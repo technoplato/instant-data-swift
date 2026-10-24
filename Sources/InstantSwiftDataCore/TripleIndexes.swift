@@ -1,8 +1,12 @@
 import Foundation
+import os
 
 // History:
 // - 2026-10-23: a many-cardinality value set (a forward link's ids) sorts without building two key strings per
 //   comparison; every read of a long recording sorted its links again (#1007).
+// - 2026-10-24: the transaction-id interner every copy shares takes a lock around its state: copies written on two
+//   threads (the store actor and a refused write's component hydrated off it) raced on its array and dictionary
+//   (#1141).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -573,52 +577,68 @@ enum AttrSlot: Hashable, Codable, Sendable {
   }
 }
 
-// SAFETY: owned exclusively by one TripleIndexes value; copies isolate via
-// isKnownUniquelyReferenced in the unique* accessors, all writes stay on the
-// owning actor or inside value-type mutating functions (no shared executor).
-private final class TxIDInterner: @unchecked Sendable {
-  var internedTxIDs: [String]
-  var txIDToIndex: [String: UInt32]
-  private var lastTxID = ""
-  private var lastTxIDIndex: UInt32 = 0
+/// The transaction ids the triples of every copy of one `TripleIndexes` refer to, by index.
+///
+/// #1141 (2026-10-24): every copy shares this box, and copies are written on more than one thread: the store's own
+/// indexes on the store actor, a copy prepared elsewhere (a refused claimed write's component, hydrated between the
+/// operation gate's turns) off it. The box appended to its array and dictionary with no lock and no uniqueness check,
+/// so two such writes raced and could corrupt the heap. Copy on write would copy every interned id into each prepared
+/// write, a cost that grows with everything the store ever wrote; interning is append-only and an index never changes,
+/// so the copies keep sharing one box, and a lock orders its reads and writes.
+private final class TxIDInterner: Sendable {
+  private struct State {
+    var internedTxIDs: [String]
+    var txIDToIndex: [String: UInt32]
+    var lastTxID = ""
+    var lastTxIDIndex: UInt32 = 0
+  }
+
+  private let state: OSAllocatedUnfairLock<State>
 
   init() {
-    internedTxIDs = [""]
-    txIDToIndex = ["": 0]
+    state = OSAllocatedUnfairLock(initialState: State(internedTxIDs: [""], txIDToIndex: ["": 0]))
   }
 
   init(internedTxIDs: [String]) {
     let interned = internedTxIDs.isEmpty ? [""] : internedTxIDs
-    self.internedTxIDs = interned
     var map: [String: UInt32] = [:]
     map.reserveCapacity(interned.count)
     for (offset, value) in interned.enumerated() {
       map[value] = UInt32(offset)
     }
-    self.txIDToIndex = map
+    state = OSAllocatedUnfairLock(initialState: State(internedTxIDs: interned, txIDToIndex: map))
+  }
+
+  /// Every interned id, by index: what an encoded store keeps.
+  var internedTxIDs: [String] {
+    state.withLock { $0.internedTxIDs }
   }
 
   func intern(_ txID: String) -> UInt32 {
-    if txID == lastTxID {
-      return lastTxIDIndex
+    state.withLock { state in
+      if txID == state.lastTxID {
+        return state.lastTxIDIndex
+      }
+      if let existing = state.txIDToIndex[txID] {
+        state.lastTxID = txID
+        state.lastTxIDIndex = existing
+        return existing
+      }
+      let index = UInt32(state.internedTxIDs.count)
+      state.internedTxIDs.append(txID)
+      state.txIDToIndex[txID] = index
+      state.lastTxID = txID
+      state.lastTxIDIndex = index
+      return index
     }
-    if let existing = txIDToIndex[txID] {
-      lastTxID = txID
-      lastTxIDIndex = existing
-      return existing
-    }
-    let index = UInt32(internedTxIDs.count)
-    internedTxIDs.append(txID)
-    txIDToIndex[txID] = index
-    lastTxID = txID
-    lastTxIDIndex = index
-    return index
   }
 
   func resolved(at index: UInt32) -> String {
-    let i = Int(index)
-    guard i >= 0, i < internedTxIDs.count else { return "" }
-    return internedTxIDs[i]
+    state.withLock { state in
+      let i = Int(index)
+      guard i >= 0, i < state.internedTxIDs.count else { return "" }
+      return state.internedTxIDs[i]
+    }
   }
 }
 
