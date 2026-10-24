@@ -7,6 +7,8 @@
 //   attempt while the device has no network, as the socket's reconnect does (`Reactor.js` `_scheduleReconnect`).
 // - 2026-10-23: a stream row's updatedAtMs never moves back, whatever the device clock does (#1012): an app's rules may
 //   refuse such an update, and with it the segment row in the same transaction.
+// - 2026-10-23: a row write that fails is tried again after the backoff, like an upload (#1012): a store that does not
+//   know the namespaces until its first `init-ok` refused the rows, and delivery ended there for good.
 
 import Dependencies
 import Foundation
@@ -214,8 +216,9 @@ public actor InstantProgressiveMediaWriter {
 
   /// Stores the spooled files and writes their rows, oldest first, until the stream is finished and delivered.
   ///
-  /// Success waits for the server, unlike ``append(_:durationSeconds:)``. A file that fails to store is tried again
-  /// after ``Backoff``'s delay, and nothing after it moves first. While the device has no network no attempt is made.
+  /// Success waits for the server, unlike ``append(_:durationSeconds:)``. A file that fails to store, or a row write
+  /// that fails (a store that does not know the namespaces before its first `init-ok`), is tried again after
+  /// ``Backoff``'s delay, and nothing after it moves first. While the device has no network no upload is attempted.
   /// A refused file (`permissionRejected`) ends delivery with that error and leaves the spool as it is; other streams'
   /// writers are not affected. Cancelling the task stops delivery between steps; the spool keeps what is left.
   public func deliver() async throws {
@@ -239,7 +242,7 @@ public actor InstantProgressiveMediaWriter {
       }
       if !record.initializationStored {
         try await store(spool.initializationURL(stream), at: stream.initializationPath)
-        try await storage.write([
+        try await write([
           .stream(streamRow(.recording, segmentCount: 0, durationSeconds: 0, updatedAtMs: try nextStamp()))
         ])
         try markInitializationStored()
@@ -250,7 +253,7 @@ public actor InstantProgressiveMediaWriter {
         try await store(spool.segmentURL(stream, segment.index), at: segment.path)
         // Read after the upload: appends and `finish()` may have happened while it ran.
         let isLast = self.record?.finished == true && segment.index == (self.record?.nextIndex ?? 0) - 1
-        try await storage.write([
+        try await write([
           .stream(
             streamRow(
               isLast ? .finished : .recording,
@@ -269,7 +272,7 @@ public actor InstantProgressiveMediaWriter {
         continue
       }
       if record.finished {
-        try await storage.write([
+        try await write([
           .stream(
             streamRow(
               .finished,
@@ -322,6 +325,28 @@ public actor InstantProgressiveMediaWriter {
       try await storage.waitForNetwork()
       do {
         try await storage.upload(file, path, Self.contentType)
+        backoff.reset()
+        lastFailure = nil
+        return
+      } catch let error as InstantError where error.code == .permissionRejected {
+        throw error
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        lastFailure = String(describing: error)
+        try await clock.sleep(for: backoff.next())
+      }
+    }
+  }
+
+  /// Writes `rows`, trying again after the backoff until the store takes them. `transact` fails only on this device
+  /// (it never waits for the server), so there is no network to wait for; a refusal (`permissionRejected`) ends
+  /// delivery like a refused file.
+  private func write(_ rows: [InstantProgressiveMediaRow]) async throws {
+    while true {
+      try Task.checkCancellation()
+      do {
+        try await storage.write(rows)
         backoff.reset()
         lastFailure = nil
         return
