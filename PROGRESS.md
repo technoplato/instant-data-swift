@@ -1,3 +1,14 @@
+## 2026-10-24 12:35:57 EDT — #654, #932: v1.9.33 pinned in Scribe for build 123; the device check is next
+
+- **Scribe main:** plan `018bfb830`, pin `2ad1eaefc` (Package.swift and Playback's exact 1.9.33; both Package.resolved
+  from swift package resolve on the Mac mini: instant-data-swift `d31f15ea` and the originHash only; the installer's
+  REQUIRED_PUBLISHED_DEPENDENCIES and its six test expectations, 65/65; the version docs; a Build 123 (next) story),
+  change log `d9b14c053`. Build 122 (installed 11:34-11:55) does not carry it.
+- **Device question** (on #654 and #1005): on the build that carries 1.9.33, while pictures from another device arrive
+  during a recording: no `query-once.failed` for `$files`, no prune or server apply holding the gate for seconds,
+  `query.answer-dropped` tallies, and the energy ledger against build 121's 09:42-09:48.
+- **Next:** the 120-minute run of the before tree (running), then cleanup.
+
 ## 2026-10-24 12:26:49 EDT — #654, #932: v1.9.33, the stored-file lookup that drove the prune and the server apply every minute
 
 - **Commits:** plan `49e42c2e`; red `adfaa4bb`, green `47d980a8` (a stored file looked up by id is a `$files` query on

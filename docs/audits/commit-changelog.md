@@ -1,3 +1,12 @@
+## 2026-10-24 12:34:49 EDT — realtime-voice `d9b14c05377e6ebb83ed37f150bc80f95063098c`
+Change log (#654 #932): the instant-data-swift 1.9.33 pin 2ad1eaefc (plan 018bfb830).
+
+## 2026-10-24 12:34:26 EDT — realtime-voice `2ad1eaefcc88610f198546752546814177485c17`
+Pin (#654 #932): Scribe and Scribe Playback pin instant-data-swift exactly 1.9.33 (d31f15ea): a stored file looked up by id is a $files query on that id, a one-shot query's late answer is not applied; both lock files (pin + originHash), installer 65/65, version docs, a Build 123 (next) story.
+
+## 2026-10-24 12:29:28 EDT — realtime-voice `018bfb83061c316a1eaaa97097c42aee7011864a`
+Plan (#654 #932): longrec-654 claims the instant-data-swift 1.9.33 pin files.
+
 ## 2026-10-24 12:26:04 EDT — instant-data-swift `267b0116b44c30249864fbaa8eb6b9a8ecc3f80d`
 Release document (#654, #932): v1.9.33, a stored file looked up by id costs one file's work and a one-shot query's late answer is not applied; measured on a copy of an iPhone's store (before: lookup apply 3.0-6.0 s and prune 6.6-6.8 s a minute; after 0-1 ms and 1-2 ms at minutes 5, 60, 120).
 
