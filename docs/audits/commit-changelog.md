@@ -1,3 +1,18 @@
+## 2026-10-24 15:26:33 EDT — scribe `2741ce7a4d40305b4d3027ee4a7698288303e234`
+Merge (#584) to main for build 127: capture after a route change; the in-place rebuild restarts the same engine with no session call, behind another app a microphone move rebuilds the running engine and a waiting route restart tries on each device change, the hand-off keeps the session and starts at once.
+
+## 2026-10-24 15:26:33 EDT — scribe `a92986dd8199775a96e1e16bfa91cd498bc6dfe1`
+changelog(#584): red, green and docs entries.
+
+## 2026-10-24 15:26:33 EDT — scribe `047ffd10ccbdda70c5fe8a949d575912b390b89d`
+Docs (#584): ADR 0042 amendment C, the audit (behind another app 4 of 4 route-change restarts failed on builds 121-123; in front 4 of 4 back in 0.3-0.6 s), Build 127 (next) story, PROGRESS.
+
+## 2026-10-24 15:26:33 EDT — scribe `b1ec69d1240a790568705d3d9cdf4891bb0d1e68`
+Green (#584): AudioCaptureGraphLifecycle.recover touches no audio session and hands a failed start off at once (prepareSessionForLiveRoute deleted); the recording keeps the session on the hand-off and starts at once; background device changes retry route restarts.
+
+## 2026-10-24 15:26:33 EDT — scribe `d266895ee2212b54968ed26280d0f64f30c058dd`
+Red test (#584): AudioCaptureRecoveryTests, RecordingCaptureRouteRecoveryTests, RecordingHeadphoneMicrophoneSwitchTests.
+
 ## 2026-10-24 15:25:36 EDT — scribe `25e44d70d3d66f04388cc378f32c059871d76c02`
 Build 126 cut: CURRENT_PROJECT_VERSION 126 for Scribe and Scribe Playback, What's New 126 dated; instant-data-swift exactly 1.9.34, models-1057 (#1057) and chunk-link-1064 (#1064, from never-shipped 125). (#1070)
 
