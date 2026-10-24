@@ -1,3 +1,27 @@
+## 2026-10-24 18:24:12 EDT — instant-data-swift `7dec49c91509d761d54af4470451f6b4000959ec`
+docs(#1072): the v1.9.35 release document names the gated performance lanes it did not run
+
+## 2026-10-24 18:22:58 EDT — instant-data-swift `3f43c2f348cffa3baa4fb9e34102ff3d114f27de`
+docs(#1072): the v1.9.35 release document: uploads, reads by id, deletes and evictions read no other file's record while nothing observes the files; real-size budgets in CI
+
+## 2026-10-24 18:22:58 EDT — instant-data-swift `caf174d0a2a13caab39f84463cb47bde8390343a`
+test(#1072): a write's instruction growth across sizes is #1108's known issue, intermittent near its limit
+
+## 2026-10-24 18:10:37 EDT — instant-data-swift `afcbc95c37e49bc967b6a4bfb78a921c85fbdcfe`
+docs(#1072): the whole-store cost audit: every hot-path operation at a quarter and at the phone's size, who calls it, what its cost grows with, and its fix or issue
+
+## 2026-10-24 18:01:49 EDT — instant-data-swift `8ca1720ad22915b94f3b1db4b76175873803e2db`
+test(#1072): a recording minute's line names the gate's top holders and the upload's share of the gate
+
+## 2026-10-24 17:49:36 EDT — instant-data-swift `4dac9e183b2930fc9f09a7466767038d393e43d6`
+test(#1072): real-size budgets that fail the build when an operation's cost grows with the store, and a fixture whose server passes the watermark
+
+## 2026-10-24 17:28:30 EDT — instant-data-swift `f83e94480dd947dad12b10a54077edbfd63a933c`
+fix(#1072): green: an upload, a read by id, a delete and an eviction read the device's file records only while an observation of them is open
+
+## 2026-10-24 17:17:37 EDT — instant-data-swift `347af4f60e69f38a2baaad15d7dc4bc07ee80674`
+test(#1072): red: while nothing observes the device's files, an upload, a read by id and a delete read no other file's record
+
 ## 2026-10-24 18:16:57 EDT — instant-data-swift `062b798c3063cc84486859237daf7df08bf0d3a4`
 Docs (#1074): the concurrency audit: 17 anti-patterns ranked by measured cost while recording (the prune's one-result batches and its run inside the frame applier first), a design and a labelled hypothesis for each, the exercises' two-run baseline on fixture version 3, and issues #1127-#1143.
 

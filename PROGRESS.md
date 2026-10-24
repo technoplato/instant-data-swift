@@ -1,3 +1,25 @@
+## 2026-10-24 18:23:43 EDT — #1072: v1.9.35, the whole-store cost audit, uploads read no other file's record, real-size budgets in CI
+
+- **Commits (instant-data-swift main):** plan `d62fa7cf` and amendment `d937ce43`; fixture `0f404f0b` (ledger
+  `d6aac6f3`); red `347af4f6`, green `f83e9448`; budgets and fixture version 3 `4dac9e18`; recording line `8ca1720a`;
+  audit `afcbc95c`; budget rule `caf174d0`; release document `3f43c2f3` and `7dec49c9`; then this ledger commit and the tag v1.9.35.
+- **Fixed (measured, Mac mini M4, release, the real-size fixture):** every upload, read by id, delete and eviction read
+  every file record the device keeps to publish them to observers nobody opened; at the phone's size an upload went
+  from 16.8 ms / 107,142 allocations / 17.4 ms of gate to 0.07 ms / 237 / 0.04 ms; over a recording the uploads' gate
+  time went from 189 / 213 / 303 ms a minute (minutes 5 / 60 / 120) to about 1 ms.
+- **Audit:** `docs/audits/2026-10-24-whole-store-cost-audit.md`, every hot-path operation at both sizes; filed
+  #1103 (discard, P1), #1104, #1105, #1106, #1107, #1108 (per-write outbox scans, P1; same as #1114's claim half),
+  #1109, #1110, #1111, #1112, #1113; app-side growth noted on #1077; expert next steps on #1072.
+- **CI:** `RealSizeBudgetTests` (correctness job, release): 18 operations within 1.5x across a 4x store and under
+  ceilings; still-growing ones are known issues.
+- **Found on the way:** the fixture's version 2 server sent text transaction ids the watermark never covers (783
+  accepted writes, 84 MB, stuck in its stores); siblings #1074-#1076 told; version 3 fixes it.
+- **Checks:** red and green; 19 stored-file tests; the budgets twice; whole bundle 1,425 tests, 3 failing (2 listed, 1
+  intermittent that passes alone 3/3).
+- **Next:** pin Scribe and Scribe Playback to 1.9.35 (plan `1157b6f49` on Scribe main); then the outbox claim fix
+  (#1108/#1114: split the claim query so an index serves it; it holds about 60% of the gate while recording).
+- **Not run:** the device check (the lab cuts and installs the next build).
+
 ## 2026-10-24 18:20:00 EDT — #1074: the concurrency audit, its exercises and today's baseline; 17 fixes filed
 
 - **Commits (instant-data-swift main):** plan `a6a2633e`; the gate's timeline `e3fa1490`; exercises `5de2da8b`; the

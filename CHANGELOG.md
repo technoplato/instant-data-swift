@@ -10,6 +10,106 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 6:24:23 p.m. EDT — `7dec49c91509` docs(#1072): the v1.9.35 release document names the gated performance lanes it did not run
+
+- **Implementation commit:** `7dec49c91509d761d54af4470451f6b4000959ec`
+- **Change:** Docs (#1072): the v1.9.35 release document names the gated performance lanes it did not run
+- **Details:**
+  - Like 1.9.30 to 1.9.34, tagged by hand on its ledger commit; the release validator now passes structurally.
+- **Files:**
+  - `docs/releases/v1.9.35.md` — the Not run section
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:29 p.m. EDT — `3f43c2f348cf` docs(#1072): the v1.9.35 release document: uploads, reads by id, deletes and evictions read no other file's record while nothing observes the files; real-size budgets in CI
+
+- **Implementation commit:** `3f43c2f348cffa3baa4fb9e34102ff3d114f27de`
+- **Change:** Docs (#1072): the v1.9.35 release document
+- **Details:**
+  - Release focus, measurements, budgets, what stays the same, checks (red and green, stored-file suites, budgets, the whole bundle: 1,425 tests, 3 failing, 2 listed and one intermittent that passes alone 3/3), not run.
+- **Files:**
+  - `docs/releases/v1.9.35.md` — new: the release document
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:29 p.m. EDT — `caf174d0a2a1` test(#1072): a write's instruction growth across sizes is #1108's known issue, intermittent near its limit
+
+- **Implementation commit:** `caf174d0a2a13caab39f84463cb47bde8390343a`
+- **Change:** Test (#1072): a write's instruction growth across sizes is #1108's known issue, intermittent near its limit
+- **Details:**
+  - transact read 1.38-1.51x across four runs; the budgets then passed twice in a row (release, 10 s, 18 known issues).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeBudgetTests.swift` — transact's rule
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:28 p.m. EDT — `afcbc95c37e4` docs(#1072): the whole-store cost audit: every hot-path operation at a quarter and at the phone's size, who calls it, what its cost grows with, and its fix or issue
+
+- **Implementation commit:** `afcbc95c37e49bc967b6a4bfb78a921c85fbdcfe`
+- **Change:** Docs (#1072): the whole-store cost audit: every hot-path operation at a quarter and at the phone's size, who calls it, what its cost grows with, and its fix or issue
+- **Details:**
+  - The table, the fix's before and after, a recording's minutes 5, 60 and 120 before and after, the fixture artifact, what was read but not metered, and the next steps as a performance and isolation expert would take them (#1103-#1114).
+- **Files:**
+  - `docs/audits/2026-10-24-whole-store-cost-audit.md` — new: the audit
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:28 p.m. EDT — `8ca1720ad229` test(#1072): a recording minute's line names the gate's top holders and the upload's share of the gate
+
+- **Implementation commit:** `8ca1720ad22915b94f3b1db4b76175873803e2db`
+- **Change:** Test (#1072): a recording minute's line names the gate's top holders and the upload's share of the gate
+- **Details:**
+  - The direct before-and-after measure on a shared machine: the uploads' gate time per minute, beside the gate's whole hold.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeReport.swift` — gateTop and uploadGateMs per recording minute
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:27 p.m. EDT — `4dac9e183b29` test(#1072): real-size budgets that fail the build when an operation's cost grows with the store, and a fixture whose server passes the watermark
+
+- **Implementation commit:** `4dac9e183b2930fc9f09a7466767038d393e43d6`
+- **Change:** Test (#1072): real-size budgets that fail the build when an operation's cost grows with the store, and a fixture whose server passes the watermark
+- **Details:**
+  - RealSizeBudgetTests: 18 operations at a quarter and the full phone size, within 1.5x across sizes and under ceilings, still-growing ones as known issues (#1103, #1104, #1106, #1108, #1111). Fixture version 3: integer transaction ids, so the watermark covers accepted writes (version 2 kept 783 accepted writes, 84 MB of bodies, and inflated every server apply). Gate events counted once, bounded histories, the meter's prepare step and gate totals by holder, the report's deadlines and progress lines, and a recording's minutes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeBudgetTests.swift` — new: the budgets
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeFixture.swift` — version 3, gate log once, bounded histories
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift` — prepare step, gate totals by holder
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeReport.swift` — deadlines, progress, settling, more calls, recording minutes
+  - `agent-presence/_channels/2026-10-24-lib-audit-1072.md` — the version 2 artifact for the sibling audits
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:27 p.m. EDT — `f83e94480dd9` fix(#1072): green: an upload, a read by id, a delete and an eviction read the device's file records only while an observation of them is open
+
+- **Implementation commit:** `f83e94480dd947dad12b10a54077edbfd63a933c`
+- **Change:** Fix (#1072): green: an upload, a read by id, a delete and an eviction read the device's file records only while an observation of them is open
+- **Details:**
+  - publishStoredFileRecordsIfObserved() reads and publishes the records only while an observation is open, after the change is written; the upload publishes under the gate; a failed publish is logged and leaves the result alone. Phone size: an upload 16.8 ms / 107,142 allocations / 17.4 ms gate -> 0.07 ms / 237 / 0.04 ms; a recording minute's uploads 189-303 ms of gate -> about 1 ms. 19 stored-file tests green.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — savePreparedStoredFile, storedFileContents, deleteStoredFile and evictStoredFiles publish through the new helper; history line
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:23:26 p.m. EDT — `347af4f60e69` test(#1072): red: while nothing observes the device's files, an upload, a read by id and a delete read no other file's record
+
+- **Implementation commit:** `347af4f60e69f38a2baaad15d7dc4bc07ee80674`
+- **Change:** Test (#1072): red: while nothing observes the device's files, an upload, a read by id and a delete read no other file's record
+- **Details:**
+  - One record no reader can decode stands in for the read of every record: on this commit the upload fails on it (DecodingError.keyNotFound) and its error handler deletes the stored file. At the phone's size an upload cost 16.8 ms, 107,142 allocations and 17.4 ms of the operation gate (Mac mini, release).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` — the red test and its undecodable-record helper
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 6:18:12 p.m. EDT — `062b798c3063` docs(#1074): the concurrency audit: 17 anti-patterns ranked by measured cost while recording, a design and a labelled hypothesis for each, and the exercises' baseline
 
 - **Implementation commit:** `062b798c3063cc84486859237daf7df08bf0d3a4`
