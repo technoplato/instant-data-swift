@@ -1,1 +1,2 @@
 claude-code/audio-stream-1012b@strangelearning 2026-10-23T16:04:02-0400 grower plan=2026-10-23-audio-stream-1012 #1012 (new)
+claude-code/audio-stream-1012b@strangelearning 2026-10-23T23:19:41-0400 grower plan=2026-10-23-audio-stream-1012 #1012 (the writer tries a failed row write again after its backoff, as it does a failed upload; released as 1.9.32)
