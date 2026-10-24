@@ -37,6 +37,9 @@ New: `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOCounters.swift`,
 `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift`,
 `docs/audits/2026-10-24-storage-disk-network-audit.md`, `docs/audits/2026-10-24-storage-io-baseline.txt`.
 Appended: `CHANGELOG.md`, `PROGRESS.md`, `docs/audits/commit-changelog.md`.
+Amendment 1 (2026-10-24, claude-code/audit-storage-1076@strangelearning, the same agent continued on another account): new
+`scripts/storage-io/phone-store-pages.sh`, the SQL-level exercise that counts the write-ahead-log frames one logical write
+dirties on a copy of a real store (the phone's is read locally and never committed); test-only, no library source.
 Read only: #1072's `RealSizeFixture.swift` and `RealSizeMeter.swift` (requests through
 `agent-presence/_channels/2026-10-24-lib-audit-1072.md`).
 
