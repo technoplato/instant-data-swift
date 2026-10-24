@@ -52,3 +52,23 @@ keeps no frame history (#1072's `RealSizeServer.sent` and `RealSizeApplyLog` gro
 two-hour replay would read as the library's growth) and hands the runtime JSON text frames through the production
 decoder (`InstantLiveMessage.decoded(fromFrame:)`), so a frame's decode is in the measurement. It plugs into the
 fixture through `RealSizeFixture.open(configure:)`; no change to #1072's files. Still no library source change.
+
+## Amendment 2 (2026-10-24 17:56 EDT, claude-code/audit-memory-1075@halfjew22)
+
+Continued on a third account after the second stopped on quota at 16:54; nothing committed is redone. Same claimed
+files, no new ones. Three harness corrections, each found by the exercises themselves and each kept to this audit's own
+files (#1072's fixture files are unchanged; the notes for #1072 and #1076 are on #1072's channel):
+- The exercises write Scribe's shapes (`MemoryScribeWrites` in `MemoryExercises.swift`: typed `update`/`updateExisting`
+  inserts, each finished line linked to its recording, the line in progress deleted). #1072's `.merge` writes never
+  materialize a new row in memory, so the first exercises missed the link set, the cascade preview and new index
+  entries. The `recordings/segments` link is added to the exercise sessions' schema only.
+- `MemoryReplayServer.swift` sends integer transaction ids (`MemoryTransactionIDs`), as Instant's server does: the
+  library covers a write by a refresh only when both ids are integers, so string ids kept every acknowledged write as
+  an overlay that each apply replayed (the first numbers measured that, not the library). #1072 fixed its own server
+  the same way in fixture version 3 (4dac9e18).
+- On a version-2 store, each session's own copy has the generator's 783 uncoverable confirmed writes re-pointed to id
+  1 (`MemoryStoreCopy`), so the session's first apply prunes them through the library's watermark path before anything
+  is measured (the phone's copy keeps 3); a version-3 store has none.
+The real-size check on the phone's own store runs on this laptop only (the heavy lane), launch exercise only; the store
+is opened read-only and copied only into a temporary session directory the exercise removes. Still no library source
+change.
