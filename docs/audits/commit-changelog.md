@@ -1,3 +1,6 @@
+## 2026-10-24 15:32:08 EDT — scribe `f9bb41e6c3c337a80d204e436407caf3bdda37bc`
+Build 127 cut (#1071): Scribe 0.1 (127) and Scribe Playback 127 from main 2741ce7a4, instant-data-swift exactly 1.9.34; carries airpods-584 (#584, capture back by itself after a route change).
+
 ## 2026-10-24 15:26:33 EDT — scribe `2741ce7a4d40305b4d3027ee4a7698288303e234`
 Merge (#584) to main for build 127: capture after a route change; the in-place rebuild restarts the same engine with no session call, behind another app a microphone move rebuilds the running engine and a waiting route restart tries on each device change, the hand-off keeps the session and starts at once.
 
