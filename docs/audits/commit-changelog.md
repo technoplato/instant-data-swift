@@ -1,3 +1,18 @@
+## 2026-10-23 20:00:32 EDT — realtime-voice `a87616be9d2364a9a7b0bea811a210f4f090d701`
+Change log for the audit commit 7d9189d1d (#1007).
+
+## 2026-10-23 20:00:30 EDT — realtime-voice `7d9189d1d40ae06e253a63327b7dd7ecddfc017b`
+The hot-path audit's N11 section and 1.9.28 released and pinned for build 119 (#1007).
+
+## 2026-10-23 20:00:04 EDT — realtime-voice `34eea4a7cc0ab982b571ecfdb8face863b041128`
+Merge of main's recording-screen-412 item 2 into the 1.9.28 pin; What's New and change log kept both (#1007).
+
+## 2026-10-23 19:59:26 EDT — realtime-voice `9d2936d61b9c676a33edbf8e06208c0f6ed3258d`
+Change log for the 1.9.28 pin dca8adcb9 (#1007).
+
+## 2026-10-23 19:59:26 EDT — realtime-voice `dca8adcb9d8a0411f5e0fbcc4b432efc89deff5d`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.28 for build 119: the optimistic-effect fingerprint once per step (#1007).
+
 ## 2026-10-23 19:59:01 EDT — scribe `32b691e7f33f1fc4b0a496e769de63fb53c3207d`
 The recording-screen audit's item 2 (#1007).
 
