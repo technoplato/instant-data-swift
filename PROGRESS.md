@@ -1,3 +1,28 @@
+## 2026-10-24 18:25:23 EDT — #1075: the memory audit, its exercises and today's baseline; 10 fixes filed
+
+- **Commits (instant-data-swift main):** plan `37e09a91`, amendments `e1d8ac9b` and `9b5107e3`; exercises `e83033cc`;
+  this commit (the audit, this entry); then the ledger.
+- **Measured (Mac mini M4, release, the phone-shaped store; the iPhone not measured):** one whole `$files` answer peaks
+  at 249 MB of live heap, allocates 2.3 GB and leaves 107 MB resident; `storedFiles()` peaks at 181 MB per call; a
+  64-line page refresh allocates 21.9 MB for one changed line (~19 a minute); an interim write 25.7 MB (#1108); a new
+  line shown in the window 45.8 MB end to end; launch keeps 737 B per resident fact; a two-hour replay with 51
+  observers grows the heap 12.1 MB an hour (resident facts 56,109 -> 63,427 -> 71,211 at minutes 5, 60, 120, the phone
+  47,162 -> 60,273 -> 72,626). E08 measured #1072's f83e9448: 106,947 -> 118 allocations per upload.
+- **Filed, worst first:** #1144 (whole `$files` read), #1145 (no eviction of acknowledged rows), #1146 (64-slot sets,
+  ids not interned), #1147 (whole-page refresh work), #1148 (eager diagnostics), #1149 (launch decode), #1150 (local
+  history pages), #1151 (reconnect), #1152 (link-set copy per line), #1153 (double prepare per final). Numbers posted
+  on #540, #541, #654, #1072, #1108, #1111, #1114, #1116, #1123.
+- **Exercises:** `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (`INSTANT_MEMORY_EXERCISES=1`),
+  `MemoryLongRunReplay.swift` (`INSTANT_MEMORY_REPLAY=1`), `MemoryReplayServer.swift`;
+  `scripts/memory-exercises/run-memory-exercises.sh`. Audit: `docs/audits/2026-10-24-memory-audit.md` (raw lines at
+  its end). Auditor reports and run logs outside the repository: `~/Sync/audit/memory-1075/`.
+- **Harness findings shared:** #1072's merge-shaped writes never materialize a new row; text transaction ids are never
+  covered by a refresh (fixed by #1072 in fixture version 3); a replay must keep the phone's observers open or the
+  prune empties the resident set.
+- **Not measured:** anything on the iPhone; the launch exercise on the phone's own store copy (queued on the laptop,
+  cancelled unrun while the laptop was saturated); a live infinite query kept `.accumulated` (needs cursor pages in the
+  scripted server; design posted on #540); the typed layer's per-emission decode.
+- **Next:** the lab dispatches the fixes; each issue names its exercise and the baseline line it should move.
 ## 2026-10-24 18:23:43 EDT — #1072: v1.9.35, the whole-store cost audit, uploads read no other file's record, real-size budgets in CI
 
 - **Commits (instant-data-swift main):** plan `d62fa7cf` and amendment `d937ce43`; fixture `0f404f0b` (ledger
