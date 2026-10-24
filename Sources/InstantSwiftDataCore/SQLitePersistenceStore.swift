@@ -7965,6 +7965,18 @@ public actor SQLitePersistenceStore {
   /// ``quarantineInvalidImmediateSupersessionTail(_:expectedStoreRevision:expectedOutboxRevision:)``
   /// to repair before the caller prepares its write. Synchronous, so `transact`
   /// reads it in the same persistence turn as its other reads (#403).
+  /// The outbox's newest row, with what the supersession tail check needs of it.
+  package static let immediateSupersessionTailSQL =
+    """
+    SELECT mutation_id, status, optimistic_overlay_active,
+           delivery_claim_state, delivery_started, delivery_state,
+           delivery_metadata_version, encoded_body_bytes,
+           created_at_ms, length(CAST(json AS BLOB))
+    FROM instant_outbox
+    ORDER BY created_at_ms DESC, mutation_id DESC
+    LIMIT 1
+    """
+
   func readImmediateSupersessionTail(
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
@@ -7981,18 +7993,7 @@ public actor SQLitePersistenceStore {
       }
 
       var statement: OpaquePointer?
-      try prepare(
-        """
-        SELECT mutation_id, status, optimistic_overlay_active,
-               delivery_claim_state, delivery_started, delivery_state,
-               delivery_metadata_version, encoded_body_bytes,
-               created_at_ms, length(CAST(json AS BLOB))
-        FROM instant_outbox
-        ORDER BY created_at_ms DESC, mutation_id DESC
-        LIMIT 1
-        """,
-        statement: &statement
-      )
+      try prepare(Self.immediateSupersessionTailSQL, statement: &statement)
       defer { finishStatement(statement) }
       let code = sqlite3_step(statement)
       if code == SQLITE_DONE {
@@ -16676,40 +16677,68 @@ public actor SQLitePersistenceStore {
     excludingClaimToken claimToken: String
   ) throws -> Bool {
     try selectInt64(
-      """
-      SELECT EXISTS(
-        SELECT 1
-        FROM instant_outbox AS outbox
-        WHERE (
-          outbox.created_at_ms > ?
-          OR (outbox.created_at_ms = ? AND outbox.mutation_id > ?)
-        )
-        AND outbox.optimistic_overlay_active != 0
-        AND COALESCE(outbox.confirmation_proven, 0) = 0
-        AND NOT (
-          outbox.delivery_claim_state = ?
-          AND COALESCE(outbox.delivery_claim_token, '') = ?
-        )
-        AND (
-          outbox.delivery_metadata_version < ?
-          OR NOT EXISTS (
-            SELECT 1
-            FROM instant_outbox_write_keys AS write_keys
-            WHERE write_keys.mutation_id = outbox.mutation_id
-          )
-        )
-        LIMIT 1
-      )
-      """,
-      [
-        .int(position.createdAtMilliseconds),
-        .int(position.createdAtMilliseconds),
-        .text(position.mutationID),
-        .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
-        .text(claimToken),
-        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-      ]
+      Self.unknownActiveOverlayAfterSQL,
+      Self.unknownActiveOverlayAfterBindings(position, excludingClaimToken: claimToken)
     ) != 0
+  }
+
+  /// Whether a later write's locally visible overlay has no trustworthy normalized write-key proof.
+  private static let unknownActiveOverlayAfterSQL =
+    """
+    SELECT EXISTS(
+      SELECT 1
+      FROM instant_outbox AS outbox
+      WHERE (
+        outbox.created_at_ms > ?
+        OR (outbox.created_at_ms = ? AND outbox.mutation_id > ?)
+      )
+      AND outbox.optimistic_overlay_active != 0
+      AND COALESCE(outbox.confirmation_proven, 0) = 0
+      AND NOT (
+        outbox.delivery_claim_state = ?
+        AND COALESCE(outbox.delivery_claim_token, '') = ?
+      )
+      AND (
+        outbox.delivery_metadata_version < ?
+        OR NOT EXISTS (
+          SELECT 1
+          FROM instant_outbox_write_keys AS write_keys
+          WHERE write_keys.mutation_id = outbox.mutation_id
+        )
+      )
+      LIMIT 1
+    )
+    """
+
+  private static func unknownActiveOverlayAfterBindings(
+    _ position: InstantOutboxDeliveryPosition,
+    excludingClaimToken claimToken: String
+  ) -> [SQLiteBinding] {
+    [
+      .int(position.createdAtMilliseconds),
+      .int(position.createdAtMilliseconds),
+      .text(position.mutationID),
+      .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+      .text(claimToken),
+      .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+    ]
+  }
+
+  /// The SQLite steps of the delivery's unknown-overlay check over every row after the start, for tests (#1108).
+  package func unknownActiveOverlayCheckStepsForTesting() throws -> Int {
+    var statement: OpaquePointer?
+    try prepare(Self.unknownActiveOverlayAfterSQL, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(
+      Self.unknownActiveOverlayAfterBindings(
+        InstantOutboxDeliveryPosition(createdAtMilliseconds: 0, mutationID: ""),
+        excludingClaimToken: "no-claim"
+      ),
+      to: statement
+    )
+    _ = sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 1)
+    while sqlite3_step(statement) == SQLITE_ROW {}
+    return Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 0))
   }
 
   private func hasActiveOverlayWriteKeyAfterWithoutTransaction(
