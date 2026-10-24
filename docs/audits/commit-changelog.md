@@ -1,3 +1,9 @@
+## 2026-10-23 20:48:27 EDT — scribe `c39dcc69121c8f50b149349bab38f1012d9f6958`
+Green (#1036): a fallback speech session attaches no engine before its first audio, so the iPhone's silent system-audio lane no longer holds a second Your Mac socket or runs On This iPhone on nothing.
+
+## 2026-10-23 20:48:27 EDT — scribe `fcb50e745024e8aaac95fc4316c0990d7db2f79f`
+Red (#1036): SpeechFailoverWatermarkTests: a session without audio connects no engine; two quick fall-backs keep the last final.
+
 ## 2026-10-23 20:44:07 EDT — instant-data-swift `c6bd5358df46dfdd032b4db424c3211847628af2`
 Release document for v1.9.29 (#1035): a refused write is rolled back at the cost of the rows it touched.
 
