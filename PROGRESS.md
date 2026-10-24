@@ -1,6 +1,6 @@
 ## 2026-10-24 18:25:23 EDT — #1075: the memory audit, its exercises and today's baseline; 10 fixes filed
 
-- **Commits (instant-data-swift main):** plan `37e09a91`, amendments `e1d8ac9b` and `9b5107e3`; exercises `e83033cc`;
+- **Commits (instant-data-swift main):** plan `37e09a91`, amendments `e1d8ac9b` and `9b5107e3`; exercises `0593a9ec`;
   this commit (the audit, this entry); then the ledger.
 - **Measured (Mac mini M4, release, the phone-shaped store; the iPhone not measured):** one whole `$files` answer peaks
   at 249 MB of live heap, allocates 2.3 GB and leaves 107 MB resident; `storedFiles()` peaks at 181 MB per call; a

@@ -1,3 +1,9 @@
+## 2026-10-24 18:30:03 EDT — instant-data-swift `01209210516e7442ef3b3fe1c6f3a787aeee0754`
+Docs (#1075): the memory audit (fifteen anti-patterns worst first, each with where it runs, its measured cost at the phone's size, its design and its saving as a hypothesis with the exercise that measures it), the baseline and raw lines, PROGRESS; ten fixes filed, #1144-#1153.
+
+## 2026-10-24 18:30:03 EDT — instant-data-swift `0593a9ec598a321118dc84aadf1f959b234d7611`
+Test (#1075): memory exercises at the phone's size (allocations, bytes, retained heap and peak per hot operation, E00-E14) and a two-hour recording replay reporting footprint, heap and resident facts at minutes 5, 60 and 120, on Scribe's write shapes with integer transaction ids.
+
 ## 2026-10-24 18:26:27 EDT — instant-data-swift `6732e4653f42f68832ae9868216e2a5eb5439dd3`
 Test (#1074): the contention instruments' tests assert whole values with expectNoDifference (the Point-Free testing review); no measurement code changed.
 

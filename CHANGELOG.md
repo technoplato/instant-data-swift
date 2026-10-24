@@ -10,6 +10,37 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 6:30:29 p.m. EDT — `01209210516e` docs(#1075): the memory audit: fifteen anti-patterns worst first, each with where it runs, its measured cost at the phone's size, its design and its saving as a hypothesis with the exercise that measures it; ten fixes filed
+
+- **Implementation commit:** `01209210516e7442ef3b3fe1c6f3a787aeee0754`
+- **Change:** Docs (#1075): the memory audit, fifteen anti-patterns worst first with measured costs, designs and hypotheses; ten fixes filed
+- **Details:**
+  - Worst single event: a whole $files read peaks at 249 MB of heap and leaves 107 MB resident; steady churn: a 64-line refresh allocates 21.9 MB for one changed line; retention: +12.1 MB of heap an hour in the two-hour replay.
+  - Filed #1144-#1153; numbers posted on #540, #541, #654, #1072, #1108, #1111, #1114, #1116, #1123; PROGRESS entry (its exercises SHA corrected in the ledger commit to 0593a9ec, the SHA on main).
+- **Files:**
+  - `docs/audits/2026-10-24-memory-audit.md` — new: the audit, its baseline and raw lines
+  - `PROGRESS.md` — the #1075 checkpoint
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-memory-1075, claude/halfjew22 after ld and strangelearning); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:30:29 p.m. EDT — `0593a9ec598a` test(#1075): memory exercises at the phone's size: allocations, bytes, what stays and the peak per hot operation, and a two-hour recording replay reporting the footprint at minutes 5, 60 and 120
+
+- **Implementation commit:** `0593a9ec598a321118dc84aadf1f959b234d7611`
+- **Change:** Test (#1075): memory exercises at the phone's size and a two-hour recording replay
+- **Details:**
+  - E00-E14 print allocations, bytes allocated, heap retained, peak live heap and footprint per hot operation on #1072's phone-shaped store with Scribe's library configuration and write shapes; the library's metered operations beside each.
+  - MemoryLongRunReplay replays two hours of the phone's measured recording workload with 51 observers open and reports footprint, heap and resident facts every five minutes; a three-minute smoke test always runs.
+  - Harness corrections the exercises found: Scribe's write shapes (a merge never materializes a new row), integer transaction ids, a version-2 store's uncoverable writes pruned first.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — new: E00-E14, the session, Scribe's write shapes
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryLongRunReplay.swift` — new: the two-hour replay and its smoke test
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryReplayServer.swift` — new: a scripted server with no frame history, text frames, integer transaction ids
+  - `scripts/memory-exercises/run-memory-exercises.sh` — new: builds in release and runs the suites alone
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-memory-1075, claude/halfjew22 after ld and strangelearning); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 6:26:29 p.m. EDT — `6732e4653f42` test(#1074): the contention instruments' tests assert whole values with expectNoDifference
 
 - **Implementation commit:** `6732e4653f42f68832ae9868216e2a5eb5439dd3`
