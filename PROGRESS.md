@@ -1,3 +1,17 @@
+## 2026-10-23 22:41:50 EDT — #654: v1.9.31 pinned for build 120; the device check is next
+
+- **Commits:** library main `0ae10a95` (plan) .. `1b5ad1a4` (red `add72672`, green `f4dfb8ee`, release document
+  `af3be52d` and its Not run section `00e6445e`, ledgers `8ee30384` and `1b5ad1a4`); tag v1.9.31 at `8ee30384`. Scribe
+  main: plan `0155627e9`, pin `179d9a5e4` (both packages exact 1.9.31, both lock files resolved, the installer expects
+  1.9.31 instead of 1.9.29, 65/65; a Build 120 story).
+- **Owner:** prune-654 is done; the lab (#1005) measures build 120 on the iPhone: the gate holds named
+  pruneLiveQueryResults(policy:now:) (1,385 and 4,168 ms on build 118), the ledger's instant:prune share (8.1%) and
+  idle/active CPU (62.7% of a core).
+- **Next, if the device still shows the prune:** its remaining cost grows with what a batch drops: the hot store's
+  in-place retraction (about 7-8 µs a fact in release on the Mac mini, half of it in the indexed attributes' indexes),
+  and the batch choice decoding each removed result's JSON (its ownership rows name the same facts without a decode).
+  #654's items 2-7 stay open on the issue.
+
 ## 2026-10-23 22:29:27 EDT — v1.9.31: the live-query prune costs in proportion to what it drops, not to the store (#654); carries 1.9.30
 
 - **Commits:** plan `0ae10a95` (claims); red `add72672`, green `f4dfb8ee` (a batch reads only the released entities'
