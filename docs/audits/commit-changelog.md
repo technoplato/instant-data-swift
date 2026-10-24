@@ -1,3 +1,6 @@
+## 2026-10-24 17:48:48 EDT — scribe `7ec05f39a865c4a4a74b21f90473eb30f30dddd6`
+Docs (#1057): reinstalling the identical Dev 127 app on the iPad recompiled all eight Neural Engine programs (97.95 s, stamp Ready): they are keyed on the install's location, not the code; the regression of 126/127 reproduced (n=2).
+
 ## 2026-10-24 17:48:05 EDT — instant-data-swift `1cdd8383f6b78284ebdb3231798783968a772d27`
 Docs (#1076): the storage, disk and network audit (eleven anti-patterns worst first, each with its design, its saving as a hypothesis, its exercise and today's baseline), the raw baseline lines, PROGRESS; twelve fixes filed, #1114-#1125.
 
