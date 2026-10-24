@@ -1,3 +1,6 @@
+## 2026-10-24 18:46:31 EDT — scribe `43a5ebc28db9da3ba00508d7f280fed7e9a0abd3`
+Docs (#1057): build 128 on the iPad with the fix: every install is Preparing at launch (95-97 s compile) with a 0.00 s stream wait; a relaunch is Ready (first words 2.36 s); no silent wait.
+
 ## 2026-10-24 18:38:05 EDT — scribe `e8bd51783bfb4eebddfa32efd8282fb372438b2f`
 Build 129 cut (#1155): CURRENT_PROJECT_VERSION 129; heat-641 (#641) and instant-data-swift exactly 1.9.35 (#1072).
 
