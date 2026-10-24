@@ -1,3 +1,12 @@
+## 2026-10-23 20:34:26 EDT — scribe `314e1aab9ac9079d0a0f4124829a43c7fc787575`
+The blank transcript's rescue in the recording-screen audit and What's New (#412).
+
+## 2026-10-23 19:56:34 EDT — scribe `7411d4f818cbed12860a768a1df61ea9fc6204c2`
+Green (#412): a following live transcript that shows no row brings its newest row back, and logs what the scroll view measured.
+
+## 2026-10-23 19:56:29 EDT — scribe `f408190a8be593b242c7b4339b5834072de17210`
+Red test (#412): RecordingTranscriptBlankTests, the first empty rows-on-screen report.
+
 ## 2026-10-23 20:12:43 EDT — instant-data-swift `4d907e4e111761035a785eb75ca0e5a551b1557d`
 Tests (#1021): the known-failing list re-recorded with the fixes, 8 names each with an issue or an owner (was 77), and Tests/known-failing-verdicts.md.
 
