@@ -39,6 +39,9 @@
 //   there was one before computing the one it stores, and the acknowledgement computed it for two checks (#1007).
 // - 2026-10-23: a refused write's rollback advances the memory cache to the revision it commits, as a server apply and a
 //   local write do; it dropped the cache, and the next read rebuilt the whole store from SQLite (#1035).
+// - 2026-10-23: the live-query prune chooses each batch from the stored results' rows and the facts they hold, then
+//   drops it against the hot store's facts of only those entities, deleting a dropped entity's rows by its id; each
+//   batch built a dictionary of every fact and diffed the whole store into SQLite (#654).
 
 import Foundation
 import IssueReporting
@@ -292,6 +295,80 @@ struct InstantLiveQueryResultPruningApplication: Sendable {
   /// Facts a removed row released that the whole-entity rule kept, because their entity still had a fact no removed
   /// row released. A later batch that releases the rest of the entity removes them together.
   var retainedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
+}
+
+/// The results a live-query prune batch removes and the facts they hold, chosen from the stored results alone (#654).
+struct InstantLiveQueryResultPruneBatch: Sendable {
+  /// The results the batch removes, in the policy's order.
+  var removedQueryKeys: [String]
+  /// Whether the policy removes more results than this batch holds (#303, item 6).
+  var hasMoreToRemove: Bool
+  /// The facts the removed results hold, and the ones an earlier batch carried.
+  var releasedIdentities: Set<InstantLiveTripleIdentity>
+  /// Of ``removedQueryKeys``, the closed queries' results kept for their next subscription (#1006).
+  fileprivate var unloadingQueryKeys: Set<String>
+  /// Of ``removedQueryKeys``, those whose result could not be read: their rows stay, as before #654.
+  fileprivate var unreadableQueryKeys: Set<String>
+  /// The stored results that stay, oldest first, then the ones a later batch removes.
+  fileprivate var remainingRows: [LiveQueryResultStorageRow]
+  /// The revisions the batch was chosen at; it applies only at them.
+  fileprivate var revisions: LiveQueryResultPruneRevisions
+
+  /// The entities whose facts the batch may drop: the only part of the store it reads.
+  var releasedEntityIDs: Set<String> {
+    Set(releasedIdentities.lazy.map(\.entityID))
+  }
+
+  /// The result of a prune that removes nothing: every stored result stays.
+  var resultRemovingNothing: InstantLiveQueryResultPruningResult {
+    InstantLiveQueryResultPruningResult(
+      removedQueryKeys: [],
+      remainingQueryKeys: remainingRows.map(\.queryKey),
+      removedOrphanedTripleCount: 0,
+      remainingEntryCount: remainingRows.count,
+      remainingTripleCount: remainingRows.reduce(0) { $0 + $1.tripleCount }
+    )
+  }
+
+  /// What a batch that removes nothing changed: nothing.
+  var applicationRemovingNothing: InstantLiveQueryResultPruneBatchApplication {
+    InstantLiveQueryResultPruneBatchApplication(
+      result: resultRemovingNothing,
+      removedFacts: [],
+      storeRevision: revisions.store,
+      attributeRevision: revisions.attribute,
+      queryResultRevision: revisions.queryResult,
+      hasMoreToRemove: false,
+      retainedReleasedIdentities: []
+    )
+  }
+}
+
+/// What a live-query prune batch removed (#654).
+struct InstantLiveQueryResultPruneBatchApplication: Sendable {
+  var result: InstantLiveQueryResultPruningResult
+  /// The store's facts the batch removed, whole entities only: the hot store retracts exactly these.
+  var removedFacts: [InstantTriple]
+  var storeRevision: Int64
+  var attributeRevision: Int64
+  var queryResultRevision: Int64
+  /// Rows the policy removes that the batch left for the next one (#303, item 6).
+  var hasMoreToRemove: Bool
+  /// Facts a removed row released that the whole-entity rule kept, because their entity still had a fact no removed
+  /// row released. A later batch that releases the rest of the entity removes them together.
+  var retainedReleasedIdentities: Set<InstantLiveTripleIdentity>
+
+  var removedEntityIDs: Set<String> {
+    Set(removedFacts.lazy.map(\.entityID))
+  }
+}
+
+/// The revisions a live-query prune batch is chosen at (#654).
+private struct LiveQueryResultPruneRevisions: Hashable, Sendable {
+  var store: Int64
+  var attribute: Int64
+  var outbox: Int64
+  var queryResult: Int64
 }
 
 private struct LiveQueryResultStorageRow: Sendable {
@@ -12380,6 +12457,14 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// Prunes the stored live-query results the policy selects in one transaction, and returns the whole state after it.
+  ///
+  /// For callers without a hot store: the store's facts come from SQLite, so this reads every fact. The runtime prunes
+  /// with
+  /// ``liveQueryResultPruneBatch(policy:now:preservingQueryKeys:maximumRemovedTripleCount:carriedReleasedIdentities:)``
+  /// and ``applyLiveQueryResultPruneBatch(_:policy:now:residentFacts:)`` instead, which read only the facts the removed
+  /// results held (#654). All three choose and keep by the same rules, in the same order.
+  ///
   /// - Parameters:
   ///   - maximumRemovedTripleCount: Remove at most this many result triples in this call (at least one row), and say
   ///     whether rows the policy removes are left, so the caller can release the operation gate between bounded
@@ -12389,256 +12474,411 @@ public actor SQLitePersistenceStore {
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
     preservingQueryKeys: Set<String> = [],
-    currentStoreSnapshot: InstantStoreSnapshot? = nil,
     maximumRemovedTripleCount: Int? = nil,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
   ) throws -> InstantLiveQueryResultPruningApplication {
     let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
     let application = try transaction {
-      let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
-      let attributeRevision = try loadMetadataRevisionWithoutTransaction(
-        Self.attributeRevisionKey
-      )
-      let outboxRevision = try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-      let queryResultRevision = try loadMetadataRevisionWithoutTransaction(
-        Self.queryResultRevisionKey
-      )
+      let revisions = try liveQueryResultPruneRevisionsWithoutTransaction()
       let currentState: InstantPersistenceState
       if var cachedState,
-        cachedState.storeRevision == storeRevision,
-        cachedState.attributeRevision == attributeRevision,
-        cachedState.outboxRevision == outboxRevision
+        cachedState.storeRevision == revisions.store,
+        cachedState.attributeRevision == revisions.attribute,
+        cachedState.outboxRevision == revisions.outbox
       {
-        cachedState.queryResultRevision = queryResultRevision
+        cachedState.queryResultRevision = revisions.queryResult
         if cachedState.snapshot.store.triples.isEmpty {
-          if let currentStoreSnapshot {
-            cachedState.snapshot.store = currentStoreSnapshot
-          } else {
-            cachedState.snapshot.store = try loadStoreSnapshotWithoutTransaction(
-              tracesStartupCollections: false
-            )
-          }
+          cachedState.snapshot.store = try loadStoreSnapshotWithoutTransaction(
+            tracesStartupCollections: false
+          )
         }
         currentState = cachedState
       } else {
         currentState = try InstantPersistenceState(
           snapshot: loadCompactSnapshotWithoutTransaction(),
-          storeRevision: storeRevision,
-          outboxRevision: outboxRevision,
-          attributeRevision: attributeRevision,
-          queryResultRevision: queryResultRevision
+          storeRevision: revisions.store,
+          outboxRevision: revisions.outbox,
+          attributeRevision: revisions.attribute,
+          queryResultRevision: revisions.queryResult
         )
       }
-      var rows = try loadLiveQueryResultRowsWithoutTransaction()
-      var protectedQueryKeys = preservingQueryKeys
-      // Compact lifecycle rows deliberately omit transaction bodies. While any
-      // mutation may still own optimistic state, preserve all persisted live
-      // results instead of hydrating the complete durable queue just to derive
-      // a narrower entity set. Pruning resumes once those lifecycle shells are
-      // server-accepted or have a proven removed overlay.
-      //
-      // TypeScript Reactor.js `_cleanupQuery` still calls `querySubs.unloadKey`
-      // when a query has no listeners, even while `pendingMutations` exist.
-      // Optimistic state lives on the outbox, not on stale infinite-query pages.
-      // Session prune passes the live listener set as `preservingQueryKeys`.
-      // Bootstrap prune passes an empty set and must keep today's protect-all
-      // so offline cache survives until the app resubscribes.
-      if preservingQueryKeys.isEmpty,
-        try outboxRequiresConservativeLiveQueryPruningWithoutTransaction()
-      {
-        protectedQueryKeys.formUnion(rows.map(\.queryKey))
-      }
-
-      var removedRows: [LiveQueryResultStorageRow] = []
-      func remove(_ row: LiveQueryResultStorageRow) -> Bool {
-        guard !protectedQueryKeys.contains(row.queryKey) else { return false }
-        rows.removeAll { $0.queryKey == row.queryKey }
-        removedRows.append(row)
-        return true
-      }
-
-      // A closed query's result is unloaded, not deleted (#1006): its facts leave the store as a deleted result's do,
-      // and its stored copy answers the query's next subscription before the server does. Upstream
-      // `PersistedObject.unloadKey` "unloads the key so that it can be garbage collected, but does not delete it".
-      var unloadingKeys: Set<String> = []
-      if !preservingQueryKeys.isEmpty {
-        for row in Array(rows) where !preservingQueryKeys.contains(row.queryKey) {
-          if remove(row) { unloadingKeys.insert(row.queryKey) }
-        }
-      }
-
-      if let maxAgeMilliseconds = policy.maxAgeMilliseconds {
-        let cutoff = now.milliseconds - Swift.max(0, maxAgeMilliseconds)
-        for row in rows where row.updatedAtMilliseconds < cutoff {
-          _ = remove(row)
-        }
-      }
-      if let maxEntries = policy.maxEntries {
-        let limit = Swift.max(0, maxEntries)
-        while rows.count > limit {
-          guard let row = rows.first(where: { !protectedQueryKeys.contains($0.queryKey) })
-          else { break }
-          _ = remove(row)
-        }
-      }
-      if let maxTripleCount = policy.maxTripleCount {
-        let limit = Swift.max(0, maxTripleCount)
-        var tripleCount = rows.reduce(0) { $0 + $1.tripleCount }
-        while tripleCount > limit {
-          guard let row = rows.first(where: { !protectedQueryKeys.contains($0.queryKey) })
-          else { break }
-          guard remove(row) else { continue }
-          tripleCount -= row.tripleCount
-        }
-      }
-
-      // A bounded batch removes the selected rows in selection order until it holds about the budget's triples; the
-      // rest stay for the next batch, which selects them again.
-      var deferredRows: [LiveQueryResultStorageRow] = []
-      if let maximumRemovedTripleCount, removedRows.count > 1 {
-        var batch: [LiveQueryResultStorageRow] = []
-        var batchTripleCount = 0
-        for row in removedRows {
-          if !batch.isEmpty, batchTripleCount + row.tripleCount > maximumRemovedTripleCount {
-            deferredRows.append(row)
-            continue
-          }
-          batch.append(row)
-          batchTripleCount += row.tripleCount
-        }
-        removedRows = batch
-        rows.append(contentsOf: deferredRows)
-      }
-
-      guard !removedRows.isEmpty else {
-        try collectUnloadedLiveQueryResultsWithoutTransaction(policy: policy, now: now, loadedRows: rows)
-        return InstantLiveQueryResultPruningApplication(
-          result: InstantLiveQueryResultPruningResult(
-            removedQueryKeys: [],
-            remainingQueryKeys: rows.map(\.queryKey),
-            removedOrphanedTripleCount: 0,
-            remainingEntryCount: rows.count,
-            remainingTripleCount: rows.reduce(0) { $0 + $1.tripleCount }
-          ),
-          state: currentState
+      let batch = try liveQueryResultPruneBatchWithoutTransaction(
+        policy: policy,
+        now: now,
+        preservingQueryKeys: preservingQueryKeys,
+        maximumRemovedTripleCount: maximumRemovedTripleCount,
+        carriedReleasedIdentities: carriedReleasedIdentities,
+        revisions: revisions
+      )
+      guard !batch.removedQueryKeys.isEmpty else {
+        try collectUnloadedLiveQueryResultsWithoutTransaction(
+          policy: policy,
+          now: now,
+          loadedRows: batch.remainingRows
         )
+        return InstantLiveQueryResultPruningApplication(result: batch.resultRemovingNothing, state: currentState)
       }
-
+      let releasedEntityIDs = batch.releasedEntityIDs
+      let applied = try applyLiveQueryResultPruneBatchWithoutTransaction(
+        batch,
+        policy: policy,
+        now: now,
+        residentFacts: currentState.snapshot.store.triples.filter { releasedEntityIDs.contains($0.entityID) }
+      )
       var snapshot = currentState.snapshot
-      var removedIdentities = carriedReleasedIdentities
-      var unloadedKeys: [String] = []
-      for row in removedRows {
-        guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
-          continue
-        }
-        for triple in result.triples {
-          removedIdentities.insert(InstantLiveTripleIdentity(triple))
-        }
-        if unloadingKeys.contains(row.queryKey) {
-          try unloadLiveQueryResultWithoutTransaction(result)
-          unloadedKeys.append(row.queryKey)
-        }
-        try execute(
-          "DELETE FROM instant_live_query_results WHERE query_key = ?",
-          [.text(row.queryKey)]
-        )
-        try forgetLiveQueryResultJSONStateWithoutTransaction(row.queryKey)
+      let removedEntityIDs = applied.removedEntityIDs
+      if !removedEntityIDs.isEmpty {
+        snapshot.store.triples.removeAll { removedEntityIDs.contains($0.entityID) }
       }
-      try collectUnloadedLiveQueryResultsWithoutTransaction(policy: policy, now: now, loadedRows: rows)
-
-      let previousStore = snapshot.store
-      let currentTriples = Dictionary(
-        snapshot.store.triples.map { (InstantLiveTripleIdentity($0), $0) },
-        uniquingKeysWith: { _, latest in latest }
-      )
-      var orphanedIdentities: Set<InstantLiveTripleIdentity> = []
-      for identity in removedIdentities {
-        guard
-          !(try liveQueryTripleHasOwnerWithoutTransaction(
-            identity,
-            excludingQueryKeys: []
-          )),
-          currentTriples[identity] != nil
-        else { continue }
-        orphanedIdentities.insert(identity)
-      }
-      // Collect whole entities only. An entity that still has a fact no remaining result owns
-      // (typically one this device wrote that the pruned query never selected) is local data;
-      // removing just the pruned query's facts left rows with `text` but no `recordingID`, which
-      // no relationship or filter can reach again (#259).
-      let candidateEntityIDs = Set(orphanedIdentities.map(\.entityID))
-      var retainedEntityIDs: Set<String> = []
-      for triple in snapshot.store.triples
-      where candidateEntityIDs.contains(triple.entityID)
-        && !orphanedIdentities.contains(InstantLiveTripleIdentity(triple))
-      {
-        retainedEntityIDs.insert(triple.entityID)
-      }
-      orphanedIdentities = orphanedIdentities.filter {
-        !retainedEntityIDs.contains($0.entityID)
-      }
-      let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
-      let retainedReleasedIdentities = Set(
-        removedIdentities.lazy.filter { retainedEntityIDs.contains($0.entityID) && currentTriples[$0] != nil }
-      )
-      snapshot.store.triples.removeAll {
-        orphanedIdentities.contains(InstantLiveTripleIdentity($0))
-      }
-      if snapshot.store != previousStore {
-        try saveStoreSnapshotDiffWithoutTransaction(
-          from: previousStore,
-          to: snapshot.store
-        )
-      }
-      // Deferred payloads never enter the store snapshot, so the diff above cannot delete them.
-      if deferredValueResidency.isEnabled, !removedEntityIDs.isEmpty {
-        try deleteDeferredValuesWithoutTransaction(entityIDs: removedEntityIDs)
-      }
-      let nextStoreRevision = if orphanedIdentities.isEmpty {
-        storeRevision
-      } else {
-        try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
-      }
-      let nextQueryResultRevision = try bumpMetadataRevisionWithoutTransaction(
-        Self.queryResultRevisionKey
-      )
       return InstantLiveQueryResultPruningApplication(
-        result: InstantLiveQueryResultPruningResult(
-          removedQueryKeys: removedRows.map(\.queryKey),
-          remainingQueryKeys: rows.map(\.queryKey),
-          removedOrphanedTripleCount: orphanedIdentities.count,
-          remainingEntryCount: rows.count,
-          remainingTripleCount: rows.reduce(0) { $0 + $1.tripleCount },
-          unloadedQueryKeys: unloadedKeys
-        ),
+        result: applied.result,
         state: InstantPersistenceState(
           snapshot: snapshot,
-          storeRevision: nextStoreRevision,
-          outboxRevision: outboxRevision,
-          attributeRevision: attributeRevision,
-          queryResultRevision: nextQueryResultRevision
+          storeRevision: applied.storeRevision,
+          outboxRevision: revisions.outbox,
+          attributeRevision: revisions.attribute,
+          queryResultRevision: applied.queryResultRevision
         ),
-        hasMoreToRemove: !deferredRows.isEmpty,
-        retainedReleasedIdentities: retainedReleasedIdentities
+        hasMoreToRemove: applied.hasMoreToRemove,
+        retainedReleasedIdentities: applied.retainedReleasedIdentities
       )
     }
     adoptCachedState(application.state)
     return application
   }
 
-  /// Keeps `result`, a closed query's newest result, for its next subscription (#1006).
-  private func unloadLiveQueryResultWithoutTransaction(_ result: InstantPersistedLiveQueryResult) throws {
+  /// Chooses the next live-query prune batch (#654): the stored results the policy removes, from the results' own rows,
+  /// and the facts those results hold. It reads no other fact of the store, so it costs in proportion to the results
+  /// it chooses. Pass the hot store's facts of ``InstantLiveQueryResultPruneBatch/releasedEntityIDs`` to
+  /// ``applyLiveQueryResultPruneBatch(_:policy:now:residentFacts:)``.
+  ///
+  /// Choosing an empty batch also collects the unloaded results the policy collects, as a prune that removed nothing
+  /// always did.
+  ///
+  /// - Parameters:
+  ///   - preservingQueryKeys: The open queries' keys. Their results stay, and every other result is unloaded (#1006);
+  ///     empty at bootstrap, when only the policy's limits remove results.
+  ///   - maximumRemovedTripleCount: Choose about this many result triples (at least one result), so the caller can
+  ///     release the operation gate between bounded batches (#303, item 6); `nil` chooses everything at once.
+  ///   - carriedReleasedIdentities: The previous batch's `retainedReleasedIdentities`.
+  func liveQueryResultPruneBatch(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    preservingQueryKeys: Set<String>,
+    maximumRemovedTripleCount: Int?,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
+  ) throws -> InstantLiveQueryResultPruneBatch {
+    let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
+    return try transaction {
+      let batch = try liveQueryResultPruneBatchWithoutTransaction(
+        policy: policy,
+        now: now,
+        preservingQueryKeys: preservingQueryKeys,
+        maximumRemovedTripleCount: maximumRemovedTripleCount,
+        carriedReleasedIdentities: carriedReleasedIdentities,
+        revisions: try liveQueryResultPruneRevisionsWithoutTransaction()
+      )
+      if batch.removedQueryKeys.isEmpty {
+        try collectUnloadedLiveQueryResultsWithoutTransaction(
+          policy: policy,
+          now: now,
+          loadedRows: batch.remainingRows
+        )
+      }
+      return batch
+    }
+  }
+
+  /// Removes `batch`'s results and the entities only they held, in one transaction (#654).
+  ///
+  /// A released fact is dropped when no stored result still holds it (the ownership index answers that per fact) and
+  /// the store holds it; an entity is dropped whole or not at all, so one with a fact no result released stays (#259).
+  /// SQLite loses each dropped entity's rows by its id. The cached state moves past the batch without being rebuilt.
+  ///
+  /// - Parameter residentFacts: The hot store's facts of `batch.releasedEntityIDs`, all of them: the whole-entity rule
+  ///   needs every fact of each entity it might drop.
+  /// - Returns: The batch's changes, its `removedFacts` for the hot store to retract; nil when the store, its schema,
+  ///   the outbox or the stored results changed after `batch` was chosen, with nothing written, to choose again.
+  func applyLiveQueryResultPruneBatch(
+    _ batch: InstantLiveQueryResultPruneBatch,
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    residentFacts: [InstantTriple]
+  ) throws -> InstantLiveQueryResultPruneBatchApplication? {
+    let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
+    let application: InstantLiveQueryResultPruneBatchApplication? = try transaction {
+      guard try liveQueryResultPruneRevisionsWithoutTransaction() == batch.revisions else { return nil }
+      return try applyLiveQueryResultPruneBatchWithoutTransaction(
+        batch,
+        policy: policy,
+        now: now,
+        residentFacts: residentFacts
+      )
+    }
+    if let application {
+      advanceCachedStateAfterLiveQueryResultPrune(from: batch.revisions, application: application)
+    }
+    return application
+  }
+
+  private func liveQueryResultPruneRevisionsWithoutTransaction() throws -> LiveQueryResultPruneRevisions {
+    LiveQueryResultPruneRevisions(
+      store: try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+      attribute: try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey),
+      outbox: try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey),
+      queryResult: try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+    )
+  }
+
+  /// The policy's choice among the stored results' rows, bounded to one batch, and the facts the chosen results hold.
+  private func liveQueryResultPruneBatchWithoutTransaction(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    preservingQueryKeys: Set<String>,
+    maximumRemovedTripleCount: Int?,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
+    revisions: LiveQueryResultPruneRevisions
+  ) throws -> InstantLiveQueryResultPruneBatch {
+    var rows = try loadLiveQueryResultRowsWithoutTransaction()
+    var protectedQueryKeys = preservingQueryKeys
+    // Compact lifecycle rows deliberately omit transaction bodies. While any
+    // mutation may still own optimistic state, preserve all persisted live
+    // results instead of hydrating the complete durable queue just to derive
+    // a narrower entity set. Pruning resumes once those lifecycle shells are
+    // server-accepted or have a proven removed overlay.
+    //
+    // TypeScript Reactor.js `_cleanupQuery` still calls `querySubs.unloadKey`
+    // when a query has no listeners, even while `pendingMutations` exist.
+    // Optimistic state lives on the outbox, not on stale infinite-query pages.
+    // Session prune passes the live listener set as `preservingQueryKeys`.
+    // Bootstrap prune passes an empty set and must keep today's protect-all
+    // so offline cache survives until the app resubscribes.
+    if preservingQueryKeys.isEmpty,
+      try outboxRequiresConservativeLiveQueryPruningWithoutTransaction()
+    {
+      protectedQueryKeys.formUnion(rows.map(\.queryKey))
+    }
+
+    var removedRows: [LiveQueryResultStorageRow] = []
+    func remove(_ row: LiveQueryResultStorageRow) -> Bool {
+      guard !protectedQueryKeys.contains(row.queryKey) else { return false }
+      rows.removeAll { $0.queryKey == row.queryKey }
+      removedRows.append(row)
+      return true
+    }
+
+    // A closed query's result is unloaded, not deleted (#1006): its facts leave the store as a deleted result's do,
+    // and its stored copy answers the query's next subscription before the server does. Upstream
+    // `PersistedObject.unloadKey` "unloads the key so that it can be garbage collected, but does not delete it".
+    var unloadingKeys: Set<String> = []
+    if !preservingQueryKeys.isEmpty {
+      for row in Array(rows) where !preservingQueryKeys.contains(row.queryKey) {
+        if remove(row) { unloadingKeys.insert(row.queryKey) }
+      }
+    }
+
+    if let maxAgeMilliseconds = policy.maxAgeMilliseconds {
+      let cutoff = now.milliseconds - Swift.max(0, maxAgeMilliseconds)
+      for row in rows where row.updatedAtMilliseconds < cutoff {
+        _ = remove(row)
+      }
+    }
+    if let maxEntries = policy.maxEntries {
+      let limit = Swift.max(0, maxEntries)
+      while rows.count > limit {
+        guard let row = rows.first(where: { !protectedQueryKeys.contains($0.queryKey) })
+        else { break }
+        _ = remove(row)
+      }
+    }
+    if let maxTripleCount = policy.maxTripleCount {
+      let limit = Swift.max(0, maxTripleCount)
+      var tripleCount = rows.reduce(0) { $0 + $1.tripleCount }
+      while tripleCount > limit {
+        guard let row = rows.first(where: { !protectedQueryKeys.contains($0.queryKey) })
+        else { break }
+        guard remove(row) else { continue }
+        tripleCount -= row.tripleCount
+      }
+    }
+
+    // A bounded batch removes the selected rows in selection order until it holds about the budget's triples; the
+    // rest stay for the next batch, which selects them again.
+    var deferredRows: [LiveQueryResultStorageRow] = []
+    if let maximumRemovedTripleCount, removedRows.count > 1 {
+      var batch: [LiveQueryResultStorageRow] = []
+      var batchTripleCount = 0
+      for row in removedRows {
+        if !batch.isEmpty, batchTripleCount + row.tripleCount > maximumRemovedTripleCount {
+          deferredRows.append(row)
+          continue
+        }
+        batch.append(row)
+        batchTripleCount += row.tripleCount
+      }
+      removedRows = batch
+      rows.append(contentsOf: deferredRows)
+    }
+
+    var releasedIdentities = carriedReleasedIdentities
+    var unreadableQueryKeys: Set<String> = []
+    for row in removedRows {
+      guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
+        // As before #654: a row whose result cannot be read stays, and releases nothing.
+        unreadableQueryKeys.insert(row.queryKey)
+        continue
+      }
+      for triple in result.triples {
+        releasedIdentities.insert(InstantLiveTripleIdentity(triple))
+      }
+    }
+    return InstantLiveQueryResultPruneBatch(
+      removedQueryKeys: removedRows.map(\.queryKey),
+      hasMoreToRemove: !deferredRows.isEmpty,
+      releasedIdentities: releasedIdentities,
+      unloadingQueryKeys: unloadingKeys,
+      unreadableQueryKeys: unreadableQueryKeys,
+      remainingRows: rows,
+      revisions: revisions
+    )
+  }
+
+  /// Removes `batch`'s results, then the entities only they held among `residentFacts`.
+  private func applyLiveQueryResultPruneBatchWithoutTransaction(
+    _ batch: InstantLiveQueryResultPruneBatch,
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    residentFacts: [InstantTriple]
+  ) throws -> InstantLiveQueryResultPruneBatchApplication {
+    var unloadedKeys: [String] = []
+    for queryKey in batch.removedQueryKeys where !batch.unreadableQueryKeys.contains(queryKey) {
+      if batch.unloadingQueryKeys.contains(queryKey) {
+        try unloadLiveQueryResultWithoutTransaction(key: queryKey)
+        unloadedKeys.append(queryKey)
+      }
+      // Its ownership rows go with it (`ON DELETE CASCADE`), so the checks below see only the results that stay.
+      try execute(
+        "DELETE FROM instant_live_query_results WHERE query_key = ?",
+        [.text(queryKey)]
+      )
+      try forgetLiveQueryResultJSONStateWithoutTransaction(queryKey)
+    }
+    try collectUnloadedLiveQueryResultsWithoutTransaction(
+      policy: policy,
+      now: now,
+      loadedRows: batch.remainingRows
+    )
+
+    // #654: the released entities' own facts stand in for the whole store, which each batch used to copy into a
+    // dictionary of every fact to answer these same questions.
+    let residentIdentities = Set(residentFacts.lazy.map(InstantLiveTripleIdentity.init))
+    var orphanedIdentities: Set<InstantLiveTripleIdentity> = []
+    for identity in batch.releasedIdentities where residentIdentities.contains(identity) {
+      guard !(try liveQueryTripleHasOwnerWithoutTransaction(identity, excludingQueryKeys: [])) else { continue }
+      orphanedIdentities.insert(identity)
+    }
+    // Collect whole entities only. An entity that still has a fact no remaining result owns
+    // (typically one this device wrote that the pruned query never selected) is local data;
+    // removing just the pruned query's facts left rows with `text` but no `recordingID`, which
+    // no relationship or filter can reach again (#259).
+    let candidateEntityIDs = Set(orphanedIdentities.lazy.map(\.entityID))
+    var retainedEntityIDs: Set<String> = []
+    for triple in residentFacts
+    where candidateEntityIDs.contains(triple.entityID)
+      && !orphanedIdentities.contains(InstantLiveTripleIdentity(triple))
+    {
+      retainedEntityIDs.insert(triple.entityID)
+    }
+    let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
+    let removedFacts = residentFacts.filter { removedEntityIDs.contains($0.entityID) }
+    let retainedReleasedIdentities = Set(
+      batch.releasedIdentities.lazy.filter {
+        retainedEntityIDs.contains($0.entityID) && residentIdentities.contains($0)
+      }
+    )
+    // The whole-store diff this replaced deleted every row of each entity that left the store, its deferred payloads
+    // and anything else SQLite held of it among them, so a removed entity's rows go by its id.
+    for entityID in removedEntityIDs.sorted() {
+      try execute("DELETE FROM instant_triples WHERE entity_id = ?", [.text(entityID)])
+    }
+    let storeRevision = removedFacts.isEmpty
+      ? batch.revisions.store
+      : try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+    let queryResultRevision = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+    return InstantLiveQueryResultPruneBatchApplication(
+      result: InstantLiveQueryResultPruningResult(
+        removedQueryKeys: batch.removedQueryKeys,
+        remainingQueryKeys: batch.remainingRows.map(\.queryKey),
+        removedOrphanedTripleCount: removedFacts.count,
+        remainingEntryCount: batch.remainingRows.count,
+        remainingTripleCount: batch.remainingRows.reduce(0) { $0 + $1.tripleCount },
+        unloadedQueryKeys: unloadedKeys
+      ),
+      removedFacts: removedFacts,
+      storeRevision: storeRevision,
+      attributeRevision: batch.revisions.attribute,
+      queryResultRevision: queryResultRevision,
+      hasMoreToRemove: batch.hasMoreToRemove,
+      retainedReleasedIdentities: retainedReleasedIdentities
+    )
+  }
+
+  /// Moves the cached state past a prune batch (#654): its revisions, and the removed entities out of any facts it
+  /// keeps. The prune used to adopt the whole state it rebuilt; a cache at other revisions is dropped, as
+  /// `advanceCachedRevisionDomains` drops one, and its next reader loads it.
+  private func advanceCachedStateAfterLiveQueryResultPrune(
+    from revisions: LiveQueryResultPruneRevisions,
+    application: InstantLiveQueryResultPruneBatchApplication
+  ) {
+    var removedEntityTriples: [String: [InstantTriple]] = [:]
+    for fact in application.removedFacts {
+      removedEntityTriples[fact.entityID] = []
+    }
+    // Like the prune before #654, the stored results' revision is taken from SQLite rather than matched.
+    if var state = cachedState,
+      state.storeRevision == revisions.store,
+      state.attributeRevision == revisions.attribute,
+      state.outboxRevision == revisions.outbox
+    {
+      if !state.snapshot.store.triples.isEmpty, !removedEntityTriples.isEmpty {
+        replaceCachedTriples(in: &state.snapshot.store.triples, with: removedEntityTriples, scope: InstantFactScope())
+      }
+      state.storeRevision = application.storeRevision
+      state.queryResultRevision = application.queryResultRevision
+      adoptCachedState(state)
+      return
+    }
+    cachedState = nil
+    if var materializedStore = cachedMaterializedStore,
+      materializedStore.storeRevision == revisions.store,
+      materializedStore.attributeRevision == revisions.attribute
+    {
+      if !materializedStore.snapshot.triples.isEmpty, !removedEntityTriples.isEmpty {
+        replaceCachedTriples(
+          in: &materializedStore.snapshot.triples,
+          with: removedEntityTriples,
+          scope: InstantFactScope()
+        )
+      }
+      materializedStore.storeRevision = application.storeRevision
+      cachedMaterializedStore = materializedStore
+    }
+  }
+
+  /// Keeps the newest result stored under `key`, a closed query's, for its next subscription (#1006).
+  private func unloadLiveQueryResultWithoutTransaction(key: String) throws {
     // The stored row is the newest unless a JSON write waits (#566); copying it skips encoding the result again.
-    if liveQueryResultJSON.deferred[result.key] == nil {
+    if liveQueryResultJSON.deferred[key] == nil {
       try execute(
         """
         INSERT OR REPLACE INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
         SELECT query_key, triple_count, updated_at_ms, json FROM instant_live_query_results WHERE query_key = ?
         """,
-        [.text(result.key)]
+        [.text(key)]
       )
       if sqlite3_changes(connection.raw) == 1 { return }
     }
+    guard let result = try liveQueryResultWithoutTransaction(key: key) else { return }
     try execute(
       """
       INSERT OR REPLACE INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)

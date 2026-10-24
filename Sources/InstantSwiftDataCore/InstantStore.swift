@@ -9,6 +9,8 @@ import Foundation
 //   makes, and no root moves in or out of its set for (#1007).
 // - 2026-10-23: a preparation base (the schema and indexes as they are, copy-on-write) lets a refused write's rollback be
 //   prepared off the actor's turn without a snapshot; tests count the store's full copies (#1035).
+// - 2026-10-23: the facts a live-query prune drops are retracted in place (`retractFactsReleasedByPrune`), without
+//   indexing the store again (#654).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -3307,9 +3309,29 @@ public actor InstantStore {
   }
 
   /// The facts the store holds of `entityIDs` (#1006): a local read evaluates its plan over them together with what
-  /// this device keeps on disk.
+  /// this device keeps on disk, and a live-query prune decides from them what it drops (#654).
   func facts(of entityIDs: Set<String>) -> [InstantTriple] {
     entityIDs.sorted().flatMap { indexes.triples(entityID: $0) }
+  }
+
+  /// Retracts the facts a live-query prune dropped, in place, at a cost in proportion to them (#654).
+  ///
+  /// The prune replaced the whole store with a copy that left them out (`replaceSnapshot`), indexing every fact again.
+  /// Like that replacement it refreshes no observer: the dropped entities belong to no open query's result, and every
+  /// observer's result is marked unverified, so the next change refreshes any observer that could still show one.
+  ///
+  /// - Parameter triples: Facts as this store holds them, from ``facts(of:)``.
+  func retractFactsReleasedByPrune(_ triples: [InstantTriple]) {
+    guard !triples.isEmpty else { return }
+    publishPendingChanges()
+    observerEpoch += 1
+    indexes.discardInternedQueryResultsBeforeWrite()
+    var changedEntityIDs: Set<String> = []
+    for triple in triples {
+      indexes.apply(.retract(triple), attributes: attributes, into: &changedEntityIDs)
+    }
+    indexes.finishInternCachesAfterWrite(invalidating: changedEntityIDs, attributes: attributes)
+    sequence += 1
   }
 
   func activeQueryCacheKeys() -> Set<String> {

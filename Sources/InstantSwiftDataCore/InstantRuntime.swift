@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-23: a live-query prune batch reads the hot store's facts of only the entities its results held and retracts
+//   the ones it drops in place, at bootstrap too; it copied the store, then replaced and indexed it again (#654).
 // - 2026-10-23: a refused write's rollback is prepared from the hot store's indexes as the operation gate leaves them,
 //   not from a snapshot of every fact indexed again (#1035).
 // - 2026-10-23: an upload through storage keeps no copy of its file, a record without a copy downloads by its
@@ -1900,6 +1902,7 @@ public final class InstantRuntime: Sendable {
         attributeRevision: state.attributeRevision
       )
 
+      var bootstrapPrunedTripleCount = 0
       if let bootstrapSynchronizationBlocker {
         configuration.actorHopRecorder?.record(.deliveryPump)
         await runtime.mutationDeliveryPump.suspend()
@@ -1919,24 +1922,19 @@ public final class InstantRuntime: Sendable {
         )
       } else {
         do {
-          configuration.actorHopRecorder?.record(.persistence)
-          let pruning = try await persistence.pruneLiveQueryResults(
+          // One unbounded batch, as before: nothing else runs yet. It reads the hot store's facts of only the entities
+          // the removed results held and retracts what it drops in place (#654), where it used to diff the whole
+          // store into SQLite and index the store again from the result. The compact state's outbox it then replaced
+          // the outbox with is always empty, as the outbox was made from.
+          let pruning = try await runtime.pruneLiveQueryResultsBatch(
             policy: configuration.liveQueryResultPruningPolicy,
             now: configuration.now(),
-            currentStoreSnapshot: state.snapshot.store
+            preservingQueryKeys: [],
+            maximumRemovedTripleCount: nil,
+            carriedReleasedIdentities: []
           )
           if !pruning.result.removedQueryKeys.isEmpty {
-            state = pruning.state
-            if pruning.result.removedOrphanedTripleCount > 0 {
-              configuration.actorHopRecorder?.record(.store)
-              await store.replaceSnapshot(state.snapshot.store)
-              runtime.installedStoreRevisions.install(
-                storeRevision: state.storeRevision,
-                attributeRevision: state.attributeRevision
-              )
-            }
-            configuration.actorHopRecorder?.record(.outbox)
-            await outbox.replace(with: state.snapshot.outbox)
+            bootstrapPrunedTripleCount = pruning.result.removedOrphanedTripleCount
             InstantDiagnostics.shared.record(
               .debug,
               subsystem: "instant-swift-data-core",
@@ -1988,7 +1986,7 @@ public final class InstantRuntime: Sendable {
             Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
           ),
           "storedAttributeCount": String(state.snapshot.store.attributes.count),
-          "storedTripleCount": String(state.snapshot.store.triples.count),
+          "storedTripleCount": String(state.snapshot.store.triples.count - bootstrapPrunedTripleCount),
           "outboxCount": String(state.snapshot.outbox.count),
         ]
       )
@@ -1997,7 +1995,7 @@ public final class InstantRuntime: Sendable {
         since: runtimeStopwatch,
         metadata: [
           "storedAttributeCount": String(state.snapshot.store.attributes.count),
-          "storedTripleCount": String(state.snapshot.store.triples.count),
+          "storedTripleCount": String(state.snapshot.store.triples.count - bootstrapPrunedTripleCount),
           "outboxCount": String(state.snapshot.outbox.count),
         ]
       )
@@ -6868,6 +6866,9 @@ public final class InstantRuntime: Sendable {
   /// facts a later batch releases, are carried into that batch, so whole-entity removal (#259) is the same as one
   /// prune's. Upstream `Reactor.js` collects unused query results lazily (`PersistedObject`'s garbage collection at
   /// idle); Swift prunes on its write cadence, so it bounds each hold instead.
+  ///
+  /// A batch costs in proportion to what it drops, not to the store (#654): see
+  /// ``pruneLiveQueryResultsBatch(policy:now:preservingQueryKeys:maximumRemovedTripleCount:carriedReleasedIdentities:)``.
   func pruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp
@@ -6879,7 +6880,7 @@ public final class InstantRuntime: Sendable {
     var lastResult: InstantLiveQueryResultPruningResult?
     while true {
       await enterOperationGate(priority: .background)
-      let application: InstantLiveQueryResultPruningApplication
+      let application: InstantLiveQueryResultPruneBatchApplication
       do {
         application = try await performPruneLiveQueryResults(
           policy: policy,
@@ -6916,36 +6917,22 @@ public final class InstantRuntime: Sendable {
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
-  ) async throws -> InstantLiveQueryResultPruningApplication {
+  ) async throws -> InstantLiveQueryResultPruneBatchApplication {
     let activeQueryKeys = await liveSession.activeQueryKeys()
     if let onActiveKeysCaptured =
       configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting
     {
       await onActiveKeysCaptured(activeQueryKeys)
     }
-    recordActorHop(.persistence)
-    let currentStoreSnapshot = await store.snapshot()
-    let application = try await persistence.pruneLiveQueryResults(
+    let application = try await pruneLiveQueryResultsBatch(
       policy: policy,
       now: now,
       preservingQueryKeys: activeQueryKeys,
-      currentStoreSnapshot: currentStoreSnapshot,
       maximumRemovedTripleCount: configuration.liveQueryResultPruneBatchTripleCount,
       carriedReleasedIdentities: carriedReleasedIdentities
     )
     guard !application.result.removedQueryKeys.isEmpty else {
       return application
-    }
-    if application.result.removedOrphanedTripleCount > 0 {
-      recordActorHop(.store)
-      // An empty snapshot is the meaningful result when pruning removes the
-      // final owned row. Skipping it leaves that row visible in the hot actor
-      // even though SQLite has already deleted it.
-      await replaceStoreSnapshot(application.state.snapshot.store)
-      installedStoreRevisions.install(
-        storeRevision: application.state.storeRevision,
-        attributeRevision: application.state.attributeRevision
-      )
     }
     for key in application.result.removedQueryKeys {
       await liveQueryResultState.unload(key: key)
@@ -6969,6 +6956,70 @@ public final class InstantRuntime: Sendable {
       ]
     )
     return application
+  }
+
+  /// One prune batch, in proportion to what it drops (#654). The caller holds the operation gate, or is bootstrapping.
+  ///
+  /// SQLite chooses the batch from the stored results' own rows and reads the facts those results hold; the hot store
+  /// hands over its facts of only the entities they name; SQLite drops the results, and each entity no remaining result
+  /// holds, in one transaction; the hot store retracts those entities' facts in place. A batch used to copy the hot
+  /// store (`snapshot()`), build a dictionary of every fact to find the few it drops, diff the whole store into SQLite,
+  /// and index the store again from the copy (`replaceSnapshot`): on build 118 an iPhone's prune held the operation
+  /// gate 1,385 ms and 4,168 ms at about 40,000 facts, and the energy ledger named it the top cost.
+  ///
+  /// The decisions are the ones the whole-store prune made, from the same facts: ownership per released fact, and the
+  /// whole-entity rule (#259) over every fact the hot store holds of each entity it might drop.
+  private func pruneLiveQueryResultsBatch(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    preservingQueryKeys: Set<String>,
+    maximumRemovedTripleCount: Int?,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
+  ) async throws -> InstantLiveQueryResultPruneBatchApplication {
+    var batch: InstantLiveQueryResultPruneBatch
+    var staleAttempts = 0
+    repeat {
+      recordActorHop(.persistence)
+      batch = try await persistence.liveQueryResultPruneBatch(
+        policy: policy,
+        now: now,
+        preservingQueryKeys: preservingQueryKeys,
+        maximumRemovedTripleCount: maximumRemovedTripleCount,
+        carriedReleasedIdentities: carriedReleasedIdentities
+      )
+      guard !batch.removedQueryKeys.isEmpty else { return batch.applicationRemovingNothing }
+      recordActorHop(.store)
+      let residentFacts = await store.facts(of: batch.releasedEntityIDs)
+      recordActorHop(.persistence)
+      if let application = try await persistence.applyLiveQueryResultPruneBatch(
+        batch,
+        policy: policy,
+        now: now,
+        residentFacts: residentFacts
+      ) {
+        if !application.removedFacts.isEmpty {
+          recordActorHop(.store)
+          await store.retractFactsReleasedByPrune(application.removedFacts)
+          installedStoreRevisions.install(
+            storeRevision: application.storeRevision,
+            attributeRevision: application.attributeRevision
+          )
+        }
+        return application
+      }
+      // Something wrote SQLite between the batch's choice and its application, which the operation gate should rule
+      // out: choose again, a few times, and otherwise leave the results for the next prune.
+      staleAttempts += 1
+    } while staleAttempts < 3
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "live-query-results.prune-batch-stale",
+      message: "Left live query results for the next prune: the store changed under each batch chosen.",
+      metadata: ["attempts": String(staleAttempts)]
+    )
+    return batch.applicationRemovingNothing
   }
 
   private func freshCachedQueryForClosedQuery(
