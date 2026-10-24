@@ -42,6 +42,9 @@
 // - 2026-10-23: the live-query prune chooses each batch from the stored results' rows and the facts they hold, then
 //   drops it against the hot store's facts of only those entities, deleting a dropped entity's rows by its id; each
 //   batch built a dictionary of every fact and diffed the whole store into SQLite (#654).
+// - 2026-10-24: the delivery pump's candidate read and continuation check search their two branches by index
+//   (instant_outbox_delivery_candidate_idx, migration 0029) instead of visiting every ready row, refused writes and
+//   their bodies' overflow pages included, after every write and acknowledgement (#1108).
 
 import Foundation
 import IssueReporting
@@ -2824,8 +2827,17 @@ public actor SQLitePersistenceStore {
       }
     }
     try withSQLiteBusyRetry {
+      // The delivery pump's candidate read searches its needs-delivery branch by this index (#1108). Each write of an
+      // outbox row writes a page of it; each claim pass no longer reads every ready row's overflow pages.
+      try migrate(name: "0029_outbox_delivery_candidate_index") {
+        try execute(Self.deliveryCandidateIndexSQL)
+      }
+    }
+    try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
+    // A restore that rebuilt `instant_outbox` after 0029 ran keeps the claim off a scan too (#1108).
+    try execute(Self.deliveryCandidateIndexSQL)
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -14626,6 +14638,12 @@ public actor SQLitePersistenceStore {
 
   /// The automatic pump's next writes to deliver, oldest first: the ready rows that need delivery, and the legacy rows
   /// whose delivery metadata predates the current version.
+  ///
+  /// #1108 (2026-10-24): one branch each, each searched by its own index (`instant_outbox_delivery_candidate_idx` and
+  /// `instant_outbox_delivery_metadata_idx`). As one filter, `claim state AND (delivery state OR legacy metadata)`, the
+  /// `OR` left SQLite a search on the claim state alone and a sort: every ready row was visited, refused writes
+  /// included, each through its body's overflow pages, after every write and acknowledgement; on one phone's store that
+  /// was 663 refused writes, and the claim held the operation gate about 60% of every recording minute.
   private static let automaticDeliveryCandidatesSQL =
     """
     SELECT
@@ -14637,11 +14655,18 @@ public actor SQLitePersistenceStore {
       status,
       delivery_started
     FROM instant_outbox
-    WHERE delivery_claim_state = ?
-      AND (
-        delivery_state = ?
-        OR (status IN (?, ?) AND delivery_metadata_version < ?)
-      )
+    WHERE \(SQLitePersistenceStore.readyForDeliveryCondition)
+    UNION
+    SELECT
+      mutation_id,
+      created_at_ms,
+      delivery_metadata_version,
+      transport_step_count,
+      COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
+      status,
+      delivery_started
+    FROM instant_outbox
+    WHERE delivery_claim_state = ? AND status IN (?, ?) AND delivery_metadata_version < ?
     ORDER BY created_at_ms, mutation_id
     LIMIT ?
     """
@@ -14649,7 +14674,6 @@ public actor SQLitePersistenceStore {
   private static func automaticDeliveryCandidateBindings(limit: Int) -> [SQLiteBinding] {
     [
       .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-      .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
       .text(InstantMutationStatus.pending.rawValue),
       .text(InstantMutationStatus.confirmed.rawValue),
       .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
@@ -14657,30 +14681,48 @@ public actor SQLitePersistenceStore {
     ]
   }
 
-  /// Whether the automatic pump has another write to deliver: the continuation check of a claim pass.
+  /// Whether the automatic pump has another write to deliver: the continuation check of a claim pass, split into the
+  /// candidate read's two branches for the same reason (#1108).
   private static let automaticDeliveryCandidateExistsSQL =
     """
     SELECT EXISTS(
       SELECT 1
       FROM instant_outbox
-      WHERE delivery_claim_state = ?
-        AND (
-          delivery_state = ?
-          OR (status IN (?, ?) AND delivery_metadata_version < ?)
-        )
-      LIMIT 1
+      WHERE \(SQLitePersistenceStore.readyForDeliveryCondition)
+    ) OR EXISTS(
+      SELECT 1
+      FROM instant_outbox
+      WHERE delivery_claim_state = ? AND status IN (?, ?) AND delivery_metadata_version < ?
     )
     """
 
   private static var automaticDeliveryCandidateExistsBindings: [SQLiteBinding] {
     [
       .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-      .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
       .text(InstantMutationStatus.pending.rawValue),
       .text(InstantMutationStatus.confirmed.rawValue),
       .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
     ]
   }
+
+  /// A row the pump may claim now: ready, and in need of delivery. Written with literals, not parameters, so SQLite can
+  /// prove a statement's filter matches the partial index below.
+  private static let readyForDeliveryCondition =
+    "delivery_claim_state = \(SQLitePersistenceStore.sqlLiteral(InstantOutboxDeliveryClaimState.ready.rawValue))"
+      + " AND delivery_state = \(SQLitePersistenceStore.sqlLiteral(InstantOutboxDeliveryState.needsDelivery.rawValue))"
+
+  /// The index the candidate read's first branch searches (#1108): only the rows the pump may claim now, in delivery
+  /// order. Partial, so a refused write, a claimed one and an acknowledgement never touch it: #1007 dropped a full index
+  /// on the claim and delivery states because every write of a row wrote a page of it, and the old filter's `OR` kept
+  /// any statement from using it. It leads with the two states, constant inside it, because SQLite without statistics
+  /// prefers an index whose leading columns a filter's equalities match: led by the creation time, it lost to
+  /// `instant_outbox_delivery_deadline_idx`, which visits every ready row.
+  static let deliveryCandidateIndexSQL =
+    """
+    CREATE INDEX IF NOT EXISTS instant_outbox_delivery_candidate_idx
+    ON instant_outbox (delivery_claim_state, delivery_state, created_at_ms, mutation_id)
+    WHERE \(SQLitePersistenceStore.readyForDeliveryCondition)
+    """
 
   private func loadAutomaticDeliveryCandidateRowsWithoutTransaction(
     limit: Int
