@@ -1,3 +1,6 @@
+## 2026-10-24 12:23:46 EDT — scribe `1b71515e8bd`
+Scribe Playback's Build 122 What's New story starts 'Now you can' (#1051): the build 122 cut check's one new failure.
+
 ## 2026-10-24 11:05:44 EDT — scribe `94c6bc9173cf952933e62ef250770e41825c608a`
 Build 122 cut (#1051): CURRENT_PROJECT_VERSION 122 for Scribe and Scribe Playback, What's New 122 dated; from main 0f222e5a7, instant-data-swift 1.9.32.
 
