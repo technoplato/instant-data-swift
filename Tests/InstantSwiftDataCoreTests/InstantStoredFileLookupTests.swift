@@ -116,6 +116,44 @@ struct InstantStoredFileLookupTests {
     let downloadedURLs = await fixture.storage.downloadedURLs
     expectNoDifference(downloadedURLs, [])
   }
+
+  // The amplifier in the same loop: the whole list's answer outlasted its one-shot query's 5 s and was applied anyway,
+  // its facts and result written under the operation gate for no query, then dropped again by the next prune.
+  // Upstream `Reactor.js` drops an add-query-ok whose query it no longer holds (`querySubs` has no entry for its hash).
+  @Test("An answer that lands after its one-shot query ended is not applied: no query wants it")
+  func answerAfterTheOneShotQueryEndedIsNotApplied() async throws {
+    let fixture = try await LookupFixture(payload: payload, accountFileCount: 400)
+    defer { fixture.remove() }
+    let mark = await fixture.addQueryCount()
+    let listing = Task { try await fixture.runtime.storedFiles() }
+    defer { listing.cancel() }
+    let query = try await fixture.waitForSent("add-query", after: mark)
+    // The one-shot query ends unanswered, as one that waited past its 5 s does, and removes its query.
+    let removals = await fixture.sentCount("remove-query")
+    listing.cancel()
+    _ = await listing.result
+    _ = try await fixture.waitForSent("remove-query", after: removals)
+
+    // Its answer lands late, then the open query's next answer, which the runtime applies after it.
+    await fixture.session.enqueue(
+      liveReactorAddQueryOK(query: query, processedTransactionID: "late-list", result: lookupResult(fixture.files))
+    )
+    await fixture.session.enqueue(
+      liveReactorAddQueryOK(query: fixture.openQueryAnswer, processedTransactionID: "after-late-list", result: lookupResult([]))
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for the open query's answer after the late list",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      // The runtime applies frames in order, so once the second frame's transaction is processed the first was handled.
+      while try await fixture.runtime.syncState().processedTransactionID != "after-late-list" {
+        try await Task.sleep(for: .milliseconds(5))
+      }
+    }
+
+    let stored = try await fixture.runtime.queryLocally(LookupFixture.everyFile)
+    expectNoDifference(stored.values.count, 0)
+  }
 }
 
 /// A connected runtime whose scripted server holds `accountFileCount` files and answers each `$files` query as Instant
@@ -145,6 +183,7 @@ private struct LookupFixture {
   let files: [RemoteFile]
   let now = InstantTimestamp(milliseconds: 1_700_000_000_000)
   let openQuery: InstantQueryObservationLease
+  let openQueryAnswer: InstantLiveJSONValue
   let runtime: InstantRuntime
   let session: LiveReactorParitySession
   let storage: LookupStorageRecorder
@@ -181,10 +220,11 @@ private struct LookupFixture {
     }
     let mark = await Self.addQueryCount(session)
     let openQuery = await runtime.observeQueryLease(Self.openQuery)
-    _ = try await Self.answerFilesQuery(session: session, files: files, after: mark)
+    let openQueryAnswer = try await Self.answerFilesQuery(session: session, files: files, after: mark)
     self.directory = directory
     self.files = files
     self.openQuery = openQuery
+    self.openQueryAnswer = openQueryAnswer
     self.runtime = runtime
     self.session = session
     self.storage = storage
@@ -202,6 +242,25 @@ private struct LookupFixture {
 
   private static func addQueryCount(_ session: LiveReactorParitySession) async -> Int {
     await session.sentMessages().filter { $0.op == "add-query" }.count
+  }
+
+  func sentCount(_ op: String) async -> Int {
+    await session.sentMessages().filter { $0.op == op }.count
+  }
+
+  /// Waits for the message `op` after the first `mark` of them, and returns its `q`.
+  func waitForSent(_ op: String, after mark: Int) async throws -> InstantLiveJSONValue {
+    try await instantLiveWithTimeout(
+      operation: "wait for \(op)",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) { () -> InstantLiveJSONValue in
+      while true {
+        let sent = await session.sentMessages()
+        let matching = sent.filter { $0.op == op }
+        if matching.count > mark, let query = matching[mark].fields["q"] { return query }
+        try await session.waitForSentMessageCount(sent.count + 1)
+      }
+    }
   }
 
   private static func answerFilesQuery(
