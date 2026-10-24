@@ -1,3 +1,18 @@
+## 2026-10-24 17:42:49 EDT — scribe `55f2ed4aa119252a7c615acba67ca87433a9132f`
+Docs (#1057): the device results and a correction: on iOS an install recompiles On This iPhone's Neural Engine programs even at an unchanged path (Scribe Dev 127 on the iPad: 96.99 s load while the stamp said Ready); ADR 0074 amendment C correction, the audit's device section and proposals (Core AI's App Group cache), the provider doc, WHATS-NEW Build 128 (next).
+
+## 2026-10-24 17:42:49 EDT — scribe `6d40342314196f220e8eea29bd7f9abebbc9bc87`
+Fix (#1057): green: the compile stamp names the app's container, so an update is Preparing once and Apple writes the words instead of a recording that waits 60-100 s with none (builds 126/127); a relaunch is Ready. SpeechClientLiveTests 156/156 on the Mac mini.
+
+## 2026-10-24 17:42:49 EDT — scribe `a65098db630f871dfa50b12224204bf26881d5ca`
+Test (#1057): red: a new install at the same models path must say 'container'; 126/127's stamps must compile once (only these 2 tests failed).
+
+## 2026-10-24 17:42:49 EDT — scribe `7c4723a3f013edbf9e5bac19dd7ddfe331998838`
+Docs (#1057): the audit's cost table gains build 124's compile (iPhone 60.9 s, iPad 95.5 s).
+
+## 2026-10-24 17:42:49 EDT — scribe `3c5c6bc390b37dea37dc11a8e208693619f49b31`
+Plan (#1057): models-1057 amendment A, claims for the ADR 0074 correction and the provider doc.
+
 ## 2026-10-24 17:02:25 EDT — instant-data-swift `c5a5f69cea6507c81b936aba85ebb9f7b30a1600`
 Test (#1076): the storage audit's exercises: a VFS shim that counts what SQLite writes, syncs and truncates per file and the b-tree behind every write-ahead-log frame; each step of a live write, an hour of recording, and the phone-shaped store, printed as stable STORAGEIO lines; the SQL-level page script for a copy of a real store.
 
