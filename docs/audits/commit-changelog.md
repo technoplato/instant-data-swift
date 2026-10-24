@@ -1,3 +1,9 @@
+## 2026-10-24 18:38:05 EDT — scribe `e8bd51783bfb4eebddfa32efd8282fb372438b2f`
+Build 129 cut (#1155): CURRENT_PROJECT_VERSION 129; heat-641 (#641) and instant-data-swift exactly 1.9.35 (#1072).
+
+## 2026-10-24 18:38:05 EDT — scribe `222fbde9193bd6dc8e0e85d1733f28076b25e250`
+changelog(#1155): build 129 cut e8bd51783.
+
 ## 2026-10-24 18:30:03 EDT — instant-data-swift `01209210516e7442ef3b3fe1c6f3a787aeee0754`
 Docs (#1075): the memory audit (fifteen anti-patterns worst first, each with where it runs, its measured cost at the phone's size, its design and its saving as a hypothesis with the exercise that measures it), the baseline and raw lines, PROGRESS; ten fixes filed, #1144-#1153.
 
