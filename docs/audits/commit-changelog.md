@@ -1,3 +1,9 @@
+## 2026-10-24 02:30:37 EDT — scribe `ed617f569a865cbc3ecb96eee42c9e7073253856`
+Change log for the build 121 cut e6c3ee7b1 (#1043).
+
+## 2026-10-24 02:30:37 EDT — scribe `01d39f0b3a858450faad9e1a79707a68bf3433ff`
+PROGRESS (#1043): Scribe 0.1 (121) installed on the iPhone, iPad and Mac; cut check 0 new failures; #1042 not in 121.
+
 ## 2026-10-24 01:47:44 EDT — scribe `e6c3ee7b12dd6b81fb1eee6b843b4d68ba59b5f1`
 Build 121 cut (#1043): CURRENT_PROJECT_VERSION 121 for Scribe and Scribe Playback, What's New 121 (#1013 reduced recording header, #1012 playback from the compressed copy, instant-data-swift 1.9.32). #1042 not in: stopped by Michael.
 
