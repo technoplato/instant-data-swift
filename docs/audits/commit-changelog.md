@@ -1,3 +1,12 @@
+## 2026-10-23 23:06:44 EDT — scribe `c92ee7dd08c4343939f9975ec5a7e6f1fa2e2ad9`
+changelog(#1012): CHANGELOG.md entries for the compressed copy's six Scribe commits and PROGRESS.md's 23:10 checkpoint.
+
+## 2026-10-23 23:03:05 EDT — scribe `74a4b1585ab45c736608a9f0c7e362e62a64923b`
+Green (#1012): a recording whose WAV is not on this device plays its compressed copy (RecordingCompressedAudioClient, Playback's no-local-WAV branch, StreamedAudioOutput: AVPlayer over the library's resource loader), live about 40 s behind or finished like a file; for build 121.
+
+## 2026-10-23 23:03:04 EDT — scribe `e85064d97aa79b6d3e92c29ceca6aef08f09dd34`
+Red test (#1012): availability, Playback and live-player tests for playing the compressed copy, against stubs; 7 fail.
+
 ## 2026-10-23 22:38:14 EDT — scribe `929a84bb9d7f6850b460332fdaa2b0da15cf9a13`
 Build 120 cut (#1040): CURRENT_PROJECT_VERSION 120 for Scribe and Scribe Playback, What's New 120 dated (#654 first). Carries instant-data-swift exactly 1.9.31 (the live-query prune, #654) and #1012's compressed audio copy switched on.
 
@@ -16,11 +25,32 @@ Plan (#654): prune-654 claims the 1.9.31 pin files (both packages and lock files
 ## 2026-10-23 22:28:48 EDT — instant-data-swift `af3be52d38bd34ab2d9afb33780f357a30181123`
 Release document for v1.9.31 (#654): the live-query prune costs in proportion to what it drops, not to the store; carries 1.9.30.
 
+## 2026-10-23 22:24:26 EDT — scribe `14ad7337cbf3f413326ddf396bc449a438383018`
+Green (#1012): build 120 writes each recording's compressed copy (RecordingAudioStream.isEnabledInThisBuild = true), once production had its schema and rules (evolve.sh push 22:18, drift 0); FEATURES.md item 24; ADR 0091 accepted for the copy.
+
+## 2026-10-23 22:24:26 EDT — scribe `091d958b76da84fb50cff2a89608f8e1856479bf`
+Red test (#1012): build 120 makes the compressed copy unless Settings turns audio uploads off.
+
 ## 2026-10-23 22:00:01 EDT — instant-data-swift `0ae10a954212647e90e9da06101aa12f2b67ec3f`
 Plan (#654): the live-query prune claims its files, its cost test and the v1.9.31 release document.
 
 ## 2026-10-23 21:56:16 EDT — instant-data-swift `f4dfb8eec2fc381b9e816b1b9e88701cf03953e8`
 Green (#654): a prune batch reads only the released entities' facts, drops results and unowned entities in one SQLite transaction by entity id, and retracts in place; the bootstrap prune runs the same batch.
+
+## 2026-10-23 21:52:19 EDT — scribe `40653dffa0de76ae919c39e25522def7b7e0456f`
+Pin instant-data-swift exactly 1.9.30 in Scribe and Scribe Playback (#1012: a stream row's updatedAtMs never moves back); superseded by 1.9.31 (#654).
+
+## 2026-10-23 21:52:19 EDT — scribe `07d6d338cf87f52e4c6aca527d6f45226493ca02`
+Test (#1012): the progressive-media rules matrix, run by evolve.sh prove (25 of 25 on the throwaway app).
+
+## 2026-10-23 21:52:19 EDT — scribe `5507a2aa4000f0e42caf1ef57c05cb0f145ceb80`
+Feature (#1012): the compressed copy's namespaces come from a generated schema module (owner set only, fixed identity, paths under /compressed-audio/); the copy stays off until production has them. Pushed to production 22:18 under the standing approval, drift 0.
+
+## 2026-10-23 21:52:19 EDT — scribe `edf6cf4460cd6717736e4ab6551268b95a4556f5`
+Green (#1012): each recording's audio is also written compressed (AAC-LC 24 kHz, 6 s segments), 10 s behind its end, and delivered on any network (RecordingAudioStream).
+
+## 2026-10-23 21:52:19 EDT — scribe `ba6a42ccf5f6cdc09b0f2bde1ef30e74303b577a`
+Red test (#1012): a recording's audio is encoded into a compressed copy 10 s behind its end and finished at Stop.
 
 ## 2026-10-23 21:50:32 EDT — instant-data-swift `add72672f3b4be5006e8bd2b1964f3369eea5492`
 Red test (#654): a live-query prune on a 40,000-fact store made 6 full store copies and 3 replace-and-reindex passes.

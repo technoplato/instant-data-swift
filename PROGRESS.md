@@ -1,3 +1,16 @@
+## 2026-10-23 23:12:00 EDT — #1012: progressive media in Scribe: the copy is written in build 120, played on other devices from 121
+
+- **Library:** nothing new since v1.9.30 (`738d0560`); 1.9.31 (#654) carries it. ADR 0021 stays Proposed until the
+  iPhone's encoding CPU is measured (its developer disk image was not mounted) and the device proof below.
+- **Scribe main:** adoption red `ba6a42ccf`, green `edf6cf446`; schema module `5507a2aa4` (production push 22:18,
+  evolve.sh under the standing approval, drift 0); rules matrix `07d6d338c` (25 of 25); switched on for build 120:
+  red `091d958b7`, green `14ad7337c` (build 120 cut `929a84bb9`); playback from the copy for build 121: red
+  `e85064d97`, green `74a4b1585` (AVPlayer over `InstantProgressiveMediaResourceLoader`, `StreamedAudioOutput`);
+  change log `c92ee7dd0`. Scribe's PROGRESS.md (23:10) has the checks and the steps left.
+- **Owner:** audio-stream-1012b (#1012). **Next:** once build 121 is on a second device, the proof: a recording the
+  iPhone is recording heard there within 60 s of its edge, away from home; a finished one played without its WAV.
+  Then ADR 0021's status and its iPhone CPU line.
+
 ## 2026-10-23 22:41:50 EDT — #654: v1.9.31 pinned for build 120; the device check is next
 
 - **Commits:** library main `0ae10a95` (plan) .. `1b5ad1a4` (red `add72672`, green `f4dfb8ee`, release document
