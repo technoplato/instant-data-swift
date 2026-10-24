@@ -1,3 +1,12 @@
+## 2026-10-23 21:42:29 EDT — instant-data-swift `3bf4d9df9d8aba21917fe90f39426244bf460f83`
+Release document for v1.9.30 (#1012): a progressive media stream row's updatedAtMs never moves back; the resource loader's SAFETY comment; carries 1.9.29.
+
+## 2026-10-23 21:41:28 EDT — instant-data-swift `2f3d735ada70b3e0272662bfc7539da1004d1397`
+Green (#1012): the progressive media writer stamps each stream row with the later of the clock and its last stamp.
+
+## 2026-10-23 21:40:11 EDT — instant-data-swift `c5da394bc711c6635cb9faf81c1d2b8d19e58feb`
+Red test (#1012): a device clock that steps back made the writer stamp a stream row earlier than its last.
+
 ## 2026-10-23 21:15:20 EDT — realtime-voice `ffe6193bde5e065fc8c797240de08679bde5f81c`
 Merge (#1035) to main: the audit's 21:20 section.
 

@@ -10,6 +10,43 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 9:42:42 p.m. EDT — `3bf4d9df9d8a` Document the v1.9.30 release: a progressive media stream row's updatedAtMs never moves back (#1012), and the resource loader's request box says what protects it
+
+- **Implementation commit:** `3bf4d9df9d8aba21917fe90f39426244bf460f83`
+- **Change:** Document the v1.9.30 release: a progressive media stream row's updatedAtMs never moves back (#1012), and the resource loader's request box says what protects it
+- **Details:**
+  - Release document: the two fixes, what progressive media is, its checks (red/green on the mini, platform builds, the bundle's last idle result).
+- **Files:**
+  - `docs/releases/v1.9.30.md` — the release document
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 9:42:42 p.m. EDT — `2f3d735ada70` Green (#1012): a progressive media stream row's updatedAtMs never moves back, whatever the device clock does
+
+- **Implementation commit:** `2f3d735ada70b3e0272662bfc7539da1004d1397`
+- **Change:** Green (#1012): a progressive media stream row's updatedAtMs never moves back, whatever the device clock does
+- **Details:**
+  - Each stream row is stamped with the later of the clock and the last stamp written, kept in the spool's record; 31 tests in 6 suites pass on the Mac mini.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — nextStamp, the stream row's stamp
+  - `Sources/InstantSwiftData/InstantProgressiveMediaSpool.swift` — the record's last stamp
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 9:42:41 p.m. EDT — `c5da394bc711` Red (#1012): a device clock that steps back makes the progressive media writer stamp a stream row earlier than its last
+
+- **Implementation commit:** `c5da394bc711c6635cb9faf81c1d2b8d19e58feb`
+- **Change:** Red (#1012): a device clock that steps back makes the progressive media writer stamp a stream row earlier than its last
+- **Details:**
+  - aClockThatStepsBackNeverStampsARowEarlier: on the Mac mini the stamps fell below the stream's createdAtMs (2 issues); the consuming app's rules would refuse such a stream row and the segment row with it.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — the backward clock test
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 8:53:14 p.m. EDT — `0f1d2ebcd123` Fix (#1012): the resource loader's request box says what protects it, so SwiftConcurrencyGuidanceTests passes on main again
 
 - **Implementation commit:** `0f1d2ebcd123f00549681ffd4d3642716c461c03`

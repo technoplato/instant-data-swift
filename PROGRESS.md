@@ -1,3 +1,13 @@
+## 2026-10-23 21:45:00 EDT — v1.9.30: a progressive media stream row's updatedAtMs never moves back (#1012); carries 1.9.29
+
+- **Commits:** red `c5da394b`, green `2f3d735a` (the writer's never-backward stamps); `0f1d2ebc` (the resource loader's
+  SAFETY comment, which 1.9.26-1.9.29 lacked); release document `3bf4d9df`; then this ledger commit and the tag v1.9.30.
+- **Checks:** on the Mac mini (Xcode 27 beta): the clock test red (2 issues) then green; the progressive media suites and
+  SwiftConcurrencyGuidanceTests, 31 tests in 6 suites. InstantSwiftDataMedia builds for iOS and watchOS (arm64,
+  arm64_32) on `0f1d2ebc`.
+- **Next:** the consuming app pins exactly 1.9.30, pushes the progressive-media schema module to production (its
+  owner-only rules), and turns its compressed copy on for build 120.
+
 ## 2026-10-23 20:58:00 EDT — #1012: progressive media over Instant, in the library (released in 1.9.26); the consuming app's adoption next
 
 - **Commits (main):** plan `be04e519`; the codec lab `f82fb15a`; ADR 0021 (proposed) `b112a2b7`; red `b1d48365`, green
