@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 4:40:33 p.m. EDT — `0f404f0ba629` test(#1072): a store shaped like a phone's, generated through the runtime, and a meter of what each operation costs at that size
+
+- **Implementation commit:** `0f404f0ba629f4fc609dd90d568f61ca2bb6c673`
+- **Change:** Test (#1072): a store shaped like a phone's, generated through the runtime, and a meter of what each operation costs at that size
+- **Details:**
+  - The shared real-size fixture (phone counts: 7,140 transcript lines, 9,455 account files, 4,264 upload records, 663 refused writes, 48 open and 355 closed queries, 2,283 attributes) written through transact and a scripted server, cached by version, shape and migrations; the meter (wall, CPU, instructions, malloc_logger allocations and bytes, logical writes, footprint, the gate's longest hold and wait); the report at a quarter and full size; a smoke test (0.75 s on the Mac mini). The first version hung on an answer with no rows; the generator now waits on each answer's own server apply.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeFixture.swift` — new: the generated store, its scripted server and storage, the cache
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift` — new: the per-operation meter and the gate timeline summary
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeReport.swift` — new: the report run and the smoke test
+  - `agent-presence/_channels/2026-10-24-lib-audit-1072.md` — the fixture's API for the sibling audits
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive "I'll read/upload/download everything" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/strangelearning); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 1:55:15 p.m. EDT — `dd0589bf5f75` Document the v1.9.34 release: a stored file deleted by id is found by its own record or its id, not in every file the account holds (#654, #932); carries 1.9.33
 
 - **Implementation commit:** `dd0589bf5f759e63766e6cef0dc9229bc1eecb5d`

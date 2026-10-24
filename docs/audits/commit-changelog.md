@@ -1,3 +1,6 @@
+## 2026-10-24 16:40:24 EDT — instant-data-swift `0f404f0ba629f4fc609dd90d568f61ca2bb6c673`
+Test (#1072): the shared real-size fixture (a store shaped like a phone's, generated through the runtime and a scripted server), the per-operation meter (time, CPU, instructions, allocations, bytes written, footprint, gate hold) and the report; the base of the #1074, #1075 and #1076 audits.
+
 ## 2026-10-24 15:32:08 EDT — scribe `f9bb41e6c3c337a80d204e436407caf3bdda37bc`
 Build 127 cut (#1071): Scribe 0.1 (127) and Scribe Playback 127 from main 2741ce7a4, instant-data-swift exactly 1.9.34; carries airpods-584 (#584, capture back by itself after a route change).
 
