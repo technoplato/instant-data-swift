@@ -1,3 +1,6 @@
+## 2026-10-24 01:47:44 EDT — scribe `e6c3ee7b12dd6b81fb1eee6b843b4d68ba59b5f1`
+Build 121 cut (#1043): CURRENT_PROJECT_VERSION 121 for Scribe and Scribe Playback, What's New 121 (#1013 reduced recording header, #1012 playback from the compressed copy, instant-data-swift 1.9.32). #1042 not in: stopped by Michael.
+
 ## 2026-10-24 00:14:37 EDT — scribe `665656d477b32a857c8caddb399cf92f3db87ff4`
 Merge (#1013) to main, for build 121: the live recording screen's header without the date line (the vertical stamp says it), with Share, Answers and the sync status in one Share and Sync menu; hide-on-scroll not landed (the threads panel's closed inspector stops the navigation bar's return).
 
