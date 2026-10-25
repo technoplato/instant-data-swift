@@ -1,3 +1,15 @@
+## 2026-10-24 23:22:45 EDT — scribe `03f076bac120f7fe95fe3e90eaa58edd53744c07`
+Docs (#1077): the audit's dated section: #1154 part A, the exercises' gate, #1078 diagnosed on the Mac.
+
+## 2026-10-24 23:22:45 EDT — scribe `f05b874cab86bb0b7337582b59a3f144bc0f73dc`
+Test (#1078): the Mac's playback following a live recording as a macOS exercise; the pinned name's fade is the cost.
+
+## 2026-10-24 23:22:45 EDT — scribe `c8f9b374539cc82b05ee49bc30880f3bfb263135`
+Test (#1154): the list while another device writes its recording, as a harness exercise.
+
+## 2026-10-24 23:22:45 EDT — scribe `d178f24f852153177e806356bd9673bb3ff76fc5`
+Test (#1077): the hot-path exercises skip themselves unless hot-path-exercises.sh asks.
+
 ## 2026-10-24 22:57:36 EDT — scribe `7abb3d20ad3f48d178c49afc70cf572193310702`
 Cut Scribe 0.1 (131) from main 7f781ee1d: CURRENT_PROJECT_VERSION 131, What's New dated (#962 slice 3, #1154 part A, #412); instant-data-swift exactly 1.9.38; Scribe Playback stays 130.
 
