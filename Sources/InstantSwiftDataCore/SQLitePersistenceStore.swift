@@ -8618,6 +8618,17 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The store and attribute revisions SQLite holds now (#1134): a one-shot read answers without the operation gate only
+  /// while they are the ones the runtime's store has installed.
+  func currentStoreAndAttributeRevisions() throws -> (store: Int64, attributes: Int64) {
+    try readTransaction {
+      (
+        store: try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+        attributes: try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+      )
+    }
+  }
+
   func currentAttributeRevision() throws -> Int64 {
     try readTransaction {
       try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)

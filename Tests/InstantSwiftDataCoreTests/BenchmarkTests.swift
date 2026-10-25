@@ -86,11 +86,13 @@ extension InstantStoreTests {
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopCount),
       [5, 5]
     )
+    // A one-shot read takes no operation gate while the store holds what SQLite does (#1134): its answer is a local
+    // observation's first, which registers with the store and ends there, besides the attribute index it validates with.
     expectNoDifference(
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 2, "persistence": 2, "store": 1],
-        ["operation-gate": 2, "persistence": 2, "store": 1],
+        ["persistence": 2, "store": 3],
+        ["persistence": 2, "store": 3],
       ]
     )
     expectNoDifference(
@@ -269,7 +271,8 @@ extension InstantStoreTests {
       [54, 54]
     )
     // The relaunch reads its first connection status and auth session under the gate, one gate pass and one persistence
-    // turn, so status reads and the status and session observations answer without the gate after it (#1132).
+    // turn, so status reads and the status and session observations answer without the gate after it (#1132); its query
+    // takes no gate, and its answer's local observation two store calls (#1134).
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopCount),
       [14, 14]
@@ -277,8 +280,8 @@ extension InstantStoreTests {
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 6, "persistence": 6, "store": 2],
-        ["operation-gate": 6, "persistence": 6, "store": 2],
+        ["operation-gate": 4, "persistence": 6, "store": 4],
+        ["operation-gate": 4, "persistence": 6, "store": 4],
       ]
     )
     // One automatic claim window is 50 mutations; residual pending stays behind

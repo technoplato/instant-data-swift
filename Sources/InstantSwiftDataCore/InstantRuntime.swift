@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-25: a one-shot read answers as the local read does, a local observation's first answer without the
+//   operation gate, and writes its query-cache row after it, revision-checked (#1134).
 // - 2026-10-25: a delivery pass takes the retry window's gate turn only when a failed write waits to be retried, and a
 //   write's acknowledgement asks for a pass only when a write waits to be claimed or retried: delivery took two claims
 //   and two retry turns per write (#1130).
@@ -6606,8 +6608,11 @@ public final class InstantRuntime: Sendable {
   }
 
   /// The first answer of a local observation of `plan`, its deferred values hydrated; then the observation ends.
-  private func firstLocalAnswer(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
-    let lease = await observeLocallyLease(plan)
+  private func firstLocalAnswer(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) async throws -> InstantQueryEmission {
+    let lease = await observe(plan, remotePageInfo: remotePageInfo, connectsToLiveTransport: false)
     var answers = lease.stream.makeAsyncIterator()
     let first = await answers.next()
     await lease.cancel()
@@ -7062,7 +7067,85 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// A one-shot read's answer from this device's store (#1134): a local observation's first answer, as the local
+  /// reader's (#1006), without the operation gate; then its query-cache row.
+  ///
+  /// It held the gate through the state load, the emission, its hydration and the cache write: 58 holds and about 1 s of
+  /// gate a minute in #1074's recording exercise, 1.2 s holds on a phone (build 121), and each write queued behind them.
+  /// It answers without the gate while SQLite's store and attribute revisions are the ones the store has installed, so
+  /// no other connection's write waits to be adopted; otherwise, and for a closed connection's error, it reads under the
+  /// gate as before. The cache row is tagged with those revisions, and the save's revision check skips it when a write
+  /// landed meanwhile: a writer saves SQLite before it commits the store, so a row whose revisions still match pairs
+  /// with its answer.
   private func materializeLocalQueryOnce(
+    _ plan: InstantQueryPlan,
+    enforcesConnectionFreshness: Bool = true,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) async throws
+    -> InstantQueryEmission
+  {
+    let installed = installedStoreRevisions.snapshot()
+    // SQLite's revisions and, when a closed connection must refuse this read, the stored connection state, in one
+    // persistence turn (#403).
+    let readsConnectionState = enforcesConnectionFreshness && !configuration.isLocalOnly
+    let connectionStateKey = connectionStateMetadataKey
+    let (persisted, storedConnectionState) = try await withPersistence { persistence in
+      (
+        try persistence.currentStoreAndAttributeRevisions(),
+        readsConnectionState
+          ? try persistence.loadMetadataValue(key: connectionStateKey).flatMap(InstantConnectionState.init(rawValue:))
+            ?? .opened
+          : nil
+      )
+    }
+    guard persisted.store == installed.store, persisted.attributes == installed.attributes,
+      storedConnectionState != .closed
+    else {
+      return try await materializeLocalQueryOnceUnderTheGate(
+        plan,
+        enforcesConnectionFreshness: enforcesConnectionFreshness,
+        remotePageInfo: remotePageInfo
+      )
+    }
+    recordActorHop(.store)
+    let attributeStore = await store.attributeStoreSnapshot()
+    if let issue = TripleIndexes.validate(plan, attributes: attributeStore) {
+      throw validationFailed(
+        operation: "validate query",
+        namespace: issue.namespace,
+        path: issue.path,
+        message: issue.message,
+        recovery: issue.recovery
+      )
+    }
+    let emission = try await firstLocalAnswer(plan, remotePageInfo: remotePageInfo)
+    recordActorHop(.persistence)
+    let didSave = try await persistence.saveQueryCache(
+      InstantCachedQuery(
+        queryID: plan.id,
+        plan: plan,
+        emission: emission,
+        updatedAt: configuration.now(),
+        storeRevision: installed.store,
+        attributeRevision: installed.attributes
+      ),
+      expectedStoreRevision: installed.store,
+      expectedAttributeRevision: installed.attributes
+    )
+    if didSave,
+      queryCachePruningCadence.shouldPrune(
+        afterSuccessfulWriteWithInterval: configuration.queryCachePruningWriteInterval
+      )
+    {
+      await pruneQueryCache(preserving: plan.cacheKey)
+    }
+    return emission
+  }
+
+  /// A one-shot read's answer under the operation gate, as every one-shot read was before #1134: for a closed
+  /// connection's error with its stored result, and when SQLite is ahead of the store, so another connection's writes
+  /// are adopted first (or a write here is between its save and its install, which the gate waits out).
+  private func materializeLocalQueryOnceUnderTheGate(
     _ plan: InstantQueryPlan,
     enforcesConnectionFreshness: Bool = true,
     remotePageInfo: InstantQueryRemotePageInfo? = nil

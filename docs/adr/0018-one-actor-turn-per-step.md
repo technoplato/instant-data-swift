@@ -208,6 +208,9 @@ every count (2,487 to 0, 119 frames, 17 rebases, 26,288 bodies, 2,384 accepted, 
   connection status and auth session inside the gate, one gate pass and one persistence turn, so `connectionStatus()`,
   `observeConnectionStatus()` and `observeAuthSession()` answer without the gate after it. The relaunch pins in
   `runtimeWorkloadsPinEveryActorHop` and BenchmarkTests follow.
+- 2026-10-25 (#1134): the relaunch still makes 14 calls, now gate 4, persistence 6, store 4: its one-shot query takes no
+  gate while the store holds what SQLite does, and answers through a local observation, which registers with the store
+  and ends there. A one-shot read of `query-materialization.todos` is 5 calls: persistence 2, store 3.
 
 ## Decisions and open questions
 
