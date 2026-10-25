@@ -1,6 +1,27 @@
 ## 2026-10-25 12:32:03 EDT — scribe `08db89f6342536222c9b2239a12d10f428955224`
 changelog(#1175): CHANGELOG entries for 13a4cb74c, 01f6c8ff2, fa57937d7; PROGRESS entry
 
+## 2026-10-25 13:02:17 EDT — scribe `39f575882701629a343f296018b4f4519be00973`
+changelog(#837): second hearing e9544fe4f (red c9d81c6cb), the app's sources a31a1c134, docs cfe91c326
+
+## 2026-10-25 13:01:44 EDT — scribe `cfe91c32695bfceea950ce1fb6a81b3868aee2ea`
+docs(#837): Build 139 (next) story, the audit, its index row, ADR 0074 amendment E (no language lock; the second hearing)
+
+## 2026-10-25 13:01:44 EDT — scribe `a31a1c1343bb28b61995f7556960e96997fad77a`
+feat(#837): the app names each stream's audio: his microphone `source=microphone`, the broadcast lane `system_audio`
+
+## 2026-10-25 13:01:43 EDT — scribe `e9544fe4f15867f911b189f438eab52f4642d2e3`
+fix(#837): green: a microphone line in another language after English is heard again with the 4 s before it; no language lock
+
+## 2026-10-25 13:01:43 EDT — scribe `c9d81c6cb477a3de9b09da1adeb3b66e75684840`
+test(#837): red: a microphone line in another language after English is heard again; system audio and unnamed streams are not
+
+## 2026-10-25 12:55:25 EDT — scribe `23e05ac47d020c0507a731b68d92bd1f27e14804`
+plan(#837): claim two more test files (the recording's microphone source, the system-audio lane's source)
+
+## 2026-10-25 12:17:02 EDT — scribe `edf1abca896ad44dde19d68f3a216235a8713dae`
+plan(#837): 2026-10-25-english-837, a microphone line in another language is heard again with the audio before it (no language lock); claims
+
 ## 2026-10-25 12:31:26 EDT — scribe `fa57937d73aac8a1a9ec7ede63a5302b68beedd5`
 docs(#1175): the builds skill says every install tells him first and how a release agent sees it work
 
