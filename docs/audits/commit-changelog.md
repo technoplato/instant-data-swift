@@ -1,3 +1,15 @@
+## 2026-10-25 17:14:55 EDT — scribe `1713dc72eea137b9076f2bce2483383a06c91091`
+Merge (#936): a vocabulary term takes heard words only when they sound like the whole term or one of its heard forms; 11.15 h replayed, wrong term swaps 226 -> 10.
+
+## 2026-10-25 17:14:55 EDT — scribe `a0d7f29ebde67c5f4e54eead46befab67e7507d1`
+Feature (#936): the phone's closing stream line counts the vocabulary replacements refused.
+
+## 2026-10-25 17:14:55 EDT — scribe `dfb051cc8d7572bf0e525c5880b64bd8a72ea2eb`
+Green (#936): each heard word is keyed on its own and digits count, so a word or number beyond the term keeps the term out.
+
+## 2026-10-25 17:14:55 EDT — scribe `bae2bf4045cc71b9564f49ea912924d950358eae`
+Green (#936): a vocabulary term takes heard words only when they sound like the whole term or one of its heard forms.
+
 ## 2026-10-25 16:58:57 EDT — scribe `6482549d5d1c470028a112f41edf6b556b55a8f2`
 Merge (#1185): what plays now stays pinned at the top of the live recording screen, above the speaker name.
 
