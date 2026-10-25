@@ -1,3 +1,93 @@
+## 2026-10-24 20:03:33 EDT — scribe `d241858fd92bb76c6f3e48842683a6601a8a51ee`
+Merge (#962) for build 130: what Scribe Playback plays shows in the recording as the item's own lines, books included (slices 1-2, ADR 0093); 29 commits, tested on the laptop's heavy.sh and the Mac mini.
+
+## 2026-10-24 20:03:33 EDT — scribe `d37672ac2734591ef63979252601af913f0549b1`
+fix(#962): a test of a book the library does not hold awaits outside expectNoDifference, whose autoclosures cannot await
+
+## 2026-10-24 20:03:33 EDT — scribe `acddb095fc78e7fb67335542479436d8fe63fb8a`
+docs(#962): the played lines ship in build 130 (the lab cut 129 at 18:37 with heat-641 and Instant 1.9.35): What's New section, feature line 25, the audit's measuring note
+
+## 2026-10-24 20:03:33 EDT — scribe `770108e3df2f6ea54c4f898cc2774c5e5d9b4711`
+fix(#962): review: Recording.State.playedLines has a getter, so @ObservableState leaves its accessors alone
+
+## 2026-10-24 20:03:33 EDT — scribe `4fddf51c05cca01df9bbd729dc99d720d61c8922`
+docs(#962): the audit says how to measure after build 129 installs (played-lines-report.py over the collector's log)
+
+## 2026-10-24 20:03:33 EDT — scribe `62a0d5fab9dee5d260297b17d4b4b376fe3984dd`
+docs(#962): the audit's evening section: why books (21 of 45 plays; A New Earth's passages), the second review's findings, the item's audio, the open hypotheses and the runs
+
+## 2026-10-24 20:03:33 EDT — scribe `3bc932c28a099f5451ff2d3f657ae13c3d586cc2`
+feat(#962): green: the item player follows the recording's playhead, moving only on a jump or half a second off
+
+## 2026-10-24 20:03:33 EDT — scribe `73ffa2da6f80fe20eb34d57e619c2a11f8572312`
+test(#962): red: the item player is told only what changes: play on entering a stretch, nothing in step, a seek after a jump or past a capture gap, play for another speed, pause on leaving
+
+## 2026-10-24 20:03:33 EDT — scribe `dfac53e57f7d53de63c1f047f05ce0797ec58a49`
+docs(#962): the played lines ship in build 129, not 128 (the lab cut 128 at 17:52 with #1057 only): What's New section and feature line 25's draft note
+
+## 2026-10-24 20:03:33 EDT — scribe `f5b5703315a0dbf48767fadb287939b0107d6d20`
+feat(#962): green: the item's own audio at each moment of the recording's playback, in step with its lines
+
+## 2026-10-24 20:03:33 EDT — scribe `e05eaff6ab1f1cd5cb12bfa005d4b6b91f4c8c79`
+test(#962): red: the item's own audio plays in the recording's playback at the second that played there
+
+## 2026-10-24 20:03:33 EDT — scribe `3334cbfad130b19e7664dfca3557d4c6b9fc13ad`
+docs(#962): ADR 0093 decision 8 (Books' words) and the review amendment; feature line 25 and What's New 128 say books
+
+## 2026-10-24 20:03:33 EDT — scribe `b97757e4f2b86e250112ae0bbdb7774a8744e7d7`
+feat(#962): green: a book's line opens Scribe Playback at its second
+
+## 2026-10-24 20:03:33 EDT — scribe `54ea163f740638fa0a227e590cd2f373df497d16`
+test(#962): red: a book's line opens Scribe Playback at its second, as Playback opens audiobook links since #929
+
+## 2026-10-24 20:03:33 EDT — scribe `cd01a300f834ba4809b548ae6550f1ec6ef29122`
+fix(#962): review: a full window is read only up to its last line; Open in Scribe Playback; ReadAlongCore declared
+
+## 2026-10-24 20:03:33 EDT — scribe `0c6efc88e5887a492d1ee3d841b7d975cff23ded`
+fix(#962): review: a finished recording's playback shows an open stretch only up to its end, and reads only near rows
+
+## 2026-10-24 20:03:33 EDT — scribe `19215a33e5af56f830557efa133750fad44aa810`
+fix(#962): review: the live screen's shortcut for a line becoming final shows a heard copy of a played line once
+
+## 2026-10-24 20:03:33 EDT — scribe `b92175c75bfeb3a21d978a8e2305bcf720b3c723`
+feat(#962): green: a book played on the recording reads its rendition's passages from the Books library
+
+## 2026-10-24 20:03:33 EDT — scribe `e9a67b213351714428c51fb81fc608f789f687d9`
+feat(#962): green: a book's lines, a passage at a time, named as Scribe Playback's read-along names them
+
+## 2026-10-24 20:03:33 EDT — scribe `75ec80b2fac4fdf27c74257b0b8efeaf9780a36e`
+test(#962): red: a book played on the recording shows its own lines under the narrator's name, read from its passages
+
+## 2026-10-24 20:03:33 EDT — scribe `0da114d2af86f70a3e9002ec62798608fe1a6c69`
+feat(#962): green: a book's words and their line rule live in ReadAlongCore; Scribe Playback's Books calls them
+
+## 2026-10-24 20:03:33 EDT — scribe `70b5cca799a7db6e7f8963ecb4b740878f33e362`
+test(#962): red: a book's words and their line rule in ReadAlongCore, as Scribe Playback reads and cuts them
+
+## 2026-10-24 20:03:33 EDT — scribe `ba2bb6f874ee500ba7a96a32e28ebc633c80536b`
+fix(#962): green: Scribe's playback of a recording redraws its timeline when the played lines arrive, and only then
+
+## 2026-10-24 20:03:33 EDT — scribe `3c50dd320055eeba876d031aa0bfa2e0aaad0086`
+test(#962): red: Scribe's playback of a recording redraws its timeline when the played lines arrive, and only then
+
+## 2026-10-24 20:03:33 EDT — scribe `46d9fc0733ddfdb3cb4ec61a15fb222a6cc81830`
+docs(#962): ADR 0093, feature line 25, What's New 128 and the audit: what Scribe Playback plays shows in the recording as the item's own lines
+
+## 2026-10-24 20:03:33 EDT — scribe `fe670b3098d88d81bef5cbe3fb79698cb04f697c`
+feat(#962): green: a text link's played lines say whose words they are, as Scribe Playback's own copies do
+
+## 2026-10-24 20:03:33 EDT — scribe `22220e1a410808026615beec6b1c8fb55bdb032a`
+test(#962): red: a text link's played lines say whose words they are, as Scribe Playback's own copies do
+
+## 2026-10-24 20:03:33 EDT — scribe `b1240fc6ea3220b93ef3c89c448aa5f7f1a26de5`
+refactor(#962): a played line's time is one button, disabled where Scribe Playback cannot open the item
+
+## 2026-10-24 20:03:33 EDT — scribe `3e8054ebc6985ce9df8fc3fe93e465917af20eef`
+feat(#962): green: the lines Scribe Playback played, derived from the play rows and the item's words, on the recording's clock, shown once
+
+## 2026-10-24 20:03:33 EDT — scribe `67fc152308bb265838227af66a951e85921a2370`
+test(#962): red: what Scribe Playback plays shows on the recording screen as the item's own lines, under its speakers' names, shown once
+
 ## 2026-10-24 19:20:49 EDT — instant-data-swift `f74a67ebbfbecf8effe0c6fcbccb07578026c951`
 docs(#1141): the v1.9.37 release document: the transaction-id interner every copy of the store's indexes shares no longer races; carries 1.9.36
 
