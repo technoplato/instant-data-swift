@@ -1,3 +1,19 @@
+## 2026-10-24 20:17:30 EDT — #1072: lib-audit-1072 done: four releases, the audit, the budgets; cleanup
+
+- **Released today from this audit:** 1.9.35 (`c0a57a53`), 1.9.36 (`253a9507`), 1.9.37 (`b33dee9c`), 1.9.38
+  (`becf941b`), each pinned in Scribe and Scribe Playback on Scribe's main (`c8bc40aa2`, `1fcf0a631`, `a35ad4987`,
+  `1f3fcedf8`). Audit: `docs/audits/2026-10-24-whole-store-cost-audit.md` (`afcbc95c`, `840b9fa0`). Budgets:
+  `RealSizeBudgetTests` in the correctness job.
+- **Open, filed:** #1104, #1105, #1106, #1107, #1109, #1110, #1111, #1112, #1113, #1115 (needs a dedicated session: a
+  schema migration); VerificationNeeded: #1103, #1108, #1114, #1141. The release steps are on the channel
+  `agent-presence/_channels/2026-10-24-lib-audit-1072.md` (20:55 entry).
+- **Removed:** on the Mac mini `~/Library/Caches/lib-audit-1072` (11 GB: seven release, debug, Thread Sanitizer and
+  bundle builds, two Scribe resolve scratches, six source copies), `/tmp/lib-audit-1072-qp` (1.5 GB of scratch store
+  copies), two version-1 fixture stores (25 MB) and one leftover session; on the laptop `/tmp/lib-audit-1072` (19 MB),
+  the worktree `scribe-pin-1072` (128 MB) and its branch, and this worktree with its `.build` (385 MB). Kept: the
+  evidence in `~/Sync/audit/lib-audit-1072` (11 MB: runs, reader reports, scripts); the shared fixture caches (version 2
+  and 3 stores under the mini's temporary directory, used by the sibling audits and the always-on tests).
+
 ## 2026-10-24 20:09:50 EDT — #1108, #1114, #1103: v1.9.38, three more outbox costs off the write path; Scribe pinned to 1.9.37
 
 - **Commits (instant-data-swift main):** plan amendments 4-6 `893b57f8`, `74c5842f`, `f3b740d2`; the tail check's

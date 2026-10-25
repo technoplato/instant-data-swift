@@ -1,3 +1,12 @@
+## 2026-10-24 20:15:42 EDT — instant-data-swift `840b9fa0b006d420f1733347c3a7510b598a3c49`
+docs(#1072): the audit records what shipped after it (1.9.35 to 1.9.38) and the partial index's write cost; the channel hands over the release steps
+
+## 2026-10-24 20:12:47 EDT — scribe `a44631c0b05c3db81035274df5bc02fba576e439`
+changelog(#1108 #1103): the instant-data-swift 1.9.38 pin 1f3fcedf8 (plan amendment 891bf7799)
+
+## 2026-10-24 20:12:43 EDT — scribe `1f3fcedf852088ea3b766af36b779b7e9ebd8921`
+Pin instant-data-swift exactly 1.9.38 instead of 1.9.37 in Scribe and Scribe Playback: a write's tail check reads only its own attributes, the outbox's overlay check and tail read stop walking every row, a refused write's discard removes its row alone (#1108, #1114, #1103)
+
 ## 2026-10-24 20:09:04 EDT — instant-data-swift `ee1578458406a16463706df0557681f050e909c2`
 docs(#1108 #1114 #1103): the v1.9.38 release document: a write's tail check reads only its own attributes, the overlay check and the tail read stop walking the outbox, a refused write's discard removes its row alone; carries 1.9.37
 

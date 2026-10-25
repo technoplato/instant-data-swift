@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 8:17:30 p.m. EDT — `840b9fa0b006` docs(#1072): the audit records what shipped after it (1.9.35 to 1.9.38) and the partial index's write cost; the channel hands over the release steps
+
+- **Implementation commit:** `840b9fa0b006d420f1733347c3a7510b598a3c49`
+- **Change:** Docs (#1072): the audit records what shipped after it (1.9.35 to 1.9.38) and the partial index's write cost; the channel hands over the release steps
+- **Details:**
+  - A table of the six fixes released the same evening with before and after; the claim's gate share 569 -> 90 ms a recording minute; the partial index's +2 log frames per write (#1115); the release steps for the next release owner.
+- **Files:**
+  - `docs/audits/2026-10-24-whole-store-cost-audit.md` — After the audit: what shipped the same evening
+  - `agent-presence/_channels/2026-10-24-lib-audit-1072.md` — the release steps
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 8:09:28 p.m. EDT — `ee1578458406` docs(#1108 #1114 #1103): the v1.9.38 release document: a write's tail check reads only its own attributes, the overlay check and the tail read stop walking the outbox, a refused write's discard removes its row alone; carries 1.9.37
 
 - **Implementation commit:** `ee1578458406a16463706df0557681f050e909c2`
