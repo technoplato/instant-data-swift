@@ -1,3 +1,9 @@
+## 2026-10-24 21:51:02 EDT — scribe `488975a2bf823659042ff13a5e63f5a6e4bd8235`
+Green (#1154): a duration alone waits for the widgets' 30 s budget; another device's heartbeats reload the recent-recordings widget 3 times a minute, was 12.
+
+## 2026-10-24 21:51:02 EDT — scribe `0474aa5e61e5625e727a8617c3bc00e47b02b3d0`
+Red (#1154): the recent-recordings widget reloads at every heartbeat of another device's recording.
+
 ## 2026-10-24 21:39:28 EDT — scribe `b72befcf0c1bf4d832a9d12b722e4617a0711b18`
 Docs (#1077): the audit of Scribe's own hot paths, 26 anti-patterns ranked by measured cost (#1078-#1102, #1154), a design and a hypothesis for each, the exercises' simulator baseline.
 
