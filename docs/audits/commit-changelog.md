@@ -1,3 +1,12 @@
+## 2026-10-25 09:09:25 EDT — scribe `8ff83440217ce05caf0d2d2e573903184eedc2f6`
+Docs (#1170): the audit of the app's lost diagnostics lines (the bisect: 80, 3 and 67 app-level lines delivered in 120 s before, with and after), its index row, an amendment to the app's ADR 0002, the build 136 story and the progress entry.
+
+## 2026-10-25 08:58:46 EDT — scribe `e516c2a4c79e98603c16a2f19dfca720282c9202`
+Green (#1170): the app's live logger forwards every call to the lanes its bootstrap installs, so a logger dependency read before bootstrap delivers once they are installed; the two source scans of the old read-order rule go or narrow.
+
+## 2026-10-25 08:54:19 EDT — scribe `ff15195821f7775ade022cef456f55c4a8363ca5`
+Red (#1170): a logger dependency read before the lanes are installed delivers nothing to the collector (the install refused, an empty collector after 5 s).
+
 ## 2026-10-25 08:22:15 EDT — scribe `f61030e837a3c4f89c9a4632b0bd7cfa17c5790f`
 Docs (#1100): the hot-paths audit's section 14 (design, schema push and backfill, the wire measurement, red and green, the bundle diff), Build 136's story, the PROGRESS entry.
 
