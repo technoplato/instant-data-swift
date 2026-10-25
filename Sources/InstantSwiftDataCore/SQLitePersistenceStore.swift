@@ -51,6 +51,8 @@
 //   their bodies' overflow pages included, after every write and acknowledgement (#1108).
 // - 2026-10-24: the delivery's unknown-overlay check seeks the overlay flag (= 1) instead of scanning the table, and the
 //   supersession tail read finds the newest id in a covering index before it reads that one row (#1108, #1114).
+// - 2026-10-24: the writer checkpoints every 4,000 frames of the log instead of Apple's 1,000: three F_FULLFSYNCs per
+//   checkpoint, one every 16 writes, made 1,039 full syncs an hour of recording (#1118).
 
 import Foundation
 import IssueReporting
@@ -2030,6 +2032,15 @@ public actor SQLitePersistenceStore {
     // same (a 4,344-write replay: -1% instructions, -0.5% bytes); the #653 audit's estimate of 992 to 609 KB per write
     // did not reproduce there. A failure here leaves SQLite's default cache, so it does not fail the open.
     _ = sqlite3_exec(opened, "PRAGMA cache_size = \(sqlitePageCacheSizeKibibytes)", nil, nil, nil)
+    // #1118: a checkpoint every 4,000 frames of the log instead of Apple's 1,000. Each one costs three F_FULLFSYNCs
+    // (the log before the copy, the file after it, the restarted log's header); at a recording's 62.5 frames a write
+    // the default ran one every 16 writes, 1,039 full syncs in #1076's simulated hour, and copied the same hot pages
+    // again each time. 4,000 frames still fit the log index's first 32 KB block (4,062 frames), so a read probes one
+    // hash table, and the log tops out near 16 MB. What it costs: synchronous = NORMAL syncs the log only at a
+    // checkpoint, so a power loss (not an app crash, which loses nothing) can take the writes since the last one, up
+    // to 4,000 frames instead of 1,000; the store opens consistent either way (SQLiteCheckpointCadenceTests). A
+    // failure leaves Apple's default, so it does not fail the open.
+    _ = sqlite3_wal_autocheckpoint(opened, sqliteWALAutocheckpointFrames)
     return opened
   }
 
@@ -19232,11 +19243,15 @@ public actor SQLitePersistenceStore {
   /// The freeze report asked for `PRAGMA synchronous = NORMAL` so a commit under the operation gate costs no fsync.
   /// Apple's SQLite already defaults a WAL connection to NORMAL: macOS 26.5's SQLite 3.51.0 and the iOS 27.0
   /// simulator's 3.54.0 are built with `SQLITE_DEFAULT_WAL_SYNCHRONOUS=1` (and `DEFAULT_CKPTFULLFSYNC`), so a commit
-  /// appends to the WAL without an fsync and only a checkpoint syncs. This line shows what the device's SQLite does.
+  /// appends to the WAL without an fsync and only a checkpoint syncs. This line shows what the device's SQLite does:
+  /// since #1118 the checkpoint's cadence (4,000 frames), whether its syncs are `F_FULLFSYNC`, and the size the log is
+  /// cut back to when it starts over.
   private func recordDurabilitySettings() {
     let synchronous = try? selectScalar("PRAGMA synchronous")
     let journalMode = try? selectScalar("PRAGMA journal_mode")
     let walAutocheckpoint = try? selectScalar("PRAGMA wal_autocheckpoint")
+    let checkpointFullfsync = try? selectScalar("PRAGMA checkpoint_fullfsync")
+    let journalSizeLimit = try? selectScalar("PRAGMA journal_size_limit")
     InstantDiagnostics.shared.record(
       .info,
       subsystem: "instant-swift-data-core",
@@ -19247,6 +19262,8 @@ public actor SQLitePersistenceStore {
         "synchronous": synchronous ?? "",
         "journalMode": journalMode ?? "",
         "walAutocheckpoint": walAutocheckpoint ?? "",
+        "checkpointFullfsync": checkpointFullfsync ?? "",
+        "journalSizeLimit": journalSizeLimit ?? "",
         "sqliteVersion": String(cString: sqlite3_libversion()),
       ]
     )
@@ -19537,6 +19554,9 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
 
 /// `PRAGMA cache_size` for every connection: negative, so it bounds the page cache in KiB (2 MiB) (#653).
 private let sqlitePageCacheSizeKibibytes = -2_048
+
+/// The writer's `wal_autocheckpoint`: a commit that leaves the log this many frames long checkpoints it (#1118).
+private let sqliteWALAutocheckpointFrames: Int32 = 4_000
 
 /// Calls a handler when the system warns of memory pressure, from a dispatch memory-pressure source, which UIKit's
 /// memory warning also comes from; it runs no timer (#653).
