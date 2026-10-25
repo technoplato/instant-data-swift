@@ -7674,6 +7674,15 @@ public final class InstantRuntime: Sendable {
     await operationGate.waiterCount
   }
 
+  /// Holds the operation gate while `body` runs (tests only), as any holder does: a test pauses inside `body` to show
+  /// what waits for the gate and what does not (#1132).
+  @concurrent
+  package func holdingOperationGateForTesting(_ body: @Sendable () async -> Void) async {
+    await enterOperationGate(operation: "test holder")
+    await body()
+    await leaveOperationGate()
+  }
+
   @concurrent
   package func serverApplyGateWaiterCountForTesting() async -> Int {
     await serverApplyGate.waiterCount
