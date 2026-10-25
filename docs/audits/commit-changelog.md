@@ -1,3 +1,9 @@
+## 2026-10-25 19:34:02 EDT — scribe `d4b2fc9030bf68f272eb8db6614e0e2b311ff313`
+Cut Scribe 0.1 (141) (#1191): #951 S2c/#961, #1183 Only Me and Play Sealed Voice, #1097 landing B, #1084, #1185, #936; instant-data-swift 1.9.42 unchanged; Scribe Playback stays 140.
+
+## 2026-10-25 19:34:02 EDT — scribe `6608030717f8c320125784a9ec0ee1a77d95f3db`
+Changelog-only commit recording build 141's cut d4b2fc903 (#1191).
+
 ## 2026-10-25 19:28:03 EDT — scribe `66cb9b7227bd2cba8d3f76e46632f5c5070bdb4d`
 Merge (#1084): drain-1084 onto main for build 141: the durability lane runs every step in the reduce that returned it, so none is a root pass.
 
