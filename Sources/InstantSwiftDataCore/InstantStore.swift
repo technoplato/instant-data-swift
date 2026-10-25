@@ -3343,6 +3343,20 @@ public actor InstantStore {
     sequence += 1
   }
 
+  /// Releases from memory every fact of `entityIDs` that no observer's answer shows (#1145): their rows stay on disk,
+  /// where a local read finds them, as after a relaunch. Returns how many of them had facts in memory, and the ones kept
+  /// because an observer's last answer, or the last one it was handed, shows them.
+  func releaseUnobservedEntities(_ entityIDs: Set<String>) -> (entityCount: Int, observed: Set<String>) {
+    var observed: Set<String> = []
+    for observer in observers.values {
+      observer.lastValues.collectEntityIDs(among: entityIDs, into: &observed)
+      observer.lastHandedValues.collectEntityIDs(among: entityIDs, into: &observed)
+    }
+    let released = facts(of: entityIDs.subtracting(observed))
+    retractFactsReleasedByPrune(released)
+    return (Set(released.lazy.map(\.entityID)).count, observed)
+  }
+
   func activeQueryCacheKeys() -> Set<String> {
     Set(observers.values.map(\.plan.cacheKey))
   }
@@ -3391,6 +3405,16 @@ extension InstantEntitySnapshot {
       }
     }
   }
+
+  /// Inserts into `found` the ids among `candidates` that this snapshot or its links show (#1145).
+  fileprivate func collectEntityIDs(among candidates: Set<String>, into found: inout Set<String>) {
+    if candidates.contains(id) { found.insert(id) }
+    for children in (links ?? [:]).values {
+      for child in children {
+        child.collectEntityIDs(among: candidates, into: &found)
+      }
+    }
+  }
 }
 
 extension InstantLinkedEntitySnapshot {
@@ -3409,11 +3433,27 @@ extension InstantLinkedEntitySnapshot {
       }
     }
   }
+
+  /// Inserts into `found` the ids among `candidates` that this snapshot or its links show (#1145).
+  fileprivate func collectEntityIDs(among candidates: Set<String>, into found: inout Set<String>) {
+    if candidates.contains(id) { found.insert(id) }
+    for children in (links ?? [:]).values {
+      for child in children {
+        child.collectEntityIDs(among: candidates, into: &found)
+      }
+    }
+  }
 }
 
 extension Array where Element == InstantEntitySnapshot {
   fileprivate func contains(anyEntityID ids: Set<String>) -> Bool {
     contains { $0.contains(anyEntityID: ids) }
+  }
+
+  fileprivate func collectEntityIDs(among candidates: Set<String>, into found: inout Set<String>) {
+    for snapshot in self {
+      snapshot.collectEntityIDs(among: candidates, into: &found)
+    }
   }
 
   fileprivate func allEntityIDs() -> Set<String> {

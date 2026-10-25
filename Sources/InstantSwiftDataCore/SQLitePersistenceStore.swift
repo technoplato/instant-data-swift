@@ -1239,6 +1239,9 @@ public actor SQLitePersistenceStore {
   private var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 300_000
   /// Ownership rows read and result values encoded to save live-query results, for the commit's metrics (#932).
   private var liveQueryOwnershipRowReadCount = 0
+  /// Whether a result's save records the entities whose ownership rows it removed, for the residency sweep (#1145).
+  private var recordsOwnershipReleases = false
+  private var ownershipReleasedEntityIDs: Set<String> = []
   private var liveQueryResultValueEncodeCount = 0
   private var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
@@ -1362,6 +1365,60 @@ public actor SQLitePersistenceStore {
   ) {
     liveQueryResultJSONWriteIntervalMilliseconds = max(0, intervalMilliseconds)
     liveQueryResultJSONFlushSleep = flushSleep
+  }
+
+  /// Whether a result's save records the entities whose ownership rows it removes, for the runtime's residency sweep
+  /// (#1145). Off, as when the sweep never runs, the record would only grow.
+  func recordOwnershipReleases(_ records: Bool) {
+    recordsOwnershipReleases = records
+    if !records { ownershipReleasedEntityIDs = [] }
+  }
+
+  /// The entities whose ownership rows a result's save removed since the last call (#1145): each may be owned by no
+  /// result now.
+  func takeOwnershipReleasedEntityIDs() -> Set<String> {
+    let released = ownershipReleasedEntityIDs
+    ownershipReleasedEntityIDs = []
+    return released
+  }
+
+  /// Which of `entityIDs` a residency sweep may release from memory (#1145): nil while a prune's release is pending,
+  /// since its next batches drop an entity only while it is resident (#1129); otherwise the ones no stored result owns
+  /// and no outbox row touches, and apart, the unowned ones an outbox row touches. Ownership is read per entity, not per
+  /// fact: an entity any result owns a fact of stays whole (#259).
+  func residencySweepDecision(for entityIDs: Set<String>) throws -> InstantResidencySweepDecision? {
+    let marker = Self.pendingLiveQueryResultReleaseMarkerPrefix
+    guard
+      try selectScalar(
+        "SELECT key FROM instant_sync_metadata WHERE key >= ? AND key < ? LIMIT 1",
+        [.text(marker), .text(marker + "\u{10FFFF}")]
+      ) == nil
+    else { return nil }
+    let unowned = entityIDs.subtracting(
+      try entityIDsWithRowsWithoutTransaction(in: "instant_live_query_triples", among: entityIDs)
+    )
+    var pending = try entityIDsWithRowsWithoutTransaction(in: "instant_outbox_write_keys", among: unowned)
+    pending.formUnion(
+      try entityIDsWithRowsWithoutTransaction(in: "instant_outbox_effect_entities", among: unowned.subtracting(pending))
+    )
+    return InstantResidencySweepDecision(releasable: unowned.subtracting(pending), pending: pending)
+  }
+
+  /// The ids among `entityIDs` that `table` holds rows of, through its index on `entity_id`, 500 to a statement.
+  private func entityIDsWithRowsWithoutTransaction(in table: String, among entityIDs: Set<String>) throws -> Set<String> {
+    var found: Set<String> = []
+    let sorted = entityIDs.sorted()
+    for start in stride(from: 0, to: sorted.count, by: 500) {
+      let batch = sorted[start..<Swift.min(start + 500, sorted.count)]
+      let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+      found.formUnion(
+        try selectStrings(
+          "SELECT DISTINCT entity_id FROM \(table) WHERE entity_id IN (\(placeholders))",
+          batch.map(SQLiteBinding.text)
+        )
+      )
+    }
+    return found
   }
 
   /// Writes the stored JSON of every live-query result whose write waited, or of the ones in `keys` (#566). The app
@@ -19122,6 +19179,12 @@ public actor SQLitePersistenceStore {
       try liveQueryOwnershipRowsWithoutTransaction(queryKey: result.key, into: &ownership)
     }
     try ownership.finish()
+    if recordsOwnershipReleases {
+      // #1145: an entity whose ownership rows this save removes may be owned by no result now.
+      for row in ownership.removed {
+        ownershipReleasedEntityIDs.insert(row.entityID)
+      }
+    }
     var json: String?
     if encodingJSONIfWritten == true,
       try liveQueryResultJSONWriteWithoutTransaction(

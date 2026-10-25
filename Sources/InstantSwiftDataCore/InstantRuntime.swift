@@ -452,6 +452,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxTripleCount: 1_000_000
   )
   var liveQueryResultPruningWriteInterval = 64
+  /// How many committed local writes start a residency sweep (#1145): the rows this device wrote that the server
+  /// acknowledged and no stored result owns leave memory, as a relaunch leaves them, and stay on disk for local reads.
+  /// `Int.max` never sweeps.
+  var residencySweepWriteInterval = 64
   /// How many result triples one prune batch removes before it releases the operation gate (#303, item 6). The
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
   /// waited; `nil` prunes everything at once.
@@ -1628,6 +1632,11 @@ public final class InstantRuntime: Sendable {
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   /// The cadence prune's task, off the frame applier (#1129).
   private let cadencePruneOwner = InstantRuntimeExactTaskOwner()
+  /// The residency sweep's task, and the entities it may release from memory (#1145).
+  private let residencySweepOwner = InstantRuntimeExactTaskOwner()
+  private let residencySweep = InstantResidencySweepState()
+  /// The candidates one hold of the operation gate decides.
+  private static let residencySweepBatchEntityCount = 500
   private let reconnectController = InstantRuntimeReconnectController()
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
   /// Brings the server's copy of each stream this device writes up to date after a connection opens (#329).
@@ -1773,6 +1782,8 @@ public final class InstantRuntime: Sendable {
         intervalMilliseconds: configuration.liveQueryResultJSONWriteIntervalMilliseconds,
         flushSleep: configuration.liveQueryResultJSONFlushSleep
       )
+      // #1145: a result's save names the entities whose ownership it removed, for the residency sweep.
+      await persistence.recordOwnershipReleases(configuration.residencySweepWriteInterval < .max)
       let bootstrapPruningResult: InstantQueryCachePruningResult?
       let bootstrapSynchronizationBlocker: InstantSynchronizationBlocker?
       var state: InstantPersistenceState
@@ -2513,6 +2524,14 @@ public final class InstantRuntime: Sendable {
         if let connectionStatus = saved.connectionStatus {
           operationGate.markHolderPhase("publish status")
           await publishConnectionStatus(from: connectionStatus)
+        }
+        // #1145: the entities this write changed may leave memory once the server acknowledged it and no stored result
+        // owns them.
+        if residencySweep.recordWrite(
+          changing: committed.prepared.result.changedEntityIDs,
+          interval: configuration.residencySweepWriteInterval
+        ) {
+          requestResidencySweep()
         }
         return InstantLocalWriteCommit(result: committed.prepared.result, publication: committed.publication)
       }
@@ -7193,6 +7212,85 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  package func residencySweepSettledForTesting() async {
+    await residencySweepOwner.runningHandle().wait()
+  }
+
+  /// Starts a residency sweep in a task of its own at background priority (#1145). A sweep already running leaves the
+  /// candidates recorded since for the next one.
+  private func requestResidencySweep() {
+    recordActorHop(.task)
+    _ = residencySweepOwner.start(priority: .background) { [weak self] in
+      guard let self else { return }
+      do {
+        _ = try await self.sweepResidentEntities()
+      } catch is CancellationError {
+        return
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "store",
+          event: "residency-sweep.failed",
+          message: "Could not release acknowledged rows no stored result owns from memory."
+        )
+      }
+    }
+  }
+
+  /// Releases from memory the candidates no stored result owns, no outbox row touches and no open observer shows, at most
+  /// 500 entities a hold of the operation gate at background priority (#1145). Their rows stay on disk, where a local
+  /// read finds them, as after a relaunch. A write to such an entity saves only the attributes it writes
+  /// (`InstantFactScope`), so nothing on disk is lost.
+  ///
+  /// A prune's release keeps a removed result's facts in memory for its next batches, which drop an entity only while it
+  /// is resident (#1129's second slice); a sweep batch between them would leave that entity's rows on disk. So no batch
+  /// runs while the cadence prune runs or a release is marked pending; the candidates wait for the next sweep.
+  @discardableResult
+  func sweepResidentEntities() async throws -> InstantResidencySweepResult {
+    recordActorHop(.persistence)
+    var candidates = residencySweep.takeCandidates().union(await persistence.takeOwnershipReleasedEntityIDs())
+    var kept: Set<String> = []
+    var result = InstantResidencySweepResult()
+    // A cancelled or deferred sweep leaves what it did not decide for the next one.
+    defer { residencySweep.keep(kept.union(candidates)) }
+    while !candidates.isEmpty {
+      try Task.checkCancellation()
+      let batch = Set(candidates.prefix(Self.residencySweepBatchEntityCount))
+      try await enterOperationGateUnlessCancelled(operation: "residency sweep", priority: .background)
+      let decision: InstantResidencySweepDecision?
+      var released = (entityCount: 0, observed: Set<String>())
+      do {
+        if cadencePruneOwner.isIdle {
+          recordActorHop(.persistence)
+          decision = try await persistence.residencySweepDecision(for: batch)
+        } else {
+          decision = nil
+        }
+        if let decision, !decision.releasable.isEmpty {
+          recordActorHop(.store)
+          released = await store.releaseUnobservedEntities(decision.releasable)
+        }
+      } catch {
+        await leaveOperationGate()
+        throw error
+      }
+      await leaveOperationGate()
+      guard let decision else {
+        result.deferredForPruneRelease = true
+        result.keptEntityCount = kept.count + candidates.count
+        return result
+      }
+      candidates.subtract(batch)
+      kept.formUnion(decision.pending)
+      kept.formUnion(released.observed)
+      result.releasedEntityCount += released.entityCount
+      result.batchCount += 1
+    }
+    result.keptEntityCount = kept.count
+    return result
+  }
+
   /// Removes the results the policy selects in bounded batches, releasing the operation gate between them, so a local
   /// write waits for one batch rather than the whole prune (#303, item 6).
   ///
@@ -8127,6 +8225,7 @@ public final class InstantRuntime: Sendable {
     let automaticLiveConnectionTask = automaticLiveConnectionTaskOwner.requestStop()
     let startupCookieSyncTask = startupCookieSyncTaskOwner.requestStop()
     let cadencePruneTask = cadencePruneOwner.requestStop()
+    let residencySweepTask = residencySweepOwner.requestStop()
     let reconnectTask = await reconnectController.requestStop()
     await mutationDeliveryPump.suspend()
     let explicitMutationFlushTask = explicitMutationFlushOwner.requestStop()
@@ -8171,6 +8270,9 @@ public final class InstantRuntime: Sendable {
       // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
       await cadencePruneTask.wait()
       cadencePruneOwner.resume()
+      // So does the residency sweep (#1145); a later write starts it again.
+      await residencySweepTask.wait()
+      residencySweepOwner.resume()
       explicitMutationFlushOwner.resume()
       streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
@@ -8193,6 +8295,9 @@ public final class InstantRuntime: Sendable {
       // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
       await cadencePruneTask.wait()
       cadencePruneOwner.resume()
+      // So does the residency sweep (#1145); a later write starts it again.
+      await residencySweepTask.wait()
+      residencySweepOwner.resume()
       explicitMutationFlushOwner.resume()
       streamWriterCatchUpOwner.resume()
       await connectionGate.leave()

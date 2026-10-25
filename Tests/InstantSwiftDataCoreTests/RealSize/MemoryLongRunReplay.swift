@@ -42,7 +42,7 @@ import Testing
 //   process-wide diagnostics hub, which the bundle's parallel tests reconfigure, and it timed out in whole-bundle runs
 //   (passing alone).
 // - 2026-10-25: #1145: the two-hour replay holds #1145's criterion: resident facts within 2,000 of minute 5 and the
-//   heap growing under 3 MB an hour.
+//   heap growing under 3 MB an hour; it runs the residency sweep at the library's default cadence.
 
 @Suite(.serialized)
 struct MemoryLongRunReplaySmokeTests {
@@ -121,6 +121,8 @@ struct MemoryReplayWorkload: Sendable, CustomStringConvertible {
   var reconnectEveryMinutes: Int? = 40
   /// The library's own prune of closed results, every this many server applies (its default).
   var pruneWriteInterval = 64
+  /// The library's residency sweep, every this many local writes (its default, #1145).
+  var residencySweepWriteInterval = 64
 
   static let scribe = MemoryReplayWorkload()
 
@@ -143,7 +145,7 @@ struct MemoryReplayWorkload: Sendable, CustomStringConvertible {
       + "x\(wavBytes)B segments/min=\(segmentsPerMinute)x\(segmentBytes)B others/min=\(otherRowsPerMinute)"
       + " window=\(windowRows) liveLines=\(liveLineRows) list=\(listRows) polls/min=\(pendingPollsPerMinute)"
       + " scans/min=\(mediaScansPerMinute) reconnectEvery=\(reconnectEveryMinutes.map { "\($0)min" } ?? "never")"
-      + " pruneEvery=\(pruneWriteInterval)"
+      + " pruneEvery=\(pruneWriteInterval) sweepEvery=\(residencySweepWriteInterval)"
   }
 }
 
@@ -243,6 +245,7 @@ enum MemoryReplay {
   ) async throws -> [MemoryReplaySample] {
     let context = try await MemoryExerciseSession.open(shape, label: "replay-\(label)") { configuration in
       configuration.liveQueryResultPruningWriteInterval = workload.pruneWriteInterval
+      configuration.residencySweepWriteInterval = workload.residencySweepWriteInterval
     }
     return try await context.closing { context in
       try await replay(context, shape: shape, minutes: minutes, workload: workload, label: label, sampleEvery: sampleEvery)

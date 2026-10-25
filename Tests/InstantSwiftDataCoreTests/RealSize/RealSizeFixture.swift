@@ -27,6 +27,8 @@ import SQLite3
 //   answers' watermark covers the writes it accepted (version 3); the text ids left every accepted write in the outbox.
 // - 2026-10-24: #1072: the scripted server keeps its newest 1,024 frames and the apply log its newest 4,096 applies, so
 //   a long recording's footprint is the library's, not the fixture's history (#1075's note).
+// - 2026-10-25: #1145: sessions turn the residency sweep off, as they turn the cadence prune off; the long-run replay
+//   turns it on.
 
 /// How big the generated store is, in the dimensions that the library's costs depend on.
 struct RealSizeShape: Sendable, Hashable, CustomStringConvertible {
@@ -1001,8 +1003,10 @@ enum RealSizeFixture {
     )
     configuration.initialAttributes = account.attributes
     configuration.autoConnectLiveTransport = false
-    // Measurements prune when they choose to, as Scribe's every-64-writes prune would land at random.
+    // Measurements prune when they choose to, as Scribe's every-64-writes prune would land at random; the same for the
+    // residency sweep (#1145), which the long-run replay turns on.
     configuration.liveQueryResultPruningWriteInterval = Int.max
+    configuration.residencySweepWriteInterval = Int.max
     configuration.liveMutationDeadlineSleep = { _ in try await Task.sleep(for: .seconds(36_000)) }
     configuration.liveReconnectSleep = { _ in try await Task.sleep(for: .seconds(36_000)) }
     // The gate log wraps whatever timeline `configure` sets, once. It used to set its own closure first and then wrap
