@@ -1,3 +1,33 @@
+## 2026-10-25 15:42:39 EDT — scribe `31db9f22831300856248e31f52ee9fb9cb28b571`
+merge(#951): S2b lands on main for build 140: the screen broadcast's voices take the recording's numbers from -10,000 down (one voice, one speaker, whatever app is in front); the lane names its recording; ADR 0096 amendment A.
+
+## 2026-10-25 15:31:07 EDT — scribe `c248e8af434185c2697754224f211bf747b990f9`
+changelog(#951): CHANGELOG entries for S2b's app half and its docs.
+
+## 2026-10-25 15:31:07 EDT — scribe `c9e568f6a61fcaaf4e286580f7e4287da696124e`
+Docs (#951): S2b verified (PROGRESS), the label round trip measured at 2.0-2.4 s machine to machine (the audit), a third question for later (ADR 0096).
+
+## 2026-10-25 15:12:13 EDT — scribe `a39c7cbfdf344ba4155471e9f192540443862ebd`
+Test (#951): speakers_used names the broadcast's recording numbers and drops an app-hashed id (the old example -12,345 lies in the broadcast's range).
+
+## 2026-10-25 14:37:54 EDT — scribe `85d70c0d9dc0d24c2a7bde1aac445ee393ff5b2a`
+changelog(#951): CHANGELOG entries for the broadcast's numbering and the docs.
+
+## 2026-10-25 14:37:42 EDT — scribe `05f6654acf96678ec1d38ff88213cade7655ac74`
+Docs (#951): ADR 0096 amendment A (the broadcast's voices numbered from -10,000 down), FEATURES item 14's broadcast clause, What's New Build 140 stories, the audit's landing, deploy and merge sections, PROGRESS.
+
+## 2026-10-25 14:32:44 EDT — scribe `46a3dd6e7ccabf9a0106c4b474e4a455568933e5`
+Green (#951, S2b app): a broadcast voice the recording numbered is one speaker whatever app is in front; the lane's config names its recording and numbers; On This iPhone passes the lane.
+
+## 2026-10-25 14:32:43 EDT — scribe `e3dbd8904687d7304ed327112bc23f0bd9f0b4b8`
+Red (#951, S2b app): one speaker across apps, the prints name a broadcast voice, the lane names its recording.
+
+## 2026-10-25 14:32:29 EDT — scribe `fd7337c8cf3f65a756764b354674da79868b9859`
+Green (#951, S2b engine): the broadcast's voices take the recording's numbers from -10,000 down; speakers_used carries them; the server passes the stream's lane.
+
+## 2026-10-25 14:32:29 EDT — scribe `a82fe388f2f153efb3ef5508bedf18fbbdd007f3`
+Red (#951, S2b engine): numbering by lane and the speakers_used range.
+
 ## 2026-10-25 15:17:57 EDT — scribe `3b01f5cb71def02c596012edab8d6b9461b078f6`
 Merge (#839): a play or pause the media player app takes from outside its screen is handed to the recorder through the App Group the two share and shown in the recording's floating bar for four seconds, logged once with the microphone; green on the merged tip, no capture change.
 
