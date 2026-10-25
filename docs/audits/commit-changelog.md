@@ -1,3 +1,24 @@
+## 2026-10-25 06:29:21 EDT — scribe `92c74ed085c807454375cfa7256be5187d07f95b`
+Merge (#1083): screen-heat-1083 slice 1 onto main for build 135: a paused recording's system surface holds still; the app root and its reply surface measured.
+
+## 2026-10-25 06:29:04 EDT — scribe `a556766c64ff835e454b14839ba3aec480f53626`
+Changelog (#1083): the red, the green, the profile loop and the docs below in CHANGELOG.md.
+
+## 2026-10-25 06:28:49 EDT — scribe `e63b91f3c1eb4dee7bf39b5f0185b504736fb1cf`
+Docs (#1083): the root-wrappers audit (the paused surface fixed; the root 20.3 M instructions a send over the list, the reply surface 6.1 M, a sample with 34% in the test host's dlsym), its index row, a Build 135 (next) story.
+
+## 2026-10-25 06:28:49 EDT — scribe `5edee6c7b35e8aadf4cc7b7e548843542ff48ef5`
+Test (#1083): a profiling loop for the app's root, off unless ROOT_PROFILE_SECONDS is set.
+
+## 2026-10-25 06:18:13 EDT — scribe `f830da7defa485c618478c9b822125d448d6cbbe`
+Perf (#1083): green: a paused recording's system surface holds still (holdStill()), so the Live Activity is not updated every second while paused; it looks the same.
+
+## 2026-10-25 05:54:01 EDT — scribe `c059fe5238d02694fdff72b1b29556f89e14d487`
+Test (#1083): red: a paused recording's surface shows nothing new from tick to tick; the root's share of a recording minute and the reply surface, measured.
+
+## 2026-10-25 05:52:17 EDT — scribe `f8098be6cde7f27970f6b912872baef005e7b44c`
+Plan (#1083): amendment F: a paused surface holds still, then the root wrappers measured; claims and a channel note.
+
 ## 2026-10-25 06:27:27 EDT — instant-data-swift `b8a2c11e5ca326144f20514120d491b426f2d894`
 Fix (#1130): a delivery pass takes the retry turn only when a failure waits, and an acknowledgement asks for a pass only when a write waits; recording's claims 180 -> 90 and retry turns 180 -> 0 (Mac mini, release).
 
