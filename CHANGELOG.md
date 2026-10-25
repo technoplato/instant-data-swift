@@ -10,6 +10,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 7:00:28 a.m. EDT — `7e8460c5c857` fix(#1134): green: a one-shot read answers without the operation gate while the store holds what SQLite does, and writes its cache row after it, revision-checked
+
+- **Implementation commit:** `7e8460c5c857810e36c7b67862bf168be188c5b9`
+- **Change:** fix(#1134): green: a one-shot read answers without the operation gate while the store holds what SQLite does, and writes its cache row after it, revision-checked
+- **Details:**
+  - recording, Mac mini, release, fixture v3 (main with #1133 and #1130 before; two runs each): one-shot read gate holds 60 -> 2-3 a minute, 863-884 -> 31-47 ms of gate a minute (the remaining holds are the gated fallback while SQLite is ahead of the store); transact waits p99 12.70-19.83 -> 4.49-7.79 ms; one-shot latency unchanged (p50 about 110-114 ms, the server round trip). The relaunch's hop mix moves gate 6 -> 4, store 2 -> 4 (14 calls, unchanged); a one-shot read is persistence 2, store 3. The cross-runtime read test (another connection's write) still passes through the fallback.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — materializeLocalQueryOnce's gate-free path, materializeLocalQueryOnceUnderTheGate, firstLocalAnswer's page info
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — currentStoreAndAttributeRevisions()
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — the one-shot read's and the relaunch's hop pins
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — the relaunch's hop pins
+  - `docs/adr/0018-one-actor-turn-per-step.md` — the relaunch's calls after #1134
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 7:00:27 a.m. EDT — `24b7177a605f` test(#1134): red: a one-shot read waits for another holder of the operation gate
+
+- **Implementation commit:** `24b7177a605f1a8c2db79708c912f5cf10958a3c`
+- **Change:** test(#1134): red: a one-shot read waits for another holder of the operation gate
+- **Details:**
+  - Release, Mac mini: the read did not answer within 2 s while a test holder kept the gate; a second test pins that a read with no write meanwhile still caches its answer (passes on red and green).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOneShotReadGateTests.swift` — the gate-held read and the cache row (new)
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 6:28:16 a.m. EDT — `b8a2c11e5ca3` fix(#1130): green: a delivery pass takes the retry turn only when a failure waits, and an acknowledgement asks for a pass only when a write waits
 
 - **Implementation commit:** `b8a2c11e5ca326144f20514120d491b426f2d894`

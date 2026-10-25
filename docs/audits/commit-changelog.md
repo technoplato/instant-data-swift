@@ -1,3 +1,9 @@
+## 2026-10-25 06:59:54 EDT — instant-data-swift `7e8460c5c857810e36c7b67862bf168be188c5b9`
+Fix (#1134): a one-shot read answers without the operation gate while the store holds what SQLite does; recording's one-shot holds 60 -> 2-3 a minute (Mac mini, release).
+
+## 2026-10-25 06:59:54 EDT — instant-data-swift `24b7177a605f1a8c2db79708c912f5cf10958a3c`
+Test (#1134): red: a one-shot read waits for another holder of the operation gate.
+
 ## 2026-10-25 06:33:47 EDT — scribe `9fb354b88df23e9550e3a25e84471757edfd998d`
 Cut build 135: Scribe 0.1 (135) and Scribe Playback 0.1 (135) from main f3122ba80, instant-data-swift exactly 1.9.41 (#1169).
 

@@ -1,3 +1,18 @@
+## 2026-10-25 07:00:28 EDT — #1134 on main: a one-shot read leaves the operation gate (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 10 `1362b2b5`; red `24b7177a`, green `7e8460c5`; then this ledger.
+- **Measured** (`recording`, Mac mini, release, fixture version 3; main with #1133 and #1130 before; two runs each):
+  one-shot read holds 60 -> 2-3 a minute, 863-884 -> 31-47 ms of gate a minute; transact waits p99 12.70-19.83 ->
+  4.49-7.79 ms; the read's latency unchanged (p50 about 110-114 ms, the server's round trip).
+- **How:** while SQLite's store and attribute revisions are the ones the store has installed, the read answers as the
+  local read does (a local observation's first answer, the gate-free hydration re-check, the store's attribute index)
+  and writes its cache row after it, revision-checked; when SQLite is ahead (another connection's write to adopt, or a
+  write here between its save and its install) and for a closed connection's error, it reads under the gate as before.
+- **Criterion not met yet:** "never holds the gate". The 2-3 holds a minute left are that fallback. To close it: when the
+  mismatch is a write of this process in flight, wait for its install rather than take the gate (a wait-for-release on
+  the gate, or the persistence store's own last-written revisions); another connection's write still needs the gate.
+- **Next:** #1136-#1140, #1142, #1143 as measured; #1127's question to the lab is open.
+
 ## 2026-10-25 06:28:16 EDT — #1130 on main: one claim per write, no retry turn without a failure (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 9 `fdf9a113`; red `9ec20c0c`, green `b8a2c11e`; then this ledger.
