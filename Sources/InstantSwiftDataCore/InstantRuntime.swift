@@ -597,6 +597,8 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (_ predecessorID: String, _ newcomerID: String) async -> Void)? = nil
   var onLocalMutationPersistedBeforeStorePublicationForTesting:
     (@Sendable (_ transactionID: String) async -> Void)? = nil
+  /// Runs when a one-shot read finds SQLite ahead of the store's installed revisions, before it decides how to read.
+  var onOneShotReadFoundSQLiteAheadForTesting: (@Sendable () async -> Void)? = nil
   var onServerApplyPreparedBeforeCommitForTesting:
     (@Sendable (_ planID: String) async -> Void)? = nil
   /// Runs after each server-apply attempt takes its seed and before it begins its plan; `operationGateHeld` is true
@@ -7097,6 +7099,9 @@ public final class InstantRuntime: Sendable {
             ?? .opened
           : nil
       )
+    }
+    if persisted.store != installed.store || persisted.attributes != installed.attributes {
+      await configuration.onOneShotReadFoundSQLiteAheadForTesting?()
     }
     guard persisted.store == installed.store, persisted.attributes == installed.attributes,
       storedConnectionState != .closed

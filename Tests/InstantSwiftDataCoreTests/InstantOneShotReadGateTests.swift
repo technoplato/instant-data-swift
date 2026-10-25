@@ -2,6 +2,7 @@
 // 2026-10-25  #1134  Created. A one-shot read materialized its answer, hydrated it and wrote it to the query cache while
 //                    holding the operation gate: 58 holds and about 1 s of gate a minute in #1074's recording exercise,
 //                    holds of 1.2 s on a phone (build 121).
+// 2026-10-25  #1134  A read during a write's commit waits for it without the gate.
 
 import Foundation
 import Testing
@@ -40,6 +41,41 @@ struct InstantOneShotReadGateTests {
 
     #expect(read.finished, "#1134: a one-shot read waited for the operation gate")
     #expect(rows.value == ["todo-held"], "the read answered \(rows.value)")
+  }
+
+  /// A one-shot read that finds a write of this process between its SQLite save and its store install waits for that
+  /// write to finish, then answers without the gate, with the write's row: only another connection's write needs the
+  /// gated read that adopts it.
+  @Test
+  func aOneShotReadDuringAWritesCommitWaitsForItWithoutTakingTheGate() async throws {
+    let holds = InstantGateHoldCounter()
+    let writePaused = InstantPausePoint()
+    let readFoundSQLiteAhead = InstantPausePoint()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "one-shot-read-during-commit",
+      persistenceURL: try InstantStoredResultReloadTests.temporaryCacheURL(),
+      initialAttributes: TodoExample.attributes
+    )
+    configuration.operationGateTimeline = holds.record
+    configuration.onLocalMutationPersistedBeforeStorePublicationForTesting = { transactionID in
+      if transactionID == "tx-mid-commit" { await writePaused.pauseOnce() }
+    }
+    configuration.onOneShotReadFoundSQLiteAheadForTesting = { await readFoundSQLiteAhead.pauseOnce() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let write = Task { try await InstantOfflineRuntimeFixture.createTodo("mid-commit", in: runtime) }
+    try await writePaused.waitUntilEntered(within: .seconds(10))
+
+    let read = Task { try await runtime.query(TodoExample.query).map(\.id) }
+    try await readFoundSQLiteAhead.waitUntilEntered(within: .seconds(10))
+    holds.reset()
+    readFoundSQLiteAhead.release()
+    writePaused.release()
+    try await write.value
+    let rows = try await read.value
+
+    let gatedReads = holds.count(of: "materializeLocalQueryOnceUnderTheGate(_:enforcesConnectionFreshness:remotePageInfo:)")
+    #expect(gatedReads == 0, "#1134: the read took the operation gate \(gatedReads) times to wait out a write of its own process")
+    #expect(rows == ["todo-mid-commit"], "the read answered \(rows)")
   }
 
   /// With no write meanwhile, a one-shot read still leaves its answer as the query's cached result.
