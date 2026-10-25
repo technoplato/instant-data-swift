@@ -58,6 +58,7 @@
 // - 2026-10-25: each fact is stored once: the fact table is keyed by the fact itself (WITHOUT ROWID) and its json is
 //   computed when read (127.1 -> 40.7 MB on a copy of a phone's store); a re-saved fact is upserted where it is, and
 //   the migration passes over facts walk a snapshot of their keys (#1121, #1120).
+// - 2026-10-25: a changing result's JSON is written at most every 5 minutes, not 30 s (#1123).
 
 import Foundation
 import IssueReporting
@@ -1208,7 +1209,7 @@ public actor SQLitePersistenceStore {
     var marked: Set<String> = []
   }
   private var liveQueryResultJSON = LiveQueryResultJSONState()
-  private var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  private var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 300_000
   /// Ownership rows read and result values encoded to save live-query results, for the commit's metrics (#932).
   private var liveQueryOwnershipRowReadCount = 0
   private var liveQueryResultValueEncodeCount = 0

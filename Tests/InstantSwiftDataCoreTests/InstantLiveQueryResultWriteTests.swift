@@ -227,12 +227,12 @@ struct InstantLiveQueryResultWriteTests {
   // MARK: - Throttled writes
 
   @Test
-  func refreshesWithinThirtySecondsWriteTheResultJSONOnceAndALaterOneWritesAgain() async throws {
+  func refreshesWithinTheIntervalWriteTheResultJSONOnceAndALaterOneWritesAgain() async throws {
     var texts = (0..<20).map { Self.longText($0, revision: 0) }
     let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-throttled")
     let afterAnswer = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
 
-    // Ten changed results, one second apart: one write per query per 30 s at most.
+    // Ten changed results, one second apart: one write per query per interval (5 minutes since #1123) at most.
     for revision in 1...10 {
       fixture.clock.advance(by: 1_000)
       texts[revision % texts.count] = Self.longText(revision % texts.count, revision: revision)
@@ -244,12 +244,12 @@ struct InstantLiveQueryResultWriteTests {
       "ten changed refreshes in 10 s wrote the result JSON \(afterBurst.writes - afterAnswer.writes) times"
     )
 
-    // 31 s after the answer's write, the next changed result writes the newest result once.
-    fixture.clock.advance(by: 21_000)
+    // 5 minutes and a second after the answer's write, the next changed result writes the newest result once.
+    fixture.clock.advance(by: 291_000)
     texts[0] = Self.longText(0, revision: 99)
     try await Self.refresh(texts, in: fixture)
     let afterLater = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-    #expect(afterLater.writes - afterBurst.writes >= 1, "the refresh after 30 s wrote the result")
+    #expect(afterLater.writes - afterBurst.writes >= 1, "the refresh after the interval wrote the result")
     await fixture.observation.cancel()
     _ = try await fixture.runtime.closeConnection()
   }
@@ -440,7 +440,7 @@ struct InstantLiveQueryResultWriteTests {
         + "bytes per refresh \(bytesPerRefresh), SQLite pages per refresh \(pagesPerRefresh) "
         + "(\(pagesAfter.pageSize) B each, \(Int(pagesPerRefresh * Double(pagesAfter.pageSize))) B)"
     )
-    // 100 s of refreshes: at most four 30 s windows, so at most four whole-result writes.
+    // 100 s of refreshes: within one 5-minute interval (#1123; four 30 s windows before), so at most four writes.
     #expect(after.writes - before.writes <= 4, "result JSON writes over 100 s: \(after.writes - before.writes)")
     await fixture.observation.cancel()
     _ = try await fixture.runtime.closeConnection()

@@ -451,8 +451,11 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// of the gate; 2,048 facts are about 30 ms there.
   var liveQueryResultReloadChunkTripleCount = 2_048
   /// How long a live query's stored result JSON may lag its newest result while the runtime runs (#566): one write
-  /// per query per interval, the newest kept in memory meanwhile.
-  var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  /// per query per interval, the newest kept in memory meanwhile. Five minutes since #1123: every 30 s a recording
+  /// rewrote its whole transcript page twice a minute, 3.90 of a live write's 54.9 log frames on #1076's exercise
+  /// (1.00 at five minutes, the same as never). The app's flush on background and termination, an unsubscribe and the
+  /// close still write what waited, and a kill is repaired from the ownership rows at the next launch.
+  var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 300_000
   /// How the runtime waits before writing the results whose JSON waited; tests make it wait longer than they run.
   var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
@@ -7662,7 +7665,7 @@ public final class InstantRuntime: Sendable {
   }
 
   /// Writes the stored results of the live queries whose result write waited (#566). The runtime writes a refreshed
-  /// query's result to SQLite at most once every 30 s and keeps the newest in memory meanwhile; it writes the rest when
+  /// query's result to SQLite at most once every 5 minutes and keeps the newest in memory meanwhile; it writes the rest when
   /// a query unsubscribes and when the connection closes. Call this when the app moves to the background or is about
   /// to terminate, so the next launch starts from the newest results. A launch after a kill without it rebuilds the
   /// waiting results from their facts, so nothing the server deleted comes back.

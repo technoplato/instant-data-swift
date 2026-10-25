@@ -869,7 +869,7 @@ struct StorageIOWriteCycle {
     configuration.localLookup = InstantLocalLookupPolicy(attributeIDs: StorageIOSchema.lookupAttributeIDs)
     // The exercise prunes once a minute itself, where the runtime prunes every 64 result writes on its own.
     configuration.liveQueryResultPruningWriteInterval = Int.max
-    // A result's JSON waits 30 s of the recording's time, not of the exercise's.
+    // A result's JSON waits its interval (5 minutes since #1123) of the recording's time, not of the exercise's.
     configuration.liveQueryResultJSONFlushSleep = { milliseconds in try await clock.sleep(milliseconds: milliseconds) }
     // A what-if for #1123: how often a changing result's whole JSON is written.
     if let interval = ProcessInfo.processInfo.environment["STORAGEIO_RESULT_JSON_INTERVAL_MS"].flatMap(Int64.init) {
