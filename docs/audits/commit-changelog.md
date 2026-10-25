@@ -1,3 +1,9 @@
+## 2026-10-25 09:15:54 EDT — scribe `679f5d358d38c7fdf0092d6bb7fce5f9cdfffea0`
+Cut build 136: Scribe 0.1 (136) and Scribe Playback 0.1 (136) from main 0313f9e6d, instant-data-swift exactly 1.9.42 (#1174).
+
+## 2026-10-25 09:15:54 EDT — scribe `04479bbc6cfbc37424aa3a4b46af8402f4c21646`
+changelog(#1174): the CHANGELOG entry for build 136's cut 679f5d358.
+
 ## 2026-10-25 09:09:25 EDT — scribe `8ff83440217ce05caf0d2d2e573903184eedc2f6`
 Docs (#1170): the audit of the app's lost diagnostics lines (the bisect: 80, 3 and 67 app-level lines delivered in 120 s before, with and after), its index row, an amendment to the app's ADR 0002, the build 136 story and the progress entry.
 
