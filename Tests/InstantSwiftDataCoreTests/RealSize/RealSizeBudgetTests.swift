@@ -30,6 +30,7 @@ import Testing
 // History:
 // - 2026-10-24: #1072: the budgets.
 // - 2026-10-24: #1103: the discard meets its budget; its known issue goes and its ceiling tightens.
+// - 2026-10-25: #1111: the local read meets its budget after #1150; its known issue goes and its ceiling tightens.
 
 /// When the budgets run: in optimized builds, unless the environment says otherwise.
 enum RealSizeBudget {
@@ -109,10 +110,9 @@ struct RealSizeBudgetTests {
     .init(operation: "prune.one-closed-page", ceiling: .init(allocations: 100_000, wall: .milliseconds(300))),
     // Queries and observations of one bounded page.
     .init(operation: "queryOnce.first-32", ceiling: .init(allocations: 90_000, wall: .milliseconds(200))),
-    .init(
-      operation: "queryLocally.first-32", ceiling: .init(allocations: 12_000, wall: .milliseconds(60)),
-      knownIssue: "#1111: a local read builds an attribute store of the whole schema and validates against it"
-    ),
+    // #1111's local read fixed by #1150 (`a641f2ea`, the store's attribute index): 714 allocations, 119 KB and 0.46 ms
+    // at both sizes (Mac mini, release), against 5,127, 12,443 KB and 5.22 ms on the phone-sized store at 1.9.40.
+    .init(operation: "queryLocally.first-32", ceiling: .init(allocations: 1_500, wall: .milliseconds(20))),
     .init(
       operation: "observe.first-emission-32", ceiling: .init(allocations: 100_000, wall: .milliseconds(120)),
       knownIssue: "#1111: an observation builds an attribute store of the whole schema and validates against it"
