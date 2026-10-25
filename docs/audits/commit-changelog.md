@@ -1,3 +1,18 @@
+## 2026-10-25 15:17:57 EDT — scribe `3b01f5cb71def02c596012edab8d6b9461b078f6`
+Merge (#839): a play or pause the media player app takes from outside its screen is handed to the recorder through the App Group the two share and shown in the recording's floating bar for four seconds, logged once with the microphone; green on the merged tip, no capture change.
+
+## 2026-10-25 14:41:15 EDT — scribe `27fc67d0e3f4df6ddd1ddcd291866588867868c0`
+Docs (#839): the target build is 140, and the hands-free route measured at the same session's later capture starts (#1177).
+
+## 2026-10-25 12:41:01 EDT — scribe `aee06c9a539015be32b4a21248e3cfdfe2dd0f38`
+Docs (#839): where a headphone press goes on each route (hands-free microphone: a call control no app receives), the audit section, an ADR 0011 amendment, the feature line and What's New.
+
+## 2026-10-25 12:41:01 EDT — scribe `0d8d9cb57dfcd1b424a084c499b69987158671db`
+Green (#839): the player hands each outside play or pause with what it did; the recorder's take listener shows it four seconds and logs one line (late past 5 s, not shown).
+
+## 2026-10-25 12:41:01 EDT — scribe `a420b37e8f03c95e15e10476e725ea8362457ccd`
+Red (#839): the press hand-off, its App Group file and stream, the take listener, the bar's four seconds and one log line, with stubs.
+
 ## 2026-10-25 14:29:36 EDT — scribe `8fc12c5489a35ee2347caf685127b866a466e9b9`
 merge(#951): one speaker identity store lands on main for build 140: S1 (a restarted voice takes its recording number back), S3 (the mirror names lines through the identity rows; its doors refuse another app's sound by source), S4a (both sign-ins), S2b's lane-tagged summaries.
 
