@@ -56,8 +56,9 @@ version 3 recording before the fix agrees (17 ms of gate per upload at minute 5)
 ## The table
 
 Costs per call: median wall ms / heap allocations / MB allocated; "gate" is the operation gate's longest hold. Quarter =
-a quarter of the phone's size; phone = its full size. Fixture version 3 and the fix unless the row says "before";
-report3's numbers, or the budget run's where report3 ran the call after the whole `$files` list had loaded.
+a quarter of the phone's size; phone = its full size. The two rows that say "before" are report2's, on fixture version
+2 (see the runs above); every other row is fixture version 3 and the fix: report3's numbers, or the budget run's where
+report3 ran the call after the whole `$files` list had loaded.
 
 | Operation | The app calls it | Quarter | Phone | Grows with | Fix or issue |
 | --- | --- | --- | --- | --- | --- |
@@ -138,8 +139,13 @@ largest holder is the outbox pump's claim: 402-524 ms of every minute, about 60%
 
 ## After the audit: what shipped the same evening
 
-Each red, then green, measured on the fixture's version 3, Mac mini M4, release; each version pinned in the consuming
-app and its Playback app on the app's main:
+Each red, then green, on the Mac mini M4, release unless the row says debug; each version pinned in the consuming app
+and its Playback app on the app's main. Where each row's numbers come from: 1.9.35's "before" is report2's (fixture
+version 2, as in the table above) and its "after" report3's (version 3); 1.9.36 is `OutboxClaimScaleTests` on version
+3 at a hundredth of the phone's size; 1.9.37 is a race test, with no fixture; the tail check is
+`OutboxSupersessionSchemaCostTests` on synthetic schemas of 16 and 2,283 attributes, with no fixture; the delivery row
+is #1076's exercise and the discard row the budget run (report3 for the 1.7 s), all on version 3 at the phone's size.
+(Labels corrected after the tags; the numbers are unchanged.)
 
 | Version | Fix | Before | After |
 | --- | --- | --- | --- |

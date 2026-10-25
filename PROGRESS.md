@@ -21,7 +21,8 @@
   discard red `8956bb6a`, green `8b08fa51`; the discard budget `3c9fbe76`; release document `ee157845`; then this ledger
   commit and the tag v1.9.38. **Scribe main:** the 1.9.37 pin `a35ad4987` (plan amendment `51f445e25`, change log
   `60ef7c29a`, a Build 130 (next) story).
-- **Measured (fixture version 3, Mac mini, release):** the tail check 1.6 MB -> equal bytes; the overlay check 5,709 ->
+- **Measured (fixture version 3, Mac mini, release; the tail check is a unit test on synthetic schemas, debug):** the
+  tail check 1.6 MB -> equal bytes; the overlay check 5,709 ->
   equal steps beside 400 refused writes; delivery's outbox reads per write 1,866 KB -> under the threshold (#1114's
   criterion met); a recording's claim gate time 90 ms a minute over minutes 1-10 (267 on 1.9.36, 569 on 1.9.35), the
   gate's whole hold 306 ms (682, 898); a discard 0.33 ms and 1,641 allocations at both sizes (112 ms, 585,459 before).
@@ -92,7 +93,8 @@
 - **Commits (instant-data-swift main):** plan `d62fa7cf` and amendment `d937ce43`; fixture `0f404f0b` (ledger
   `d6aac6f3`); red `347af4f6`, green `f83e9448`; budgets and fixture version 3 `4dac9e18`; recording line `8ca1720a`;
   audit `afcbc95c`; budget rule `caf174d0`; release document `3f43c2f3` and `7dec49c9`; then this ledger commit and the tag v1.9.35.
-- **Fixed (measured, Mac mini M4, release, the real-size fixture):** every upload, read by id, delete and eviction read
+- **Fixed (measured, Mac mini M4, release, the real-size fixture: the single-call "before" on version 2, the rest on
+  version 3):** every upload, read by id, delete and eviction read
   every file record the device keeps to publish them to observers nobody opened; at the phone's size an upload went
   from 16.8 ms / 107,142 allocations / 17.4 ms of gate to 0.07 ms / 237 / 0.04 ms; over a recording the uploads' gate
   time went from 189 / 213 / 303 ms a minute (minutes 5 / 60 / 120) to about 1 ms.
