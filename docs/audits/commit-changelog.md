@@ -1,3 +1,12 @@
+## 2026-10-24 21:01:25 EDT — scribe `2f77dd92108f2db4cae44ae191180007e43bca9e`
+Merge (#1156 #1101): the audit names what still grows after the fix.
+
+## 2026-10-24 21:01:25 EDT — scribe `cd66277c350e15bf7407b4e1ea09c12a392c7930`
+changelog(#1156 #1101): the docs entry.
+
+## 2026-10-24 21:01:25 EDT — scribe `927a70eed850f5b22f08a4c329e9adeb19922df1`
+Docs (#1156 #1101): the audit names what still grows after the fix: each section update walks the loaded timeline (the window's settle, the transcript's rebuild; in the harness a final costs 6.5 ms at 100 rows and 41.9 ms at 1,300).
+
 ## 2026-10-24 21:00:58 EDT — scribe `7c07dc841633230c0aa3ea281df8fdd0817a3602`
 Build 130 cut (#1159): CURRENT_PROJECT_VERSION 130; #1156 #1089 #962 #1067, instant-data-swift exactly 1.9.38.
 
