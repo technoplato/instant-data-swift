@@ -1,3 +1,12 @@
+## 2026-10-25 10:02:39 EDT — scribe `ff51af26cfebbb0c891ef4c440d08786ad331323`
+Docs (#1173): the audit of the live words missed after a silence (Recording 297 against a Parakeet reference, the engine's replay, the lead-in sweep, five recordings and 4.9 h of music), ADR 0074 amendment D, and scripts/process-eval/missed_words.py.
+
+## 2026-10-25 10:02:39 EDT — scribe `ae0f31fb81d9dd497d43afe0d342ceb7b1dee375`
+Green (#1173): an utterance starts 0.65 s before the speech detector's start and the 8 s cap counts from the detector, so a phrase's first word after a silence is decoded and no cut moves: five recordings' errors 1,014 -> 977 against references, no new lines over 4.9 h of music, the same decodes.
+
+## 2026-10-25 10:02:39 EDT — scribe `e13adee41e9cebf21b860bb56f8ec7550f8fa239`
+Red (#1173): a speech start the detector reports late keeps at least 0.6 s of audio before it (the segmenter kept 0.15 s).
+
 ## 2026-10-25 09:58:18 EDT — scribe `c6bcc0f60476f818eec303c65b893d4e20ef4a18`
 Docs (#1059): the agents-guide audit after landing: a headless agent's first request in the mirror folder 112,287 -> 39,546 tokens; routing eval 18/18.
 
