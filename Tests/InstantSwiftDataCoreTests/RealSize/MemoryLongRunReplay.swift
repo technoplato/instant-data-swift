@@ -33,14 +33,18 @@ import Testing
 // `INSTANT_MEMORY_REPLAY=1` runs it (release, alone); `INSTANT_MEMORY_REPLAY_MINUTES` (default 120),
 // `INSTANT_MEMORY_REPLAY_SCALE` (the store's size against the phone's, default 1), `INSTANT_MEMORY_REPLAY_SAMPLE_EVERY`
 // (minutes, default 5) and `INSTANT_MEMORY_REPLAY_LABEL` change it. Each sample also names the wall time each kind of
-// step took since the previous one (`ms.<kind>`), so a cost that grows with the recording names its step. The smoke test below always runs, on a tiny store for three minutes, so the replay cannot rot.
+// step took since the previous one (`ms.<kind>`), so a cost that grows with the recording names its step. The smoke test
+// below runs on a tiny store for three minutes in the bundle's measurement pass, so the replay cannot rot.
 //
 // History:
 // - 2026-10-24: #1075: the replay, its workload (the phone's two-hour recording) and its report.
+// - 2026-10-24: #1075: the smoke test runs in the measurement pass (`.measurement`, #1021): its apply waiter listens on the
+//   process-wide diagnostics hub, which the bundle's parallel tests reconfigure, and it timed out in whole-bundle runs
+//   (passing alone).
 
 @Suite(.serialized)
 struct MemoryLongRunReplaySmokeTests {
-  @Test func aTinyReplaySamplesEveryMinute() async throws {
+  @Test(.measurement) func aTinyReplaySamplesEveryMinute() async throws {
     var workload = MemoryReplayWorkload.scribe
     workload.wavBytes = 4_096
     workload.segmentBytes = 1_024
