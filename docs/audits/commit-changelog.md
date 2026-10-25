@@ -1,3 +1,9 @@
+## 2026-10-25 03:05:37 EDT — scribe `3d3363ba23b2a25280f11ef65b5fa8eca4ee9c33`
+Cut Scribe 0.1 (133) and Scribe Playback 0.1 (133) from main eb30382c7 (#1164): instant-data-swift exactly 1.9.39 (#1131 #1129 #1152 #1147), #1085, #962; Playback rebuilt because its package pins 1.9.39.
+
+## 2026-10-25 03:05:37 EDT — scribe `411271a81c470ffe48a5330b3b948dd9378baf39`
+changelog(#1164): CHANGELOG.md entry for the build 133 cut 3d3363ba2.
+
 ## 2026-10-25 02:55:55 EDT — instant-data-swift `743640fdd714fe91f13748213aafb46a35534b81`
 Test (#1131): the observer-send test acknowledges its local write; a loaded debug run tripped its 6 s deadline.
 
