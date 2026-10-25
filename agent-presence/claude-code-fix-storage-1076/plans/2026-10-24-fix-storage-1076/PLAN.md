@@ -154,3 +154,26 @@ upstream's `Stream.ts` does (it fetches every file from its start); the divergen
 - `Sources/InstantSwiftDataCore/InstantStreamFileTransport.swift`: the whole file (the response's `Content-Range`, the
   client's ranged fetch and its live form, the materializer).
 - `Tests/InstantSwiftDataCoreTests/InstantStreamFileTransportTests.swift`: new cases beside the existing ones.
+
+## Amendment 8 (2026-10-25 02:10 EDT, #1115 slice 2)
+
+Three outbox indexes exist to find a write in a rare state, yet hold every write: the synchronization blocker (an
+active overlay with no receipt), effect normalization (an active overlay whose effect metadata is not the current
+version, or has no receipt) and delivery metadata (a row whose delivery metadata is older than the current version). A
+live write is saved at the current versions with its receipt, so none of the three ever finds it, but its save, its
+acknowledgement and its echo each write a page of them: 7 of the 30 outbox frames per write on `eachStepOfALiveWrite`.
+Partial indexes on exactly those states (literal versions, so the planner can prove a query implies them) leave a
+live write out. The queries they serve name the same literal predicates; on a schema-only copy of the phone's store,
+every query that uses them keeps its plan (Apple's SQLite 3.51 on the laptop; the claim's candidate read, its
+continuation check and the per-claim overlay check included). Hypothesis: 30 -> 23 outbox frames per write. Claimed:
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: the bootstrap's migrations (a new
+  `0033_outbox_rare_state_indexes_partial` after 0031) and the blocker index's re-assert after them; new static SQL for
+  the three indexes; `loadServerApplyReductionContext` (its normalization and old-delivery-metadata checks),
+  `firstUnknownActiveServerApplyMutationIDWithoutTransaction`, `loadFirstUnknownActiveOptimisticEffectRowWithoutTransaction`,
+  `automaticDeliveryCandidatesSQL`, `automaticDeliveryCandidateBindings(limit:)`, `automaticDeliveryCandidateExistsSQL`,
+  `automaticDeliveryCandidateExistsBindings`, `unknownActiveOverlayAfterSQL`, `unknownActiveOverlayAfterBindings`.
+- `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift`: `InstantOutboxDeliveryMetadata.currentVersion`'s doc.
+- `Sources/InstantSwiftDataCore/InstantOptimisticEffectFootprint.swift`: `currentVersion`'s doc.
+- `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift`: a new test, and the frames bound 30 -> 24
+  (#1115's criterion); a new `Tests/InstantSwiftDataCoreTests/InstantOutboxRareStateIndexTests.swift` (the plans, a
+  store migrated from the full indexes, a version change that must rebuild them).
