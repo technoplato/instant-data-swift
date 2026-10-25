@@ -128,3 +128,15 @@ the readers that list every stored result (the JSON size listing, the result cou
 bootstrap step; `Sources/InstantSwiftDataCore/InstantRuntime.swift`: `pruneLiveQueryResults`,
 `pruneLiveQueryResultsBatch`, `pruneReleasedLiveQueryResultFacts`, the bootstrap prune's call; tests in
 `InstantPruneOffTheApplierTests.swift`. #1122 (the copy's own log frames) goes back to fix-storage-1076.
+
+## Amendment 7 (2026-10-25 04:11 EDT, #1132)
+
+`connectionStatus()`, `observeConnectionStatus()` and `observeAuthSession()` stop taking the operation gate. The status
+and session observer registries keep the latest value they published (seeded at bootstrap), so a registration takes it
+in the same actor turn as any publish and can neither miss one nor register late; `connectionStatus()` returns that
+latest status, and falls back to today's read (and republishes) when no status was published yet or the last publish
+failed (`try?` today). A test holds every status change to "the published status equals a fresh read". Touching
+`Sources/InstantSwiftDataCore/InstantRuntime.swift` (the three calls, `publishConnectionStatus*`, bootstrap's first
+publish, the auth publishers), `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` (a latest value per key)
+and the auth session observers' type; the tests that hold the gate through
+`onAuthSessionObservationHoldsOperationGateForTesting` move to a holder that still takes the gate.
