@@ -1,3 +1,29 @@
+## 2026-10-25 00:48:13 EDT — 1.9.39 pinned in Scribe and Scribe Playback; #1129's second slice red and green (release owner fix-gate-1074)
+
+- **Scribe main:** plan `195529326`, pin `45b083370` (both `Package.swift` exact 1.9.39; both `Package.resolved`: the
+  pin `a5c8da29` and the originHash only, from `swift package resolve` with Xcode 27 beta on the laptop under heavy.sh;
+  installer tests 65/65), changelog `ed9d6b78e`, pin channel `d2235dd1f`. Build 132 was cut at `db8b71d93` before the
+  pin, so 1.9.39 rides build 133 (its story is under Build 133 (next)).
+- **Library main:** release channel `4f08887a`, the pin's audit-ledger entry `81561c52`, plan amendment 4 `a5fe8379`.
+- **#1129's second slice** (branch `agent/claude/fix-gate-1074`, not pushed): red `895e2095` fails as designed on the
+  Mac mini in release (24 batches for 24 results of about 450 facts at a 100-fact budget, at least 96 wanted; the end
+  state holds). Green (working tree): a batch checks at most a batch of the facts its results released, whole entities,
+  and leaves the rest to the next batches; ownership is read once per 500 entities; the results a batch may drop are
+  decoded on the read connection before the gate and used only while their row is unchanged. Crash safety: only
+  unloaded results are spread over batches; the batch marks them in `instant_sync_metadata` with their removal, the
+  batch that checks their last facts clears the marks, and opening the store finishes a marked release from the
+  results' stored copies. The green before the marker passed on the mini: 578 tests in 12 suites, failing only the
+  release runner's artifacts (CLI not built; `withKnownIssue` not recordable in release; 5 hidden issues, all expected).
+- **Blocked:** the Mac mini's disk (19-22 GB free with other agents' bundle runs). The green-with-marker run waits there
+  for room (it starts at 23.5 GB free, or 22 GB with no other build); a laptop heavy.sh measurement with phase timers
+  (chunked against not) is queued.
+- **Removed:** the Scribe worktree `scribe-pin-1074` and its branch; the laptop's resolve scratch; on the mini my build
+  folder (1.0 GB), my stopped run's exercise copy (335 MB) and its temp log, and the old stages.
+- **Next:** the mini run (the prune suites, then `prune` and `prune-inline` against #1129's criterion: no batch over
+  250 ms, a write's wait under 300 ms); push red and green; ledger; 1.9.40 with #1118, #1124, #1153, #1147 step 4 and
+  this. Continue from `git -C ~/Sync/worktrees/instant-fix-gate-1074 status` (the green is uncommitted on red
+  `895e2095`); the mini's runner is `~/Library/Caches/fix-gate-1074/bin/d-run.sh`, its log `logs/d-run.log`.
+
 ## 2026-10-25 00:46:04 EDT — #1153 and #1147 step 4 on main: a finished line is prepared once; a refresh's ownership diff costs its change (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plan amendments `5cba47d1` (#1153), `35e87d5d` (#1147 step 4), `e2978ffc`
