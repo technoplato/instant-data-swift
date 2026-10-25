@@ -1,3 +1,6 @@
+## 2026-10-25 00:34:38 EDT — scribe `db8b71d93822af15ae4b06bed956c226c1d8a78e`
+Cut Scribe 0.1 (132) from main 4aaebbcf3 (#1162): build number 132, What's New dated; carries #1068 (home screen recordings first) and #1101 (section update costs what changed); instant-data-swift exactly 1.9.38; Scribe Playback stays 130.
+
 ## 2026-10-25 00:12:28 EDT — scribe `4aaebbcf3811284794ddcfb5510ec72c992fb033`
 Merge (#412): the stamp's frozen-time test fix and the audit's merged-tree checks (24 of 24 on the merged tree).
 
