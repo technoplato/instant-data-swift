@@ -6,6 +6,12 @@ import Foundation
   import Glibc
 #endif
 
+// History:
+// - 2026-10-25: an entry's message and metadata are built only once the entry will be recorded (`@autoclosure`), and
+//   bounding and redacting them makes no string for an ASCII key: every write, apply and emission built its entries'
+//   texts and dictionaries before the floor dropped most of them, about 2.6 MB a write at Scribe's `.info` with five
+//   handlers (#1148).
+
 public enum InstantDiagnosticLevel: String, Codable, CaseIterable, Sendable {
   case trace
   case debug
@@ -268,13 +274,20 @@ public final class InstantDiagnostics: @unchecked Sendable {
     }
   }
 
+  /// Records an entry when `level` meets the floor and a file or a handler is set.
+  ///
+  /// `message` and `metadata` are evaluated only then: an entry the floor drops costs its caller nothing (#1148).
+  /// ```swift
+  /// InstantDiagnostics.shared.record(.debug, subsystem: "app", category: "sync", event: "page.refreshed",
+  ///                                  message: "Refreshed \(rows.count) rows", metadata: ["queryID": queryID])
+  /// ```
   public func record(
     _ level: InstantDiagnosticLevel = .info,
     subsystem: String,
     category: String,
     event: String,
-    message: String,
-    metadata: [String: String] = [:],
+    message: @autoclosure () -> String,
+    metadata: @autoclosure () -> [String: String] = [:],
     correlationID: String? = nil,
     fileID: String = #fileID,
     line: UInt = #line,
@@ -298,8 +311,8 @@ public final class InstantDiagnostics: @unchecked Sendable {
     subsystem: String,
     category: String,
     event: String,
-    message: String,
-    metadata: [String: String] = [:],
+    message: @autoclosure () -> String,
+    metadata: @autoclosure () -> [String: String] = [:],
     correlationID: String? = nil,
     changeKey: String,
     fileID: String = #fileID,
@@ -318,15 +331,18 @@ public final class InstantDiagnostics: @unchecked Sendable {
     subsystem: String,
     category: String,
     event: String,
-    message: String,
-    metadata: [String: String],
+    message: () -> String,
+    metadata: () -> [String: String],
     correlationID: String?,
     changeKey: String?,
     fileID: String,
     line: UInt,
     function: String
   ) {
-    guard hasActiveSink else { return }
+    guard isEnabled(at: level) else { return }
+    // Built only now, and outside the lock: building can take work, or record an entry itself (#1148).
+    let message = message()
+    let metadata = metadata()
     var entry: InstantDiagnosticEntry?
     var fileURL: URL?
     var maximumFileBytes: Int?
@@ -393,14 +409,15 @@ public final class InstantDiagnostics: @unchecked Sendable {
     subsystem: String,
     category: String,
     event: String,
-    message: String,
-    metadata: [String: String] = [:],
+    message: @autoclosure () -> String,
+    metadata: @autoclosure () -> [String: String] = [:],
     correlationID: String? = nil,
     fileID: String = #fileID,
     line: UInt = #line,
     function: String = #function
   ) {
-    var context = metadata
+    guard isEnabled(at: .error) else { return }
+    var context = metadata()
     context["errorType"] = String(reflecting: type(of: error))
     if let instantError = error as? InstantError {
       // Prefer the structured Instant summary over Swift's opaque NSError collapse.
@@ -424,7 +441,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
       subsystem: subsystem,
       category: category,
       event: event,
-      message: message,
+      message: message(),
       metadata: context.compactMapValues { $0 },
       correlationID: correlationID,
       fileID: fileID,
@@ -434,19 +451,44 @@ public final class InstantDiagnostics: @unchecked Sendable {
   }
 
   private static func redacted(_ metadata: [String: String]) -> [String: String] {
-    metadata.reduce(into: [:]) { result, element in
-      let normalizedKey = element.key
-        .lowercased()
-        .filter(\.isLetter)
-      result[bounded(element.key, limit: 128)] =
-        sensitiveMetadataKeys.contains(normalizedKey)
-        ? "<redacted>"
-        : bounded(element.value, limit: 4_096)
+    var result: [String: String] = [:]
+    result.reserveCapacity(metadata.count)
+    for (key, value) in metadata {
+      result[bounded(key, limit: 128)] = isSensitive(key) ? "<redacted>" : bounded(value, limit: 4_096)
+    }
+    return result
+  }
+
+  /// The longest secret's name: a key with more letters names none.
+  private static let longestSensitiveKey = sensitiveMetadataKeys.map(\.utf8.count).max() ?? 0
+
+  /// Whether `key`, lowercased and stripped to its letters, names a secret. An ASCII key, as every caller's is, is
+  /// lowercased into a small buffer on the stack instead of two new strings (#1148).
+  private static func isSensitive(_ key: String) -> Bool {
+    guard key.utf8.allSatisfy({ $0 < 0x80 }) else {
+      return sensitiveMetadataKeys.contains(key.lowercased().filter(\.isLetter))
+    }
+    return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: longestSensitiveKey) { letters in
+      var count = 0
+      for byte in key.utf8 {
+        let lowercased: UInt8
+        switch byte {
+        case UInt8(ascii: "A")...UInt8(ascii: "Z"): lowercased = byte + 32
+        case UInt8(ascii: "a")...UInt8(ascii: "z"): lowercased = byte
+        default: continue
+        }
+        guard count < letters.count else { return false }
+        letters[count] = lowercased
+        count += 1
+      }
+      // Up to 15 bytes, the string is stored inline, so the lookup allocates nothing.
+      return sensitiveMetadataKeys.contains(String(decoding: UnsafeBufferPointer(rebasing: letters[..<count]), as: UTF8.self))
     }
   }
 
   private static func bounded(_ value: String, limit: Int) -> String {
-    guard value.count > limit else { return value }
+    // A string of at most `limit` UTF-8 bytes holds at most `limit` characters; only a longer one is counted (#1148).
+    guard value.utf8.count > limit, value.count > limit else { return value }
     return String(value.prefix(limit)) + "…"
   }
 
