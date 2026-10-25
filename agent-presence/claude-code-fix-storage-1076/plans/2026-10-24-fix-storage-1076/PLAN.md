@@ -142,3 +142,15 @@ Claimed:
   doc.
 - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift`: the throttle test's window and a new
   ten-minute test.
+
+## Amendment 7 (2026-10-25 01:35 EDT, #1125)
+
+A stream file's resume asks only for the bytes it has not seen: each file the reader has seen whole is asked for past
+its end and the one its seen offset falls in from that point, with an HTTP `Range` request, and a file is passed over
+only when the server says so (a 206 whose `Content-Range` starts where the reader asked, or a 416 naming the file's
+size). Any other answer, or a transport without ranged fetches, fetches the rest whole and drops what was seen, as
+upstream's `Stream.ts` does (it fetches every file from its start); the divergence is the radio's cost of a resume
+(Scribe reads shared recordings' media from streams). Claimed:
+- `Sources/InstantSwiftDataCore/InstantStreamFileTransport.swift`: the whole file (the response's `Content-Range`, the
+  client's ranged fetch and its live form, the materializer).
+- `Tests/InstantSwiftDataCoreTests/InstantStreamFileTransportTests.swift`: new cases beside the existing ones.
