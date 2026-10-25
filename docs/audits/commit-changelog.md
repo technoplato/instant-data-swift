@@ -1,3 +1,21 @@
+## 2026-10-25 04:04:31 EDT — instant-data-swift `ffbd3e874091d33a2f322173cb80374b552205d5`
+Green (#1147 step 5): the store's deferred loads read facts from their columns through the column reader: E03's 64-line refresh 8,915 -> 6,171 allocations and 10,699 -> 6,605 KB (23,947 / 22,769 KB before #1147; Mac mini, release).
+
+## 2026-10-25 04:04:31 EDT — instant-data-swift `9a6929a4d3a32534d4c0869be706eed6196fc99b`
+Red (#1147): E03's 64-line refresh over a 7,000-allocation, 8 MB step budget (8,915, 10,699 KB).
+
+## 2026-10-25 03:50:23 EDT — instant-data-swift `282250184efef9b66e632d04f96b34356c48cd1d`
+Plan (#1145, #1147, #1165): amendment 14: #1145 parked on #1165 (strict writes read only in-memory facts); #1147 step 5 claims the store's deferred loads.
+
+## 2026-10-25 03:13:35 EDT — instant-data-swift `0dd37d073c457c74f820076dee50aaee36cdde83`
+Plan (#1145): claims for bootstrap's persistence call and the fixture boot's sweep-off line (inactive since amendment 14).
+
+## 2026-10-25 02:54:35 EDT — instant-data-swift `96fb719912f4e615cb1e5172c9963b8d322e0c8f`
+Plan (#1145): claim the two-hour replay's test for #1145's criterion.
+
+## 2026-10-25 02:52:55 EDT — instant-data-swift `18416b6d3ff4a4b3f4ba24e10241d689ecbdd097`
+Plan (#1145): amendment 13: the residency sweep's files and functions (inactive since amendment 14).
+
 ## 2026-10-25 03:56:41 EDT — instant-data-swift `375beb425efad9a32a17f05236496183bd099899`
 Test (#1119): an echo with the next write already saved, and a backlog's first echo, write no temporary file on main (guards). At the audit's baseline the echo's 222 KB of temp writes were all the temporary database's rollback journal; on main no measured case stages or writes one, so the temporary-journal change is not made.
 

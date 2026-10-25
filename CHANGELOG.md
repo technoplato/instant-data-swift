@@ -10,6 +10,30 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 4:05:30 a.m. EDT — `ffbd3e874091` perf(#1147): green: the store's deferred loads read facts from their columns, not the json the fact table computes
+
+- **Implementation commit:** `ffbd3e874091d33a2f322173cb80374b552205d5`
+- **Change:** Perf (#1147): the store's deferred loads read facts from their columns, not the json the fact table computes
+- **Details:**
+  - loadDeferredValues reads through InstantFactRowReader instead of selectBatchedJSON and JSONDecoder; the reader's failures are reported as each caller's own error. E03 64-line refresh 8,915 -> 6,171 allocations, 10,699 -> 6,605 KB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — loadDeferredValues; Sources/InstantSwiftDataCore/InstantFactRows.swift::ReadFailure; Sources/InstantSwiftDataCore/SQLiteReadConnection.swift::readFacts
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 4:05:29 a.m. EDT — `9a6929a4d3a3` test(#1147): red: E03's 64-line refresh allocates 8,915 times and 10.4 MB, over a 7,000 and 8 MB step budget
+
+- **Implementation commit:** `9a6929a4d3a32534d4c0869be706eed6196fc99b`
+- **Change:** Test (#1147): red: E03's 64-line refresh allocates 8,915 times and 10.4 MB, over a 7,000 and 8 MB step budget
+- **Details:**
+  - E03 holds a budget for Scribe's 64-line window, tightened per step toward 5,000 allocations and 4 MB (Mac mini, release, fixture v3).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — E03's 64-line budget
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 3:57:34 a.m. EDT — `375beb425efa` test(#1119): an echo with a write pending, and a backlog's first echo, write no temporary file
 
 - **Implementation commit:** `375beb425efad9a32a17f05236496183bd099899`

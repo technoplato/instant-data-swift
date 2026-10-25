@@ -1,3 +1,22 @@
+## 2026-10-25 04:05:30 EDT — #1147 step 5 on main (a refresh 6,171 allocations); #1145 parked on #1165 (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plans `18416b6d`, `96fb7199`, `0dd37d07` (#1145, inactive), `28225018`
+  (amendment 14); #1147 red `9a6929a4`, green `ffbd3e87`; then this ledger commit. Not on main: #1145's red `1ac14803`
+  and sweep `bdf17ef8` on branch `agent/claude/fix-memory-1075-sweep`.
+- **Measured (Mac mini, release, fixture v3):** E03's 64-line refresh 8,915 -> 6,171 allocations and 10,699 -> 6,605 KB
+  (the store's deferred loads through the column reader); since #1147 began 23,947 -> 6,171 and 22,769 -> 6,605 KB. The
+  issue's criterion (under 5,000 and 4 MB) is not met yet. S03 now: the frame parse about 2,300 allocations; the
+  changed-entity save's `SELECT json` about 380; `ShardedDictionary`'s `_modify` coroutine frames about 270; the
+  reduction's set about 320; statement re-prepares about 220.
+- **#1145 (measured, then parked):** the replay holds the criterion as a red (56,109 -> 71,211 facts, +11.5 MB of heap
+  an hour, the audit's counts). With the sweep on, the replay failed at minute 0: a released route chunk's
+  `updateExisting` threw "No existing entity was found". Local write validation reads only the facts in memory (#1165,
+  filed; latent after a relaunch). #1145 waits for #1165; fix-gate-1074 asked which design.
+- **Checks:** a release run of 22 suites (569 tests): no new failure (112 CLI tests lack the CLI executable in that lane;
+  6 `withKnownIssue` issues release builds cannot judge).
+- **Next:** #1147's smaller pieces (the save's previous facts through the column reader, `ShardedDictionary` without a
+  coroutine frame per insert), then the frame parse; #1146 (a set of one without 64 shards).
+
 ## 2026-10-25 03:58:42 EDT — #1119 measured to the end: no temporary file on main; #1115 slice 2 testing; #1122 to fix-gate-1074 (fix-storage-1076)
 
 - **Landed on main:** plan amendment 8 `4637c507` and claims `8fe6b328` (#1115 slice 2), amendment 9 `af48d41d`, and

@@ -49,7 +49,7 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
 | Issue | Finding | Commits | Exercise | Before | After |
 | --- | --- | --- | --- | --- | --- |
 | #1152 | M13 | red `ccdbc47b`, green `33c5c042` | E04 final line on the 2,318-line recording vs a new recording | 7,255 vs 6,786 KB (+6.9%) | 6,636 vs 6,456 KB (+2.8%) |
-| #1147 (steps 1-4) | M2, M9 | `79707ad5`/`a9751099`, `63b65c80`/`553cb332`, `40280360`/`3e787d2d`, `164131cd`/`560540fe` | E03 64-line refresh, one line changed | 23,947 allocations, 22,769 KB | 11,160 allocations, 11,411 KB |
+| #1147 (steps 1-5) | M2, M9 | `79707ad5`/`a9751099`, `63b65c80`/`553cb332`, `40280360`/`3e787d2d`, `164131cd`/`560540fe`, `9a6929a4`/`ffbd3e87` | E03 64-line refresh, one line changed | 23,947 allocations, 22,769 KB | 6,171 allocations, 6,605 KB |
 | #1153 | M14 | red `6d765ee0`, green `0744cfb1` | E04 final line, store prepares per write | 2.0 | 1.0 |
 | #1148 | M4 | red `9d4ca094`, green `97ed60bc`, E09 fix `63920cb0` | a dropped debug entry, allocations (calling thread) | 18 | 0 |
 | #1150 | M11 | red `1256f9e0`, `a641f2ea`, `6fdf9ff2`, red `713a5f9d`, green `e7dacb2d` | E14 256-line history page | 23,979 allocations, 19,548 KB | 3,296 allocations, 2,550 KB |
