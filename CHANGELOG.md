@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 8:26:47 p.m. EDT — `4b31f891b07f` docs(#1072): say which fixture version produced each quoted number
+
+- **Implementation commit:** `4b31f891b07f3723484087fe56962d51b0c41edf`
+- **Change:** docs(#1072): say which fixture version produced each quoted number
+- **Details:**
+  - The upload's single-call before numbers came from the real-size fixture's version 2 (report2), the tail check's from a unit test on synthetic schemas in debug, the interner row from a race test; the rest from version 3. Labels only: every number stays and the tags keep their copies. Asked by the lab at 18:45: "Before quoting a number from the generated fixture, say whether fixture v3 (integer tx ids) produced it."
+- **Files:**
+  - `docs/releases/v1.9.35.md` — the before columns ran on version 2
+  - `docs/releases/v1.9.38.md` — the tail check is a synthetic-schema unit test; the overlay check the fixture at a hundredth
+  - `docs/audits/2026-10-24-whole-store-cost-audit.md` — the table's legend and each shipped row's source
+  - `PROGRESS.md` — the 1.9.35 and 1.9.38 entries' labels
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive "I'll read/upload/download everything" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 8:17:30 p.m. EDT — `840b9fa0b006` docs(#1072): the audit records what shipped after it (1.9.35 to 1.9.38) and the partial index's write cost; the channel hands over the release steps
 
 - **Implementation commit:** `840b9fa0b006d420f1733347c3a7510b598a3c49`

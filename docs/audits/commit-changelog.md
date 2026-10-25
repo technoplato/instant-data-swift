@@ -1,3 +1,6 @@
+## 2026-10-24 20:25:52 EDT — instant-data-swift `4b31f891b07f3723484087fe56962d51b0c41edf`
+docs(#1072): say which fixture version produced each quoted number (the upload's single-call before numbers came from fixture version 2, the tail check from a synthetic-schema unit test; labels only, numbers unchanged).
+
 ## 2026-10-24 20:24:21 EDT — scribe `5a35b578efa8b7ac7b20b6b7bba31bc208d4804c`
 Merge (#1156) for build 130: the recording screen's speaker runs no longer cost every action a re-read of each run.
 
