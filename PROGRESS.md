@@ -1,3 +1,17 @@
+## 2026-10-25 07:28:39 EDT — #1136 on main: compaction asks the app's hold before the gate; #1138 re-measured (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 11 `f20f6404`; red `d0280c43`, green `53979805`; then this ledger.
+- **Measured** (`compaction-main-hop`, new: the VACUUM with a hold closure that asks a main actor kept busy in 30 ms
+  slices; Mac mini, release, fixture version 3; two runs each): the gate's hold 189.09/169.88 ms against a VACUUM of
+  159.08/139.86 ms -> 159.55/156.00 ms against 154.19/150.67 ms. Criterion met. A write still waits for the VACUUM
+  (about 96 ms here): the VACUUM holds the store, by design.
+- **#1138 on today's main** (`recording`, two runs): a trivial persistence-actor call p99 17.88/15.07 ms (criterion 1,
+  under 20 ms: met by the batch and gate fixes); its worst during the prune about 93 ms (criterion 2, under 50 ms: not
+  met; the `$files` unload's SQLite turn, which #1122's in-place unload removes).
+- **Not measurable here:** #1137 (its criterion is the iPhone's diagnostics collector; the `launch` exercise does not
+  reproduce the phone's 5.5-6.8 s connection-gate hold). #1139 and #1140 need exercises not written yet.
+- **Next:** `prune` and `server-apply` runs for #1138's second criterion are queued on the mini; then #1140's exercise.
+
 ## 2026-10-25 07:15:18 EDT — #1134's criterion met: a one-shot read never holds the operation gate (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** red `70257dfe`, green `8aa690b0` (slice 2; slice 1 `24b7177a`/`7e8460c5`).

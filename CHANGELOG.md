@@ -10,6 +10,32 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 7:28:39 a.m. EDT — `53979805d87d` fix(#1136): green: compaction asks the app's hold once, before the operation gate
+
+- **Implementation commit:** `53979805d87d188f2b51084e073420fd474542ec`
+- **Change:** fix(#1136): green: compaction asks the app's hold once, before the operation gate
+- **Details:**
+  - compaction-main-hop, Mac mini, release, fixture v3 (two runs each): the gate's hold 189.09/169.88 ms against a VACUUM of 159.08/139.86 ms (one 30 ms main-actor slice more) -> 159.55/156.00 ms against 154.19/150.67 ms (the rest is the cache file's re-read under the gate). 35 tests in 5 suites pass in release. Criterion met.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — localCacheCompactionDeviceHold, the gate-held re-check, the public doc's note on hold
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 7:28:39 a.m. EDT — `d0280c4364ba` test(#1136): red: compaction asks the app's hold a second time under the operation gate
+
+- **Implementation commit:** `d0280c4364ba00e75b27843ae9a67e1d0cd79c1e`
+- **Change:** test(#1136): red: compaction asks the app's hold a second time under the operation gate
+- **Details:**
+  - Release, Mac mini: the hold was asked 2 times, 1 under the gate. Adds the compaction-main-hop exercise (a hold closure that asks a main actor kept busy in 30 ms slices).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantCompactionHoldTests.swift` — the asks of the app's hold (new)
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — compaction-main-hop
+  - `scripts/contention-exercises/run-contention-exercises.sh` — the usage line
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 7:15:18 a.m. EDT — `8aa690b00c85` fix(#1134): green: a one-shot read during a write's commit waits for it to leave the gate without taking the gate
 
 - **Implementation commit:** `8aa690b00c85b06c50746c7b87af452a3775c672`

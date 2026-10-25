@@ -1,3 +1,9 @@
+## 2026-10-25 07:17:44 EDT — instant-data-swift `53979805d87d188f2b51084e073420fd474542ec`
+Fix (#1136): compaction asks the app's hold once, before the operation gate; compaction-main-hop's gate hold equals its VACUUM's time (Mac mini, release).
+
+## 2026-10-25 07:17:00 EDT — instant-data-swift `d0280c4364ba00e75b27843ae9a67e1d0cd79c1e`
+Test (#1136): red: compaction asks the app's hold a second time under the gate; the compaction-main-hop exercise.
+
 ## 2026-10-25 07:02:22 EDT — instant-data-swift `8aa690b00c85b06c50746c7b87af452a3775c672`
 Fix (#1134): a one-shot read during a write's commit waits for it without taking the gate; recording's one-shot holds 2-3 -> 0 a minute (Mac mini, release).
 
