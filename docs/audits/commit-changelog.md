@@ -1,3 +1,9 @@
+## 2026-10-25 11:36:20 EDT — scribe `867311039d4717bc20e3b114418c2a2daacf8420`
+#1156 changelog entry for the commit below.
+
+## 2026-10-25 11:36:20 EDT — scribe `b342b02cf281912a13f3df1914c66decd46c5fd2`
+#1156 the end of the field-check recording appended to the audit: same-scene silent minutes, the scene-mixed fit flagged, the criterion still open.
+
 ## 2026-10-25 11:29:33 EDT — scribe `2a43c44baa21d8c303f5ea73881d806c32b452d8`
 changelog(#1176): the CHANGELOG entries for the guide, naming, renamed-recording, backfill and docs commits.
 
