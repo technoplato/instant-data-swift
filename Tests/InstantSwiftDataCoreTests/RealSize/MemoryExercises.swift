@@ -34,6 +34,7 @@ import Testing
 //   under 1% of E03's refresh in the allocation-site recording, `MemorySiteExercises`).
 // - 2026-10-25: #1148: E09 stops the session's apply log, a diagnostics handler, so its "no sink" pass has none.
 // - 2026-10-25: #1150: E14 holds a per-page budget, tightened as each step of the fix lands.
+// - 2026-10-25: #1147: E03 holds a budget for Scribe's 64-line window, tightened as each step lands.
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_EXERCISES"] != nil))
 struct MemoryExercises {
@@ -180,6 +181,16 @@ struct MemoryExercises {
             ("resultJSONWrites", String(writesAfter.writes - writes.writes)),
           ]
         )
+        if rows == 64 {
+          // #1147: Scribe's live window. 23,947 allocations and 22,769 KB a refresh on the Mac mini before #1147, 8,911 and
+          // 10,691 KB once its steps 1-4 and #1150's column reader landed; the bound tightens with each step, toward the
+          // issue's 5,000 allocations and 4 MB.
+          #expect(measurement.allocations < 7_000, "E03 allocated \(measurement.allocations) times a 64-line refresh.")
+          #expect(
+            measurement.allocatedBytes < 8 * 1_024 * 1_024,
+            "E03 allocated \(measurement.allocatedBytes / 1_024) KB a 64-line refresh."
+          )
+        }
         await page.close()
       }
     }
