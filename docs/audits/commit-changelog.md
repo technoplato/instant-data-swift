@@ -1,3 +1,9 @@
+## 2026-10-25 15:59:11 EDT — scribe `88a3cebb2fcec7d4285dd1ee45bdab3c40aee280`
+release(#1188): cut Scribe 0.1 (140) and Scribe Playback 140 from main e72e42922 (#951 S1/S2b/S3/S4a, #839, #1097 landing A); instant-data-swift 1.9.42 unchanged
+
+## 2026-10-25 15:59:11 EDT — scribe `dd2f4adbfffd49a4b8a5f17d17dee82bd9007aa9`
+changelog(#1188): build 140 cut 88a3cebb2
+
 ## 2026-10-25 15:52:39 EDT — scribe `2b3e8901f8833edfeb0132396440b5dc7a6dc84e`
 Docs (#1097): landing A in the hot-paths audit's section 15 (four waves of verification and their attribution against main's baseline), the Build 140 story, PROGRESS, ADR 0094's status; landed on main 71b91e816.
 
