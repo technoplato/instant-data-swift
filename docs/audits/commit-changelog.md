@@ -1,3 +1,33 @@
+## 2026-10-25 17:48:18 EDT — scribe `2b957a4843a73009ae8de415dbc392730c2025ee`
+merge(#1183): Only Me on the iPhone (ADR 0097 amendment A-S1): a voice filter decided on the device before any words exist, off by default
+
+## 2026-10-25 17:47:19 EDT — scribe `a6eb794009b9ea3b3807cdf0d64f8cfdd23841ae`
+changelog(#1183): the second replay's findings c13dd3db7
+
+## 2026-10-25 17:44:41 EDT — scribe `c13dd3db7da0e548c47f8897140ea7b9d22f0eb4`
+docs(#1183): her voice alone never passes the gate; four recognizer candidates replayed and ruled out (ADR 0097 A10)
+
+## 2026-10-25 17:21:29 EDT — scribe `52fb7fad8bd11059e41e16f4738814d73a0eabc0`
+Merge origin/main into agent/claude/wife-blur-1183: main through #936's whole-term vocabulary and #1185's pinned now-playing bar
+
+## 2026-10-25 17:23:53 EDT — scribe `54de397c4ca2a7ce8778c278aaf49f065e840481`
+plan(#1183): claims for A-S1b's playback tests and A-S1's speech-log test (late); a channel note: A-S1 lands, A-S1b's edits
+
+## 2026-10-25 17:20:30 EDT — scribe `c95f922633bf29cfd9f62a52efaad506fd08927a`
+changelog(#1183): the delay line red f9484729c and green 9d4a1d3c0, the measurement 773a354b9, the live gate's pool and the caption c73e68d40
+
+## 2026-10-25 17:19:52 EDT — scribe `c73e68d4060bdf30c6fd5fa9d875dbcd69cf5cc2`
+fix(#1183): the live gate drains Core ML's buffers after each window; the Voices caption says how sure Only Me is
+
+## 2026-10-25 17:05:25 EDT — scribe `773a354b9eafd377ddfcfd3b92dbebf62b37c11a`
+docs(#1183): the voice gate measured on three of his recordings (ADR 0097 A10): not yet sure enough for "never"
+
+## 2026-10-25 17:04:26 EDT — scribe `9d4a1d3c0e05fe41032c602552964bbc90328244`
+fix(#1183): the delay line keeps one stretch of another voice as one piece across the gate's decisions, cut at 15 s
+
+## 2026-10-25 17:04:01 EDT — scribe `f9484729cc83c833427cc6af6611e732f6e0a7b7`
+test(#1183): red: one stretch of another voice is one withheld stretch, in pieces of at most 15 s
+
 ## 2026-10-25 17:14:55 EDT — scribe `1713dc72eea137b9076f2bce2483383a06c91091`
 Merge (#936): a vocabulary term takes heard words only when they sound like the whole term or one of its heard forms; 11.15 h replayed, wrong term swaps 226 -> 10.
 
