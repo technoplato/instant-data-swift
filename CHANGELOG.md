@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 6:22:10 a.m. EDT — `501def54f562` docs(#1132 #1133 #1129 #1150 #1147 #1146 #1149 #1115): the v1.9.41 release document: status reads and hydration re-checks stop waiting for gate work they do not need, bounded prune chunks, a launch that allocates half as much
+
+- **Implementation commit:** `501def54f56213dc844856d674d7e5d243a27e64`
+- **Change:** docs: the v1.9.41 release document (status reads and hydration re-checks off the gate work they do not need, bounded prune chunks, a launch that allocates half as much; no going back to an older build)
+- **Details:**
+  - Cut at main ec1257ba (last code commit 99318502), carrying 1.9.40; tagged on this release branch's ledger commit. Checks: RealSizeBudgetTests in release on the Mac mini (12 known issues; #1111's local read now meets its budget, f834c614); the whole core bundle in debug on the laptop (1,524 tests, 4 failing: 2 listed load-only, 2 debug-only allocation bounds now held to optimized builds, ec1257ba); the InstantSwiftDataTests bundle in debug (405 tests, 3 failing: 2 pass alone, 1 is #304, failing on 1.9.40 too); the release's gate suites in release; #1168 filed for a loaded-run race in an explicit-flush test.
+- **Files:**
+  - `docs/releases/v1.9.41.md` — the release document
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 5:42:47 a.m. EDT — `9931850236bb` fix(#1133): green: gate holders that write no store facts say so as they take the gate
 
 - **Implementation commit:** `9931850236bbaa766206eff369201214ed0f833e`

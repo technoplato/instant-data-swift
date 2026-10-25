@@ -1,3 +1,16 @@
+## 2026-10-25 06:22:10 EDT — v1.9.41 released (fix-gate-1074, the release owner)
+
+- **Release:** `docs/releases/v1.9.41.md` (`501def54`), cut at main `ec1257ba`, last code commit `99318502`, carrying
+  1.9.40; annotated tag `v1.9.41` on this ledger commit of `release/v1.9.41`; both commits cherry-picked to main.
+- **In it:** #1132 (status and session reads off the gate), #1133 (holders that write no store facts say so), #1129
+  slices 3-5, #1150, #1147 step 5, #1146 steps 1-2, #1149 step 1, #1115 slice 2; tests `743640fd`, `375beb42`,
+  `340319ef`, `f834c614`, `ec1257ba`. A store 1.9.41 opened cannot be used by an older build.
+- **Checks:** RealSizeBudgetTests (release, Mac mini) 12 known issues; the core bundle (debug, laptop) 1,524 tests, 4
+  failing, 2 listed and 2 debug-only allocation bounds now held to optimized builds; InstantSwiftDataTests (debug)
+  405 tests, 3 failing: 2 load flakes, #304 (fails on 1.9.40 too). #1168 filed (an explicit-flush test's loaded-run
+  race, before #1133 as after it).
+- **Next:** pin 1.9.41 in Scribe and Scribe Playback; then #1130 (red `f0a5cc96`, green `de909caa`, local, measured).
+
 ## 2026-10-25 05:42:47 EDT — #1133 on main: holders that write no store facts say so as they take the gate; #1132's stale tests fixed (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 8 `7b2ad90e`; red `9005cc07`, green `99318502`; #1132's

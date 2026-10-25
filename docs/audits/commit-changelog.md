@@ -1,3 +1,6 @@
+## 2026-10-25 06:21:52 EDT — instant-data-swift `501def54f56213dc844856d674d7e5d243a27e64`
+Docs: the v1.9.41 release document; cut at main ec1257ba (last code commit 99318502); tagged v1.9.41 on its ledger commit.
+
 ## 2026-10-25 05:55:14 EDT — scribe `7be3b7714f4f69a7ea31339fce9bebff4dca8a06`
 Docs (#1077 #1154): the hot-path audit's section 13: the XCTest host's dlsym on every dependency and @Shared read inflates the exercises' timings (79% of the following list's busy main thread); counts stand.
 
