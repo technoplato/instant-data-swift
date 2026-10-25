@@ -7075,7 +7075,8 @@ public final class InstantRuntime: Sendable {
   /// It held the gate through the state load, the emission, its hydration and the cache write: 58 holds and about 1 s of
   /// gate a minute in #1074's recording exercise, 1.2 s holds on a phone (build 121), and each write queued behind them.
   /// It answers without the gate while SQLite's store and attribute revisions are the ones the store has installed, so
-  /// no other connection's write waits to be adopted; otherwise, and for a closed connection's error, it reads under the
+  /// no other connection's write waits to be adopted; a write of this process that is between its save and its install
+  /// it waits out first, without taking the gate. Otherwise, and for a closed connection's error, it reads under the
   /// gate as before. The cache row is tagged with those revisions, and the save's revision check skips it when a write
   /// landed meanwhile: a writer saves SQLite before it commits the store, so a row whose revisions still match pairs
   /// with its answer.
@@ -7086,22 +7087,33 @@ public final class InstantRuntime: Sendable {
   ) async throws
     -> InstantQueryEmission
   {
-    let installed = installedStoreRevisions.snapshot()
+    var installed = installedStoreRevisions.snapshot()
     // SQLite's revisions and, when a closed connection must refuse this read, the stored connection state, in one
     // persistence turn (#403).
     let readsConnectionState = enforcesConnectionFreshness && !configuration.isLocalOnly
     let connectionStateKey = connectionStateMetadataKey
-    let (persisted, storedConnectionState) = try await withPersistence { persistence in
+    let read = try await withPersistence { persistence in
       (
-        try persistence.currentStoreAndAttributeRevisions(),
-        readsConnectionState
+        revisions: try persistence.currentStoreAndAttributeRevisions(),
+        connectionState: readsConnectionState
           ? try persistence.loadMetadataValue(key: connectionStateKey).flatMap(InstantConnectionState.init(rawValue:))
             ?? .opened
           : nil
       )
     }
+    var persisted = read.revisions
+    let storedConnectionState = read.connectionState
     if persisted.store != installed.store || persisted.attributes != installed.attributes {
       await configuration.onOneShotReadFoundSQLiteAheadForTesting?()
+      // A write of this process between its SQLite save and its install holds the gate: wait for it to leave, without
+      // taking the gate, and look again. Another connection's write still needs the gated read that adopts it.
+      if storedConnectionState != .closed, operationGate.isHeldSnapshot {
+        recordActorHop(.operationGate)
+        await operationGate.waitForRelease()
+        installed = installedStoreRevisions.snapshot()
+        recordActorHop(.persistence)
+        persisted = try await persistence.currentStoreAndAttributeRevisions()
+      }
     }
     guard persisted.store == installed.store, persisted.attributes == installed.attributes,
       storedConnectionState != .closed

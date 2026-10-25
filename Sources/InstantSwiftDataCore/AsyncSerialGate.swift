@@ -5,6 +5,7 @@
 //   measure each caller's wait and each holder's hold, the short ones too (#1074).
 // - 2026-10-25: a caller names what it writes as it enters, and the gate sets it as it hands the caller the gate, so a
 //   holder that writes no store facts never reads as writing everything (#1133).
+// - 2026-10-25: waitForRelease() waits for the holder to leave without taking the gate (#1134).
 
 import Foundation
 import IssueReporting
@@ -197,6 +198,9 @@ actor AsyncSerialGate {
   private let agingMilliseconds: Int
   private let report: @Sendable (StallReport) -> Void
   private let waitReport: @Sendable (WaitReport) -> Void
+
+  /// Callers waiting for the holder to leave without taking the gate (``waitForRelease()``), resumed when it does.
+  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
   /// Queued callers in the order they arrived.
   private var waiters: [Waiter] = [] {
@@ -404,6 +408,14 @@ actor AsyncSerialGate {
     holderPhase ?? markedPhase.withLock { $0 }
   }
 
+  /// Returns once the current holder has left the gate, without taking it; at once when no caller holds it (#1134). A
+  /// reader that found a write of this process half done waits it out this way: taking the gate would also make it
+  /// wait for every caller queued before it, and then hold the gate itself.
+  func waitForRelease() async {
+    guard holderOperation != nil else { return }
+    await withCheckedContinuation { releaseWaiters.append($0) }
+  }
+
   /// Releases the gate, handing it to the queued caller that goes next (``nextWaiterIndex(at:)``), if there is one.
   func leave() {
     stallCount = 0
@@ -417,6 +429,11 @@ actor AsyncSerialGate {
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
     markedWrites.withLock { $0 = nil }
+    if !releaseWaiters.isEmpty {
+      let released = releaseWaiters
+      releaseWaiters = []
+      for continuation in released { continuation.resume() }
+    }
     // Cancellation already resumed any waiter that is not waiting; it never took ownership.
     if waiters.contains(where: { !$0.isWaiting }) {
       waiters.removeAll { !$0.isWaiting }
