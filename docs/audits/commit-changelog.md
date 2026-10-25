@@ -1,3 +1,27 @@
+## 2026-10-25 02:30:09 EDT — scribe `aa25b3687e99f9513268cef8b5d60815e89227cc`
+Merge (#1085): screen-heat-1085 onto main for build 133: the list reads the recording's state in its own pass, so the recording sends no delegate.stateUpdated round trip; #1101's cost test counts its thread.
+
+## 2026-10-25 02:29:23 EDT — scribe `eca22c7b9057b20eaeee1afd3f4e804b2d67bf4c`
+Changelog (#1085 #1101): the red, the green, #1101's counter and the docs below in CHANGELOG.md.
+
+## 2026-10-25 02:28:53 EDT — scribe `bae39f8e841048d8f57e0cf0bf2f8382e247137e`
+Docs (#1085): the root-passes audit (a test minute of the phone's recording actions 630 -> 450 root passes, the bundles like for like), its index row, the Build 133 (next) story, the channel's correction.
+
+## 2026-10-25 01:36:12 EDT — scribe `39d4653e5b28bc1f73e7b16039d2150d66d97f76`
+Test (#1101): the section update cost test counts this thread's instructions (thread_selfcounts), not the process's: in a parallel bundle the tests beside it failed its bound.
+
+## 2026-10-25 01:36:12 EDT — scribe `ae834a1f87b4c060f9518b84b4f50c4b8a658f68`
+Perf (#1085): green: the list reads the recording's state in its own pass after each recording action and composes it with RecordingStateHandOff.sameAction, so the recording sends no delegate.stateUpdated round trip (113-124 root passes a minute on the phone).
+
+## 2026-10-25 01:35:02 EDT — scribe `c3b0eb3341ab3add49350fb501e5f55a693400c4`
+Plan (#1085): amendment C: the live row follows after each recording action; one floating-bar test's expectation says so.
+
+## 2026-10-25 00:36:50 EDT — scribe `25dc3be9d65dd93b8a7ad55ebde8f1f02bbeeb78`
+Plan (#1101): amendment B: #1101's cost test counts this thread's instructions, not the process's.
+
+## 2026-10-24 23:45:46 EDT — scribe `3691eeb9153e7b29da24b6774e03deb00c2a54cb`
+Test (#1085): red: a recording minute through the list sends no delegate.stateUpdated round trip, and the live row follows the recording in the same action.
+
 ## 2026-10-25 02:19:57 EDT — instant-data-swift `37b0286585a53c782cfe8c875e0c380f8c6f198d`
 Fix (#1128): a server apply's retry reuses its first attempt's retractions and saves at the same revisions; the $files answer's gate-held plan 521.45 -> 66.15 ms (Mac mini, release).
 
