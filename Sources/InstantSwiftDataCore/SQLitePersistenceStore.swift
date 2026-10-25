@@ -53,6 +53,8 @@
 //   supersession tail read finds the newest id in a covering index before it reads that one row (#1108, #1114).
 // - 2026-10-24: the writer checkpoints every 4,000 frames of the log instead of Apple's 1,000: three F_FULLFSYNCs per
 //   checkpoint, one every 16 writes, made 1,039 full syncs an hour of recording (#1118).
+// - 2026-10-25: a write's key rows and effect entities live in WITHOUT ROWID tables, and one delivery index replaces
+//   the deadline and candidate indexes: two b-trees fewer on every save and echo, one fewer on every claim (#1115).
 
 import Foundation
 import IssueReporting
@@ -2874,10 +2876,40 @@ public actor SQLitePersistenceStore {
       }
     }
     try withSQLiteBusyRetry {
+      // #1115: a write's key rows and its effect entities are keyed by their whole row. As rowid tables each kept a
+      // second b-tree, its primary key's index, holding the same columns, so every save and every echo wrote a page of
+      // both: 4 of a live write's 36 outbox frames (#1076's eachStepOfALiveWrite). WITHOUT ROWID the key is the table.
+      // A row whose write is gone (a restore that turned foreign keys off can leave one) is not carried over.
+      try migrate(name: "0030_outbox_key_tables_without_rowid") {
+        for table in Self.outboxKeyTablesWithoutRowid {
+          try execute(table.create)
+          try execute(
+            """
+            INSERT INTO \(table.name)_0030 (\(table.columns))
+            SELECT \(table.columns) FROM \(table.name) AS keyed
+            WHERE EXISTS (SELECT 1 FROM instant_outbox AS outbox WHERE outbox.mutation_id = keyed.mutation_id)
+            """
+          )
+          try execute("DROP TABLE \(table.name)")
+          try execute("ALTER TABLE \(table.name)_0030 RENAME TO \(table.name)")
+          try execute(table.lookupIndex)
+        }
+      }
+    }
+    try withSQLiteBusyRetry {
+      // #1115: one index for the delivery order and the claims' deadlines, where a claim moved its row in two (the
+      // deadline index and #1108's candidate index) and a save inserted it into both.
+      try migrate(name: "0031_outbox_delivery_index") {
+        try execute("DROP INDEX IF EXISTS instant_outbox_delivery_candidate_idx")
+        try execute("DROP INDEX IF EXISTS instant_outbox_delivery_deadline_idx")
+        try execute(Self.deliveryIndexSQL)
+      }
+    }
+    try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
-    // A restore that rebuilt `instant_outbox` after 0029 ran keeps the claim off a scan too (#1108).
-    try execute(Self.deliveryCandidateIndexSQL)
+    // A restore that rebuilt `instant_outbox` after 0031 ran keeps the claim off a scan too (#1108, #1115).
+    try execute(Self.deliveryIndexSQL)
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -14913,8 +14945,8 @@ public actor SQLitePersistenceStore {
   /// The automatic pump's next writes to deliver, oldest first: the ready rows that need delivery, and the legacy rows
   /// whose delivery metadata predates the current version.
   ///
-  /// #1108 (2026-10-24): one branch each, each searched by its own index (`instant_outbox_delivery_candidate_idx` and
-  /// `instant_outbox_delivery_metadata_idx`). As one filter, `claim state AND (delivery state OR legacy metadata)`, the
+  /// #1108 (2026-10-24): one branch each, each searched by its own index (`instant_outbox_delivery_idx` since #1115, then
+  /// `instant_outbox_delivery_candidate_idx`, and `instant_outbox_delivery_metadata_idx`). As one filter, `claim state AND (delivery state OR legacy metadata)`, the
   /// `OR` left SQLite a search on the claim state alone and a sort: every ready row was visited, refused writes
   /// included, each through its body's overflow pages, after every write and acknowledgement; on one phone's store that
   /// was 663 refused writes, and the claim held the operation gate about 60% of every recording minute.
@@ -14979,24 +15011,80 @@ public actor SQLitePersistenceStore {
     ]
   }
 
-  /// A row the pump may claim now: ready, and in need of delivery. Written with literals, not parameters, so SQLite can
-  /// prove a statement's filter matches the partial index below.
+  /// A row the pump may claim now: ready, in need of delivery, and so with no claim deadline (every statement that
+  /// makes a row ready clears it; only a claimed row has one). The deadline's `IS NULL` is what lets
+  /// ``deliveryIndexSQL`` hand these rows back in creation order, so the read stops at its limit (#1115). Written with
+  /// literals, as #1108's partial index needed.
   private static let readyForDeliveryCondition =
     "delivery_claim_state = \(SQLitePersistenceStore.sqlLiteral(InstantOutboxDeliveryClaimState.ready.rawValue))"
       + " AND delivery_state = \(SQLitePersistenceStore.sqlLiteral(InstantOutboxDeliveryState.needsDelivery.rawValue))"
+      + " AND delivery_claim_deadline_ms IS NULL"
 
-  /// The index the candidate read's first branch searches (#1108): only the rows the pump may claim now, in delivery
-  /// order. Partial, so a refused write, a claimed one and an acknowledgement never touch it: #1007 dropped a full index
-  /// on the claim and delivery states because every write of a row wrote a page of it, and the old filter's `OR` kept
-  /// any statement from using it. It leads with the two states, constant inside it, because SQLite without statistics
-  /// prefers an index whose leading columns a filter's equalities match: led by the creation time, it lost to
-  /// `instant_outbox_delivery_deadline_idx`, which visits every ready row.
+  /// The index the candidate read's first branch searched from #1108 to #1115, as migration 0029 made it: only the rows
+  /// the pump may claim now, in delivery order. Partial, so a refused write, a claimed one and an acknowledgement never
+  /// touched it: #1007 dropped a full index on the claim and delivery states because every write of a row wrote a page
+  /// of it, and the old filter's `OR` kept any statement from using it. It led with the two states, constant inside it,
+  /// because SQLite without statistics prefers an index whose leading columns a filter's equalities match. Migration
+  /// 0031 drops it for ``deliveryIndexSQL``, which leads the same way and serves the claims' deadlines too.
   static let deliveryCandidateIndexSQL =
     """
     CREATE INDEX IF NOT EXISTS instant_outbox_delivery_candidate_idx
     ON instant_outbox (delivery_claim_state, delivery_state, created_at_ms, mutation_id)
-    WHERE \(SQLitePersistenceStore.readyForDeliveryCondition)
+    WHERE delivery_claim_state = 'ready' AND delivery_state = 'needs_delivery'
     """
+
+  /// The index the pump's candidate read and every claim statement search (#1115): rows by claim state, delivery state
+  /// and claim deadline, in delivery order. The rows the pump may claim now are one stretch of it in creation order (a
+  /// ready row has no deadline), and a claim statement seeks the claimed rows, at most a window's worth. Migration 0031
+  /// put it in place of the deadline index and #1108's candidate partial index, which each moved a row on every claim.
+  static let deliveryIndexSQL =
+    """
+    CREATE INDEX IF NOT EXISTS instant_outbox_delivery_idx
+    ON instant_outbox
+      (delivery_claim_state, delivery_state, delivery_claim_deadline_ms, created_at_ms, mutation_id)
+    """
+
+  /// The tables keyed by their whole row that migration 0030 rebuilds WITHOUT ROWID (#1115), each with its new
+  /// definition, its columns and its lookup index.
+  private static let outboxKeyTablesWithoutRowid: [(name: String, create: String, columns: String, lookupIndex: String)]
+    = [
+      (
+        name: "instant_outbox_write_keys",
+        create: """
+          CREATE TABLE instant_outbox_write_keys_0030 (
+            mutation_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            attribute_id TEXT NOT NULL,
+            PRIMARY KEY (mutation_id, entity_id, attribute_id),
+            FOREIGN KEY (mutation_id) REFERENCES instant_outbox (mutation_id)
+              ON DELETE CASCADE
+          ) WITHOUT ROWID
+          """,
+        columns: "mutation_id, entity_id, attribute_id",
+        lookupIndex: """
+          CREATE INDEX instant_outbox_write_keys_lookup_idx
+          ON instant_outbox_write_keys (entity_id, attribute_id, mutation_id)
+          """
+      ),
+      (
+        name: "instant_outbox_effect_entities",
+        create: """
+          CREATE TABLE instant_outbox_effect_entities_0030 (
+            mutation_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (mutation_id, entity_id),
+            FOREIGN KEY (mutation_id) REFERENCES instant_outbox (mutation_id)
+              ON DELETE CASCADE
+          ) WITHOUT ROWID
+          """,
+        columns: "mutation_id, entity_id, created_at_ms",
+        lookupIndex: """
+          CREATE INDEX instant_outbox_effect_entities_lookup_idx
+          ON instant_outbox_effect_entities (entity_id, created_at_ms, mutation_id)
+          """
+      ),
+    ]
 
   private func loadAutomaticDeliveryCandidateRowsWithoutTransaction(
     limit: Int

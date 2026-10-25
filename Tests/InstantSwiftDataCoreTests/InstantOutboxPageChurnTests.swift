@@ -12,7 +12,9 @@ import Testing
 /// write's key rows and inserts the same rows again. An unchanged row keeps its place.
 @Suite(.serialized)
 struct InstantOutboxPageChurnTests {
-  /// An acknowledgement leaves the write's key rows and the store's revision rows where they are.
+  /// An acknowledgement leaves the write's key rows and the store's revision rows where they are. The key rows live in a
+  /// WITHOUT ROWID table since #1115, which has no rowid to watch: `aWritesOutboxRowsWriteNoBTreeTwice` (in
+  /// `StorageIOExercises`) checks that the acknowledgement writes no page of it, here its rows stay the same.
   @Test
   func anAcknowledgementUpdatesItsBookkeepingRowsInPlace() async throws {
     var fixture = try await FastDrainFixture.make(
@@ -24,7 +26,7 @@ struct InstantOutboxPageChurnTests {
     let (token, mutations) = try await fixture.claimWindow()
     let mutation = try #require(mutations.first)
     let keysBefore = try Self.rows(
-      "SELECT rowid, entity_id, attribute_id FROM instant_outbox_write_keys WHERE mutation_id = ? ORDER BY rowid",
+      "SELECT entity_id, attribute_id FROM instant_outbox_write_keys WHERE mutation_id = ? ORDER BY entity_id, attribute_id",
       binding: mutation.id,
       in: database
     )
@@ -45,7 +47,7 @@ struct InstantOutboxPageChurnTests {
     let pagesAfter = await fixture.runtime.sqlitePagesWrittenForTesting()
     print("outbox-page-churn: one acknowledgement wrote \(pagesAfter.pages - pagesBefore.pages) pages")
     let keysAfter = try Self.rows(
-      "SELECT rowid, entity_id, attribute_id FROM instant_outbox_write_keys WHERE mutation_id = ? ORDER BY rowid",
+      "SELECT entity_id, attribute_id FROM instant_outbox_write_keys WHERE mutation_id = ? ORDER BY entity_id, attribute_id",
       binding: mutation.id,
       in: database
     )
@@ -95,7 +97,8 @@ struct InstantOutboxPageChurnTests {
 
   /// The outbox keeps no index its statements cannot use (#1007): every insert, claim, acknowledgement and delete of a
   /// row writes a page of each index, and no statement's plan used `instant_outbox_delivery_window_idx` (its leading
-  /// column is the claim state, which the deadline index leads with too and serves).
+  /// column is the claim state, which the deadline index leads with too and serves). Since #1115 one delivery index
+  /// serves the claims' deadlines and the candidate read, in place of the deadline index and #1108's candidate index.
   @Test
   func theOutboxKeepsNoIndexItsStatementsCannotUse() async throws {
     var fixture = try await FastDrainFixture.make(
@@ -107,8 +110,12 @@ struct InstantOutboxPageChurnTests {
       "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'instant_outbox' ORDER BY name",
       in: fixture.configuration.persistenceURL
     ).map { $0[0] }
-    #expect(indexes.contains("instant_outbox_delivery_deadline_idx"))
-    #expect(!indexes.contains("instant_outbox_delivery_window_idx"), "indexes: \(indexes)")
+    #expect(indexes.contains("instant_outbox_delivery_idx"), "indexes: \(indexes)")
+    for retired in [
+      "instant_outbox_delivery_window_idx", "instant_outbox_delivery_deadline_idx", "instant_outbox_delivery_candidate_idx",
+    ] {
+      #expect(!indexes.contains(retired), "indexes: \(indexes)")
+    }
     _ = try? await fixture.runtime.closeConnection()
   }
 
@@ -135,8 +142,9 @@ struct InstantOutboxPageChurnTests {
 
     let pages = await fixture.runtime.sqlitePagesWrittenForTesting().pages - pagesBefore.pages
     print("outbox-page-churn: one acknowledgement wrote \(pages) pages")
-    // The row's leaf, the deadline, delivery-metadata and watermark indexes it moves, its lifecycle and the revision
-    // row: about six pages, against nine with the unused window index and the three rewritten overlay indexes.
+    // The row's leaf, the delivery (claim and deadline), delivery-metadata and watermark indexes it moves, its lifecycle
+    // and the revision row: about six pages, against nine with the unused window index and the three rewritten overlay
+    // indexes.
     #expect(pages <= 6, "one acknowledgement wrote \(pages) pages")
     _ = try? await fixture.runtime.closeConnection()
   }
