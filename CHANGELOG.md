@@ -10,6 +10,44 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 3:03:14 a.m. EDT — `743640fdd714` test(#1131): the observer-send test acknowledges its local write, so a slow run no longer trips the write's acknowledgement deadline
+
+- **Implementation commit:** `743640fdd714fe91f13748213aafb46a35534b81`
+- **Change:** test(#1131): the observer-send test acknowledges its local write, so a slow run no longer trips the write's acknowledgement deadline
+- **Details:**
+  - 1.9.40's whole-bundle run (laptop, debug, loaded) failed it: its unacknowledged write's 6 s deadline ran out mid-test. Passes in release on the Mac mini with no hidden issue.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — acknowledge the write
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 3:03:13 a.m. EDT — `68d37d42c2b5` fix(#1129): green: a large closed result's row is re-keyed out of its key's way and released a bounded chunk at a time, so its batch no longer deletes every ownership row in one cascade
+
+- **Implementation commit:** `68d37d42c2b50e0525b80cf4d553172c0bb6caf0`
+- **Change:** fix(#1129): green: a large closed result's row is re-keyed out of its key's way and released a bounded chunk at a time, so its batch no longer deletes every ownership row in one cascade
+- **Details:**
+  - Mac mini, release, fixture v3 (slice 2 before): worst prune hold 397.21 -> 114.36 ms (prune) and 411.18 -> 104.66 ms (prune-inline); a write's worst wait during the prune 371.80 -> 74.35 ms; the first two criteria met. The refresh behind the cadence prune 58.41 -> 217.81 ms (one batch at its snapshot, another at its retry), the next slice's work. 589 tests in 13 suites pass in release apart from the runner's known artifacts; rebased on #1150, 165 prune and read suites pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — released rows (re-key, chunk read and apply, startup dismantle), readers skip them, no marker writes
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the prune loop checks released rows first; slice 2's in-memory chunks removed
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — released-row crash and earlier-marker tests
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 3:03:13 a.m. EDT — `a565f0b7fcfb` test(#1129): red: the batch that unloads a large closed result deletes all its ownership rows at once
+
+- **Implementation commit:** `a565f0b7fcfb71ba01a11ba2b19752dda2a8c605`
+- **Change:** test(#1129): red: the batch that unloads a large closed result deletes all its ownership rows at once
+- **Details:**
+  - Release, Mac mini: fails as designed (0 of 452 ownership rows left after the batch that unloaded the result).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — the released-row test and SQLite helpers
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 2:53:30 a.m. EDT — `222f25bc9d75` docs(#1129 #1128 #1121 #1115 #1118 #1123 #1125 #1124 #1153 #1147 #1148): the v1.9.40 release document: bounded prune batches, a retry that reuses its plan's work, each fact stored once; no going back to an older build
 
 - **Implementation commit:** `222f25bc9d75069c7cbb7cfe351bfbabb12d15fb`

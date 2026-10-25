@@ -1,3 +1,12 @@
+## 2026-10-25 02:55:55 EDT — instant-data-swift `743640fdd714fe91f13748213aafb46a35534b81`
+Test (#1131): the observer-send test acknowledges its local write; a loaded debug run tripped its 6 s deadline.
+
+## 2026-10-25 02:55:55 EDT — instant-data-swift `68d37d42c2b50e0525b80cf4d553172c0bb6caf0`
+Fix (#1129): a large closed result's row is re-keyed and released a bounded chunk at a time; worst prune hold 397.21 -> 114.36 ms (Mac mini, release).
+
+## 2026-10-25 02:55:55 EDT — instant-data-swift `a565f0b7fcfb71ba01a11ba2b19752dda2a8c605`
+Test (#1129): red: the batch that unloads a large closed result deletes all its ownership rows at once.
+
 ## 2026-10-25 02:53:30 EDT — instant-data-swift `222f25bc9d75069c7cbb7cfe351bfbabb12d15fb`
 Docs: the v1.9.40 release document (cut at a50f7a62; a store 1.9.40 opened cannot be written by an older build).
 ## 2026-10-25 02:46:54 EDT — instant-data-swift `e7dacb2dfb44c62365b6a37f765ace4a474ea51d`

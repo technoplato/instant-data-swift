@@ -1,3 +1,18 @@
+## 2026-10-25 03:03:14 EDT — #1129's third slice on main: a large closed result is released over bounded batches from a re-keyed row (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 6 `fd59f3a9`; red `a565f0b7`, green `68d37d42`; the #1131 test
+  fix `743640fd`; then this ledger.
+- **Measured** (Mac mini, release, fixture version 3; slice 2 before): the worst prune hold 397.21 -> 114.36 ms
+  (`prune`) and 411.18 -> 104.66 ms (`prune-inline`); a write's worst wait during the prune 371.80 -> 74.35 ms. #1129's
+  first two parts (under 250 ms and 300 ms) are met. Its third (the refresh behind the cadence prune as fast as the one
+  before it) is not: 217.81 ms against 44.22 ms (it was 58.41 ms with slice 2), as the refresh waited for one batch at
+  its snapshot and, after a batch committed between its seed and its plan, for another at its retry.
+- **Checks:** red fails as designed (0 of 452 ownership rows left); green: 589 tests in 13 suites in release, failing
+  only the runner's known artifacts; rebased on #1150: 165 prune, reload, observer, transport and read tests pass.
+- **Next:** slice 4: a prune batch holds the server-apply gate at background priority, so no batch commits inside a
+  frame's apply (the refresh waits for at most one batch, and never retries behind one), with a smaller default batch
+  if the measurement asks for it. Then pin 1.9.40 in Scribe (the resolve is queued on the laptop).
+
 ## 2026-10-25 02:53:30 EDT — 1.9.40: bounded prune batches, a retry that reuses its plan's work, each fact stored once (release owner fix-gate-1074)
 
 - **Released:** v1.9.40, tagged on this ledger commit of branch `release/v1.9.40`, whose tree is main `a50f7a62`'s code
