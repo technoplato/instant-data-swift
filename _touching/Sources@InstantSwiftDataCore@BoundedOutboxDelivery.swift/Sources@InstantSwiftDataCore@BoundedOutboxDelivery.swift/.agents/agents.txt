@@ -6,3 +6,4 @@ claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-libra
 claude-opus-5.5-library-79 2026-10-02T14:32:22-04:00 mower plan=2026-10-02-library-79-hops #403
 claude-opus-5.5-library-79 2026-10-03T12:03:55-04:00 mower plan=2026-10-02-library-79-hops #441
 claude-code-no-words-990-sync 2026-10-21T22:19:55-04:00 grower plan=2026-10-21-claim-lease-990 #990
+claude-code/fix-storage-1076@ld 2026-10-25T02:01:09-0400 mower plan=2026-10-24-fix-storage-1076 #1115 amendment 8 (InstantOutboxDeliveryMetadata.currentVersion's doc)
