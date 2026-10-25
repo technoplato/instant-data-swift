@@ -1,3 +1,12 @@
+## 2026-10-25 18:56:51 EDT — scribe `364d6336177489f4062ff26fa0db26a9596177d1`
+progress(#1183): Only Me on the iPhone and Play Sealed Voice landed for build 141; the voice gate measured; next A-S1c
+
+## 2026-10-25 18:56:07 EDT — scribe `91e9f943cb8845f88b3fd8b26783561bb405e89a`
+changelog(#1183): the interior-words measurement f49ec01c8
+
+## 2026-10-25 18:56:06 EDT — scribe `f49ec01c8e6e16bf05fec956cba7e0338e083ca7`
+docs(#1183): the audit's leak on interior words only: at 0.5, 5 of her 1,661 words and 13 of 717 others'; at 0.6 none, at 48.5% of his
+
 ## 2026-10-25 18:53:57 EDT — scribe `5d2c2127037c07d6d756f9d806bc9ee8b02a6773`
 changelog(#1183): the audit's comparison b00020f55 and the rules note a617e3430
 
