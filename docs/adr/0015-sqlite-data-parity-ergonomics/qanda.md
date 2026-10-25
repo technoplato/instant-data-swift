@@ -792,3 +792,39 @@ attribute map, so per-fact scope now applies only where it pays:
 After the amendment (median of 10 alternating runs): inserts, streams, scalar updates, and reads
 match 1.5.7; small-entity updates and deletes stay 7–10% slower in the in-memory step (below
 1 µs per entity).
+
+## Q34 — List attachments ride two has-one links (the audio row, the newest image)
+
+- **Status:** decided
+- **Asked:** 2026-10-24
+- **Decided:** 2026-10-25 (Scribe #1100)
+- **Supersedes:** Q31's "Attachments include may use a page/limit (e.g. 24)" for list rows.
+- **Question:** The list's `attachments` include (nested `limit` 24) is the unbounded include Q32 removed for
+  segments: the server answers every attachment of every listed recording on each refresh, and a live recording's
+  5 s heartbeat is a refresh. What should list rows read?
+
+### Evidence
+
+- What the 24 fed (Scribe, traced 2026-10-25): one audio row per recording (audio availability, the Without Audio
+  filter, deletion refusal, launch restore, the unfinished-recording sweep, playback opened from the list, the
+  floating bar); the map pin's newest image; a continued take's earlier images, silently capped at 24. No list row
+  draws thumbnails (Scribe #391).
+- The app's data, 2026-10-25: 6,357 attachments on 387 of 561 recordings; per recording p50 1, p90 21, p99 368,
+  max 550; 34 recordings over 24; 109 audio rows without a `recording` link, all written before lifecycle ids.
+- A throwaway app's server, admin queries (rows and JSON bytes): 12 recordings with 240 images each answered 2,892
+  attachment rows and 1,666,864 bytes with the old include, 24 rows and 13,216 bytes with the two links; one with
+  2,400 images, 2,401 rows and 1,390,607 bytes against 2 and 1,120.
+- A latent defect: the 24 newest by `updatedAtMs` pushed an older audio row out of a recording with more than 24
+  images, and the list then read it as having no audio.
+
+### Answer
+
+Two has-one links on `recordings`, bounded on the server as Q32's slots are: `audioAttachment` (the audio row, set in
+the stop's summary transaction) and `previewImage` (the newest image, set with each image write). The list, its local
+lookahead and the Without Audio rows include them instead of `attachments`; a continued take reads its recording's
+images by `recordingID`, from the local store and from the server within 5 s. Links only, no rules: linking checks the
+recording's update rule and the attachment's view rule. Pushed to production and backfilled on 2026-10-25 (492 links on
+379 recordings; 101 audio rows found only by `recordingID`). `transcriptions` stays has-many: at most two rows a
+recording. A second top-level audio query joined to the list in app code was rejected (overview 01, "Explicitly
+rejected"). Writers that do not link `previewImage` yet (dropped images, thread images, agent replies) leave the map
+pin one image behind until the backfill runs again.
