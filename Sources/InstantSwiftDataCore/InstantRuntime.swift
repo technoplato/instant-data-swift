@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-25: compaction asks the app's hold once, before the operation gate, and under it re-checks only what reads
+//   at once, so the gate's hold is the VACUUM's own (#1136).
 // - 2026-10-25: a one-shot read answers as the local read does, a local observation's first answer without the
 //   operation gate, and writes its query-cache row after it, revision-checked (#1134).
 // - 2026-10-25: a delivery pass takes the retry window's gate turn only when a failed write waits to be retried, and a
@@ -12104,7 +12106,8 @@ public final class InstantRuntime: Sendable {
   /// 200 MB of live pages on a Mac mini, so every write waits for it: it does not start while the device is hot
   /// (thermal state serious or critical), in Low Power Mode, short of disk for a copy of the live pages and a WAL as
   /// large, or cancelled, or while `hold` gives a reason, such as a recording. It takes the operation gate behind every
-  /// other caller, so never while a server apply holds it.
+  /// other caller, so never while a server apply holds it. `hold` is asked once, before the gate: to stop a compaction
+  /// that has already passed it, cancel its task, which the gate's holder checks again before the `VACUUM` starts.
   ///
   /// ```swift
   /// let compaction = try await db.compactLocalCache { recorder.isRecording ? "recording" : nil }
@@ -12149,7 +12152,10 @@ public final class InstantRuntime: Sendable {
         await leaveOperationGate()
         return compaction
       }
-      if let reason = await localCacheCompactionHold(hold, requiredDiskBytes: policy.requiredDiskBytes(current)) {
+      // #1136: the app's hold was asked just before the gate; asking it again here held the gate while it ran (the
+      // consuming app's hop to the main actor) as well as during the VACUUM. What may have changed while this waited
+      // for the gate and reads at once is read again: cancellation, the device's heat and power, the volume's room.
+      if let reason = localCacheCompactionDeviceHold(requiredDiskBytes: policy.requiredDiskBytes(current)) {
         await leaveOperationGate()
         compaction.outcome = .held(reason)
         recordLocalCacheCompaction(compaction)
@@ -12180,6 +12186,14 @@ public final class InstantRuntime: Sendable {
     _ hold: @Sendable () async -> String?,
     requiredDiskBytes: Int64
   ) async -> InstantLocalCacheCompaction.Hold? {
+    if let reason = localCacheCompactionDeviceHold(requiredDiskBytes: requiredDiskBytes) { return reason }
+    if let reason = await hold() { return .application(reason) }
+    return nil
+  }
+
+  /// Why the VACUUM must not start now, from what reads at once (#1136): a cancelled task, a hot device, Low Power Mode,
+  /// or a volume without room for it. The one check made again under the operation gate.
+  private func localCacheCompactionDeviceHold(requiredDiskBytes: Int64) -> InstantLocalCacheCompaction.Hold? {
     if Task.isCancelled { return .cancelled }
     let conditions = configuration.storageMaintenanceConditions(configuration.persistenceURL)
     if conditions.isHot { return .deviceIsHot }
@@ -12187,7 +12201,6 @@ public final class InstantRuntime: Sendable {
     if let available = conditions.availableDiskBytes, available < requiredDiskBytes {
       return .insufficientDiskSpace(availableBytes: available, requiredBytes: requiredDiskBytes)
     }
-    if let reason = await hold() { return .application(reason) }
     return nil
   }
 
