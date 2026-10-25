@@ -1,3 +1,20 @@
+## 2026-10-25 05:13:12 EDT — fix-storage-1076 done: cleanup, and a release-version correction (fix-storage-1076)
+
+- **Correction:** v1.9.40 was tagged at 02:53 (`da9771bc`). It holds #1118, #1115 slice 1, #1121/#1120, #1123, #1124
+  and #1125. #1115 slice 2 (`84a6195b`, `12f487e1`) and #1119's guards (`375beb42`, tests only) came after it and wait
+  for the next release; the entries above that say 1.9.40 for them are wrong (channel `eada89ef`).
+- **State of the task's issues:** VerificationNeeded: #1118, #1124, #1121, #1120, #1125, #1119, #1115 (both slices).
+  #1122: fix-gate-1074's, folded into #1129's third slice. #1123: Open again, released for the lab (the interval landed;
+  the frame left is the per-refresh count and time update, best designed after #1129's third slice).
+- **Removed:** Mac mini `~/Library/Caches/fix-storage-1076` (1,053.2 MB: build 1.0 GB, sources 24 MB, logs 8.1 MB) and
+  three files in `/tmp`; free space 22.18 -> 23.01 GB. Laptop `~/Library/Caches/fix-storage-1076` (2,336.3 MB: two
+  release build folders of about 1.1 GB each, two source copies, three measurement and development worktrees, logs,
+  scratch), local branches `agent/claude/fix-storage-1119` (merged) and `wip/fix-storage-1120` (8 superseded commits,
+  bundled first), and my files in `/tmp`; then this worktree (389 MB, `.build` 366 MB of it) and its merged branch. No
+  simulators were created.
+- **Kept:** `~/Sync/audit/fix-storage-1076` (9.4 MB): both machines' run logs, the runner scripts, drafts (#1119's
+  set-aside temp-journal patch among them) and `wip-fix-storage-1120.bundle`.
+
 ## 2026-10-25 05:08:28 EDT — #1115 slice 2 landed: the outbox's rare-state indexes are partial (fix-storage-1076)
 
 - **Landed on main:** red `84a6195b`, green `12f487e1` (plan amendments 8 `4637c507` and 10 `4d8ca298`). Ready for 1.9.40.
