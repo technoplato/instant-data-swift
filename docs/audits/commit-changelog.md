@@ -1,3 +1,39 @@
+## 2026-10-25 19:15:42 EDT — scribe `8508a24d7bb023147ed0091c87195b5d9d160aef`
+Merge (#951, #1185): S2c, a broadcast voice named after the item that was playing (ADR 0096 amendment C), and two fixes to #1185 (the Watch slice; the idle bookkeeping write).
+
+## 2026-10-25 19:15:42 EDT — scribe `bfe417cf958a54309c81467ca941a0bab19a4185`
+Merge origin/main into agent/claude/speakers-live-961: main through #1183's A-S1b and #1077's section 17.
+
+## 2026-10-25 19:15:42 EDT — scribe `0b211426206367a8ea11f80c08c170a50105993b`
+Docs (#951): the audit's last runs and #1185's two fixes; the CHANGELOG entry for the idle write.
+
+## 2026-10-25 19:15:42 EDT — scribe `b707cf815452750ef7d03e5fee843e9d13ae973e`
+Fix (#1185): a recording that has not started writes no now-playing bookkeeping, so its state does not change on every action.
+
+## 2026-10-25 19:15:42 EDT — scribe `e9c65affd99bb70baa3c553b0a467b14c41a3552`
+Changelog (#951): the CHANGELOG entry for S2c's green.
+
+## 2026-10-25 19:15:42 EDT — scribe `ed853c9906a17c0821b081c96acda34fcd2959f4`
+Changelog (#951): CHANGELOG entries for S2c and #1185's watchOS guard.
+
+## 2026-10-25 19:15:42 EDT — scribe `25ebd734969f89a1c5ecb269b96067dd74337379`
+Merge origin/main into agent/claude/speakers-live-961: main through #1097 landing B.
+
+## 2026-10-25 19:15:42 EDT — scribe `1ed05e6443c0b4bcee53199766d1392c1fdabb37`
+Docs (#951): S2c: ADR 0096 amendment C, FEATURES item 14, What's New Build 141, the audit.
+
+## 2026-10-25 19:15:42 EDT — scribe `36c64dfb63a9c438298ad7178c42a8a636a86b69`
+Fix (#1185): nowPlayingTapped compiles only where its bar and timelineItemAction do (not watchOS or tvOS).
+
+## 2026-10-25 19:15:42 EDT — scribe `7f20c56056009538f7c056305c4fc8f0bb35fa8b`
+Green (#951 S2c): a broadcast voice repeating an item he plays is named after that item's speaker.
+
+## 2026-10-25 19:15:42 EDT — scribe `1a5b589d838f3981fc0f2720cc24fdb052fdef3c`
+Red (#951 S2c): a broadcast voice repeating an item he plays is named after that item's speaker.
+
+## 2026-10-25 19:15:42 EDT — scribe `9f432e97dbed4a5b267a2085d2a249d8af75d32e`
+Plan (#951 S2c): a broadcast voice named after the item that was playing; claims.
+
 ## 2026-10-25 19:07:34 EDT — scribe `91b3debb3d781dedacc851bb39f10e5e4a732e25`
 Docs (#1077, #1097): the hot-paths audit's section 17 (where each of its 26 findings stands: 7 landed awaiting device checks, 3 in part, 1 in progress, 15 open), section 16 with wave 7 (landing B's suites rebuilt and run on main after its merge: 13 list tests, 3 beat tests, 63 durability tests, all pass), the index row's status; on main with change log f363a073e.
 
