@@ -145,3 +145,21 @@ on the channel.
 every session's boot registers `RealSizeApplyLog`, a diagnostics handler, so the pass ran at the `.debug` floor with
 one handler. Claims `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E09 only): the passes stop the
 session's apply log, a pass with no sink checks that none is active, and each pass reports whether one was.
+
+## Amendment 9 (2026-10-25 01:33 EDT, claude-code/fix-memory-1075@ld)
+
+#1148 landed (red `9d4ca094`, green `97ed60bc`, E09 fix `63920cb0`). Fresh breakdown on main with #1121's fact table
+(Mac mini, release, fixture v3): E03 64-line refresh 11,030 allocations / 11.4 MB; E14 history page 23,979 / 19.5 MB.
+S14 puts about 8 MB of a history page in `queryLocally` rebuilding an `AttributeStore` from a sorted copy of all 2,283
+attributes, and about 17,000 allocations in the read connection's deferred loads (each row's computed `json`,
+`String(cString:)`, one joined batch string, `JSONDecoder`); S03 puts about 3,000 of a refresh's allocations and 4.3 MB
+in the store's deferred loads (the same JSON path).
+
+#1150 step 1 claims: `Sources/InstantSwiftDataCore/InstantRuntime.swift` (`queryLocally(_:)` and
+`mergingEntitiesOnDisk(into:plan:lookup:attributes:attributeStore:)` only): the read takes the store's own
+`AttributeStore` (a copy-on-write value) and hands hydration only the configured attributes;
+`Sources/InstantSwiftDataCore/InstantStore.swift` (a new `attributeStoreSnapshot()` only);
+`Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E14's per-page budget, tightened per step toward
+#1150's 4 MB). Step 2 (named here before editing): the read connection reads a fact's columns instead of its computed
+`json`, with a value reader that inverts `InstantStoredJSON` and falls back to `JSONDecoder`; the store's deferred
+loads (#1147) after agreeing their part with fix-storage-1076.
