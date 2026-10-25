@@ -1,6 +1,8 @@
 import Foundation
 
 struct InstantOptimisticEffectFootprint: Equatable, Sendable {
+  /// The outbox's effect normalization index is partial on this version, written as a literal (#1115:
+  /// `SQLitePersistenceStore.rareStateIndexes`), which each open rebuilds when the version it names is not this one.
   static let currentVersion = 2
 
   var entityIDs: Set<String>

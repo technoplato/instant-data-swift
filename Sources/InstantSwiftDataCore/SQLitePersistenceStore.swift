@@ -66,6 +66,8 @@
 //   computed when read (127.1 -> 40.7 MB on a copy of a phone's store); a re-saved fact is upserted where it is, and
 //   the migration passes over facts walk a snapshot of their keys (#1121, #1120).
 // - 2026-10-25: a changing result's JSON is written at most every 5 minutes, not 30 s (#1123).
+// - 2026-10-25: the outbox's three rare-state indexes are partial on the state each finds, so a live write's save,
+//   acknowledgement and echo write none of them; the queries they serve name the same literal predicates (#1115).
 
 import Foundation
 import IssueReporting
@@ -2953,17 +2955,11 @@ public actor SQLitePersistenceStore {
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
-    try execute(
-      """
-      CREATE INDEX IF NOT EXISTS instant_outbox_synchronization_blocker_idx
-      ON instant_outbox (
-        optimistic_overlay_active,
-        optimistic_effect_receipt_fingerprint,
-        created_at_ms,
-        mutation_id
-      )
-      """
-    )
+    // Since #1115 it is one of the three rare-state indexes, each partial and
+    // each put in place here as its definition says.
+    try withSQLiteBusyRetry {
+      try ensureRareStateIndexes()
+    }
     try ensureServerApplyStagingSchema()
     try withSQLiteBusyRetry {
       try ensureLookupIndexes()
@@ -5579,32 +5575,29 @@ public actor SQLitePersistenceStore {
           """,
           []
         ),
+        // The two version checks name their versions as literals, which their partial indexes need (#1115).
         (
           """
           SELECT EXISTS(
             SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
             WHERE optimistic_overlay_active = 1
-              AND (optimistic_effect_metadata_version < ? OR optimistic_effect_metadata_version > ?)
+              AND optimistic_effect_metadata_version != \(InstantOptimisticEffectFootprint.currentVersion)
             LIMIT 1
           )
           """,
-          [
-            .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
-            .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
-          ]
+          []
         ),
         (
           """
           SELECT EXISTS(
             SELECT 1 FROM instant_outbox
-            WHERE status IN (?, ?) AND delivery_metadata_version < ? AND optimistic_overlay_active = 1
+            WHERE status IN (?, ?) AND \(Self.staleDeliveryMetadataPredicate) AND optimistic_overlay_active = 1
             LIMIT 1
           )
           """,
           [
             .text(InstantMutationStatus.pending.rawValue),
             .text(InstantMutationStatus.confirmed.rawValue),
-            .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
           ]
         ),
         (
@@ -6739,21 +6732,15 @@ public actor SQLitePersistenceStore {
   }
 
   private func firstUnknownActiveServerApplyMutationIDWithoutTransaction() throws -> String? {
+    // The partial index's own predicate, its version a literal (#1115).
     try selectScalar(
       """
       SELECT mutation_id
       FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
-      WHERE optimistic_overlay_active = 1
-        AND (
-          optimistic_effect_metadata_version != ?
-          OR optimistic_effect_receipt_fingerprint IS NULL
-        )
+      WHERE \(Self.unknownActiveEffectPredicate)
       ORDER BY created_at_ms, mutation_id
       LIMIT 1
-      """,
-      [
-        .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
-      ]
+      """
     )
   }
 
@@ -15560,7 +15547,7 @@ public actor SQLitePersistenceStore {
   /// `OR` left SQLite a search on the claim state alone and a sort: every ready row was visited, refused writes
   /// included, each through its body's overflow pages, after every write and acknowledgement; on one phone's store that
   /// was 663 refused writes, and the claim held the operation gate about 60% of every recording minute.
-  private static let automaticDeliveryCandidatesSQL =
+  static let automaticDeliveryCandidatesSQL =
     """
     SELECT
       mutation_id,
@@ -15582,24 +15569,26 @@ public actor SQLitePersistenceStore {
       status,
       delivery_started
     FROM instant_outbox
-    WHERE delivery_claim_state = ? AND status IN (?, ?) AND delivery_metadata_version < ?
+    WHERE delivery_claim_state = ? AND status IN (?, ?) AND \(SQLitePersistenceStore.staleDeliveryMetadataPredicate)
     ORDER BY created_at_ms, mutation_id
     LIMIT ?
     """
 
+  /// The second branch names its version as a literal (#1115): the delivery metadata index is partial on it, and with
+  /// the version bound SQLite could not use that index, so the branch would search every ready row, refused writes
+  /// included, and read each one's late columns through its body (#1108).
   private static func automaticDeliveryCandidateBindings(limit: Int) -> [SQLiteBinding] {
     [
       .text(InstantOutboxDeliveryClaimState.ready.rawValue),
       .text(InstantMutationStatus.pending.rawValue),
       .text(InstantMutationStatus.confirmed.rawValue),
-      .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
       .int(Int64(limit)),
     ]
   }
 
   /// Whether the automatic pump has another write to deliver: the continuation check of a claim pass, split into the
   /// candidate read's two branches for the same reason (#1108).
-  private static let automaticDeliveryCandidateExistsSQL =
+  static let automaticDeliveryCandidateExistsSQL =
     """
     SELECT EXISTS(
       SELECT 1
@@ -15608,7 +15597,7 @@ public actor SQLitePersistenceStore {
     ) OR EXISTS(
       SELECT 1
       FROM instant_outbox
-      WHERE delivery_claim_state = ? AND status IN (?, ?) AND delivery_metadata_version < ?
+      WHERE delivery_claim_state = ? AND status IN (?, ?) AND \(SQLitePersistenceStore.staleDeliveryMetadataPredicate)
     )
     """
 
@@ -15617,7 +15606,6 @@ public actor SQLitePersistenceStore {
       .text(InstantOutboxDeliveryClaimState.ready.rawValue),
       .text(InstantMutationStatus.pending.rawValue),
       .text(InstantMutationStatus.confirmed.rawValue),
-      .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
     ]
   }
 
@@ -15653,6 +15641,69 @@ public actor SQLitePersistenceStore {
     ON instant_outbox
       (delivery_claim_state, delivery_state, delivery_claim_deadline_ms, created_at_ms, mutation_id)
     """
+
+  /// Puts each of ``rareStateIndexes`` in place as it is defined (#1115): built when a store has none, or has the full
+  /// index an older version made, or a partial one naming another version, which a query forcing the index would fail
+  /// on. SQLite keeps an index's CREATE text without its `IF NOT EXISTS`, so the stored text is compared whole: three
+  /// small reads at each open. The drop and the build commit together, so a reader never finds the index missing.
+  private func ensureRareStateIndexes() throws {
+    for index in Self.rareStateIndexes {
+      let defined = index.sql.replacingOccurrences(of: "CREATE INDEX IF NOT EXISTS", with: "CREATE INDEX")
+      let stored = try selectScalar(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+        [.text(index.name)]
+      )
+      guard stored != defined else { continue }
+      try transaction {
+        try execute("DROP INDEX IF EXISTS \(index.name)")
+        try execute(index.sql)
+      }
+    }
+  }
+
+  /// An active overlay whose effect metadata is not the current version, or that has no receipt: what the effect
+  /// normalization index holds (#1115).
+  static let unknownActiveEffectPredicate =
+    "optimistic_overlay_active = 1 AND (optimistic_effect_metadata_version != "
+      + "\(InstantOptimisticEffectFootprint.currentVersion) OR optimistic_effect_receipt_fingerprint IS NULL)"
+
+  /// A row whose delivery metadata is older than the current version: what the delivery metadata index holds (#1115).
+  static let staleDeliveryMetadataPredicate =
+    "delivery_metadata_version < \(InstantOutboxDeliveryMetadata.currentVersion)"
+
+  /// The outbox's rare-state indexes, each partial on the one state it finds (#1115). A live write is saved at the
+  /// current versions with its receipt, so none of them returns it; as full indexes they held it anyway, and its save,
+  /// acknowledgement and echo each wrote a page of all three, 7 of the 30 outbox frames a write took. The predicates
+  /// name each version as a literal: SQLite uses a partial index only for a query whose WHERE clause holds the index's
+  /// own terms, and a bound parameter is not one, so every query they serve interpolates the same predicate. Each open
+  /// rebuilds an index whose stored definition differs (``ensureRareStateIndexes()``), so a new version needs no
+  /// migration of its own.
+  static let rareStateIndexes: [(name: String, sql: String)] = [
+    (
+      name: "instant_outbox_synchronization_blocker_idx",
+      sql: """
+        CREATE INDEX IF NOT EXISTS instant_outbox_synchronization_blocker_idx
+        ON instant_outbox (optimistic_overlay_active, optimistic_effect_receipt_fingerprint, created_at_ms, mutation_id)
+        WHERE \(receiptlessRetainedMutationPredicate)
+        """
+    ),
+    (
+      name: "instant_outbox_effect_normalization_idx",
+      sql: """
+        CREATE INDEX IF NOT EXISTS instant_outbox_effect_normalization_idx
+        ON instant_outbox (optimistic_overlay_active, optimistic_effect_metadata_version, created_at_ms, mutation_id)
+        WHERE \(unknownActiveEffectPredicate)
+        """
+    ),
+    (
+      name: "instant_outbox_delivery_metadata_idx",
+      sql: """
+        CREATE INDEX IF NOT EXISTS instant_outbox_delivery_metadata_idx
+        ON instant_outbox (status, delivery_metadata_version, created_at_ms, mutation_id)
+        WHERE \(staleDeliveryMetadataPredicate)
+        """
+    ),
+  ]
 
   /// The tables keyed by their whole row that migration 0030 rebuilds WITHOUT ROWID (#1115), each with its new
   /// definition, its columns and its lookup index.
@@ -16671,8 +16722,8 @@ public actor SQLitePersistenceStore {
   private func loadFirstUnknownActiveOptimisticEffectRowWithoutTransaction(
     after position: InstantOutboxDeliveryPosition
   ) throws -> InstantOptimisticEffectRow? {
-    let currentVersion = InstantOptimisticEffectFootprint.currentVersion
-    return try loadOptimisticEffectRowsWithoutTransaction(
+    // The partial index's own predicate, its version a literal (#1115).
+    try loadOptimisticEffectRowsWithoutTransaction(
       """
       SELECT mutation_id, created_at_ms, mutation_revision,
              optimistic_effect_metadata_version, optimistic_effect_is_global,
@@ -16681,11 +16732,7 @@ public actor SQLitePersistenceStore {
                length(CAST(json AS BLOB))
              )
       FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
-      WHERE optimistic_overlay_active = 1
-        AND (
-          optimistic_effect_metadata_version != ?
-          OR optimistic_effect_receipt_fingerprint IS NULL
-        )
+      WHERE \(Self.unknownActiveEffectPredicate)
         AND confirmation_proven = 0
         AND (
           created_at_ms > ? OR (created_at_ms = ? AND mutation_id > ?)
@@ -16694,7 +16741,6 @@ public actor SQLitePersistenceStore {
       LIMIT 1
       """,
       [
-        .int(Int64(currentVersion)),
         .int(position.createdAtMilliseconds),
         .int(position.createdAtMilliseconds),
         .text(position.mutationID),

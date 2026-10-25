@@ -266,6 +266,8 @@ package struct InstantMutationDeliveryBarrierSummary: Sendable {
 }
 
 enum InstantOutboxDeliveryMetadata {
+  /// The outbox's delivery metadata index is partial on this version, written as a literal (#1115:
+  /// `SQLitePersistenceStore.rareStateIndexes`), which each open rebuilds when the version it names is not this one.
   static let currentVersion = 2
 
   static func state(for mutation: PendingMutation) -> InstantOutboxDeliveryState {

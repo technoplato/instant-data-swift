@@ -5597,13 +5597,23 @@ private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
   )
 }
 
+/// Migration 0014's effect normalization index, full, as every store before #1115 held it.
+private let preReceiptAuthorityEffectNormalizationIndexSQL = """
+  CREATE INDEX instant_outbox_effect_normalization_idx
+  ON instant_outbox (optimistic_overlay_active, optimistic_effect_metadata_version, created_at_ms, mutation_id);
+  """
+
+/// A store before migration 0020 had migration 0014's full effect normalization index; since #1115 the index is partial
+/// on the receipt column this drops, so the rollback drops it first and puts the full one back.
 private func restorePreReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
   try executeBoundedOutboxSQL(
     """
     DROP INDEX IF EXISTS instant_outbox_synchronization_blocker_idx;
+    DROP INDEX IF EXISTS instant_outbox_effect_normalization_idx;
     ALTER TABLE instant_outbox DROP COLUMN optimistic_effect_receipt_fingerprint;
     ALTER TABLE instant_outbox DROP COLUMN delivery_claim_payload_fingerprint;
     ALTER TABLE instant_outbox DROP COLUMN server_acceptance_payload_fingerprint;
+    \(preReceiptAuthorityEffectNormalizationIndexSQL)
     DELETE FROM instant_schema_migrations
     WHERE name = '0020_outbox_optimistic_effect_receipt_fingerprint';
     """,
@@ -5611,12 +5621,15 @@ private func restorePreReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
   )
 }
 
+/// As ``restorePreReceiptAuthorityOutboxSchema(cacheURL:)``, from before migration 0017: the full effect normalization
+/// index goes back too (#1115).
 private func restorePreServerApplyAndReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
   try executeBoundedOutboxSQL(
     """
     DROP INDEX IF EXISTS instant_outbox_synchronization_blocker_idx;
     DROP INDEX IF EXISTS instant_outbox_server_apply_watermark_idx;
     DROP INDEX IF EXISTS instant_outbox_server_apply_failed_idx;
+    DROP INDEX IF EXISTS instant_outbox_effect_normalization_idx;
     ALTER TABLE instant_outbox DROP COLUMN server_transaction_id;
     ALTER TABLE instant_outbox DROP COLUMN confirmation_source;
     ALTER TABLE instant_outbox DROP COLUMN failure_attribute_revision;
@@ -5624,6 +5637,7 @@ private func restorePreServerApplyAndReceiptAuthorityOutboxSchema(cacheURL: URL)
     ALTER TABLE instant_outbox DROP COLUMN optimistic_effect_receipt_fingerprint;
     ALTER TABLE instant_outbox DROP COLUMN delivery_claim_payload_fingerprint;
     ALTER TABLE instant_outbox DROP COLUMN server_acceptance_payload_fingerprint;
+    \(preReceiptAuthorityEffectNormalizationIndexSQL)
     DELETE FROM instant_schema_migrations
     WHERE name IN (
       '0017_bounded_server_apply',
