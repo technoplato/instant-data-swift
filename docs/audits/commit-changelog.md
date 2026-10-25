@@ -1,3 +1,6 @@
+## 2026-10-25 02:53:30 EDT — instant-data-swift `222f25bc9d75069c7cbb7cfe351bfbabb12d15fb`
+Docs: the v1.9.40 release document (cut at a50f7a62; a store 1.9.40 opened cannot be written by an older build).
+
 ## 2026-10-25 02:19:57 EDT — instant-data-swift `37b0286585a53c782cfe8c875e0c380f8c6f198d`
 Fix (#1128): a server apply's retry reuses its first attempt's retractions and saves at the same revisions; the $files answer's gate-held plan 521.45 -> 66.15 ms (Mac mini, release).
 
