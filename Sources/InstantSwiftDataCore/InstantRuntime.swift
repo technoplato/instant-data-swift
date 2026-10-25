@@ -454,10 +454,11 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxTripleCount: 1_000_000
   )
   var liveQueryResultPruningWriteInterval = 64
-  /// How many result triples one prune batch removes before it releases the operation gate (#303, item 6). The
+  /// How many result triples one prune batch removes or checks before it releases the operation gate (#303, item 6). The
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
-  /// waited; `nil` prunes everything at once.
-  var liveQueryResultPruneBatchTripleCount: Int? = 5_000
+  /// waited; `nil` prunes everything at once. 1,000 since #1129: a batch also holds the server-apply gate, so a refresh
+  /// that arrives during one waits for it, and a batch of 5,000 held both about 100 ms.
+  var liveQueryResultPruneBatchTripleCount: Int? = 1_000
   /// How many of a closed result's facts one operation-gate hold loads back when its query reopens (#1131). The reload
   /// of the `$files` list's 75,640 facts held the gate about 1.3 s in one hold on the Mac mini after its read moved out
   /// of the gate; 2,048 facts are about 30 ms there.
