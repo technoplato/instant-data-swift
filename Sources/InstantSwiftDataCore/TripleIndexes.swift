@@ -139,6 +139,36 @@ struct AttributeStore: Hashable, Codable, Sendable {
     attributesByNamespace[namespace] ?? []
   }
 
+  /// Whether deleting an entity of `namespace` can reach an entity of one of `namespaces`: one its cascades delete
+  /// (`onDelete` on a link to it, `onDeleteReverse` on its own links), one that loses its link to a deleted entity, or
+  /// one a deleted entity links to. A link that names no target namespace may point anywhere, so it reaches. A superset
+  /// of what the store's delete walks; the deleted entity itself counts only when a link reaches its namespace (#1153).
+  func deleteCanReach(_ namespaces: Set<String>, from namespace: String) -> Bool {
+    guard !namespaces.isEmpty else { return false }
+    var visited: Set<String> = [namespace]
+    var pending = [namespace]
+    while let current = pending.popLast() {
+      for attributes in attributesByNamespace.values {
+        for attribute in attributes where attribute.valueType == .ref {
+          // A link to `current`: its entity loses the fact, or is deleted with the target.
+          if attribute.linkNamespace == nil || attribute.linkNamespace == current {
+            if namespaces.contains(attribute.namespace) { return true }
+            if attribute.onDelete == .cascade, visited.insert(attribute.namespace).inserted {
+              pending.append(attribute.namespace)
+            }
+          }
+          // A link of `current`'s: its targets lose a reverse reference, or are deleted with it.
+          if attribute.namespace == current {
+            guard let target = attribute.linkNamespace else { return true }
+            if namespaces.contains(target) { return true }
+            if attribute.onDeleteReverse == .cascade, visited.insert(target).inserted { pending.append(target) }
+          }
+        }
+      }
+    }
+    return false
+  }
+
   func namespaceHasManyCardinality(_ namespace: String) -> Bool {
     namespacesWithManyCardinality.contains(namespace)
   }

@@ -641,6 +641,8 @@ public actor InstantStore {
   /// How many times this store copied every fact it holds (#1035): a snapshot, or indexes built from one. A change
   /// prepared against such a copy costs work in proportion to the store, not to the change.
   package private(set) var fullCopyCountForTesting = 0
+  /// How many mutations this store prepared, previews included: a finished line should be prepared once (#1153).
+  package private(set) var preparationCountForTesting = 0
 
   package func resetFullCopyCountForTesting() {
     fullCopyCountForTesting = 0
@@ -1268,6 +1270,7 @@ public actor InstantStore {
     insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
     let energy = InstantEnergyMeter.begin(.storePrepare); defer { energy.end() }
+    preparationCountForTesting += 1
     indexes.discardInternedQueryResultsBeforeWrite()
     indexes.reserveCapacity(
       entityCapacity: transaction.operations.count,
