@@ -1,3 +1,48 @@
+## 2026-10-25 13:09:00 EDT — scribe `41eb89e712019cad34ca46e2e4f1538f877059ef`
+changelog(#1176): the CHANGELOG entry for the docs commit below.
+
+## 2026-10-25 13:08:52 EDT — scribe `364c8285a553b590face32a47951a4676d846595`
+Docs (#1176): ADR 0095 as run and measured (980 merged, 943 written; recall from Instant 24/25, precision 30/33; finding one by topic 0.73 s query, 1 ms search) and the PROGRESS entry.
+
+## 2026-10-25 12:43:35 EDT — scribe `b174f4f0786b8bc95d098d44bf2036e821efa056`
+changelog(#1176): entries for the qa check fix and the dry-run fix.
+
+## 2026-10-25 12:43:23 EDT — scribe `c97e3238f887799eb0158ca84f06431ae3db235b`
+Fix (#1176): a backfill dry run writes nothing, not even its apply ledger.
+
+## 2026-10-25 12:43:23 EDT — scribe `6ef17d4a9a12b50236cb062e591051616e618132`
+Green (#1176): qa check sees a moment's recording (has-one) as the SDK returns it, one object; the production report of unlinked stretches was the check, not the data.
+
+## 2026-10-25 12:43:23 EDT — scribe `7c8545ca209306a3e802ad6a29e8f2f30b61617c`
+Red (#1176): the test's Instant returns has-one links as one object, as the SDK does with the schema.
+
+## 2026-10-25 12:39:34 EDT — scribe `364d309956b0708bacb1aceb50820ad6db29aba8`
+changelog(#1176): the entry for keepable.
+
+## 2026-10-25 12:39:25 EDT — scribe `dc299f88221003dab47eec5cc13db5f95efddae9`
+Green (#1176): the backfill keeps a question asked of a person only when he wants to learn from it (keepable); apply and the plan's score share it.
+
+## 2026-10-25 12:39:25 EDT — scribe `5738c3d4dc450c15e0762343a8cc8d8308eb799c`
+Red (#1176): the backfill keeps a question to a person only to learn from.
+
+## 2026-10-25 11:56:57 EDT — scribe `10b202d443a738ae3248544b4ee7ab326aea2070`
+Docs (#1176): qa-door cites rule 12 for answers that draw on his wife's lines; a note on #1183's channel about where scribe qa copies line text.
+
+## 2026-10-25 11:54:52 EDT — scribe `d4f7aaff48ea5230becb8bf81378240c2ee890a6`
+Docs (#1176): the listener's reference: qa add refuses a line of system audio or one named for someone else.
+
+## 2026-10-25 10:34:42 EDT — scribe `37ae16d9ae441da26190e86601a07be316185205`
+Plan (#1176): amendment C to 2026-10-25-qa-1176 and its claims (the listener's skill and the guide).
+
+## 2026-10-25 10:27:39 EDT — scribe `9a88688709dd0e59aa9b382a43429f09128cbd86`
+Plan (#1176): amendment B to 2026-10-25-qa-1176 and its claims.
+
+## 2026-10-25 10:23:00 EDT — scribe `6f0cc826be1183c57af05bbac27d9a26cd80d978`
+Plan (#1176): amendment A's claims (ideas.ts, ideas-command.ts, agent-cli.ts, mirror.ts).
+
+## 2026-10-25 10:22:43 EDT — scribe `f733b8ceae2f0a7355830bbc35095cf1ae36fecb`
+Plan (#1176): amendment A to 2026-10-25-qa-1176: scribe qa rides the ideas op.
+
 ## 2026-10-25 13:08:25 EDT — scribe `a20d9197c8fd9f4039a07a94311dfb7588ef4d7d`
 merge(#962): main into the branch before landing: What's New keeps #837's and #1177's Build 139 (next) stories with #962's; PROGRESS, CHANGELOG and the audits index keep every entry
 
