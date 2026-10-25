@@ -1,3 +1,12 @@
+## 2026-10-25 09:58:18 EDT — scribe `c6bcc0f60476f818eec303c65b893d4e20ef4a18`
+Docs (#1059): the agents-guide audit after landing: a headless agent's first request in the mirror folder 112,287 -> 39,546 tokens; routing eval 18/18.
+
+## 2026-10-25 09:53:26 EDT — scribe `60df1913fb3121c351a546b863f12ae948a74a22`
+Fix (#1059): quote skill descriptions that YAML cut at " #" (their triggers were read as a comment); the coverage test fails on any unquoted " #".
+
+## 2026-10-25 09:51:22 EDT — scribe `6032a96d7be139d8c1b56752241eeef673a4aa95`
+Merge (#1059): the agents guide lands as ten commandments, a small core and 12 skills loaded on demand (red 79c75ffa1, green 53dfafed8, install 42231eaac, routing eval 107967400, audit 6483b7b7e 079983260); installed with backups.
+
 ## 2026-10-25 09:37:01 EDT — scribe `cd9ac3ac59d69bbccedb6533473bde3b4049183b`
 Cut build 137: Scribe 0.1 (137) from main 0dfe43c34 (136's app code plus #1097's liveRoomKey schema declaration), instant-data-swift exactly 1.9.42; Dev and Mac 136 had stopped at the drift gate (#1174).
 
