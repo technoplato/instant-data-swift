@@ -177,3 +177,18 @@ continuation check and the per-claim overlay check included). Hypothesis: 30 -> 
 - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift`: a new test, and the frames bound 30 -> 24
   (#1115's criterion); a new `Tests/InstantSwiftDataCoreTests/InstantOutboxRareStateIndexTests.swift` (the plans, a
   store migrated from the full indexes, a version change that must rebuild them).
+
+## Amendment 9 (2026-10-25 02:30 EDT, #1119)
+
+At the audit's baseline the phone-shaped echo's 222 KB of temp writes were all the temporary database's rollback
+journal (measured with the shim's temp kinds, laptop, tree a3889057). On main that exercise writes none, but it saves
+each write only after the last one's echo, so its echo never rebases a pending write; a phone saves its next interim
+while the server's answer to the last is on its way, and a rebase stages rows in the plan's temporary tables. A test
+whose echo rebases a pending write decides whether main still writes that journal; if it does, the writer keeps its
+temporary database's journal in memory (`PRAGMA temp.journal_mode = MEMORY`: the temporary database is per-connection
+scratch, discarded at a crash, and the journal holds only the pages a transaction changes until it commits). Claimed:
+- `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift`: `StorageIOWriteCycle.writeLine(into:alsoInto:)`
+  gains `overlapping:` (each write after a line's first saved before the previous one's echo).
+- New `Tests/InstantSwiftDataCoreTests/InstantServerApplyTempJournalTests.swift`.
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (only if the test fails on main): `openRawConnection(fileURL:vfs:)`
+  and `recordDurabilitySettings`.
