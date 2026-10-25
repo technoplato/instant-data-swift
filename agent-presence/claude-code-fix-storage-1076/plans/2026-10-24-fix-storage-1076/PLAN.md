@@ -126,3 +126,19 @@ Claimed: `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift`, the expected
 `transactionsPersistOnlyChangedRows` only: an update of a todo's text now inserts one fact row (the new text), where
 INSERT OR REPLACE inserted two (the re-stamped id fact too); the in-place upsert updates the id fact in its row. Found by
 comparing the release bundle's printed `expectNoDifference` differences before and after #1121.
+
+## Amendment 6 (2026-10-25 01:20 EDT, #1123)
+
+A changing query's whole result JSON is written at most every 5 minutes instead of every 30 s. The app's flush on
+background and termination (Scribe's `ScribeLiveQueryResultFlush`), a query's unsubscribe and the connection's close
+still write what waited, and a kill is repaired from ownership rows at the next launch (#566's design, unchanged), so the
+interval only bounds how often a foreground session rewrites it. What-if (mini, release, synthetic store, main after
+#1121): `instant_live_query_results` 3.90 -> 1.00 frames per write, all frames 54.9 -> 51.9; never writing it measures
+the same 1.00, the row's count and time that each refresh keeps exact for the crash repair and #1131's reload check.
+Claimed:
+- `Sources/InstantSwiftDataCore/InstantRuntime.swift`: `InstantRuntimeConfiguration.liveQueryResultJSONWriteIntervalMilliseconds`'
+  default and `flushPendingLiveQueryResults`' doc.
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: the store's default interval and `LiveQueryResultJSONState`'s
+  doc.
+- `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift`: the throttle test's window and a new
+  ten-minute test.

@@ -81,3 +81,4 @@ claude-code/fix-gate-1074@ld 2026-10-24T21:11:36-0400 mower plan=2026-10-24-fix-
 claude-code/fix-memory-1075@ld 2026-10-24T22:37:54-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 2 (hydratingDeferredValues(in:plan:attributes:onFailure:) only)
 claude-code/fix-gate-1074@ld 2026-10-24T23:01:44-0400 mower plan=2026-10-24-fix-gate-1074 #1129 amendment 2 (applyLiveRefresh's cadence prune call, a cadence prune task owner and its close latch, pruneLiveQueryResults, performPruneLiveQueryResults, pruneLiveQueryResultsBatch)
 claude-code/fix-memory-1075@ld 2026-10-24T23:40:43-0400 mower plan=2026-10-24-fix-memory-1075 #1153 amendment 5 (deferredValuesForPreparing only)
+claude-code/fix-storage-1076@ld 2026-10-25T01:05:14-0400 mower plan=2026-10-24-fix-storage-1076 #1123 amendment 6 (the result-JSON interval's default, flushPendingLiveQueryResults' doc)
