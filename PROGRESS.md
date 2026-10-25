@@ -1,3 +1,26 @@
+## 2026-10-25 05:42:47 EDT — #1133 on main: holders that write no store facts say so as they take the gate; #1132's stale tests fixed (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 8 `7b2ad90e`; red `9005cc07`, green `99318502`; #1132's
+  follow-up `340319ef` (three tests it left stale, hidden in release: the auth observation during a sign-in, the
+  relaunch hop pins 11 -> 14); then this ledger.
+- **Measured** (`recording-deferred`: `recording` with Scribe's configuration, transcript text and words deferred; Mac
+  mini, release, fixture version 3; 208 re-checks a run): before (the red tree), 96-102 re-checks took the gate, p50
+  1.27-1.39 ms, p99 13.10-93.12 ms, worst 93.12-94.50 ms behind prune batches, the rest behind delivery claims,
+  acknowledgements, plans and the retry window; after, none took the gate in three runs. The transcript page's observer
+  lag p50 15.76-16.62 -> 11.30-11.97 ms. Criterion met.
+- **How:** `AsyncSerialGate.enter`/`enterUnlessCancelled` take `writes:`, set as the gate hands the caller the gate and
+  before it publishes the new holder; the holders that write no store facts pass `[]` (the server apply's snapshot,
+  plan and catch-up, the acknowledgement, a registration, the local reads, the retry window, an upload's record, the
+  VACUUM, the delivery claim, the status reads, bootstrap's seed, the re-check itself); a prune batch names the
+  entities it releases from SQLite's delete to the store's retraction; adopting another connection's writes reads as
+  writing anything.
+- **Watch:** `InstantBoundedOutboxDeliveryTests/explicitFlushTimeoutAbortsAndExactlyJoinsCancellationIgnoringOperationAndRenewal`
+  failed once in the green suite run under load ("Expected the explicit mutation transport to time out"); 30 of 30
+  isolated runs pass on red and on green; nothing #1133 changed is on its path.
+- **Not run:** `InstantSwiftDataTests` (its release link fails on the Xcode beta: SwiftUI `View.task(id:name:...)` in
+  the V3 fixture tests); for the 1.9.41 debug gate.
+- **Next:** 1.9.41 (I am the release owner), then #1130 (two pump passes per write, each with a retry turn).
+
 ## 2026-10-25 05:13:12 EDT — fix-storage-1076 done: cleanup, and a release-version correction (fix-storage-1076)
 
 - **Correction:** v1.9.40 was tagged at 02:53 (`da9771bc`). It holds #1118, #1115 slice 1, #1121/#1120, #1123, #1124

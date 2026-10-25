@@ -10,6 +10,35 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 5:42:47 a.m. EDT — `9931850236bb` fix(#1133): green: gate holders that write no store facts say so as they take the gate
+
+- **Implementation commit:** `9931850236bbaa766206eff369201214ed0f833e`
+- **Change:** fix(#1133): green: gate holders that write no store facts say so as they take the gate
+- **Details:**
+  - recording-deferred, Mac mini, release, fixture v3, 208 re-checks each run: before (the red tree) 96-102 took the gate, p50 1.27-1.39 ms, p99 13.10-93.12 ms, worst 93.12-94.50 ms behind prune batches, the rest behind claims, acknowledgements, plans and the retry window; after, none took the gate in any of three runs. The page's observer lag p50 15.76-16.62 -> 11.30-11.97 ms. 719 tests in 23 suites pass in release apart from withKnownIssue artifacts, the CLI tests' missing executable, and one explicit-flush timeout race seen once under the suite's load (30 of 30 isolated runs pass on red and on green).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — enter and enterUnlessCancelled take writes:, set at handoff before the holder
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the holders' declarations, the prune's named sets, the adoption mark
+  - `Tests/InstantSwiftDataCoreTests/InstantHydrationRecheckHolderTests.swift` — the handoff test
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 5:42:47 a.m. EDT — `9005cc07e740` test(#1133): red: a hydration's re-check waits for the cache's VACUUM and for a prune batch, which write no store facts it read
+
+- **Implementation commit:** `9005cc07e7407945b300d06b93674d83853e721a`
+- **Change:** test(#1133): red: a hydration's re-check waits for the cache's VACUUM and for a prune batch, which write no store facts it read
+- **Details:**
+  - Release, Mac mini: both tests fail at their 5 s deadline. Adds recording-deferred (recording with Scribe's configuration, transcript text and words deferred) and its count of every re-check, and a test hook at a prune batch's start.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantHydrationRecheckHolderTests.swift` — the two holder tests
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — recording-deferred and its re-check count
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — onLiveQueryResultPruneBatchHoldsOperationGateForTesting
+  - `scripts/contention-exercises/run-contention-exercises.sh` — the usage line
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 5:10:49 a.m. EDT — `340319efb9a1` test(#1132): the auth observation's first value is the session as it is; the relaunch pays the status and session seed
 
 - **Implementation commit:** `340319efb9a1b9e34cd56ce39388ed00d507ca92`

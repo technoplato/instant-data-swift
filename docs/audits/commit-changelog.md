@@ -1,3 +1,9 @@
+## 2026-10-25 05:42:16 EDT — instant-data-swift `9931850236bbaa766206eff369201214ed0f833e`
+Fix (#1133): gate holders that write no store facts say so as they take the gate; recording-deferred's 96-102 gated re-checks (p99 up to 93.12 ms behind prune batches) -> none (Mac mini, release).
+
+## 2026-10-25 05:42:16 EDT — instant-data-swift `9005cc07e7407945b300d06b93674d83853e721a`
+Test (#1133): red: a hydration's re-check waits for the VACUUM and a prune batch; the recording-deferred exercise.
+
 ## 2026-10-25 05:10:26 EDT — instant-data-swift `340319efb9a1b9e34cd56ce39388ed00d507ca92`
 Test (#1132): the three tests #1132 left stale (the auth observation during a sign-in, the relaunch hop pins 11 -> 14) follow its contract; ADR 0018 records the relaunch's calls.
 
