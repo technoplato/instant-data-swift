@@ -32,6 +32,7 @@ import Testing
 // - 2026-10-24: #1147: each line's entity is built before the counted passes, and the waits park on the apply waiter
 //   instead of polling, so a pass counts the library's work and as little of the harness's as it can (the polling was
 //   under 1% of E03's refresh in the allocation-site recording, `MemorySiteExercises`).
+// - 2026-10-25: #1148: E09 stops the session's apply log, a diagnostics handler, so its "no sink" pass has none.
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_EXERCISES"] != nil))
 struct MemoryExercises {
@@ -409,6 +410,9 @@ struct MemoryExercises {
 
   /// E09: what a write's diagnostics cost: the same write with no diagnostics sink, with Scribe's (the `.info` floor
   /// and five handlers), and with the exercises' (the `.debug` floor and one handler).
+  ///
+  /// The session's apply log is a handler as well, so the passes stop it first: until #1148 the "no sink" pass ran at the
+  /// `.debug` floor with that handler, and each other pass had one handler more than its name says.
   @Test func e09DiagnosticsPerWrite() async throws {
     try await MemoryExerciseSession.open(Self.shape, label: "e09", waitsForApplies: false).closing { context in
       let runtime = context.runtime
@@ -416,9 +420,11 @@ struct MemoryExercises {
       let recordingID = RealSizeID.make(.write, 830_000)
       let diagnostics = InstantDiagnostics.shared
       defer { diagnostics.configure(.environment()) }
+      context.session.applies.stop()
 
       for (name, level, handlers) in [("no-sink", InstantDiagnosticLevel.debug, 0), ("scribe-info-5-handlers", .info, 5), ("debug-1-handler", .debug, 1)] {
         diagnostics.configure(InstantDiagnosticsConfiguration(fileURL: nil, minimumLevel: level))
+        try #require(!diagnostics.isEnabled, "E09 \(name): a sink this pass did not add is active.")
         let events = MemoryEventCounter()
         let tokens = (0..<handlers).map { _ in diagnostics.addHandler { _ in events.increment() } }
         // An interim of the line in progress, Scribe's most frequent write.
