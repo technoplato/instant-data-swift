@@ -311,47 +311,126 @@ final class MemoryReplayConnection: @unchecked Sendable {
 }
 
 /// Waits for the runtime's server applies by processed transaction id, from the runtime's own
-/// `server-apply.operation-gate-held` event. Unlike `RealSizeApplyLog`, it forgets an apply once it was waited for,
-/// and keeps at most a few hundred it was never asked about, so it does not grow over a long run.
+/// `server-apply.operation-gate-held` event, and for the server's acknowledgments of writes. Unlike `RealSizeApplyLog`,
+/// it forgets an apply once it was waited for, and keeps at most a few hundred it was never asked about, so it does not
+/// grow over a long run.
 ///
 /// The event is debug-level when the apply held the gate under 250 ms, so the waiter needs the diagnostics floor at
 /// `.debug` (the default): every exercise that waits on applies runs with one handler at that floor, which E09 prices.
+///
+/// A wait parks on a continuation that the event resumes (#1147); the first version polled every 200 microseconds, so a
+/// counted pass also counted the polling.
 final class MemoryApplyWaiter: @unchecked Sendable {
-  // SAFETY: `lock` guards `finished` and `token`.
+  // SAFETY: `lock` guards every stored property but `watchdog`, which is set once in `init`.
   private let lock = NSLock()
   private var finished: Set<String> = []
+  private var waiting: [String: (continuation: CheckedContinuation<Void, any Error>, deadline: ContinuousClock.Instant)] = [:]
+  /// How many write outcomes (an acknowledgment, a refusal) the runtime reported, and who waits for the next.
+  private var outcomes = 0
+  private var outcomeWaiters: [CheckedContinuation<Void, Never>] = []
   private var token: UUID?
+  private var watchdog: Task<Void, Never>?
   private static let unclaimedLimit = 512
+
+  /// The waiter of the session that is open, for `MemoryExerciseSession.waitUntilAcknowledged`.
+  nonisolated(unsafe) private(set) static weak var current: MemoryApplyWaiter?
 
   init() {
     let token = InstantDiagnostics.shared.addHandler { [weak self] entry in
-      guard let self, entry.event == "server-apply.operation-gate-held", let id = entry.correlationID else { return }
-      self.lock.withLock {
-        if self.finished.count >= Self.unclaimedLimit { self.finished.removeAll(keepingCapacity: true) }
-        self.finished.insert(id)
+      guard let self else { return }
+      if entry.event == "server-apply.operation-gate-held", let id = entry.correlationID {
+        self.applyFinished(id)
+      } else if entry.event.hasPrefix("transaction.") || entry.event.hasPrefix("outbox.") {
+        self.outcomeReported()
       }
     }
     lock.withLock { self.token = token }
+    // One timer for every wait's deadline, and a nudge for write waits in case an outcome reports no event.
+    watchdog = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(250))
+        self?.expireOverdueWaits()
+      }
+    }
+    Self.current = self
   }
 
   func stop() {
     if let token = lock.withLock({ self.token }) { InstantDiagnostics.shared.removeHandler(token) }
     lock.withLock { token = nil }
+    watchdog?.cancel()
+    if Self.current === self { Self.current = nil }
   }
 
   /// Returns once the apply of `transactionID` finished (and forgets it), or throws after `timeout`.
   func wait(for transactionID: String, timeout: Duration = .seconds(120)) async throws {
+    if lock.withLock({ finished.remove(transactionID) }) != nil { return }
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+      let done = lock.withLock { () -> Bool in
+        if finished.remove(transactionID) != nil { return true }
+        waiting[transactionID] = (continuation, ContinuousClock.now + timeout)
+        return false
+      }
+      if done { continuation.resume() }
+    }
+  }
+
+  /// Returns once no write is pending, checking the outbox after each outcome the runtime reports instead of on a timer.
+  func waitUntilAcknowledged(_ runtime: InstantRuntime, timeout: Duration = .seconds(60)) async throws {
     let deadline = ContinuousClock.now + timeout
     while true {
-      if lock.withLock({ finished.remove(transactionID) }) != nil { return }
+      let seen = lock.withLock { outcomes }
+      if await runtime.pendingMutationCount() == 0 { return }
       guard ContinuousClock.now < deadline else {
-        throw InstantError(
+        throw MemoryStreams.Timeout(description: "writes still pending after \(timeout)")
+      }
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        let reported = lock.withLock { () -> Bool in
+          if outcomes != seen { return true }
+          outcomeWaiters.append(continuation)
+          return false
+        }
+        if reported { continuation.resume() }
+      }
+    }
+  }
+
+  private func applyFinished(_ id: String) {
+    let continuation = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
+      if let waiter = waiting.removeValue(forKey: id) { return waiter.continuation }
+      if finished.count >= Self.unclaimedLimit { finished.removeAll(keepingCapacity: true) }
+      finished.insert(id)
+      return nil
+    }
+    continuation?.resume()
+  }
+
+  private func outcomeReported() {
+    let waiters = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+      outcomes &+= 1
+      defer { outcomeWaiters.removeAll(keepingCapacity: true) }
+      return outcomeWaiters
+    }
+    for waiter in waiters { waiter.resume() }
+  }
+
+  private func expireOverdueWaits() {
+    let now = ContinuousClock.now
+    let (overdue, nudged) = lock.withLock { () -> ([(String, CheckedContinuation<Void, any Error>)], [CheckedContinuation<Void, Never>]) in
+      let overdue = waiting.filter { $0.value.deadline <= now }.map { ($0.key, $0.value.continuation) }
+      for (id, _) in overdue { waiting[id] = nil }
+      defer { outcomeWaiters.removeAll(keepingCapacity: true) }
+      return (overdue, outcomeWaiters)
+    }
+    for (id, continuation) in overdue {
+      continuation.resume(
+        throwing: InstantError(
           code: .implementationFailed, operation: "wait for a memory-replay server apply",
-          message: "No server apply finished for \(transactionID) within \(timeout).",
+          message: "No server apply finished for \(id) in time.",
           recovery: "Check that the frame names a query the runtime holds."
         )
-      }
-      try await Task.sleep(for: .microseconds(200))
+      )
     }
+    for waiter in nudged { waiter.resume() }
   }
 }

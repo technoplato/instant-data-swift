@@ -29,6 +29,9 @@ import Testing
 //
 // History:
 // - 2026-10-24: #1075: the first exercises and their baseline (docs/audits/2026-10-24-memory-audit.md).
+// - 2026-10-24: #1147: each line's entity is built before the counted passes, and the waits park on the apply waiter
+//   instead of polling, so a pass counts the library's work and as little of the harness's as it can (the polling was
+//   under 1% of E03's refresh in the allocation-site recording, `MemorySiteExercises`).
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_EXERCISES"] != nil))
 struct MemoryExercises {
@@ -207,12 +210,16 @@ struct MemoryExercises {
         }
         try await MemoryExerciseSession.settle(runtime)
         let energy = InstantEnergyMeter.snapshot()
-        let measurement = try await RealSizeMeter.measure("transact.\(name)", label: Self.label, iterations: iterations, warmup: warmup) { index in
-          let line = RealSizeAccount.segment(
+        // Each line is built before the counted passes: generating a line's words is the harness's work (#1147). The
+        // write itself is assembled in the pass, at its time.
+        let lines = (0..<(warmup + 2 * iterations)).map { index in
+          RealSizeAccount.segment(
             recordingID: recording.id, line: base + index, revision: 4, serial: 0, id: RealSizeID.make(.write, 810_000 + base + index)
           )
+        }
+        let measurement = try await RealSizeMeter.measure("transact.\(name)", label: Self.label, iterations: iterations, warmup: warmup) { index in
           try await runtime.transact(
-            MemoryScribeWrites.finalLine(line, recording: recording, liveLine: (lives[index].id, lives[index].namespace), at: clock.advance())
+            MemoryScribeWrites.finalLine(lines[index], recording: recording, liveLine: (lives[index].id, lives[index].namespace), at: clock.advance())
           )
           try await MemoryExerciseSession.waitUntilAcknowledged(runtime)
         }
@@ -240,10 +247,12 @@ struct MemoryExercises {
       )
       energy = InstantEnergyMeter.snapshot()
 
+      // Two interims a line: the first writes the line in progress, the second rewrites it with more words.
+      let interims = (0..<(warmup + 2 * iterations)).map { index in
+        MemoryScribeWrites.liveLine(recordingID: fresh.id, line: 900_000 + index / 2, words: 3 + 6 * (index % 2), at: clock.now())
+      }
       let interim = try await RealSizeMeter.measure("transact.interim", label: Self.label, iterations: iterations, warmup: warmup) { index in
-        // Two interims a line: the first writes the line in progress, the second rewrites it with more words.
-        let live = MemoryScribeWrites.liveLine(recordingID: fresh.id, line: 900_000 + index / 2, words: 3 + 6 * (index % 2), at: clock.now())
-        try await runtime.transact(MemoryScribeWrites.transaction { MemoryScribeWrites.update(live, at: clock.advance(), txID: $0) })
+        try await runtime.transact(MemoryScribeWrites.transaction { MemoryScribeWrites.update(interims[index], at: clock.advance(), txID: $0) })
         try await MemoryExerciseSession.waitUntilAcknowledged(runtime)
       }
       MemoryReport.print(
@@ -275,10 +284,12 @@ struct MemoryExercises {
           )
         }
         let energy = InstantEnergyMeter.snapshot()
+        let newLines = (0..<(3 + 2 * iterations)).map { index in
+          RealSizeAccount.segment(recordingID: recordingID, line: base + index, revision: 4, serial: 0, id: frames[index].id)
+        }
         let measurement = try await RealSizeMeter.measure("new-line-\(rows)", label: Self.label, iterations: iterations, warmup: 3) { index in
-          let line = RealSizeAccount.segment(recordingID: recordingID, line: base + index, revision: 4, serial: 0, id: frames[index].id)
           try await tail.writeAndShow(
-            frames[index], MemoryScribeWrites.finalLine(line, recording: recording, liveLine: nil, at: context.session.clock.advance())
+            frames[index], MemoryScribeWrites.finalLine(newLines[index], recording: recording, liveLine: nil, at: context.session.clock.advance())
           )
         }
         let publish = await context.runtime.store.lastPublishMetrics
@@ -410,10 +421,12 @@ struct MemoryExercises {
         diagnostics.configure(InstantDiagnosticsConfiguration(fileURL: nil, minimumLevel: level))
         let events = MemoryEventCounter()
         let tokens = (0..<handlers).map { _ in diagnostics.addHandler { _ in events.increment() } }
+        // An interim of the line in progress, Scribe's most frequent write.
+        let interims = (0..<210).map { index in
+          MemoryScribeWrites.liveLine(recordingID: recordingID, line: 830_001, words: 3 + index % 9, at: clock.now())
+        }
         let measurement = try await RealSizeMeter.measure("transact", label: Self.label, iterations: 100, warmup: 10) { index in
-          // An interim of the line in progress, Scribe's most frequent write.
-          let live = MemoryScribeWrites.liveLine(recordingID: recordingID, line: 830_001, words: 3 + index % 9, at: clock.now())
-          try await runtime.transact(MemoryScribeWrites.transaction { MemoryScribeWrites.update(live, at: clock.advance(), txID: $0) })
+          try await runtime.transact(MemoryScribeWrites.transaction { MemoryScribeWrites.update(interims[index], at: clock.advance(), txID: $0) })
           try await MemoryExerciseSession.waitUntilAcknowledged(runtime)
         }
         for token in tokens { diagnostics.removeHandler(token) }
@@ -448,10 +461,12 @@ struct MemoryExercises {
         }
         let recording = try #require(context.session.account.entities["recordings"]?.first { $0.id == recordingID })
         let energy = InstantEnergyMeter.snapshot()
+        let newLines = (0..<43).map { index in
+          RealSizeAccount.segment(recordingID: recordingID, line: 50_000 + index, revision: 4, serial: 0, id: frames[index].id)
+        }
         let write = try await RealSizeMeter.measure("new-line", label: Self.label, iterations: 20, warmup: 3) { index in
-          let line = RealSizeAccount.segment(recordingID: recordingID, line: 50_000 + index, revision: 4, serial: 0, id: frames[index].id)
           try await tail.writeAndShow(
-            frames[index], MemoryScribeWrites.finalLine(line, recording: recording, liveLine: nil, at: context.session.clock.advance())
+            frames[index], MemoryScribeWrites.finalLine(newLines[index], recording: recording, liveLine: nil, at: context.session.clock.advance())
           )
         }
         MemoryReport.print(
@@ -696,8 +711,14 @@ struct MemoryExerciseSession: Sendable {
     return result
   }
 
-  /// Waits until the server acknowledged every write.
+  /// Waits until the server acknowledged every write: on the open session's apply waiter, which checks the outbox after
+  /// each write outcome the runtime reports (#1147), or, in a session without one (E09 prices handlers, so it adds
+  /// none), by checking every millisecond.
   static func waitUntilAcknowledged(_ runtime: InstantRuntime) async throws {
+    if let waiter = MemoryApplyWaiter.current {
+      try await waiter.waitUntilAcknowledged(runtime)
+      return
+    }
     let deadline = ContinuousClock.now + .seconds(60)
     while await runtime.pendingMutationCount() > 0 {
       guard ContinuousClock.now < deadline else { throw MemoryStreams.Timeout(description: "writes still pending after 60 s") }
