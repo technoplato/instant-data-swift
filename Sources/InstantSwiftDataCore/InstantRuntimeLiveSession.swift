@@ -1,3 +1,7 @@
+// History:
+// - 2026-10-24: a query's registration is recorded and sent in two steps, so the runtime records it under its
+//   operation gate and sends after leaving; one registration held the gate 5.0-7.8 s across its send (#1131).
+
 import Foundation
 import IssueReporting
 import os
@@ -1053,31 +1057,46 @@ package actor InstantRuntimeLiveSession {
     }
   }
 
-  func registerQuery(
+  /// The `add-query` a registration owes the socket it was recorded on (#1131).
+  struct QueryRegistrationSend: Sendable {
+    fileprivate let key: String
+    fileprivate let query: InstantLiveJSONValue
+    fileprivate let generation: Int
+  }
+
+  /// Records an observer of `query` and sends nothing (#1131). The runtime records under its operation gate, where the
+  /// prune reads ``activeQueryKeys()``, so the prune keeps this query's result, and sends with
+  /// ``sendQueryRegistration(_:clientEventID:)`` after it leaves the gate: on builds 121-126 one registration held the
+  /// gate 5.0-7.8 s across its send, with about 11 callers queued behind it.
+  ///
+  /// Returns nil when nothing is owed: another observer registered the query already, or no socket is open, and the
+  /// next session's init sends every registered query. Upstream queryOnce sends add-query even when this exact query is
+  /// subscribed, so `requiresServerAcknowledgement` owes one then too: Instant answers add-query-exists, a fresh
+  /// acknowledgement for the one-shot read while the materialized query stays.
+  func recordQueryRegistration(
     _ query: InstantLiveJSONValue,
     key: String,
-    clientEventID: String,
     requiresServerAcknowledgement: Bool = false
-  ) async throws {
+  ) -> QueryRegistrationSend? {
     if var registration = registeredQueries[key] {
       registration.observerCount += 1
       registeredQueries[key] = registration
-      guard requiresServerAcknowledgement else { return }
-      // Upstream queryOnce always sends add-query, even when this exact query is
-      // already subscribed. Instant answers with add-query-exists, which gives
-      // the one-shot operation a fresh server acknowledgement while retaining
-      // the materialized query store.
-      try await reconcileQueryMembership(
-        key: key,
-        fallbackQuery: query,
-        initialClientEventID: clientEventID
-      )
-      return
+      guard requiresServerAcknowledgement else { return nil }
+    } else {
+      registeredQueries[key] = RegisteredQuery(query: query, observerCount: 1)
     }
-    registeredQueries[key] = RegisteredQuery(query: query, observerCount: 1)
+    guard session != nil, isOpened else { return nil }
+    return QueryRegistrationSend(key: key, query: query, generation: generation)
+  }
+
+  /// Sends the `add-query` that ``recordQueryRegistration(_:key:requiresServerAcknowledgement:)`` owes, unless the
+  /// socket it was recorded on is gone (a new session's init sends every registered query) or the query was
+  /// unregistered since.
+  func sendQueryRegistration(_ send: QueryRegistrationSend, clientEventID: String) async throws {
+    guard send.generation == generation, registeredQueries[send.key] != nil else { return }
     try await reconcileQueryMembership(
-      key: key,
-      fallbackQuery: query,
+      key: send.key,
+      fallbackQuery: send.query,
       initialClientEventID: clientEventID
     )
   }

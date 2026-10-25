@@ -6,6 +6,8 @@
 // - 2026-10-23: the session prune unloads a closed query's result into instant_unloaded_live_query_results instead of
 //   deleting it, and the query's next subscription loads it back, as upstream PersistedObject.unloadKey keeps a closed
 //   query's stored copy (#1006).
+// - 2026-10-24: a closed result's reload commits the row its caller read before the operation gate, reading it again
+//   when a newer one replaced it, and moves the stored JSON inside SQLite instead of encoding it again (#1131).
 // - 2026-10-23: an uploaded file's record keeps no copy of its bytes (saveUploadedFileRecord), a record without a copy
 //   is not downloaded to reads and the snapshot, and an evicted copy's record stays (forgetStoredFileCopy) (#959).
 // - 2026-10-23: metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone: both
@@ -276,6 +278,15 @@ public struct InstantLiveQueryResultPruningResult: Hashable, Codable, Sendable {
   }
 }
 
+/// A closed query's stored result as one read found it (#1131), with what names its row: a reopened query reads it
+/// before it takes the operation gate, and the reload under the gate commits it only while that row is still the one
+/// stored under its key.
+struct InstantUnloadedLiveQueryResultRead: Sendable {
+  var result: InstantPersistedLiveQueryResult
+  var rowTripleCount: Int
+  var rowUpdatedAtMilliseconds: Int64
+}
+
 /// An unloaded result loaded back for its query's new subscription (#1006).
 struct InstantUnloadedLiveQueryResultReload: Sendable {
   var result: InstantPersistedLiveQueryResult
@@ -290,6 +301,9 @@ struct InstantUnloadedLiveQueryResultReload: Sendable {
   var storeChanged: Bool
   var storeRevision: Int64
   var attributeRevision: Int64
+  /// Whether the row read before the operation gate had been replaced by the time of the reload, so the reload read it
+  /// again (#1131).
+  var readAgain = false
 }
 
 struct InstantLiveQueryResultPruningApplication: Sendable {
@@ -13016,36 +13030,74 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  /// The unloaded result of `key`, if a prune unloaded it and nothing since saved or collected it (#1006).
-  func unloadedLiveQueryResult(key: String) throws -> InstantPersistedLiveQueryResult? {
-    try readTransaction {
-      let results: [InstantPersistedLiveQueryResult] = try selectJSON(
-        "SELECT json FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
-        [.text(key)]
+  /// The unloaded result of `key`, if a prune unloaded it and nothing since saved or collected it (#1006). A reopened
+  /// query reads it on the read connection before it takes the operation gate (#1131); this read, on the store's own
+  /// connection, is for when that one cannot read.
+  func unloadedLiveQueryResult(key: String) throws -> InstantUnloadedLiveQueryResultRead? {
+    try readTransaction { try unloadedLiveQueryResultWithoutTransaction(key: key) }
+  }
+
+  private func unloadedLiveQueryResultWithoutTransaction(key: String) throws -> InstantUnloadedLiveQueryResultRead? {
+    guard let identity = try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key) else { return nil }
+    let results: [InstantPersistedLiveQueryResult] = try selectJSON(
+      "SELECT json FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
+      [.text(key)]
+    )
+    return results.first.map {
+      InstantUnloadedLiveQueryResultRead(
+        result: $0,
+        rowTripleCount: identity.tripleCount,
+        rowUpdatedAtMilliseconds: identity.updatedAtMilliseconds
       )
-      return results.first
     }
   }
 
-  /// Loads `result`, an unloaded result whose query subscribes again, back among the stored results (#1006): it owns
-  /// its facts again, and its entities that left the store come back, from SQLite when it still holds them (facts this
-  /// device wrote that no stored result owned load only when one does), else from the result. An entity the store
+  /// What names `key`'s unloaded row: a prune writes the result's own fact count and update time with it, so a row
+  /// unloaded again for a newer result differs in one of them (#1131).
+  private func unloadedLiveQueryResultRowIdentityWithoutTransaction(
+    key: String
+  ) throws -> (tripleCount: Int, updatedAtMilliseconds: Int64)? {
+    var statement: OpaquePointer?
+    try prepare(
+      "SELECT triple_count, updated_at_ms FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind([.text(key)], to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW else {
+      throw persistenceError(operation: "read an unloaded live-query result", message: lastErrorMessage())
+    }
+    return (Int(sqlite3_column_int64(statement, 0)), sqlite3_column_int64(statement, 1))
+  }
+
+  /// Loads `read`'s result, an unloaded result whose query subscribes again, back among the stored results (#1006): it
+  /// owns its facts again, and its entities that left the store come back, from SQLite when it still holds them (facts
+  /// this device wrote that no stored result owned load only when one does), else from the result. An entity the store
   /// still holds keeps what the store holds.
+  ///
+  /// `read` was read before the caller took the operation gate (#1131). When another row has replaced it since (its
+  /// query reopened, was restated and closed, and a prune unloaded it again), the row stored now is read again here.
   ///
   /// Returns nil when the result is no longer unloaded.
   func reloadUnloadedLiveQueryResult(
-    _ result: InstantPersistedLiveQueryResult,
+    _ read: InstantUnloadedLiveQueryResultRead,
     residentEntityIDs: Set<String>
   ) throws -> InstantUnloadedLiveQueryResultReload? {
     var expected: (store: Int64, attributes: Int64, outbox: Int64, queryResults: Int64) = (0, 0, 0, 0)
     var restoredEntityTriples: [String: [InstantTriple]] = [:]
     let reload: InstantUnloadedLiveQueryResultReload? = try transaction {
-      guard
-        try selectScalar(
-          "SELECT 1 FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
-          [.text(result.key)]
-        ) != nil
-      else { return nil }
+      guard let identity = try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: read.result.key) else {
+        return nil
+      }
+      var result = read.result
+      let readAgain = identity.tripleCount != read.rowTripleCount
+        || identity.updatedAtMilliseconds != read.rowUpdatedAtMilliseconds
+      if readAgain {
+        guard let current = try unloadedLiveQueryResultWithoutTransaction(key: read.result.key) else { return nil }
+        result = current.result
+      }
       expected = (
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
         try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey),
@@ -13079,7 +13131,7 @@ public actor SQLitePersistenceStore {
           restoredEntityTriples[entityID] = resident
         }
       }
-      try saveLiveQueryResultWithoutTransaction(result)
+      try restoreUnloadedLiveQueryResultWithoutTransaction(result)
       let storeRevision = wroteTriples
         ? try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey) : expected.store
       _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
@@ -13090,7 +13142,8 @@ public actor SQLitePersistenceStore {
         restoredFromSQLiteEntityCount: restoredFromSQLiteCount,
         storeChanged: wroteTriples,
         storeRevision: storeRevision,
-        attributeRevision: expected.attributes
+        attributeRevision: expected.attributes,
+        readAgain: readAgain
       )
     }
     if let reload {
@@ -18211,6 +18264,47 @@ public actor SQLitePersistenceStore {
     try applyLiveQueryResultSaveWithoutTransaction(prepared.save, deferringJSON: deferringJSON)
   }
 
+  /// Saves `result`, read from its unloaded row, back among the stored results (#1131): its ownership rows as any save
+  /// writes them, and its JSON moved from the unloaded row inside SQLite rather than encoded again, when the nested
+  /// limits keep every fact (the schema the row was written under), as the prune's unload copies it (#1006). The
+  /// reload encoded the whole result again holding the operation gate: 25 MB for a 75,640-fact `$files` list.
+  private func restoreUnloadedLiveQueryResultWithoutTransaction(_ result: InstantPersistedLiveQueryResult) throws {
+    let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
+      result,
+      previousOwnership: nil,
+      encodingJSONIfWritten: nil
+    )
+    let save = prepared.save
+    guard save.result.triples.count == result.triples.count else {
+      try applyLiveQueryResultSaveWithoutTransaction(save, deferringJSON: false)
+      return
+    }
+    let key = result.key
+    try invalidateDeclaredRelationStorageMarkerIfNeeded(forAttributeIDs: save.attributeIDs)
+    try execute(
+      """
+      INSERT INTO instant_live_query_results (query_key, triple_count, updated_at_ms, json)
+      SELECT query_key, triple_count, updated_at_ms, json FROM instant_unloaded_live_query_results WHERE query_key = ?
+      ON CONFLICT(query_key) DO UPDATE SET
+        triple_count = excluded.triple_count,
+        updated_at_ms = excluded.updated_at_ms,
+        json = excluded.json
+      """,
+      [.text(key)]
+    )
+    try execute("DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?", [.text(key)])
+    liveQueryResultJSONWriteStats.saves += 1
+    liveQueryResultJSON.deferred[key] = nil
+    liveQueryResultJSON.writtenAt[key] = result.updatedAt.milliseconds
+    liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
+    try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
+    try applyLiveQueryOwnershipChangesWithoutTransaction(
+      key: key,
+      removed: save.removedOwnership,
+      inserted: save.insertedOwnership
+    )
+  }
+
   /// Works out the saves of a server apply's restated results before the apply takes the operation gate (#932); nil
   /// when the query-result revision moved since `expectedQueryResultRevision`. The commit checks the same revision, and
   /// every writer of a result's ownership rows bumps it in the same transaction, so the rows read here are the rows
@@ -18365,6 +18459,19 @@ public actor SQLitePersistenceStore {
       liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
       try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
     }
+    try applyLiveQueryOwnershipChangesWithoutTransaction(
+      key: key,
+      removed: removedOwnership,
+      inserted: insertedOwnership
+    )
+  }
+
+  /// Writes a stored result's ownership rows that leave and join; the result's row must be written already.
+  private func applyLiveQueryOwnershipChangesWithoutTransaction(
+    key: String,
+    removed removedOwnership: [LiveQueryOwnershipIdentity],
+    inserted insertedOwnership: [LiveQueryOwnershipIdentity]
+  ) throws {
     guard !removedOwnership.isEmpty || !insertedOwnership.isEmpty else { return }
     // The row was written above; its id names it in every ownership row (#704).
     let queryID = try liveQueryResultIDWithoutTransaction(key: key)

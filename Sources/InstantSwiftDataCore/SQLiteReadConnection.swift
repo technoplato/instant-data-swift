@@ -1,5 +1,6 @@
 // History:
 // - 2026-10-23: added (#1006): local reads read SQLite on their own read-only connection, beside the writer.
+// - 2026-10-24: a reopened query reads its closed stored result here, before it takes the operation gate (#1131).
 
 import Foundation
 import SQLite3
@@ -138,6 +139,55 @@ actor SQLiteReadConnection {
       }
     }
     return triples
+  }
+
+  /// The closed query result stored under `key`, decoded, if a prune unloaded one (#1006), as
+  /// ``SQLitePersistenceStore/unloadedLiveQueryResult(key:)`` reads it (#1131): a reopened query reads it here before it
+  /// takes the operation gate, which it held for the read and decode (1,718 ms for a 75,640-fact `$files` list).
+  func unloadedLiveQueryResult(key: String) throws -> InstantUnloadedLiveQueryResultRead? {
+    var read: InstantUnloadedLiveQueryResultRead?
+    try readTransaction { connection in
+      var statement: OpaquePointer?
+      guard
+        sqlite3_prepare_v2(
+          connection,
+          "SELECT triple_count, updated_at_ms, json FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
+          -1,
+          &statement,
+          nil
+        ) == SQLITE_OK, let statement
+      else {
+        throw Self.failure(operation: "prepare a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      defer { sqlite3_finalize(statement) }
+      let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+      guard sqlite3_bind_text(statement, 1, key, -1, transient) == SQLITE_OK else {
+        throw Self.failure(operation: "bind a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      let step = sqlite3_step(statement)
+      if step == SQLITE_DONE { return }
+      guard step == SQLITE_ROW, let json = sqlite3_column_text(statement, 2) else {
+        throw Self.failure(operation: "step a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      let tripleCount = Int(sqlite3_column_int64(statement, 0))
+      let updatedAtMilliseconds = sqlite3_column_int64(statement, 1)
+      let result: InstantPersistedLiveQueryResult
+      do {
+        result = try decoder.decode(InstantPersistedLiveQueryResult.self, from: Data(String(cString: json).utf8))
+      } catch {
+        throw Self.failure(
+          operation: "decode a closed query result on the local read connection",
+          message: "The stored result could not be decoded: \(error)",
+          path: fileURL.path
+        )
+      }
+      read = InstantUnloadedLiveQueryResultRead(
+        result: result,
+        rowTripleCount: tripleCount,
+        rowUpdatedAtMilliseconds: updatedAtMilliseconds
+      )
+    }
+    return read
   }
 
   // MARK: - SQLite
