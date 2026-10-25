@@ -1,3 +1,19 @@
+## 2026-10-25 04:47:14 EDT — #1132 on main: status and auth reads leave the operation gate; #1127 attributed (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 7 `dd0b1257`; red `21730c33`, green `de2388ec`; then this ledger.
+- **Measured** (Mac mini, release, fixture version 3; main `6590a7e4` before): `connectionStatus()` p99 1.29 -> 0.03 ms
+  (recording), 10.29 -> 0.01 (prune), 11.88 -> 0.01 (prune-inline), 380.19 -> 0.01 (server-apply), 2.28 -> 0.01
+  (observers); no gate wait for it in any exercise. The exercises call neither observation; the unit test covers them.
+- **How:** reads answer from the status inputs and session the last gate-held computation left (every publish leaves
+  them; a lifecycle or failure write that publishes nothing forgets them first), and the registries hand a new observer
+  their latest value in the same turn as any publish. A coverage test holds the read to a read under the gate after a
+  connection, a write, its acknowledgement, a refused write and a close; it caught four stale paths before landing.
+- **#1127:** criterion 1 met and marked (recording acks p99 126.71-177.77 ms; reads 152.72-187.26 ms; all accepted). Its
+  observers part (1,647.47 ms) is not the applier: measured meters show transact-ok waits 0.1 ms and applies in 5.9 ms,
+  and send-to-ack is 153.6 ms; the time is the delivery pump awaiting each send (150 ms in that exercise) while the writer
+  writes every 100 ms. Asked the lab: pipeline sends or change the exercise.
+- **Next:** #1133 (needs the deferred-text exercise), the post-push check of `de2388ec` on the combined tree (running).
+
 ## 2026-10-25 04:44:25 EDT — #1149 step 1 on main: the launch 635 -> 370 MB allocated, a resident fact 457.5 B (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plans `9de7a73f`, `b6e0ab02`; red `a48fe943`, green `4c190959`; then this

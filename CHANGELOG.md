@@ -10,6 +10,36 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 4:47:14 a.m. EDT — `de2388ec6d1d` fix(#1132): green: connectionStatus, observeConnectionStatus and observeAuthSession answer without the operation gate
+
+- **Implementation commit:** `de2388ec6d1d2d27f2991d4ac90a01533e5c828e`
+- **Change:** fix(#1132): green: connectionStatus, observeConnectionStatus and observeAuthSession answer without the operation gate
+- **Details:**
+  - Mac mini, release, fixture v3 (main 6590a7e4 before): connectionStatus() p99 1.29 -> 0.03 ms (recording), 10.29 -> 0.01 (prune), 11.88 -> 0.01 (prune-inline), 380.19 -> 0.01 (server-apply), 2.28 -> 0.01 (observers), no gate wait in any exercise. 394 tests in 24 suites pass in release apart from withKnownIssue artifacts; hidden issues match main's.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — status inputs snapshot, registry latest values, bootstrap seed, invalidation before lifecycle writes
+  - `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` — keepsLatest, observeLatest, seedLatest
+  - `Tests/InstantSwiftDataCoreTests/InstantStatusReadsOffTheGateTests.swift` — the coverage test
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalReadTests.swift` — the gate holder
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateAwaitTests.swift` — the gate holder
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the gate holder
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 4:47:14 a.m. EDT — `21730c3355a1` test(#1132): red: connectionStatus, observeConnectionStatus and observeAuthSession wait for another holder of the operation gate
+
+- **Implementation commit:** `21730c3355a10b1cbd565e8877ae381d92619417`
+- **Change:** test(#1132): red: connectionStatus, observeConnectionStatus and observeAuthSession wait for another holder of the operation gate
+- **Details:**
+  - Release, Mac mini: fails as designed, all three waited 2 s each for the test holder; adds holdingOperationGateForTesting.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — holdingOperationGateForTesting (test-only)
+  - `Tests/InstantSwiftDataCoreTests/InstantStatusReadsOffTheGateTests.swift` — the gate-held reads test
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 4:44:25 a.m. EDT — `4c19095964d7` perf(#1149 #1146): green: the launch reads its resident facts from their columns, one id string per entity and attribute
 
 - **Implementation commit:** `4c19095964d772829d1778cc0a3626be683113e7`

@@ -1,3 +1,9 @@
+## 2026-10-25 04:46:26 EDT — instant-data-swift `de2388ec6d1d2d27f2991d4ac90a01533e5c828e`
+Fix (#1132): connectionStatus, observeConnectionStatus and observeAuthSession answer without the operation gate; connectionStatus() p99 380.19 -> 0.01 ms in the server-apply exercise (Mac mini, release).
+
+## 2026-10-25 04:46:26 EDT — instant-data-swift `21730c3355a10b1cbd565e8877ae381d92619417`
+Test (#1132): red: the status and session reads wait for another holder of the operation gate.
+
 ## 2026-10-25 04:46:40 EDT — scribe `ccf35fd42b56dd466d815655be41e93773d0b3b9`
 Merge (#1078) for build 134: the playback's pinned name replacing another fades in Core Animation's render server, so following a live conversation stops drawing the whole Mac window at every frame. Its message cites the change-log commit as 25b6f5b0e; it is d0d484f7b20f558a05dcfd83682a234d9e4f4d76.
 
