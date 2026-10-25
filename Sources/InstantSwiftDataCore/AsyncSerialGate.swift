@@ -3,6 +3,8 @@
 //   waits only for a holder that may be writing what it read (#1006).
 // - 2026-10-24: an optional timeline reports every request, acquisition, release and cancellation, so an exercise can
 //   measure each caller's wait and each holder's hold, the short ones too (#1074).
+// - 2026-10-25: a caller names what it writes as it enters, and the gate sets it as it hands the caller the gate, so a
+//   holder that writes no store facts never reads as writing everything (#1133).
 
 import Foundation
 import IssueReporting
@@ -26,9 +28,9 @@ import os
 /// work is never starved (freeze-185 item 2). Cancelling a queued caller removes it from the middle of the queue
 /// without reordering the callers that remain.
 actor AsyncSerialGate {
-  /// Which queued caller takes the gate next. On Michael's iPhone a transcript write queued behind server catch-ups
-  /// and hydrations, first come first served (freeze-185, 13:17:34): a local write or a read a caller awaits now goes
-  /// ahead of background work.
+  /// Which queued caller takes the gate next. On a phone a transcript write queued behind server catch-ups and
+  /// hydrations, first come first served (freeze-185, 13:17:34): a local write or a read a caller awaits now goes ahead
+  /// of background work.
   enum Priority: Int, Comparable, Sendable, CustomStringConvertible {
     /// Work no caller waits on: a prune, a retry window, an unbounded listing. A server apply is not: later frames,
     /// the writes' acknowledgements among them, wait for it, and its commit's work grows with every write it waits for.
@@ -160,11 +162,14 @@ actor AsyncSerialGate {
     let priority: Priority
     let enqueuedAt: Date
     let ticket: UInt64
+    /// What the caller said it writes as it entered (``markHolderWrites(_:)``), set as it takes the gate (#1133).
+    let writes: Set<String>?
 
-    init(operation: String, priority: Priority, enqueuedAt: Date, ticket: UInt64) {
+    init(operation: String, priority: Priority, enqueuedAt: Date, ticket: UInt64, writes: Set<String>?) {
       self.operation = operation
       self.priority = priority
       self.enqueuedAt = enqueuedAt
+      self.writes = writes
       self.ticket = ticket
     }
 
@@ -316,16 +321,22 @@ actor AsyncSerialGate {
   /// This entry point cannot observe cancellation: resuming a queued caller
   /// without handing it ownership would let it run the critical section while
   /// another caller still holds the gate. Callers in a throwing context should
-  /// prefer ``enterUnlessCancelled(operation:)``.
-  func enter(operation: String = #function, priority: Priority = .standard) async {
+  /// prefer ``enterUnlessCancelled(operation:priority:writes:)``.
+  ///
+  /// - Parameter writes: The entities the caller writes before its store commit, as ``markHolderWrites(_:)`` names
+  ///   them: empty for none, nil for any. Set as the caller takes the gate, so a caller that writes no store facts never
+  ///   reads as writing everything, even before its first line runs (#1133).
+  func enter(operation: String = #function, priority: Priority = .standard, writes: Set<String>? = nil) async {
     let ticket = request(operation: operation, priority: priority)
     if holderOperation == nil {
-      acquire(operation: operation, priority: priority, ticket: ticket)
+      acquire(operation: operation, priority: priority, ticket: ticket, writes: writes)
       return
     }
     // Only `enterUnlessCancelled` installs a cancellation handler, so no waiter
     // reached from here can be resumed with an error.
-    try? await waitForBaton(operation: operation, priority: priority, ticket: ticket, honoringCancellation: false)
+    try? await waitForBaton(
+      operation: operation, priority: priority, ticket: ticket, writes: writes, honoringCancellation: false
+    )
   }
 
   /// Acquires the gate, waiting if another caller holds it, and throws
@@ -335,14 +346,20 @@ actor AsyncSerialGate {
   /// ``leave()``. Cancellation is only honored *before* acquisition, so a
   /// critical section that has already started still runs to completion and
   /// cannot leave half-applied optimistic state behind.
-  func enterUnlessCancelled(operation: String = #function, priority: Priority = .standard) async throws {
+  func enterUnlessCancelled(
+    operation: String = #function,
+    priority: Priority = .standard,
+    writes: Set<String>? = nil
+  ) async throws {
     if Task.isCancelled { throw CancellationError() }
     let ticket = request(operation: operation, priority: priority)
     if holderOperation == nil {
-      acquire(operation: operation, priority: priority, ticket: ticket)
+      acquire(operation: operation, priority: priority, ticket: ticket, writes: writes)
       return
     }
-    try await waitForBaton(operation: operation, priority: priority, ticket: ticket, honoringCancellation: true)
+    try await waitForBaton(
+      operation: operation, priority: priority, ticket: ticket, writes: writes, honoringCancellation: true
+    )
   }
 
   /// Names what the current holder is doing, so stall and wait reports can say which part of a
@@ -374,6 +391,12 @@ actor AsyncSerialGate {
     guard isHeldSnapshot else { return false }
     guard let writes = markedWrites.withLock({ $0 }) else { return true }
     return !writes.isDisjoint(with: entityIDs)
+  }
+
+  /// What the holder named last with ``markHolderWrites(_:)`` or as it entered: nil for any. Read it only while
+  /// holding the gate, to name something else for a while and then name this again.
+  nonisolated var holderWrites: Set<String>? {
+    markedWrites.withLock { $0 }
   }
 
   /// The phase the holder named last, by either entry point.
@@ -409,6 +432,8 @@ actor AsyncSerialGate {
         return
       }
       waiter.state = .resumed
+      // Before the holder: a read that sees the new holder sees what it said it writes (#1133).
+      markedWrites.withLock { $0 = waiter.writes }
       holderOperation = waiter.operation
       holderAcquiredAt = now
       holderTicket = waiter.ticket
@@ -459,11 +484,11 @@ actor AsyncSerialGate {
     return best?.index
   }
 
-  private func acquire(operation: String, priority: Priority, ticket: UInt64) {
+  private func acquire(operation: String, priority: Priority, ticket: UInt64, writes: Set<String>?) {
+    markedWrites.withLock { $0 = writes }
     holderOperation = operation
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
-    markedWrites.withLock { $0 = nil }
     holderAcquiredAt = currentDate()
     holderTicket = ticket
     holderPriority = priority
@@ -504,9 +529,12 @@ actor AsyncSerialGate {
     operation: String,
     priority: Priority,
     ticket: UInt64,
+    writes: Set<String>?,
     honoringCancellation: Bool
   ) async throws {
-    let waiter = Waiter(operation: operation, priority: priority, enqueuedAt: currentDate(), ticket: ticket)
+    let waiter = Waiter(
+      operation: operation, priority: priority, enqueuedAt: currentDate(), ticket: ticket, writes: writes
+    )
     guard honoringCancellation else {
       return try await withCheckedThrowingContinuation { continuation in
         attach(continuation, to: waiter)

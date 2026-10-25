@@ -55,6 +55,43 @@ struct InstantHydrationRecheckHolderTests {
     #expect(hydrated, "#1133: the hydration's re-check waited for a prune batch, which writes no fact it read")
   }
 
+  /// A caller's named writes hold from the moment the gate is handed to it, before its own code runs: the timeline
+  /// reports each acquisition in the same turn as the handoff. A caller that marked its writes after entering read as
+  /// writing everything until then (#1133).
+  @Test
+  func aCallersNamedWritesHoldFromTheMomentItTakesTheGate() async throws {
+    let gate = GateBox()
+    let seen = GateBox.Seen()
+    let serialGate = AsyncSerialGate(
+      label: "test",
+      timeline: { event in
+        guard event.kind == .acquired, let gate = gate.gate else { return }
+        seen.record(event.operation, mayWrite: gate.holderMayWrite(any: ["entity"]))
+      }
+    )
+    gate.set(serialGate)
+    await serialGate.enter(operation: "writer")
+    let reader = Task.detached {
+      await serialGate.enter(operation: "queued reader", writes: [])
+      await serialGate.leave()
+    }
+    let deadline = ContinuousClock.now + .seconds(10)
+    while await serialGate.waiterCount == 0, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(2))
+    }
+    await serialGate.leave()
+    await reader.value
+    await serialGate.enter(operation: "reader", writes: [])
+    await serialGate.leave()
+    await serialGate.enter(operation: "named writer", writes: ["entity"])
+    await serialGate.leave()
+
+    #expect(
+      seen.value == ["writer": true, "queued reader": false, "reader": false, "named writer": true],
+      "#1133: whether each holder may write `entity` as it took the gate"
+    )
+  }
+
   // MARK: - Helpers
 
   static let idAttribute = InstantAttribute.primaryKey(namespace: "notes")
@@ -173,6 +210,31 @@ private final class HolderStart: @unchecked Sendable {
       let task = Task { await holder(runtime) }
       started = task
       return task
+    }
+  }
+}
+
+/// The gate a timeline callback reads, set once it exists, and what the callback saw.
+private final class GateBox: @unchecked Sendable {
+  // SAFETY: `lock` guards `stored`.
+  private let lock = NSLock()
+  private var stored: AsyncSerialGate?
+
+  var gate: AsyncSerialGate? { lock.withLock { stored } }
+
+  func set(_ gate: AsyncSerialGate) {
+    lock.withLock { stored = gate }
+  }
+
+  final class Seen: @unchecked Sendable {
+    // SAFETY: `lock` guards `mayWrite`.
+    private let lock = NSLock()
+    private var mayWrite: [String: Bool] = [:]
+
+    var value: [String: Bool] { lock.withLock { mayWrite } }
+
+    func record(_ operation: String, mayWrite: Bool) {
+      lock.withLock { self.mayWrite[operation] = mayWrite }
     }
   }
 }

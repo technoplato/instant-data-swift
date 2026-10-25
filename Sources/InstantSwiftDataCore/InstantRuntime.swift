@@ -1,4 +1,8 @@
 // History:
+// - 2026-10-25: the gate holders that write no store facts say so as they take the gate (the server apply's snapshot,
+//   plan and catch-up, the acknowledgement, a registration, the local reads, the retry window, an upload's record, the
+//   VACUUM, the delivery claim, the status reads), and a prune batch names the entities it releases, so a hydration's
+//   re-check no longer waits for them; adopting another connection's writes reads as writing anything (#1133).
 // - 2026-10-25: connectionStatus(), observeConnectionStatus() and observeAuthSession() no longer take the operation
 //   gate: they answer from the latest status inputs and session the writers computed under it, and the registries hand
 //   a new observer their latest value in the same turn as any publish (#1132).
@@ -2949,7 +2953,7 @@ public final class InstantRuntime: Sendable {
     operationGateAlreadyHeld: Bool
   ) async throws -> InstantServerApplySeed {
     if !operationGateAlreadyHeld {
-      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .interactive)
+      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .interactive, writes: [])
     }
     do {
       recordActorHop(.persistence)
@@ -3027,7 +3031,7 @@ public final class InstantRuntime: Sendable {
       // replays, as on the first attempt.
       let holdsGateWhilePlanning = attemptIndex > 0 && !operationGateAlreadyHeld
       if holdsGateWhilePlanning {
-        try await enterOperationGateUnlessCancelled(operation: "plan server apply", priority: .interactive)
+        try await enterOperationGateUnlessCancelled(operation: "plan server apply", priority: .interactive, writes: [])
       }
       // From entering the gate, so the event reports the hold, not the wait for it.
       let planningStartedAt = ContinuousClock.now
@@ -3568,7 +3572,7 @@ public final class InstantRuntime: Sendable {
         catchUp: while true {
           if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
             // With local writes, not behind them: each write admitted while it waits is one more to replay here.
-            await enterOperationGate(operation: "catch up server apply", priority: .interactive)
+            await enterOperationGate(operation: "catch up server apply", priority: .interactive, writes: [])
             enteredOperationGateForCommit = true
             gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
@@ -5029,7 +5033,7 @@ public final class InstantRuntime: Sendable {
     serverTransactionID: String,
     claimToken: String?
   ) async throws -> PendingMutation? {
-    await enterOperationGate()
+    await enterOperationGate(writes: [])
     do {
       let result = try await performAcceptMutationIfPresent(
         id: id,
@@ -5523,7 +5527,8 @@ public final class InstantRuntime: Sendable {
       do {
         try await enterOperationGateUnlessCancelled(
           operation: "observe standard live query",
-          priority: .interactive
+          priority: .interactive,
+          writes: []
         )
       } catch {
         return Self.finishedQueryObservationLease()
@@ -6295,9 +6300,11 @@ public final class InstantRuntime: Sendable {
     if !operationGate.holderMayWrite(any: readEntityIDs) {
       return await isStillCurrent(queryID: queryID, emittedAt: sequence)
     }
+    // It writes nothing either, so another query's check need not wait for it (#1133).
     try await enterOperationGateUnlessCancelled(
       operation: "check hydrated deferred query emission",
-      priority: .interactive
+      priority: .interactive,
+      writes: []
     )
     let current = await isStillCurrent(queryID: queryID, emittedAt: sequence)
     await leaveOperationGate()
@@ -6476,7 +6483,7 @@ public final class InstantRuntime: Sendable {
       // reconnecting so an opening session sends add-query ahead of its durable
       // mutation backlog. Recorded under the gate, sent after it (#1131, #1135): the send held the gate p50 12.8 ms a
       // read in #1074's `recording` exercise, on a socket that never waits.
-      await enterOperationGate(priority: .interactive)
+      await enterOperationGate(priority: .interactive, writes: [])
       let owedSend = await liveSession.recordQueryRegistration(
         query,
         key: registrationKey,
@@ -7059,7 +7066,7 @@ public final class InstantRuntime: Sendable {
   ) async throws
     -> InstantQueryEmission
   {
-    await enterOperationGate(priority: .interactive)
+    await enterOperationGate(priority: .interactive, writes: [])
     do {
       for _ in 0..<5 {
         // The state and, when a closed connection must refuse this query, the stored connection state, in one
@@ -7265,7 +7272,7 @@ public final class InstantRuntime: Sendable {
       } catch {
         break
       }
-      await enterOperationGate(priority: .background)
+      await enterOperationGate(priority: .background, writes: [])
       let application: InstantLiveQueryResultPruneBatchApplication
       var checkedReleasedChunk = false
       do {
@@ -7347,10 +7354,12 @@ public final class InstantRuntime: Sendable {
     _ chunk: InstantReleasedLiveQueryResultChunk,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
+    let checkedEntityIDs = chunk.entityIDs.union(carriedReleasedIdentities.lazy.map(\.entityID))
     recordActorHop(.store)
-    let residentFacts = await store.facts(
-      of: chunk.entityIDs.union(carriedReleasedIdentities.lazy.map(\.entityID))
-    )
+    let residentFacts = await store.facts(of: checkedEntityIDs)
+    // #1133: from SQLite's delete to the store's retraction, the batch writes only these entities' facts, which no open
+    // query holds, so a hydration that read others need not wait for it.
+    operationGate.markHolderWrites(checkedEntityIDs)
     recordActorHop(.persistence)
     let application = try await persistence.applyReleasedLiveQueryResultChunk(
       chunk,
@@ -7365,6 +7374,7 @@ public final class InstantRuntime: Sendable {
         attributeRevision: application.attributeRevision
       )
     }
+    operationGate.markHolderWrites([])
     InstantDiagnostics.shared.record(
       .debug,
       subsystem: "instant-swift-data-core",
@@ -7463,6 +7473,9 @@ public final class InstantRuntime: Sendable {
       guard !batch.removedQueryKeys.isEmpty else { return batch.applicationRemovingNothing }
       recordActorHop(.store)
       let residentFacts = await store.facts(of: batch.releasedEntityIDs)
+      // #1133: from SQLite's delete to the store's retraction, the batch writes only these entities' facts, which no
+      // open query holds. At bootstrap nothing holds the gate, so the marks change nothing.
+      operationGate.markHolderWrites(batch.releasedEntityIDs)
       recordActorHop(.persistence)
       if let application = try await persistence.applyLiveQueryResultPruneBatch(
         batch,
@@ -7478,8 +7491,10 @@ public final class InstantRuntime: Sendable {
             attributeRevision: application.attributeRevision
           )
         }
+        operationGate.markHolderWrites([])
         return application
       }
+      operationGate.markHolderWrites([])
       // Something wrote SQLite between the batch's choice and its application, which the operation gate should rule
       // out: choose again, a few times, and otherwise leave the results for the next prune.
       staleAttempts += 1
@@ -7907,7 +7922,7 @@ public final class InstantRuntime: Sendable {
       return await connectionStatus(from: inputs)
     }
     // Before the first status, or after one that could not be read: read it under the gate, as before (#1132).
-    await operationGate.enter()
+    await operationGate.enter(writes: [])
     do {
       let status = try await connectionStatusWithGateHeld()
       await operationGate.leave()
@@ -7928,7 +7943,7 @@ public final class InstantRuntime: Sendable {
     if let stream = await connectionStatusObservers.observeLatest(key: configuration.appID) {
       return stream
     }
-    await operationGate.enter()
+    await operationGate.enter(writes: [])
     do {
       let status = try await connectionStatusWithGateHeld()
       await connectionStatusObservers.seedLatest(status, for: configuration.appID)
@@ -8366,7 +8381,7 @@ public final class InstantRuntime: Sendable {
   /// Reads the first connection status and auth session for the reads and observations that answer without the
   /// operation gate (#1132); one that cannot be read leaves its read to the gate, as before.
   private func seedStatusAndSessionReads() async {
-    await enterOperationGate(operation: "seed status and session reads")
+    await enterOperationGate(operation: "seed status and session reads", writes: [])
     if let status = try? await connectionStatusWithGateHeld() {
       await connectionStatusObservers.seedLatest(status, for: configuration.appID)
     }
@@ -9809,7 +9824,8 @@ public final class InstantRuntime: Sendable {
   private func retryOnePersistedTransientMutationFailureWindow() async throws -> Bool? {
     try await enterOperationGateUnlessCancelled(
       operation: "retry one persisted transient mutation failure window",
-      priority: .background
+      priority: .background,
+      writes: []
     )
     do {
       let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
@@ -10461,7 +10477,7 @@ public final class InstantRuntime: Sendable {
     if let stream = await authSessionObservers.observeLatest() {
       return stream
     }
-    await operationGate.enter()
+    await operationGate.enter(writes: [])
     do {
       await configuration.onAuthSessionObservationHoldsOperationGateForTesting?()
       let session = try await persistence.loadAuthSession(key: authSessionKey)
@@ -11861,7 +11877,7 @@ public final class InstantRuntime: Sendable {
       uploadedPath = file.name
       uploadedRefreshToken = refreshToken
     }
-    await operationGate.enter()
+    await operationGate.enter(writes: [])
     do {
       // #959: storage holds an uploaded file, so the device keeps its record and no copy, as upstream's
       // `StorageAPI.uploadFile` keeps none. Every upload used to be copied here and kept for good: on one device 3,754
@@ -11985,7 +12001,7 @@ public final class InstantRuntime: Sendable {
       return compaction
     }
     do {
-      try await enterOperationGateUnlessCancelled(priority: .background)
+      try await enterOperationGateUnlessCancelled(priority: .background, writes: [])
     } catch {
       compaction.outcome = .held(.cancelled)
       recordLocalCacheCompaction(compaction)
@@ -14624,7 +14640,8 @@ public final class InstantRuntime: Sendable {
     probesOneWrite: Bool = false
   ) async throws -> InstantAutomaticOutboxTransportSelection {
     try await enterOperationGateUnlessCancelled(
-      operation: "claim automatic outbox transport mutations for delivery"
+      operation: "claim automatic outbox transport mutations for delivery",
+      writes: []
     )
     do {
       recordActorHop(.persistence)
@@ -15653,9 +15670,16 @@ public final class InstantRuntime: Sendable {
     return (loaded.load.state, loaded.then)
   }
 
+  /// Every caller holds the operation gate.
   private func adoptPersistedStoreIfNeeded(
     _ adoption: InstantPersistenceStoreAdoption
   ) async {
+    if case .none = adoption { return }
+    // #1133: the hot store takes what another connection wrote to SQLite, so until it has, a hydration that read those
+    // values without the gate waits for this holder, whatever the holder named.
+    let named = operationGate.holderWrites
+    operationGate.markHolderWrites(nil)
+    defer { operationGate.markHolderWrites(named) }
     switch adoption {
     case .none:
       break
@@ -17213,22 +17237,28 @@ public final class InstantRuntime: Sendable {
   ///
   /// `operation` defaults to the caller's own function so a stalled gate names
   /// the function that is actually holding it rather than this wrapper.
+  ///
+  /// `writes` names what the caller writes before its store commit, as `AsyncSerialGate.markHolderWrites(_:)` does:
+  /// empty for no store facts, nil (the default) for any. A hydration that read without the gate waits only for a
+  /// holder that may be writing what it read (#1006, #1133).
   private func enterOperationGate(
     operation: String = #function,
-    priority: AsyncSerialGate.Priority = .standard
+    priority: AsyncSerialGate.Priority = .standard,
+    writes: Set<String>? = nil
   ) async {
     recordActorHop(.operationGate)
-    await operationGate.enter(operation: operation, priority: priority)
+    await operationGate.enter(operation: operation, priority: priority, writes: writes)
   }
 
   /// Cancellation-aware variant for callers that already throw. A caller that
   /// throws here never acquired the gate and must not leave it.
   private func enterOperationGateUnlessCancelled(
     operation: String = #function,
-    priority: AsyncSerialGate.Priority = .standard
+    priority: AsyncSerialGate.Priority = .standard,
+    writes: Set<String>? = nil
   ) async throws {
     recordActorHop(.operationGate)
-    try await operationGate.enterUnlessCancelled(operation: operation, priority: priority)
+    try await operationGate.enterUnlessCancelled(operation: operation, priority: priority, writes: writes)
   }
 
   private func leaveOperationGate() async {
