@@ -1,3 +1,30 @@
+## 2026-10-25 15:52:39 EDT — scribe `2b3e8901f8833edfeb0132396440b5dc7a6dc84e`
+Docs (#1097): landing A in the hot-paths audit's section 15 (four waves of verification and their attribution against main's baseline), the Build 140 story, PROGRESS, ADR 0094's status; landed on main 71b91e816.
+
+## 2026-10-25 14:06:00 EDT — scribe `22497508e211e748c34bef12894881e7a70cea94`
+Fix (#1097): the list's live-room reads ask for the time only for a row with a key and another client's stamp (24 list tests that stub no date had failed).
+
+## 2026-10-25 14:06:00 EDT — scribe `92cb2cf26f85680d0ad64b9fd418a32cd3af4bcf`
+Fix (#1100): the branch's copy of 93dd93db1 (a continued take's images answer silent and empty in tests).
+
+## 2026-10-25 12:01:32 EDT — scribe `4a734581caac3154f7e603e7a4bd663e4ae6bd05`
+Fix (#1097): the live room's preview value is silent too, for tests that run in a preview context.
+
+## 2026-10-25 10:21:28 EDT — scribe `355dc7d5722c5337d363c31541bcf2c4958739a8`
+Feat (#1097, ADR 0094): the follow-along tail reads a live recording's room every 5 s beside its follow loop (a read-only GET of /admin/rooms/presence); a grown beat from an allowlisted owner counts as a write for its quiet rule.
+
+## 2026-10-25 10:21:28 EDT — scribe `437bf92be655c867ebcf36b112c1583c1b4bc0da`
+Feat (#1097, ADR 0094): the mirror reads each live recording's room every 5 s (admin rooms.getPresence, 5 s timeout) and counts a grown beat from an owner, published within 15 s, as a heartbeat; mirror suite 663/663.
+
+## 2026-10-25 10:21:28 EDT — scribe `1ef82da2cb071fb385dd1f856210596b2d0589e2`
+Feat (#1097, ADR 0094): the recording device publishes each 5 s beat in its take's live room from its own effect and writes a room key once; the list reads the rooms of rows live elsewhere, folds beats into its live signals and playback's; Stop leaves the room.
+
+## 2026-10-25 10:21:14 EDT — scribe `f8dc421809e204d45205ca9a7dd293577224993b`
+Feat (#1097, ADR 0094): RecordingLiveRoomClient over the Instant client's rooms: one join a take, a presence value a beat in plain JSON numbers, leave at Stop; readers take the newest beat of the row's owner or themselves.
+
+## 2026-10-25 10:21:14 EDT — scribe `316ff44a287ea86fbef48a37c16a8dfc5df1445e`
+Feat (#1097, ADR 0094): recordings.liveRoomKey reaches the domain recording the way updatedAt does; its one writer is a set-once metadata write; the entity's whole-row upsert never writes it.
+
 ## 2026-10-25 15:42:39 EDT — scribe `31db9f22831300856248e31f52ee9fb9cb28b571`
 merge(#951): S2b lands on main for build 140: the screen broadcast's voices take the recording's numbers from -10,000 down (one voice, one speaker, whatever app is in front); the lane names its recording; ADR 0096 amendment A.
 
