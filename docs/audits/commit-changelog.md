@@ -1,3 +1,6 @@
+## 2026-10-25 11:14:37 EDT — scribe `7eda31ed62c8d95c4b51c88930dae0503814bc1a`
+Scribe 0.1 (138) cut from main a56142d2f (#1182): #1173 lead-in, #1176 sync labels, production apps only (#1179); instant-data-swift 1.9.42.
+
 ## 2026-10-25 10:43:54 EDT — scribe `efb09352f886d18c67f9de822329729a9d58a948`
 #1179 red: a bare installer run builds the production app; the Dev app needs --dev.
 
