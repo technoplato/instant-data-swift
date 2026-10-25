@@ -7,6 +7,8 @@
 //   write, and which table those pages belong to points at the statement. The time spent in syncs, and the bytes the
 //   process's I/O wrote to the drive beside the logical bytes. And a replay of a live write's four transactions under
 //   each checkpoint setting, because the store's own connection has no way to set them from a test.
+// - 2026-10-24: the hour prints the store's own checkpoint setting, its checkpoints, and the most lines written between
+//   two of them, which is what a power loss can take (#1118).
 
 import Compression
 import Foundation
@@ -210,15 +212,28 @@ struct StorageIOExercises {
     startLine.add("minute", 0)
     startLine.add("storeFacts", try StorageIOStoreFile.factCount(store))
     startLine.add(file: startFile)
+    startLine.add("walAutocheckpoint", Int(try await cycle.runtime.persistence.walAutocheckpointForTesting()))
     startLine.print()
 
     let ledger = StorageIOLedger()
     let hour = StorageIOProbe.start()
     var interval = StorageIOProbe.start()
     var intervalLedger = StorageIOLedger()
+    // A checkpoint ends with the database file's full sync, after the log's: a power loss takes the lines written
+    // since the last one (#1118).
+    var checkpoints = StorageIOCounters.snapshot()[.database].fullSyncs
+    var linesSinceCheckpoint = 0
+    var powerLossReachLines = 0
     for minute in 1...settings.minutes {
       for _ in 0..<settings.linesPerMinute {
         try await cycle.writeLine(into: ledger, alsoInto: intervalLedger)
+        linesSinceCheckpoint += 1
+        let synced = StorageIOCounters.snapshot()[.database].fullSyncs
+        if synced > checkpoints {
+          powerLossReachLines = max(powerLossReachLines, linesSinceCheckpoint)
+          linesSinceCheckpoint = 0
+          checkpoints = synced
+        }
       }
       try await cycle.prune(into: ledger)
       guard minute % 5 == 0 || minute == settings.minutes else { continue }
@@ -259,6 +274,13 @@ struct StorageIOExercises {
     end.add("fullSyncs", total.io.fullSyncs)
     end.add("syncSeconds", Double(total.io.syncNanoseconds) / 1_000_000_000, digits: 2)
     end.add("walRestarts", total.io.walRestarts)
+    end.add("checkpoints", total.io[.database].fullSyncs)
+    end.add("powerLossReachLines", max(powerLossReachLines, linesSinceCheckpoint))
+    end.add(
+      "powerLossReachSeconds",
+      Double(max(powerLossReachLines, linesSinceCheckpoint)) * 60 / Double(max(1, settings.linesPerMinute)),
+      digits: 0
+    )
     end.add("fileGrowthMB", Double(endFile.databaseBytes - startFile.databaseBytes) / 1_048_576, digits: 2)
     end.add("pagesEnd", endFile.pageCount)
     end.add("freePagesEnd", endFile.freePages)

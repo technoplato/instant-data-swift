@@ -6,6 +6,9 @@
 //   about 416 MB of it, and the b-tree those reads land on names the statement to look at. And the time each sync
 //   takes: an hour of recording asked for about 1,040 full syncs, and their cost is the time a commit waits for the
 //   drive.
+// - 2026-10-24: a journal of each watched file's writes since its last full sync, with the bytes each replaced, so a
+//   test can open the files as a power loss would leave them (#1118: the store's log now holds up to 4,000 frames
+//   between checkpoints, and a power loss can take what the last checkpoint did not sync).
 
 import Foundation
 import SQLite3
@@ -167,6 +170,39 @@ enum StorageIOCounters {
   static func snapshot() -> StorageIOSnapshot {
     storageIOShimState.withLock { $0.snapshot }
   }
+
+  /// Journals every database and write-ahead log under `directory` that a connection opens through the shim from now
+  /// on: each write and truncate since the file's last full sync, with the bytes it replaced, so
+  /// ``powerLossImage(of:in:keepingUnsyncedWrites:)`` can take them back (#1118). `nil` stops and forgets the journals.
+  static func journalUnsyncedWrites(under directory: URL?) {
+    StorageIOJournal.shared.watch(directory: directory)
+  }
+
+  /// What the journal holds for `store` and its write-ahead log now.
+  static func unsyncedWrites(of store: URL) -> StorageIOUnsyncedWrites {
+    StorageIOJournal.shared.unsyncedWrites(of: store)
+  }
+
+  /// A copy of `store` and its write-ahead log in `directory` as a power loss would leave them: each file as its last
+  /// full sync left it, plus the first `kept` of the writes and truncates after that sync, as a drive that wrote them
+  /// in order and lost power partway (#1118). Apple's drives make only `F_FULLFSYNC` durable, so a plain sync is not
+  /// a barrier here. No `-shm`: SQLite rebuilds the log's index when it opens the copy. `store` is not touched.
+  static func powerLossImage(of store: URL, in directory: URL, keepingUnsyncedWrites kept: Int = 0) throws -> URL {
+    try StorageIOJournal.shared.image(of: store, in: directory, keeping: kept)
+  }
+}
+
+/// The journal's count for one store and its log, since each file's last full sync (#1118).
+struct StorageIOUnsyncedWrites: Equatable, Sendable {
+  var databaseWrites = 0
+  var databaseBytes = 0
+  var walWrites = 0
+  var walBytes = 0
+  /// Full syncs each file has had since it was first journaled.
+  var databaseFullSyncs = 0
+  var walFullSyncs = 0
+  /// Syncs that were not full, on either file: on Apple's drives they do not make a write durable.
+  var partialSyncs = 0
 }
 
 /// The b-tree each page of a store belongs to, read from SQLite's `dbstat` table on a connection of its own that
@@ -280,6 +316,185 @@ private struct StorageIOShimFile {
   var real: UnsafeMutablePointer<sqlite3_file>
   var kind: StorageIOFileKind
   var counted: Bool
+  /// The file's journal (``StorageIOJournal``), or -1 when it is not journaled.
+  var journal: Int
+}
+
+/// Every write and truncate since each watched file's last full sync, with the bytes each one replaced, so an image
+/// of the files can take them back as a power loss would (#1118). A file's journal is its path's: the writer and any
+/// reader of one file share it. The lock is held across the real call, so an image never sees half of one.
+private final class StorageIOJournal: @unchecked Sendable {
+  static let shared = StorageIOJournal()
+
+  enum Entry {
+    /// A write at `offset` over `replaced` (the bytes there before, those inside the old size) in a file of
+    /// `sizeBefore` bytes.
+    case write(offset: Int64, length: Int, replaced: [UInt8], sizeBefore: Int64)
+    /// A truncate to `size` of a file of `sizeBefore` bytes, which removed `removed`.
+    case truncate(size: Int64, removed: [UInt8], sizeBefore: Int64)
+  }
+
+  struct File {
+    var path: String
+    var kind: StorageIOFileKind
+    var entries: [Entry] = []
+    var fullSyncs = 0
+    var partialSyncs = 0
+  }
+
+  // SAFETY: `lock` guards `prefix` and `files`; SQLite calls the shim from any thread.
+  private let lock = NSLock()
+  private var prefix: String?
+  private var files: [File] = []
+
+  /// A file keeps its journal's index while it is open, so watching another directory empties the journals and keeps
+  /// them.
+  func watch(directory: URL?) {
+    lock.withLock {
+      prefix = directory.map { Self.resolved($0.path) }
+      for index in files.indices { files[index].entries = [] }
+    }
+  }
+
+  /// The journal a file opened at `path` writes to: its path's, made on first use; -1 for a file not watched.
+  func journal(path: String?, kind: StorageIOFileKind) -> Int {
+    guard kind == .database || kind == .wal, let path else { return -1 }
+    return lock.withLock {
+      guard let prefix, path.hasPrefix(prefix) else { return -1 }
+      if let index = files.firstIndex(where: { $0.path == path }) { return index }
+      files.append(File(path: path, kind: kind))
+      return files.count - 1
+    }
+  }
+
+  func write(
+    _ journal: Int,
+    _ real: UnsafeMutablePointer<sqlite3_file>,
+    _ buffer: UnsafeRawPointer?,
+    _ amount: Int32,
+    _ offset: sqlite3_int64
+  ) -> Int32 {
+    lock.withLock {
+      let methods = real.pointee.pMethods.pointee
+      let size = Self.size(of: real)
+      let replaced = Self.read(real, from: offset, to: min(offset + Int64(amount), size))
+      let result = methods.xWrite(real, buffer, amount, offset)
+      if result == SQLITE_OK, files.indices.contains(journal) {
+        files[journal].entries.append(.write(offset: offset, length: Int(amount), replaced: replaced, sizeBefore: size))
+      }
+      return result
+    }
+  }
+
+  func truncate(_ journal: Int, _ real: UnsafeMutablePointer<sqlite3_file>, _ newSize: sqlite3_int64) -> Int32 {
+    lock.withLock {
+      let size = Self.size(of: real)
+      let removed = Self.read(real, from: newSize, to: size)
+      let result = real.pointee.pMethods.pointee.xTruncate(real, newSize)
+      if result == SQLITE_OK, files.indices.contains(journal) {
+        files[journal].entries.append(.truncate(size: newSize, removed: removed, sizeBefore: size))
+      }
+      return result
+    }
+  }
+
+  /// A full sync makes everything before it durable, so the journal starts over; a plain one does not.
+  func sync(_ journal: Int, _ real: UnsafeMutablePointer<sqlite3_file>, _ flags: Int32) -> Int32 {
+    lock.withLock {
+      let result = real.pointee.pMethods.pointee.xSync(real, flags)
+      guard result == SQLITE_OK, files.indices.contains(journal) else { return result }
+      if flags & 0x0F == SQLITE_SYNC_FULL {
+        files[journal].entries = []
+        files[journal].fullSyncs += 1
+      } else {
+        files[journal].partialSyncs += 1
+      }
+      return result
+    }
+  }
+
+  func unsyncedWrites(of store: URL) -> StorageIOUnsyncedWrites {
+    let database = Self.resolved(store.path)
+    return lock.withLock {
+      var counts = StorageIOUnsyncedWrites()
+      for file in files where file.path == database || file.path == database + "-wal" {
+        let bytes = file.entries.reduce(0) { total, entry in
+          if case let .write(_, length, _, _) = entry { return total + length }
+          return total
+        }
+        if file.kind == .wal {
+          counts.walWrites = file.entries.count
+          counts.walBytes = bytes
+          counts.walFullSyncs = file.fullSyncs
+        } else {
+          counts.databaseWrites = file.entries.count
+          counts.databaseBytes = bytes
+          counts.databaseFullSyncs = file.fullSyncs
+        }
+        counts.partialSyncs += file.partialSyncs
+      }
+      return counts
+    }
+  }
+
+  func image(of store: URL, in directory: URL, keeping kept: Int) throws -> URL {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let target = directory.appendingPathComponent(store.lastPathComponent)
+    let database = Self.resolved(store.path)
+    try lock.withLock {
+      for suffix in ["", "-wal"] where FileManager.default.fileExists(atPath: store.path + suffix) {
+        let copy = target.path + suffix
+        try FileManager.default.copyItem(atPath: store.path + suffix, toPath: copy)
+        let entries = files.first(where: { $0.path == database + suffix })?.entries ?? []
+        let handle = try FileHandle(forUpdating: URL(fileURLWithPath: copy))
+        defer { try? handle.close() }
+        // Newest first, each one taken back, until only the first `kept` remain.
+        for entry in entries.dropFirst(min(kept, entries.count)).reversed() {
+          switch entry {
+          case let .write(offset, _, replaced, sizeBefore):
+            if !replaced.isEmpty {
+              try handle.seek(toOffset: UInt64(offset))
+              try handle.write(contentsOf: replaced)
+            }
+            if try handle.seekToEnd() > UInt64(sizeBefore) { try handle.truncate(atOffset: UInt64(sizeBefore)) }
+          case let .truncate(size, removed, sizeBefore):
+            if sizeBefore > size {
+              try handle.seek(toOffset: UInt64(size))
+              try handle.write(contentsOf: removed)
+            } else {
+              try handle.truncate(atOffset: UInt64(sizeBefore))
+            }
+          }
+        }
+      }
+    }
+    return target
+  }
+
+  private static func size(of real: UnsafeMutablePointer<sqlite3_file>) -> Int64 {
+    var size: sqlite3_int64 = 0
+    _ = real.pointee.pMethods.pointee.xFileSize(real, &size)
+    return size
+  }
+
+  private static func read(_ real: UnsafeMutablePointer<sqlite3_file>, from start: Int64, to end: Int64) -> [UInt8] {
+    guard end > start else { return [] }
+    var bytes = [UInt8](repeating: 0, count: Int(end - start))
+    _ = bytes.withUnsafeMutableBytes { buffer in
+      real.pointee.pMethods.pointee.xRead(real, buffer.baseAddress, Int32(buffer.count), start)
+    }
+    return bytes
+  }
+
+  /// SQLite names a file by its resolved path, and the temporary directory is a symbolic link (`/var` is
+  /// `/private/var`), so a path is compared with its directory resolved.
+  static func resolved(_ path: String) -> String {
+    let url = URL(fileURLWithPath: path)
+    let directory = url.deletingLastPathComponent().path
+    guard let real = realpath(directory, nil) else { return url.standardizedFileURL.path }
+    defer { free(real) }
+    return String(cString: real) + "/" + url.lastPathComponent
+  }
 }
 
 private enum StorageIOShim {
@@ -429,13 +644,17 @@ private enum StorageIOShim {
         guard let prefix = state.pathPrefix, let path else { return true }
         return path.hasPrefix(prefix)
       }
+      let kind = StorageIOFileKind(openFlags: flags)
+      // A journaled file belongs to a power-loss test, not to a measurement: its writes are not counted.
+      let journal = StorageIOJournal.shared.journal(path: path, kind: kind)
       let header = raw.bindMemory(to: StorageIOShimFile.self, capacity: 1)
       header.initialize(
         to: StorageIOShimFile(
           base: sqlite3_file(pMethods: nil),
           real: realFile,
-          kind: StorageIOFileKind(openFlags: flags),
-          counted: counted
+          kind: kind,
+          counted: counted && journal < 0,
+          journal: journal
         )
       )
       let result = real.pointee.xOpen(real, name, realFile, flags, outFlags)
@@ -506,17 +725,28 @@ private enum StorageIOShim {
       return result
     }
     methods.xWrite = { file, buffer, amount, offset in
-      let result = StorageIOShim.realMethods(file).xWrite(StorageIOShim.real(file), buffer, amount, offset)
+      let journal = StorageIOShim.shim(file).pointee.journal
+      let result =
+        journal >= 0
+        ? StorageIOJournal.shared.write(journal, StorageIOShim.real(file), buffer, amount, offset)
+        : StorageIOShim.realMethods(file).xWrite(StorageIOShim.real(file), buffer, amount, offset)
       if result == SQLITE_OK { StorageIOShim.countWrite(file, buffer, amount, offset) }
       return result
     }
     methods.xTruncate = { file, size in
       StorageIOShim.count(file) { $0.truncates += 1 }
-      return StorageIOShim.realMethods(file).xTruncate(StorageIOShim.real(file), size)
+      let journal = StorageIOShim.shim(file).pointee.journal
+      return journal >= 0
+        ? StorageIOJournal.shared.truncate(journal, StorageIOShim.real(file), size)
+        : StorageIOShim.realMethods(file).xTruncate(StorageIOShim.real(file), size)
     }
     methods.xSync = { file, flags in
       let started = DispatchTime.now().uptimeNanoseconds
-      let result = StorageIOShim.realMethods(file).xSync(StorageIOShim.real(file), flags)
+      let journal = StorageIOShim.shim(file).pointee.journal
+      let result =
+        journal >= 0
+        ? StorageIOJournal.shared.sync(journal, StorageIOShim.real(file), flags)
+        : StorageIOShim.realMethods(file).xSync(StorageIOShim.real(file), flags)
       let elapsed = DispatchTime.now().uptimeNanoseconds &- started
       StorageIOShim.count(file) {
         $0.syncs += 1

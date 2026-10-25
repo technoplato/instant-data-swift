@@ -1130,6 +1130,8 @@ public actor SQLitePersistenceStore {
   private let deferredValueResidency: InstantDeferredValueResidencyPolicy
   private let localLookup: InstantLocalLookupPolicy
   private let declaredAttributes: [InstantAttribute]
+  /// The VFS the writer opens through, from ``connectionVFSForTesting`` at init, so a reopened connection keeps it.
+  private let connectionVFS: String?
   private let connection: SQLiteConnection
   /// A read-only connection to this store's file, for local reads that must not wait behind this actor's writes
   /// (#1006). Reached without a hop onto this actor.
@@ -1896,6 +1898,8 @@ public actor SQLitePersistenceStore {
     self.deferredValueResidency = deferredValueResidency
     self.localLookup = localLookup
     self.declaredAttributes = declaredAttributes
+    let connectionVFS = Self.connectionVFSForTesting
+    self.connectionVFS = connectionVFS
     self.readConnection = SQLiteReadConnection(
       fileURL: fileURL,
       deferredAttributeIDs: deferredValueResidency.attributeIDs,
@@ -1917,7 +1921,7 @@ public actor SQLitePersistenceStore {
       metadata: ["path": fileURL.path]
     )
     do {
-      self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+      self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS))
       self.memoryPressureMonitor = SQLiteMemoryPressureMonitor()
       startupTrace.completed(
         "sqlite.open",
@@ -1955,7 +1959,11 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private static func openRawConnection(fileURL: URL) throws -> OpaquePointer? {
+  /// The VFS a store made in this task opens its writer through; `nil`, the system's default. A test sets it to watch
+  /// what SQLite asks the file system to do: #1118's power-loss images journal every write since the last sync.
+  @TaskLocal package static var connectionVFSForTesting: String?
+
+  private static func openRawConnection(fileURL: URL, vfs: String?) throws -> OpaquePointer? {
     let directory = fileURL.deletingLastPathComponent()
     let fileManager = FileManager.default
     if !fileManager.fileExists(atPath: directory.path) {
@@ -1968,7 +1976,7 @@ public actor SQLitePersistenceStore {
 
     var opened: OpaquePointer?
     let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
-    guard sqlite3_open_v2(fileURL.path, &opened, flags, nil) == SQLITE_OK
+    guard sqlite3_open_v2(fileURL.path, &opened, flags, vfs) == SQLITE_OK
     else {
       let message =
         opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
@@ -19158,7 +19166,7 @@ public actor SQLitePersistenceStore {
 
   private func reopenConnection() throws {
     connection.close()
-    connection.raw = try Self.openRawConnection(fileURL: fileURL)
+    connection.raw = try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS)
   }
 
   private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) throws {
@@ -19247,6 +19255,12 @@ public actor SQLitePersistenceStore {
   /// `PRAGMA synchronous` on this connection: 0 off, 1 normal, 2 full, 3 extra.
   package func synchronousSettingForTesting() throws -> String? {
     try selectScalar("PRAGMA synchronous")
+  }
+
+  /// `PRAGMA wal_autocheckpoint` on the writer: a commit that leaves the log this many frames long or longer
+  /// checkpoints it (#1118). The setting is the connection's own, so only the store can say what its writer uses.
+  package func walAutocheckpointForTesting() throws -> Int64 {
+    try selectInt64("PRAGMA wal_autocheckpoint")
   }
 
   /// What SQLite's page cache holds on this connection (#653).
