@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 7:59:54 a.m. EDT — `e19b30a8c900` docs(#1130 #1134 #1136): the v1.9.42 release document: one delivery claim per write, one-shot reads and compaction off the operation gate
+
+- **Implementation commit:** `e19b30a8c90023f51323cb05804563782b6555d0`
+- **Change:** docs: the v1.9.42 release document (one delivery claim per write, one-shot reads and compaction off the operation gate)
+- **Details:**
+  - Cut at main 239ba916 (last code commit 53979805), carrying 1.9.41; tagged on this release branch's ledger commit. Checks: RealSizeBudgetTests in release (12 known issues); the release's gate suites in release (514 tests); the core bundle in debug on the laptop (1,531 tests, 2 failing: 1 listed, 1 load-missed deadline in #1134's test, 239ba916); InstantSwiftDataTests in debug (405 tests, 1 failing: #304).
+- **Files:**
+  - `docs/releases/v1.9.42.md` — the release document
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 7:28:39 a.m. EDT — `53979805d87d` fix(#1136): green: compaction asks the app's hold once, before the operation gate
 
 - **Implementation commit:** `53979805d87d188f2b51084e073420fd474542ec`

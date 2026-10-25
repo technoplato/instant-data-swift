@@ -1,3 +1,14 @@
+## 2026-10-25 07:59:54 EDT — v1.9.42 released (fix-gate-1074, the release owner)
+
+- **Release:** `docs/releases/v1.9.42.md` (`e19b30a8`), cut at main `239ba916`, last code commit `53979805`, carrying
+  1.9.41; annotated tag `v1.9.42` on this ledger commit.
+- **In it:** #1130 (one delivery claim per write, no retry turn without a failure), #1134 (one-shot reads off the
+  operation gate, both slices), #1136 (compaction asks the app's hold before the gate); tests `239ba916`. No migration.
+- **Checks:** RealSizeBudgetTests (release, Mac mini) 12 known issues; the gate suites (release) 514 tests, artifacts
+  only; the core bundle (debug, laptop) 1,531 tests, 2 failing (1 listed, 1 a load-missed 2 s deadline in #1134's test,
+  now 30 s); InstantSwiftDataTests (debug) 405 tests, 1 failing (#304).
+- **Next:** pin 1.9.42 in Scribe and Scribe Playback.
+
 ## 2026-10-25 07:28:39 EDT — #1136 on main: compaction asks the app's hold before the gate; #1138 re-measured (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 11 `f20f6404`; red `d0280c43`, green `53979805`; then this ledger.

@@ -1,3 +1,6 @@
+## 2026-10-25 07:59:41 EDT — instant-data-swift `e19b30a8c90023f51323cb05804563782b6555d0`
+Docs: the v1.9.42 release document; cut at main 239ba916 (last code commit 53979805); tagged v1.9.42 on its ledger commit.
+
 ## 2026-10-25 07:17:44 EDT — instant-data-swift `53979805d87d188f2b51084e073420fd474542ec`
 Fix (#1136): compaction asks the app's hold once, before the operation gate; compaction-main-hop's gate hold equals its VACUUM's time (Mac mini, release).
 
