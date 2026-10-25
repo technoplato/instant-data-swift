@@ -1,3 +1,21 @@
+## 2026-10-24 23:44:17 EDT — scribe `120a1e88782e5fb95cb78cba850c7925011a3ccf`
+changelog(#1101): red, green and docs.
+
+## 2026-10-24 23:44:17 EDT — scribe `37fabc91d303dd38b5048fa94f64cfba20a98c30`
+Docs (#1101): the section-update audit (the cost test before and after, the profile's four walks, the property tests and mutation checks, the watchOS static check), its index row, the Build 132 (next) story.
+
+## 2026-10-24 23:44:17 EDT — scribe `21e826cfbfa88d5b151eb8d13540dcdc8c7b8949`
+Fix (#1101): a live section update costs what changed: the window reads the query's answers by the rows after those the last answer shared, confirms local finals without a settle, keeps equal storage, and journals the settled rows; the transcript writes its runs once and places a new speaker's final and an appended row in place. A final at 1,300 rows 91.5 M instructions against 87.3 M at 100 (561.4 against 110.5 before, -Onone).
+
+## 2026-10-24 23:44:17 EDT — scribe `576b0cca09a402f74efe65765728e9b4a6ed01af`
+Test (#1101): red: each live section update at most 5,000 instructions more per timeline row at 1,300 rows than at 100.
+
+## 2026-10-24 23:44:17 EDT — scribe `8156299b55b5112dc19b4fcb633f485e4c933e3a`
+Plan (#1085) amendment A: the recording keeps its round trip by default; the list composes it with a same-action hand-off.
+
+## 2026-10-24 23:44:17 EDT — scribe `fc748290044a99c6ab9c47b7b9012800e7e29663`
+Plan (#1085): the recording's per-action round trips cost the root no pass of their own (#1085, then #1084, #1086, #1083).
+
 ## 2026-10-24 23:33:52 EDT — instant-data-swift `3e787d2da21a7dd8fc4d0dec9d805f4606be126b`
 perf(#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy
 
