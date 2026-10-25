@@ -12477,8 +12477,11 @@ struct InstantStoreTests {
     expectNoDifference(observedToken, token)
   }
 
+  /// An observation started while a sign-in holds the operation gate answers at once with the session as it is, then
+  /// sees the sign-in when it commits (#1132), as upstream `subscribeAuth` calls back with the cached user and then with
+  /// each change. Until #1132 it waited for the sign-in to leave the gate, and its first value was the sign-in's.
   @Test
-  func authSessionObservationRegistersAtomicallyWithInFlightSignIn() async throws {
+  func authSessionObservationDuringAnInFlightSignInSeesTheSignInWhenItCommits() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let verifyEntered = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -12519,17 +12522,25 @@ struct InstantStoreTests {
     var verifyEnteredIterator = verifyEntered.stream.makeAsyncIterator()
     _ = await verifyEnteredIterator.next()
 
-    let observeTask = Task {
-      try await runtime.observeAuthSession()
+    // An observation that waits for the gate again gets it once the sign-in goes on, which it does after 5 s, and then
+    // its first value is the sign-in's.
+    let releaseSignIn = Task {
+      try? await Task.sleep(for: .seconds(5))
+      resumeVerify.continuation.yield(())
     }
-    try await Task.sleep(nanoseconds: 10_000_000)
-    resumeVerify.continuation.yield(())
-
-    let stream = try await observeTask.value
+    let stream = try await runtime.observeAuthSession()
     var iterator = stream.makeAsyncIterator()
-    let observedSession = try #require(await iterator.next())
+    // Read before the sign-in goes on: the stream keeps only its newest value.
+    let observedBeforeSignIn = try #require(await iterator.next())
+    try #require(
+      observedBeforeSignIn == nil,
+      "#1132: observeAuthSession() waited for the sign-in that held the operation gate"
+    )
+    resumeVerify.continuation.yield(())
     let signedInSession = try await signInTask.value
-    expectNoDifference(observedSession, signedInSession)
+    let observedSignIn = try #require(await iterator.next())
+    releaseSignIn.cancel()
+    #expect(observedSignIn == signedInSession)
   }
 
   @Test

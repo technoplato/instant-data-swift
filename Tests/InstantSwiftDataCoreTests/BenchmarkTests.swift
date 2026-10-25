@@ -268,15 +268,17 @@ extension InstantStoreTests {
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.pendingMutationCount),
       [54, 54]
     )
+    // The relaunch reads its first connection status and auth session under the gate, one gate pass and one persistence
+    // turn, so status reads and the status and session observations answer without the gate after it (#1132).
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopCount),
-      [11, 11]
+      [14, 14]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 4, "persistence": 5, "store": 2],
-        ["operation-gate": 4, "persistence": 5, "store": 2],
+        ["operation-gate": 6, "persistence": 6, "store": 2],
+        ["operation-gate": 6, "persistence": 6, "store": 2],
       ]
     )
     // One automatic claim window is 50 mutations; residual pending stays behind

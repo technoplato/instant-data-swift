@@ -74,11 +74,12 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
       "store": 2,
       "observers": 1,
     ]
-    // Relaunch: one turn to open the store, the live-result prune, then a query (one turn of reads, the store, the
-    // query-cache save) and the pending mutations (one turn), each inside the gate.
+    // Relaunch: one turn to open the store, the live-result prune, the first connection status and auth session
+    // inside the gate (#1132: status reads and observations answer without the gate after it), then a query (one turn
+    // of reads, the store, the query-cache save) and the pending mutations (one turn), each inside the gate.
     let relaunch: [String: Int] = [
-      "operation-gate": 4,
-      "persistence": 5,
+      "operation-gate": 6,
+      "persistence": 6,
       "store": 2,
     ]
     // Reconnect and drain: connect saves the opened state and reads the status in one turn; the explicit flush claims
@@ -100,7 +101,7 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
     )
     expectNoDifference(
       result.metrics.map { metric in metric.samples.map(\.actorHopCount) },
-      [[7, 7], [11, 11], [25, 25]]
+      [[7, 7], [14, 14], [25, 25]]
     )
   }
 

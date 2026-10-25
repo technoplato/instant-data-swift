@@ -204,6 +204,10 @@ every count (2,487 to 0, 119 frames, 17 rebases, 26,288 bodies, 2,384 accepted, 
   decoded, which the next read would do anyway.
 - The startup diagnostic `query-cache.pruned-at-bootstrap` is now recorded after the compact state loads.
 - Tests that pinned hop counts now pin every call (BenchmarkTests' local-todos pins grow where calls were uncounted).
+- 2026-10-25 (#1132): the relaunch makes 14 calls (gate 6, persistence 6, store 2). Bootstrap reads the first
+  connection status and auth session inside the gate, one gate pass and one persistence turn, so `connectionStatus()`,
+  `observeConnectionStatus()` and `observeAuthSession()` answer without the gate after it. The relaunch pins in
+  `runtimeWorkloadsPinEveryActorHop` and BenchmarkTests follow.
 
 ## Decisions and open questions
 
