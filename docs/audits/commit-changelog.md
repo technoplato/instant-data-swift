@@ -1,3 +1,15 @@
+## 2026-10-25 04:57:52 EDT — scribe `59638fbfabaf3e16d11d9b1d0f90b3d227d2b16f`
+Docs (#1154 #1077): the hot-path audit's and PROGRESS's heading times are the commits' own (they were estimates).
+
+## 2026-10-25 04:56:59 EDT — scribe `73e3d6fe95a136a660238ce9bf6d8e49150cb3a3`
+Docs (#1154 #1077): the PROGRESS entry for #1154 fix 1 and the hot-path runs r4 and r5.
+
+## 2026-10-25 04:56:39 EDT — scribe `83ef8621a75a26db40cb44288440405fc8477ccc`
+Docs (#1154): What's New for build 134: the Live on iPhone mark breathes in the display system on iPhone and iPad too.
+
+## 2026-10-25 04:56:06 EDT — scribe `0560a91b4f051fb22701d7a3f78c5a9205f414e6`
+Docs (#1154 #1077): the hot-path audit's fix 1 section: one breathing symbol 12.6% of the process to 0.015% on the iOS simulator, the list with a live row 14.2% to 5.86% of the main thread.
+
 ## 2026-10-25 04:46:26 EDT — instant-data-swift `de2388ec6d1d2d27f2991d4ac90a01533e5c828e`
 Fix (#1132): connectionStatus, observeConnectionStatus and observeAuthSession answer without the operation gate; connectionStatus() p99 380.19 -> 0.01 ms in the server-apply exercise (Mac mini, release).
 
@@ -52,6 +64,15 @@ Perf (#1084): green: the durability lane's admission and its two interim paths a
 ## 2026-10-25 02:38:58 EDT — scribe `d17fb1baa8c62cceca083ed4135326f0b03817ec`
 Test (#1084): red: a write behind a save in flight sends no drain step, and a recording minute behind one takes a single startDrain root pass.
 
+## 2026-10-25 02:38:20 EDT — scribe `9235b8fad87b70257d47f9b396546c00e5510b73`
+Test (#1077): hot-path-exercises.sh takes --only more than once, so one simulator session runs a fix's tests and its exercises.
+
+## 2026-10-25 02:37:21 EDT — scribe `3c3ee1925f2326173d176d0760d3f9e41020d6e3`
+Fix (#1154): green: on iOS the live mark breathes in the render server, as it does on the Mac (BreathingSymbol's UIKit path).
+
+## 2026-10-25 02:35:27 EDT — scribe `8f571115f116963974753fc5e2c98512c2c1597c`
+Test (#1154): red: on iOS a breathing symbol turns the main run loop 90 times a second, and its breath is not Core Animation's.
+
 ## 2026-10-25 02:34:48 EDT — scribe `98613c9b9f37b3f8bdadc95f43610ccf3817ab30`
 Plan (#1084): amendment D: no drain step while a save is in flight; claims and a channel note.
 
@@ -87,6 +108,9 @@ Test (#1119): an echo with the next write already saved, and a backlog's first e
 
 ## 2026-10-25 02:30:50 EDT — instant-data-swift `af48d41d88465bfa3af35b4eb5153bfcaa265210`
 Plan (#1076 #1119): amendment 9: a test whose echo rebases a pending write decides #1119.
+
+## 2026-10-25 02:30:50 EDT — scribe `3cb64b610fb9b77309fbab0b873dd80f5253f214`
+Docs (#1077 #1154 #412 #1101): the hot-path audit's section 10: run r5 measures #412's stamp and #1101 with the same exercises and splits #1154's list.
 
 ## 2026-10-25 02:01:09 EDT — instant-data-swift `8fe6b328a750e59647f88182fac6b9509489a438`
 Plan (#1115): fix-storage-1076 claims amendment 8's files.
