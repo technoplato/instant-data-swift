@@ -1,3 +1,9 @@
+## 2026-10-25 13:14:29 EDT — scribe `3dc654f6a4264e165fe4ed4b62cd817bddca9f07`
+cut(#1186): Scribe 0.1 (139) from main 41eb89e71: CURRENT_PROJECT_VERSION 139, What's New Build 139 dated (#1177, #962, #837, #1175). instant-data-swift 1.9.42 unchanged; production apps only.
+
+## 2026-10-25 13:14:29 EDT — scribe `0b00e270a9480e27a169c54c38ebb1fee1452c4d`
+changelog(#1186): CHANGELOG.md entry for the build 139 cut.
+
 ## 2026-10-25 13:09:00 EDT — scribe `41eb89e712019cad34ca46e2e4f1538f877059ef`
 changelog(#1176): the CHANGELOG entry for the docs commit below.
 
