@@ -10,6 +10,97 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 12:04:33 a.m. EDT — `7da3ad9d81a2` docs(#1131 #1129 #1152 #1147): the v1.9.39 release document: observer registration leaves the operation gate, the cadence prune leaves the frame applier, a page refresh costs less
+
+- **Implementation commit:** `7da3ad9d81a2e80b24bb1811b561b814fd8f47a3`
+- **Change:** docs(#1131 #1129 #1152 #1147): the v1.9.39 release document
+- **Details:**
+  - Release focus, measurements, what stays the same, checks (budgets in release twice on e1ea434c and once on ba733bd9; the whole bundle in debug on ba733bd9: 1,478 tests, 3 failing, one listed and #1147's two cost tests whose bounds hold only in release), not run.
+- **Files:**
+  - `docs/releases/v1.9.39.md` — new: the release document
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:57:04 p.m. EDT — `e1ea434cccce` fix(#1129): green: the cadence prune runs in a task of its own, after the frame applier let go of the refresh that asked for it
+
+- **Implementation commit:** `e1ea434cccce88771f9c9cf964986608fd0653fe`
+- **Change:** fix(#1129): green: the cadence prune runs in a task of its own, after the frame applier let go of the refresh that asked for it
+- **Details:**
+  - applyLiveRefresh decides under the server-apply gate and asks for the prune after leaving it; the prune runs in a coalesced task at utility priority, each batch still queueing for the operation gate at background priority; a close latches and waits for it.
+  - prune-inline exercise (Mac mini, release, fixture v3): the refresh behind the prune applied after 1,723.23 ms before, 1,618.05 ms after: it waits for the one $files batch now, not the whole prune; bounding that batch is the next slice.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — requestCadencePrune and its owner, the close latch
+  - `Sources/InstantSwiftDataCore/InstantRuntimeExactTaskOwner.swift` — runningHandle and the idle state's cadence prune
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — two cadence tests wait for the prune to settle
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:57:03 p.m. EDT — `4278f2f87b19` test(#1129): red: a refresh that triggers the cadence prune waits for it, and so does the next frame
+
+- **Implementation commit:** `4278f2f87b19432290c9cecd0f5649b70983fae0`
+- **Change:** test(#1129): red: a refresh that triggers the cadence prune waits for it, and so does the next frame
+- **Details:**
+  - The test pauses the cadence prune between two batches: the refresh that triggered it has not returned, and the next refresh cannot apply (both expectations failed on main, Mac mini, release).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — new: the test
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:57:03 p.m. EDT — `821e592afda0` fix(#1131): green: a registration's last observer leaving before its add-query went out sends that add-query first
+
+- **Implementation commit:** `821e592afda092449e961ad63b4999b8c19ef9ba`
+- **Change:** fix(#1131): green: a registration's last observer leaving before its add-query went out sends that add-query first
+- **Details:**
+  - The live session records the socket generation whose add-query a registration owes; any send of its add-query clears it. An unregistration of the last observer while it is owed sends it first, then the remove-query, as upstream's synchronous ws.send at subscription always ordered them.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — owedAddQueryGeneration, unregisterQuery, reconcileQueryMembership
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:57:03 p.m. EDT — `fb3bc4072e53` test(#1131): red: an observation that ends before its owed add-query went out puts remove-query alone on the wire
+
+- **Implementation commit:** `fb3bc4072e53d641296fc997a77a3cf10826c7ed`
+- **Change:** test(#1131): red: an observation that ends before its owed add-query went out puts remove-query alone on the wire
+- **Details:**
+  - Under the whole bundle's load an infinite query's frozen chunk was evicted between its registration's record and its deferred send; the test drives that gap on the live session directly and the wire reads remove-query alone.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — anUnregistrationBeforeTheOwedSendSendsAddThenRemove
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:57:02 p.m. EDT — `ffd14777e407` fix(#1131): green: a closed result loads back in bounded operation-gate holds, and the registration's own hold loads none of it
+
+- **Implementation commit:** `ffd14777e407598b46be6c9424481f319cf13f16`
+- **Change:** fix(#1131): green: a closed result loads back in bounded operation-gate holds, and the registration's own hold loads none of it
+- **Details:**
+  - The reload moves the stored row back (its JSON inside SQLite) and then gives it its facts and brings its entities back in chunks of at most 2,048 facts, each its own hold and transaction; a chunk stops once a server answer replaced the row. A per-key registration lease covers a registration from before its read until it records itself: the prune keeps leased keys' results, and a second observer waits for the first one's registration. A prune batch that captured the open queries before the lease is caught by a check under the registration's hold.
+  - server-apply exercise (Mac mini, release, fixture v3; main ed161097 before): the registration's own hold 1,616.70 -> 23.73 ms; the reload's 38 holds p50 34.80 ms, worst 98.13 ms; acknowledgements p50 1,227.84 -> 97.80 ms.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantLiveQueryRegistrations, the chunked reload, the prune's active keys
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — beginUnloadedLiveQueryResultReload and reloadUnloadedLiveQueryResultChunk replace the single-hold reload
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — the stale-read checks move to the persistence level
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:57:02 p.m. EDT — `d55e72fd0239` test(#1131): red: a closed result's reload commits in one hold of the operation gate, the size of the whole result
+
+- **Implementation commit:** `d55e72fd0239203fde78c40a3484200c4e3fb0fd`
+- **Change:** test(#1131): red: a closed result's reload commits in one hold of the operation gate, the size of the whole result
+- **Details:**
+  - Three focused tests with 4 facts a hold: the 12-fact list loads back in four holds of its own and the registration's hold loads none; a prune between two holds keeps the reloading result; a second observer of the reloading query waits for the reload and shares its subscription. They failed on main as designed (Mac mini, release).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — the three tests and a hold counter
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — liveQueryResultReloadChunkTripleCount and onUnloadedLiveQueryResultReloadChunkForTesting, unused until the green
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 11:35:08 p.m. EDT — `3e787d2da21a` perf(#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy
 
 - **Implementation commit:** `3e787d2da21a7dd8fc4d0dec9d805f4606be126b`
