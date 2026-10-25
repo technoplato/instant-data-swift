@@ -1,3 +1,6 @@
+## 2026-10-25 03:29:06 EDT — scribe `fb5aad45eb6c559dc4ded93054d9971bfdf2fe37`
+Pin instant-data-swift exactly 1.9.40 (da9771bc) instead of 1.9.39 in Scribe and Scribe Playback: bounded prune batches, a retry that reuses its plan's work, each fact stored once; both lock files (pin and originHash only), installer 65/65, a Build 134 (next) story with the no-going-back warning.
+
 ## 2026-10-25 03:05:37 EDT — scribe `3d3363ba23b2a25280f11ef65b5fa8eca4ee9c33`
 Cut Scribe 0.1 (133) and Scribe Playback 0.1 (133) from main eb30382c7 (#1164): instant-data-swift exactly 1.9.39 (#1131 #1129 #1152 #1147), #1085, #962; Playback rebuilt because its package pins 1.9.39.
 
