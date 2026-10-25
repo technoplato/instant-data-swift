@@ -1,3 +1,17 @@
+## 2026-10-25 06:28:16 EDT — #1130 on main: one claim per write, no retry turn without a failure (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 9 `fdf9a113`; red `9ec20c0c`, green `b8a2c11e`; then this ledger.
+- **Measured** (`recording`, Mac mini, release, fixture version 3; main with #1133 before; two runs each; 90 writes, all
+  accepted): delivery claims 180 -> 90, retry turns 180 -> 0; the claims' gate time 378-389 -> 373-406 ms a minute (each
+  claim now does the work two did); delivery's gate time a recorded minute (claims and acknowledgements) about
+  0.6-0.7 s; acknowledgement p99 108-122 -> 109-114 ms. Both criteria met.
+- **How:** a pass reads, without the gate, whether a failed write waits to be retried (the connection's opening already
+  made that read) before it takes the gate for the retry window; a `transact-ok` asks for a pass only when a write waits
+  to be claimed or retried (`hasAutomaticDeliveryCandidate()` beside the retry read, one persistence turn). The deadline
+  wake, a connection's first pass, a write's own pass and a refusal's pass are unchanged, so expired claims are still
+  reclaimed at their deadlines.
+- **Next:** the brief's remaining items (#1134-#1140, #1142, #1143) as measured; #1127's question to the lab is open.
+
 ## 2026-10-25 06:22:10 EDT — v1.9.41 released (fix-gate-1074, the release owner)
 
 - **Release:** `docs/releases/v1.9.41.md` (`501def54`), cut at main `ec1257ba`, last code commit `99318502`, carrying

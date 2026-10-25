@@ -10,6 +10,31 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 6:28:16 a.m. EDT — `b8a2c11e5ca3` fix(#1130): green: a delivery pass takes the retry turn only when a failure waits, and an acknowledgement asks for a pass only when a write waits
+
+- **Implementation commit:** `b8a2c11e5ca326144f20514120d491b426f2d894`
+- **Change:** fix(#1130): green: a delivery pass takes the retry turn only when a failure waits, and an acknowledgement asks for a pass only when a write waits
+- **Details:**
+  - recording, Mac mini, release, fixture v3 (main with #1133 before, two runs each; 90 writes, all accepted): delivery claims 180 -> 90, retry turns 180 -> 0; claim holds 378-389 -> 373-406 ms a minute; delivery's gate time a recorded minute (claims and acknowledgements) about 0.6-0.7 s; acknowledgement p99 108-122 -> 109-114 ms. 782 tests in 29 suites pass in release apart from withKnownIssue artifacts and #1168.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — runAutomaticMutationPumpPass's ungated retry check; the transact-ok case's automaticDeliveryWorkWaits()
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — hasAutomaticDeliveryCandidate(), a read-only wrapper of the claim's candidate read
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 6:28:16 a.m. EDT — `9ec20c0cfeb0` test(#1130): red: each acknowledged write takes two delivery claims and two retry turns while nothing failed
+
+- **Implementation commit:** `9ec20c0cfeb0bb7c3e3761b6c15e38994c8d1938`
+- **Change:** test(#1130): red: each acknowledged write takes two delivery claims and two retry turns while nothing failed
+- **Details:**
+  - Release, Mac mini: 16 claims and 16 retry turns for 8 writes; every write sent once, in order.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantDeliveryPassTests.swift` — the claim and retry-turn counts (new)
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 6:22:10 a.m. EDT — `501def54f562` docs(#1132 #1133 #1129 #1150 #1147 #1146 #1149 #1115): the v1.9.41 release document: status reads and hydration re-checks stop waiting for gate work they do not need, bounded prune chunks, a launch that allocates half as much
 
 - **Implementation commit:** `501def54f56213dc844856d674d7e5d243a27e64`

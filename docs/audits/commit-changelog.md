@@ -1,3 +1,9 @@
+## 2026-10-25 06:27:27 EDT — instant-data-swift `b8a2c11e5ca326144f20514120d491b426f2d894`
+Fix (#1130): a delivery pass takes the retry turn only when a failure waits, and an acknowledgement asks for a pass only when a write waits; recording's claims 180 -> 90 and retry turns 180 -> 0 (Mac mini, release).
+
+## 2026-10-25 06:27:27 EDT — instant-data-swift `9ec20c0cfeb0bb7c3e3761b6c15e38994c8d1938`
+Test (#1130): red: two claims and two retry turns per acknowledged write.
+
 ## 2026-10-25 06:26:17 EDT — realtime-voice `65195f23846189c5716c061a01aa31fd67bdc307`
 Pin instant-data-swift exactly 1.9.41 in Scribe and Scribe Playback (status reads and transcript hydration off the library's housekeeping, bounded prune chunks, a launch that allocates half as much; a store 1.9.41 opened cannot be used by an older build).
 
