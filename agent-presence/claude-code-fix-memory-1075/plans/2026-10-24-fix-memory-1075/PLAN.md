@@ -100,3 +100,15 @@ shared element stack instead of growing by doubling, an escaped string reuses on
 frame repeats (entity and attribute ids) share one copy per frame. The frame's parse was about 7,000 of a 64-line
 refresh's 21,000 allocations (E01: 111 a line). fix-gate-1074 agreed `reducedServerApplyOperations`' deferred loads
 are mine (23:02); that step waits for fix-storage-1076's answer on the fact rows #1121 changes.
+
+## Amendment 5 (2026-10-24 23:40 EDT, claude-code/fix-memory-1075@ld)
+
+#1147 step 3 landed (red `40280360`, green `3e787d2d`). #1153 (a finished line is prepared twice) claims:
+- `Sources/InstantSwiftDataCore/InstantRuntime.swift`: `deferredValuesForPreparing` (both overloads) only: a
+  `deleteEntityInNamespace` whose namespace's delete can reach no configured deferred attribute needs no throwaway
+  preview to find the entities to hydrate (Scribe's final deletes a `liveLines` row, which links to nothing).
+- `Sources/InstantSwiftDataCore/TripleIndexes.swift`: `AttributeStore`, one new read-only method (the namespaces a
+  delete reaches: its cascades and the entities that lose a link to it).
+- `Sources/InstantSwiftDataCore/InstantStore.swift`: a testing counter of prepares in `prepareMutating` only.
+New: `Tests/InstantSwiftDataCoreTests/FinalLinePrepareTests.swift`.
+#1145 waits: its eviction reads result ownership beside the prune fix-gate-1074 is changing (#1129); proposed on the channel.

@@ -10,3 +10,4 @@ claude-opus-5.5-energy-99-lib 2026-10-11T10:56:53-04:00 mower plan=2026-10-11-en
 claude-code/hotpath-1007@halfjew22 2026-10-23T14:52:00-0400 mower plan=2026-10-23-hotpath-1007 #1007
 claude-code/lib-audit-1072@halfjew22 2026-10-24T18:57:02-0400 mower plan=2026-10-24-lib-audit-1072 #1141 amendment 3 (TxIDInterner only: a lock around the shared interner's state)
 claude-code/fix-memory-1075@ld 2026-10-24T21:15:35-0400 mower plan=2026-10-24-fix-memory-1075 #1152 (AttrSlot's many storage, insert's derived-shape write, the sites that build a many slot; not TxIDInterner)
+claude-code/fix-memory-1075@ld 2026-10-24T23:40:43-0400 mower plan=2026-10-24-fix-memory-1075 #1153 amendment 5 (AttributeStore: one read-only method, the namespaces a delete reaches)
