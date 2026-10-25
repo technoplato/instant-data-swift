@@ -617,6 +617,12 @@ public actor InstantStore {
     attributes.attributes
   }
 
+  /// The store's attribute index as it is: a copy-on-write value, so a reader that needs the schema does not sort and
+  /// index every attribute again, as a local read did for each 256-line history page (#1150).
+  func attributeStoreSnapshot() -> AttributeStore {
+    attributes
+  }
+
   func currentSequence() -> Int64 {
     sequence
   }

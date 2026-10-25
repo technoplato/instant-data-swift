@@ -5411,7 +5411,11 @@ public final class InstantRuntime: Sendable {
     // mutations update this actor-isolated store directly.
     recordActorHop(.store)
     let schemaSnapshotStopwatch = configuration.startupTrace.stopwatch()
-    let attributes = await store.attributeSnapshot()
+    // The store's own index, and only the deferred attributes for hydration, which reads no others: sorting the phone's
+    // 2,283 attributes and indexing them again cost each observation open about 4 MB (#1150).
+    let attributeStore = await store.attributeStoreSnapshot()
+    let attributes = configuration.deferredValueResidency.attributeIDs.sorted()
+      .compactMap { attributeStore.exactAttribute(id: $0) }
     guard !Task.isCancelled else {
       return Self.finishedQueryObservationLease()
     }
@@ -5420,10 +5424,7 @@ public final class InstantRuntime: Sendable {
       since: schemaSnapshotStopwatch,
       metadata: ["namespace": plan.namespace]
     )
-    if let issue = TripleIndexes.validate(
-      plan,
-      attributes: AttributeStore(attributes: attributes)
-    ) {
+    if let issue = TripleIndexes.validate(plan, attributes: attributeStore) {
       InstantDiagnostics.shared.record(
         .warning,
         subsystem: "instant-swift-data-core",
@@ -6529,8 +6530,9 @@ public final class InstantRuntime: Sendable {
   @concurrent
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     recordActorHop(.store)
-    let attributes = await store.attributeSnapshot()
-    let attributeStore = AttributeStore(attributes: attributes)
+    // The store's own index: rebuilding one from a sorted copy of the phone's 2,283 attributes was about 8 MB of each
+    // 256-line history page (#1150).
+    let attributeStore = await store.attributeStoreSnapshot()
     if let issue = TripleIndexes.validate(plan, attributes: attributeStore) {
       throw validationFailed(
         operation: "validate query",
@@ -6553,7 +6555,6 @@ public final class InstantRuntime: Sendable {
       into: memory,
       plan: plan,
       lookup: lookup,
-      attributes: attributes,
       attributeStore: attributeStore
     )
   }
@@ -6666,7 +6667,6 @@ public final class InstantRuntime: Sendable {
     into memory: InstantQueryEmission,
     plan: InstantQueryPlan,
     lookup: (attributeID: String, value: InstantValue),
-    attributes: [InstantAttribute],
     attributeStore: AttributeStore
   ) async throws -> InstantQueryEmission {
     let reader = persistence.readConnection
@@ -6708,7 +6708,8 @@ public final class InstantRuntime: Sendable {
       InstantQueryEmission(queryID: plan.id, sequence: memory.sequence, values: fromDisk),
       for: plan,
       with: diskFacts.filter { deferredAttributeIDs.contains($0.attributeID) },
-      attributes: attributes
+      // Hydration reads only the deferred attributes, so they are all it needs of the schema (#1150).
+      attributes: deferredAttributeIDs.sorted().compactMap { attributeStore.exactAttribute(id: $0) }
     )
     let onlyOnDisk = Dictionary(hydratedFromDisk.values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     InstantDiagnostics.shared.record(
