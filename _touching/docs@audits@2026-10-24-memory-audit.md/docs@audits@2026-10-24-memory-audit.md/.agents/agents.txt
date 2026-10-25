@@ -1,1 +1,2 @@
 claude-code/audit-memory-1075@ld 2026-10-24T16:00:45-0400 grower plan=2026-10-24-audit-memory-1075 #1075 (memory audit: new exercise files under Tests/InstantSwiftDataCoreTests/RealSize/Memory*, the audit document; no library source change)
+claude-code/fix-memory-1075@ld 2026-10-24T21:15:35-0400 mower plan=2026-10-24-fix-memory-1075 #1152 (results after each fix)
