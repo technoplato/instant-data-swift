@@ -10,6 +10,66 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 2:48:12 a.m. EDT — `e7dacb2dfb44` perf(#1150): green: a fact is read from its columns, not from the json the fact table computes for it
+
+- **Implementation commit:** `e7dacb2dfb44c62365b6a37f765ace4a474ea51d`
+- **Change:** Perf (#1150): a fact is read from its columns, not from the json the fact table computes for it
+- **Details:**
+  - Columns with ids reused across rows; InstantStoredJSON.value(stored:scratch:) inverts the writer strictly, JSONDecoder for the rest. 512 deferred facts under 1,536 allocations; E14 2,550 KB a page (criterion under 4 MB met); E03 64-line refresh 8,911 allocations.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantFactRows.swift` — column reader; Sources/InstantSwiftDataCore/InstantStoredJSON.swift::value reader; Tests/InstantSwiftDataCoreTests/InstantFactRowsTests.swift::value reader tests; MemoryExercises.swift::E14 budget 4 MB
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 2:48:12 a.m. EDT — `713a5f9dc0a1` test(#1150): red: reading 512 deferred facts allocates 23 times a fact
+
+- **Implementation commit:** `713a5f9dc0a103d8b49302ef233e25dea7f51edb`
+- **Change:** Test (#1150): red: reading 512 deferred facts allocates 23 times a fact
+- **Details:**
+  - 11,820 allocations for a history page's 512 deferred facts from an in-memory fact table (Mac mini, release, calling thread); an equivalence test passes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFactRowsTests.swift` — new: equivalence and cost
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 2:48:11 a.m. EDT — `6fdf9ff26425` refactor(#1150): the read connection's fact reads move into InstantFactRowReader, unchanged
+
+- **Implementation commit:** `6fdf9ff2642576de53f43ed22d89004420302816`
+- **Change:** Refactor (#1150): the read connection's fact reads move into InstantFactRowReader, unchanged
+- **Details:**
+  - Same computed json, joined batch and JSONDecoder, now in a reader a test can run on one thread.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantFactRows.swift` — new reader; Sources/InstantSwiftDataCore/SQLiteReadConnection.swift::facts(of:), loadDeferredValues, withStatement
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 2:48:11 a.m. EDT — `a641f2ead97f` perf(#1150 #1111): green: a local read and an observation open take the store's attribute index instead of rebuilding it
+
+- **Implementation commit:** `a641f2ead97f11b8ad1ec8b90d0fde2d6d7dd54a`
+- **Change:** Perf (#1150, #1111): a local read and an observation open take the store's attribute index instead of rebuilding it
+- **Details:**
+  - queryLocally and prepareObservation used the store's AttributeStore via attributeStoreSnapshot() instead of sorting all attributes and building a new index; hydration gets only the deferred attributes. E14 19,548 -> 7,221 KB a page.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — queryLocally, mergingEntitiesOnDisk, prepareObservation's schema snapshot; Sources/InstantSwiftDataCore/InstantStore.swift::attributeStoreSnapshot()
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 2:48:11 a.m. EDT — `1256f9e00572` test(#1150): red: E14's 256-line history page allocates 19.5 MB, over a 13 MB budget
+
+- **Implementation commit:** `1256f9e005720854cadecce7b81ffeffa1777f59`
+- **Change:** Test (#1150): red: E14's 256-line history page allocates 19.5 MB, over a 13 MB budget
+- **Details:**
+  - E14 holds a per-page budget, tightened per step toward the issue's 4 MB; 23,979 allocations and 19,548 KB a page on the Mac mini (release, fixture v3).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — E14's per-page budget
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 2:21:14 a.m. EDT — `37b0286585a5` fix(#1128): green: a server apply's retry reuses the retractions and saves its first attempt worked out, so the plan it makes holding the operation gate no longer decodes and encodes the whole restated result
 
 - **Implementation commit:** `37b0286585a53c782cfe8c875e0c380f8c6f198d`

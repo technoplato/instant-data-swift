@@ -52,6 +52,7 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
 | #1147 (steps 1-4) | M2, M9 | `79707ad5`/`a9751099`, `63b65c80`/`553cb332`, `40280360`/`3e787d2d`, `164131cd`/`560540fe` | E03 64-line refresh, one line changed | 23,947 allocations, 22,769 KB | 11,160 allocations, 11,411 KB |
 | #1153 | M14 | red `6d765ee0`, green `0744cfb1` | E04 final line, store prepares per write | 2.0 | 1.0 |
 | #1148 | M4 | red `9d4ca094`, green `97ed60bc`, E09 fix `63920cb0` | a dropped debug entry, allocations (calling thread) | 18 | 0 |
+| #1150 | M11 | red `1256f9e0`, `a641f2ea`, `6fdf9ff2`, red `713a5f9d`, green `e7dacb2d` | E14 256-line history page | 23,979 allocations, 19,548 KB | 3,296 allocations, 2,550 KB |
 
 - **#1152:** a many-cardinality slot keeps its values in a `ShardedDictionary` (one plain dictionary up to 32 entries,
   then 64 shards), so a line linked to a long recording copies one shard of the link set; `insert` writes a derived
@@ -65,6 +66,9 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
   answer 548,414 -> 160,779). An allocation-site recording (`MemorySiteExercises`) attributes what remains.
 - **#1147 step 4:** a refreshed page's ownership diff compares 128-bit fingerprints of the rows' bytes and the values'
   stored text; only rows that leave or join become strings (a 64-line page's diff 5,137 -> under 300 allocations).
+- **#1150:** a local read and an observation open take the store's attribute index (they sorted all 2,283 attributes
+  and built a new one each time, also #1111), and the read connection reads a fact's columns instead of the `json` the
+  fact table computes, with a strict reader of a value's stored text (`JSONDecoder` for the rest).
 - **#1148:** a diagnostics entry the floor drops builds nothing, and redaction makes no string per ASCII key.
   **Correction to M4 (measured):** E09's "no sink" pass had a handler (every session registers `RealSizeApplyLog`), and
   the +2.6 MB a write for Scribe's setup does not reproduce on main in any exercise order, this audit's included (+4 to

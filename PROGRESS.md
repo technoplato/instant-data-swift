@@ -1,3 +1,22 @@
+## 2026-10-25 02:48:13 EDT — #1150 on main: a history page 19.5 -> 2.5 MB; #1145's sweep approved (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plans `bb94689d`, `242e328f`, `53584f57` (amendments 9-11), `2f142f49`
+  (amendment 12, #1145's design); #1150 red `1256f9e0`, step 1 green `a641f2ea` (also #1111), step 2 refactor
+  `6fdf9ff2`, red `713a5f9d`, green `e7dacb2d`; then this ledger commit.
+- **Measured (Mac mini, release, fixture v3):** E14's 256-line history page 23,979 -> 3,296 allocations and 19,548 ->
+  2,550 KB (step 1, the store's attribute index instead of a rebuilt one in `queryLocally` and `prepareObservation`:
+  7,221 KB; step 2, facts read from columns instead of the computed `json` and `JSONDecoder`). #1150's criterion (under 4
+  MB a page) holds and E14 holds that budget. Every observation open no longer sorts the 2,283 attributes and builds an
+  index (about 4 MB an open, #1111). E03's 64-line refresh 8,911 allocations / 10,691 KB with the same reader (#1147).
+- **Checks:** InstantFactRowsTests (equivalence over every kind of value, the value reader against `JSONDecoder`, texts
+  the writer does not write, the cost bound); a release run of the 19 suites that read through the reader, 539 tests:
+  no new failure (112 CLI tests lack the CLI executable in that lane; 4 `withKnownIssue` tests release builds cannot
+  judge).
+- **#1145:** fix-gate-1074 approved the sweep with two changes (candidates from acknowledged writes, no timer; no batch
+  while a prune release is pending); my reply adds the entities whose ownership a result's save removes as candidates.
+- **Next:** #1145's sweep (claims first); #1147's store-side deferred loads through the column reader once
+  fix-storage-1076 agrees; then #1146 (the set of one) and #1149 (launch, the same reader).
+
 ## 2026-10-25 02:21:14 EDT — #1128 on main: a server apply's retry no longer works its restated results out under the gate (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 5 `3229127b`; red `a4e08723`, green `37b02865`; then this ledger.

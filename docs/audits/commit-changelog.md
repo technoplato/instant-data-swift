@@ -1,3 +1,30 @@
+## 2026-10-25 02:46:54 EDT — instant-data-swift `e7dacb2dfb44c62365b6a37f765ace4a474ea51d`
+Green (#1150): a fact is read from its columns, not the json the fact table computes for it; a stored value's text is read by a strict inverse of its writer, JSONDecoder for the rest. E14's history page 7,221 -> 2,550 KB (19,548 before step 1): #1150's criterion met (Mac mini, release).
+
+## 2026-10-25 02:46:54 EDT — instant-data-swift `713a5f9dc0a103d8b49302ef233e25dea7f51edb`
+Red (#1150): reading 512 deferred facts allocates 23 times a fact (11,820).
+
+## 2026-10-25 02:46:53 EDT — instant-data-swift `6fdf9ff2642576de53f43ed22d89004420302816`
+Refactor (#1150): the read connection's fact reads move into InstantFactRowReader, unchanged.
+
+## 2026-10-25 02:46:53 EDT — instant-data-swift `a641f2ead97f11b8ad1ec8b90d0fde2d6d7dd54a`
+Green (#1150, #1111): a local read and an observation open take the store's attribute index instead of sorting and rebuilding it: E14 19,548 -> 7,221 KB a page; every observation open about 4 MB less on the phone's schema.
+
+## 2026-10-25 02:46:53 EDT — instant-data-swift `1256f9e005720854cadecce7b81ffeffa1777f59`
+Red (#1150): E14's 256-line history page allocates 19.5 MB, over a 13 MB budget.
+
+## 2026-10-25 02:22:17 EDT — instant-data-swift `2f142f49930e2a93b123600e561f24d83e7a61c6`
+Plan (#1145): fix-memory-1075 amendment 12: a residency sweep's design, for fix-gate-1074's review.
+
+## 2026-10-25 01:48:21 EDT — instant-data-swift `53584f575a4618d89ed373e4ac48927c606b2c39`
+Plan (#1150): amendment 11: a fact read from its columns, with a reader of a stored value's text.
+
+## 2026-10-25 01:44:51 EDT — instant-data-swift `242e328f7caad40901f070bbd6b61f3daf2c0be5`
+Plan (#1150): amendment 10: prepareObservation's schema snapshot uses the store's attribute index.
+
+## 2026-10-25 01:33:16 EDT — instant-data-swift `bb94689ddd8be98e5a2bf0de7e9364d4645e2a19`
+Plan (#1150): amendment 9: a local read takes the store's attribute index; E14's budget.
+
 ## 2026-10-25 02:30:09 EDT — scribe `aa25b3687e99f9513268cef8b5d60815e89227cc`
 Merge (#1085): screen-heat-1085 onto main for build 133: the list reads the recording's state in its own pass, so the recording sends no delegate.stateUpdated round trip; #1101's cost test counts its thread.
 
