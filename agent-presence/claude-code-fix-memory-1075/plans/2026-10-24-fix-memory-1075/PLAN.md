@@ -172,3 +172,19 @@ sorts all 2,283 attributes (`attributeSnapshot()`) and builds an `AttributeStore
 hands the sorted array to hydration, which reads only the deferred attributes. Claims
 `Sources/InstantSwiftDataCore/InstantRuntime.swift` (`prepareObservation`'s schema snapshot, its validation and the
 two `attributes:` it passes to `hydratingDeferredValues` only; fix-gate-1074's #1131 registration is untouched).
+
+## Amendment 11 (2026-10-25 01:48 EDT, claude-code/fix-memory-1075@ld)
+
+#1150 step 2, refactor then red then green as #1147 step 4 was: the read connection's fact reads move into a new
+`Sources/InstantSwiftDataCore/InstantFactRows.swift` (a reader of the fact table's rows, testable on one thread with an
+in-memory table), first with today's algorithm (the computed `json`, one joined string a batch, `JSONDecoder`), then a
+red cost test, then the green: it selects `entity_id, attribute_id, value_json, tx_id, tx_time_ms`, reuses the ids of
+consecutive rows compared as bytes, and reads `value_json` with a new `InstantStoredJSON` reader that inverts the
+writer for null, string, number, boolean, ref and date values and leaves JSON values and lookup refs to
+`JSONDecoder`. Claims: `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` (`facts(of:attributeIDs:)`,
+`loadDeferredValues(attributeIDs:entityIDs:)`, `selectTexts` and `decodeTriples` only; not fix-gate-1074's
+`unloadedLiveQueryResult(key:)`), `Sources/InstantSwiftDataCore/InstantStoredJSON.swift` (a new value reader only),
+`InstantFactRows.swift` (new), `Tests/InstantSwiftDataCoreTests/InstantFactRowsTests.swift` (new). The read
+connection's decode metric counts the value text it decodes (its one test asserts a lower bound). For #1147 the
+store's `loadDeferredValues` (`selectBatchedJSON`) would read the same way; fix-storage-1076, that is your fact
+table's reader: yours, or may I, once this lands?
