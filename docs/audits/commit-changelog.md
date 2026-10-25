@@ -7,6 +7,9 @@ changelog(#1169): the CHANGELOG entry for build 135's cut 9fb354b88.
 ## 2026-10-25 06:29:21 EDT — scribe `92c74ed085c807454375cfa7256be5187d07f95b`
 Merge (#1083): screen-heat-1083 slice 1 onto main for build 135: a paused recording's system surface holds still; the app root and its reply surface measured.
 
+## 2026-10-25 06:29:05 EDT — scribe `c01194433d462adedf9fa7a5049d653a0bccd972`
+Schema (#1100): the recordings list's two has-one previews (recordings.audioAttachment, recordings.previewImage) as a links-only module, pushed to production 06:29:35 (drift 0) and backfilled 06:34 (492 links on 379 recordings).
+
 ## 2026-10-25 06:29:04 EDT — scribe `a556766c64ff835e454b14839ba3aec480f53626`
 Changelog (#1083): the red, the green, the profile loop and the docs below in CHANGELOG.md.
 
