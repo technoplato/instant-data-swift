@@ -184,12 +184,6 @@ private struct StoredTripleKey: Hashable {
   }
 }
 
-private struct LiveQueryOwnershipIdentity: Hashable {
-  var entityID: String
-  var attributeID: String
-  var valueJSON: String
-}
-
 private struct InstantApplicationMigrationOutboxRow {
   var mutation: PendingMutation
   var deliveryStarted: Bool
@@ -3502,7 +3496,7 @@ public actor SQLitePersistenceStore {
         (query_id, entity_id, attribute_id, value_json)
       VALUES (?, ?, ?, ?)
       """,
-      bindings: ownership.sorted(by: Self.liveQueryOwnershipOrder).map { identity in
+      bindings: ownership.sorted(by: LiveQueryOwnershipDiff.storeOrder).map { identity in
         [
           .int(queryID),
           .text(identity.entityID),
@@ -13252,7 +13246,7 @@ public actor SQLitePersistenceStore {
           (query_id, entity_id, attribute_id, value_json)
         VALUES (?, ?, ?, ?)
         """,
-        bindings: ownership.sorted(by: Self.liveQueryOwnershipOrder).map { identity in
+        bindings: ownership.sorted(by: LiveQueryOwnershipDiff.storeOrder).map { identity in
           [.int(queryID), .text(identity.entityID), .text(identity.attributeID), .text(identity.valueJSON)]
         }
       )
@@ -18477,22 +18471,18 @@ public actor SQLitePersistenceStore {
       attributes: attributes
     )
     liveQueryResultValueEncodeCount += result.triples.count
-    let nextOwnership = try Set(
-      result.triples.map { triple in
-        LiveQueryOwnershipIdentity(
-          entityID: triple.entityID,
-          attributeID: triple.attributeID,
-          valueJSON: try encode(triple.value)
-        )
-      }
-    )
-    let previousOwnership = try knownPreviousOwnership
-      ?? liveQueryOwnershipWithoutTransaction(queryKey: result.key)
+    var ownership = try LiveQueryOwnershipDiff(next: Array(result.triples), encoder: encoder)
+    if let knownPreviousOwnership {
+      ownership.previousRows(knownPreviousOwnership)
+    } else {
+      try liveQueryOwnershipRowsWithoutTransaction(queryKey: result.key, into: &ownership)
+    }
+    ownership.finish()
     var json: String?
     if encodingJSONIfWritten == true,
       try liveQueryResultJSONWriteWithoutTransaction(
         result,
-        ownershipUnchanged: previousOwnership == nextOwnership,
+        ownershipUnchanged: ownership.isUnchanged,
         deferringJSON: true
       ).writesJSON
     {
@@ -18502,11 +18492,11 @@ public actor SQLitePersistenceStore {
       InstantPreparedLiveQueryResultSave(
         result: result,
         attributeIDs: attributeIDs,
-        removedOwnership: previousOwnership.subtracting(nextOwnership).sorted(by: Self.liveQueryOwnershipOrder),
-        insertedOwnership: nextOwnership.subtracting(previousOwnership).sorted(by: Self.liveQueryOwnershipOrder),
+        removedOwnership: ownership.removed,
+        insertedOwnership: ownership.inserted,
         json: json
       ),
-      nextOwnership
+      ownership.nextRows
     )
   }
 
@@ -18636,6 +18626,50 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Hands each ownership row of the stored result `queryKey` to `diff`, as its columns' bytes (#1147).
+  private func liveQueryOwnershipRowsWithoutTransaction(
+    queryKey: String,
+    into diff: inout LiveQueryOwnershipDiff
+  ) throws {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT entity_id, attribute_id, value_json
+      FROM instant_live_query_triples
+      WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = ?)
+      """,
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind([.text(queryKey)], to: statement)
+    func column(_ index: Int32) -> UnsafeBufferPointer<UInt8>? {
+      guard let text = sqlite3_column_text(statement, index) else { return nil }
+      return UnsafeBufferPointer(start: text, count: Int(sqlite3_column_bytes(statement, index)))
+    }
+    var rows = 0
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        liveQueryOwnershipRowReadCount += rows
+        return
+      }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(
+          operation: "read live-query ownership",
+          message: lastErrorMessage()
+        )
+      }
+      guard let entityID = column(0), let attributeID = column(1), let valueJSON = column(2) else {
+        throw persistenceError(
+          operation: "read live-query ownership",
+          message: "SQLite returned a NULL live-query ownership column."
+        )
+      }
+      diff.previousRow(entityID: entityID, attributeID: attributeID, valueJSON: valueJSON)
+      rows += 1
+    }
+  }
+
   private func liveQueryOwnershipWithoutTransaction(
     queryKey: String
   ) throws -> Set<LiveQueryOwnershipIdentity> {
@@ -18693,7 +18727,7 @@ public actor SQLitePersistenceStore {
   package func liveQueryOwnershipForTesting(queryKey: String) throws -> [[String]] {
     try readTransaction {
       try liveQueryOwnershipWithoutTransaction(queryKey: queryKey)
-        .sorted(by: Self.liveQueryOwnershipOrder)
+        .sorted(by: LiveQueryOwnershipDiff.storeOrder)
         .map { [$0.entityID, $0.attributeID, $0.valueJSON] }
     }
   }
@@ -18753,13 +18787,6 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private static func liveQueryOwnershipOrder(
-    _ lhs: LiveQueryOwnershipIdentity,
-    _ rhs: LiveQueryOwnershipIdentity
-  ) -> Bool {
-    (lhs.entityID, lhs.attributeID, lhs.valueJSON)
-      < (rhs.entityID, rhs.attributeID, rhs.valueJSON)
-  }
 
   /// Writes a metadata row in place (#1007). `INSERT OR REPLACE` deleted the row and inserted it again under a new rowid,
   /// so every revision bump rewrote the table's leaf and its key index, in every transaction.
