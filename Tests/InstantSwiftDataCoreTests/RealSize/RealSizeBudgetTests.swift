@@ -29,6 +29,7 @@ import Testing
 //
 // History:
 // - 2026-10-24: #1072: the budgets.
+// - 2026-10-24: #1103: the discard meets its budget; its known issue goes and its ceiling tightens.
 
 /// When the budgets run: in optimized builds, unless the environment says otherwise.
 enum RealSizeBudget {
@@ -138,10 +139,9 @@ struct RealSizeBudgetTests {
       operation: "failedMutationSupersessions", ceiling: .init(allocations: 50_000, wall: .milliseconds(50)),
       knownIssue: "#1106: the supersessions of the failed writes read every later write of each slot"
     ),
-    .init(
-      operation: "discardFailedMutation", ceiling: .init(allocations: 50_000, wall: .milliseconds(50)),
-      knownIssue: "#1103: a discard copies, diffs and reloads the whole store under the operation gate"
-    ),
+    // #1103 fixed: a refused write that left no effect discards by its row (0.33 ms and 1,641 allocations at both sizes,
+    // against 112 ms and 585,459 on the store as launched before).
+    .init(operation: "discardFailedMutation", ceiling: .init(allocations: 5_000, wall: .milliseconds(20))),
     .init(operation: "connectionStatus", ceiling: .init(allocations: 5_000, wall: .milliseconds(20))),
   ]
 
