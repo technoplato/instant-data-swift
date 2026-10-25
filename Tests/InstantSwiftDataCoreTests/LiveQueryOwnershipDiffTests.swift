@@ -100,6 +100,8 @@ struct LiveQueryOwnershipDiffTests {
     }
     let result = try diff()
     #expect(result.removed.count == 2 && result.inserted.count == 2, "removed \(result.removed.count), inserted \(result.inserted.count)")
+    // The bound holds in optimized builds; an unoptimized one allocates each nested closure's context.
+    guard RealSizeBudget.isOptimized else { return }
     var allocations = 0
     _ = try diff()
     RealSizeAllocations.start(onCurrentThreadOnly: true)

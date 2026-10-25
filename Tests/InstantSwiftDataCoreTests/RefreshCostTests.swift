@@ -9,12 +9,14 @@ import Testing
 // and an allocation-site recording of one 64-line refresh (`MemorySiteExercises` S03, about 22,400 allocations and
 // 21.7 MB) found steps that each rebuilt maps of the whole schema (2,283 attributes on the phone) or of the whole page.
 // Each step here is held by a one-thread allocation count, so the tests a parallel bundle runs beside them do not land
-// in the count.
+// in the count. The schema-size bounds hold in optimized builds, where the counts were measured: an unoptimized build
+// copies each attribute out of the schema's array onto the heap while it scans it, as the #1108 test says.
 //
 // History:
 // - 2026-10-24: #1147: the nested-limit pass: its cost, and its shortcut's equivalence with the general pass.
 // - 2026-10-24: #1147: the deferred-value hydration of an emission.
 // - 2026-10-24: #1147: a refresh frame's parse.
+// - 2026-10-25: #1147: the schema-size bounds hold in optimized builds only (a debug bundle failed them, v1.9.39's check).
 
 @Suite
 struct RefreshCostTests {
@@ -36,6 +38,7 @@ struct RefreshCostTests {
     let withLarge = Self.bytesAllocated {
       _ = InstantLiveQueryNestedLimit.limitedTriples(queryKey: page.key, triples: page.triples, attributes: large)
     }
+    guard RealSizeBudget.isOptimized else { return }
     #expect(
       withLarge <= withSmall + 4_096,
       "The pass allocated \(withLarge) bytes with 2,283 attributes against \(withSmall) with 16."
@@ -122,6 +125,7 @@ struct RefreshCostTests {
     }
     expectNoDifference(hydrate(large), hydrate(small))
     expectNoDifference(hydrate(large).values.first?.values["text"], .one(.string("the words of line-0")))
+    guard RealSizeBudget.isOptimized else { return }
     let withSmall = Self.bytesAllocated { _ = hydrate(small) }
     let withLarge = Self.bytesAllocated { _ = hydrate(large) }
     #expect(
