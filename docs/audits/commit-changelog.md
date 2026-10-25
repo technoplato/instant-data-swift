@@ -1,3 +1,18 @@
+## 2026-10-24 20:24:21 EDT — scribe `5a35b578efa8b7ac7b20b6b7bba31bc208d4804c`
+Merge (#1156) for build 130: the recording screen's speaker runs no longer cost every action a re-read of each run.
+
+## 2026-10-24 20:24:21 EDT — scribe `fc3eb992ceaf397c75795689926650e9c555a448`
+changelog(#1156): red, green and docs entries.
+
+## 2026-10-24 20:24:21 EDT — scribe `b4f9a1c6ce9277437d23797e2d48a0028673b11b`
+Docs (#1156): the audit (the phone's ledger fit 3.7 ms + 31 us per speaker run per action, the mechanism, the cost test before and after, the harness's counts, the XCTest host's per-dependency dlsym), its index row, the Build 130 story.
+
+## 2026-10-24 20:24:21 EDT — scribe `b295d7e085c259371bed6b6518892cc7ed74f810`
+Green (#1156): the transcript's runs read by id through the recording's one store, no TCA store per run; a tick with 901 runs hosted 307.6 M instructions / 18.4 ms -> 0.79 M / 0.12 ms.
+
+## 2026-10-24 20:24:21 EDT — scribe `e298381839fca70f4ef2887c0c6be32bcb7fe649`
+Red (#1156): RecordingTranscriptStoreCostTests' conversation case asserts no per-run cost on a parent-only tick.
+
 ## 2026-10-24 20:15:42 EDT — instant-data-swift `840b9fa0b006d420f1733347c3a7510b598a3c49`
 docs(#1072): the audit records what shipped after it (1.9.35 to 1.9.38) and the partial index's write cost; the channel hands over the release steps
 
