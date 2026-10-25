@@ -1895,6 +1895,7 @@ actor InstantURLSessionLiveWebSocket {
 
   private let task: URLSessionWebSocketTask
   private nonisolated let abortHandle: InstantLiveWebSocketAbortHandle
+  private let wireMeter: InstantWireMeterStorage
   private var isClosed = false
 
   var urlSessionIdentity: ObjectIdentifier {
@@ -1905,11 +1906,12 @@ actor InstantURLSessionLiveWebSocket {
     Self.sharedURLSession.configuration.waitsForConnectivity
   }
 
-  init(url: URL) throws {
+  init(url: URL, wireMeter: InstantWireMeterStorage = InstantWireMeter.shared) throws {
     let task = Self.sharedURLSession.webSocketTask(with: url)
     task.maximumMessageSize = Self.maximumMessageSize
     self.task = task
     self.abortHandle = InstantLiveWebSocketAbortHandle(task: task)
+    self.wireMeter = wireMeter
     task.resume()
     InstantDiagnostics.shared.record(
       .debug,
