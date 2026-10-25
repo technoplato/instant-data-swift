@@ -5754,6 +5754,8 @@ struct InstantLiveTransportTests {
       )
     }
 
+    // The cadence prune runs after the refresh that asked for it, in a task of its own (#1129).
+    await runtime.cadencePruneSettledForTesting()
     let firstKey = try InstantLiveQueryEncoder.registrationKey(for: firstQuery)
     let secondKey = try InstantLiveQueryEncoder.registrationKey(for: secondQuery)
     #expect(try await runtime.persistence.liveQueryResult(key: firstKey) == nil)
@@ -5806,10 +5808,13 @@ struct InstantLiveTransportTests {
         receivedAt: timestamp
       )
       if index == 62 {
+        await runtime.cadencePruneSettledForTesting()
         #expect(try await runtime.persistence.liveQueryResult(key: keys[0]) != nil)
       }
     }
 
+    // The cadence prune runs after the refresh that asked for it, in a task of its own (#1129).
+    await runtime.cadencePruneSettledForTesting()
     #expect(try await runtime.persistence.liveQueryResult(key: keys[0]) == nil)
     #expect(try await runtime.persistence.liveQueryResult(key: keys[63]) != nil)
     let remaining = try await TodoExample.decode(runtime.query(TodoExample.query))

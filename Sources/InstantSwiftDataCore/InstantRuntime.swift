@@ -1602,6 +1602,8 @@ public final class InstantRuntime: Sendable {
   private let roomTopicsState = InstantRuntimeRoomTopics()
   private let automaticLiveConnectionTaskOwner = InstantRuntimeExactTaskOwner()
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
+  /// The cadence prune's task, off the frame applier (#1129).
+  private let cadencePruneOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
   /// Brings the server's copy of each stream this device writes up to date after a connection opens (#329).
@@ -4840,28 +4842,16 @@ public final class InstantRuntime: Sendable {
         initialSeed: seed
       )
       await liveQueryResultState.record(translated.queryResultReplacements)
-      if !translated.queryResultReplacements.isEmpty,
-        liveQueryResultPruningCadence.shouldPrune(
+      let isPruneDue = !translated.queryResultReplacements.isEmpty
+        && liveQueryResultPruningCadence.shouldPrune(
           afterSuccessfulWriteWithInterval: configuration.liveQueryResultPruningWriteInterval
         )
-      {
-        do {
-          _ = try await pruneLiveQueryResults(
-            policy: configuration.liveQueryResultPruningPolicy,
-            now: configuration.now()
-          )
-        } catch {
-          InstantDiagnostics.shared.record(
-            error: error,
-            subsystem: "instant-swift-data-core",
-            category: "query",
-            event: "live-query-results.prune-failed",
-            message: "Could not prune unloaded persisted live query results."
-          )
-        }
-      }
 
       await serverApplyGate.leave()
+      // #1129: the prune runs in a task of its own, after the frame applier let go of this frame. It ran here, holding
+      // the server-apply gate, and every frame behind it waited for the whole prune: in #1074's `prune-inline` exercise
+      // the refresh queued behind applied after 1,815 ms against 45 ms for the one before it.
+      if isPruneDue { requestCadencePrune() }
       return InstantLiveRefreshApplicationResult(
         transaction: applied.transaction,
         application: applied.application,
@@ -7080,6 +7070,39 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Waits until the cadence prune the last refreshes asked for has finished (#1129).
+  package func cadencePruneSettledForTesting() async {
+    await cadencePruneOwner.runningHandle().wait()
+  }
+
+  /// Starts the cadence prune in a task of its own, or, when one runs, has it prune once more when it ends (#1129).
+  ///
+  /// Upstream `Reactor.js` collects unused query results lazily, at idle (`PersistedObject`'s garbage collection),
+  /// never inside `_handleReceive`. The task runs at utility priority; each batch still queues for the operation gate
+  /// behind every write and read, at background priority.
+  private func requestCadencePrune() {
+    recordActorHop(.task)
+    _ = cadencePruneOwner.start(priority: .utility, restartIfRunning: true) { [weak self] in
+      guard let self else { return }
+      do {
+        _ = try await self.pruneLiveQueryResults(
+          policy: self.configuration.liveQueryResultPruningPolicy,
+          now: self.configuration.now()
+        )
+      } catch is CancellationError {
+        return
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "live-query-results.prune-failed",
+          message: "Could not prune unloaded persisted live query results."
+        )
+      }
+    }
+  }
+
   /// Removes the results the policy selects in bounded batches, releasing the operation gate between them, so a local
   /// write waits for one batch rather than the whole prune (#303, item 6).
   ///
@@ -7125,6 +7148,8 @@ public final class InstantRuntime: Sendable {
         application.result.removedQueryKeys.count
       )
       guard application.hasMoreToRemove, !application.result.removedQueryKeys.isEmpty else { break }
+      // A close cancels the cadence prune's task: the batches left wait for the next prune (#1129).
+      if Task.isCancelled { break }
       await Task.yield()
     }
     return InstantLiveQueryResultPruningResult(
@@ -7444,6 +7469,7 @@ public final class InstantRuntime: Sendable {
     return InstantRuntimeExactCloseIdleState(
       automaticLiveConnection: automaticLiveConnectionTaskOwner.isIdle,
       startupCookieSync: startupCookieSyncTaskOwner.isIdle,
+      cadencePrune: cadencePruneOwner.isIdle,
       reconnect: reconnectIsIdle,
       receiver: receiverIsIdle,
       mutationDeliveryPump: mutationDeliveryIsIdle,
@@ -7923,6 +7949,7 @@ public final class InstantRuntime: Sendable {
     // no new automatic task can enter behind this close.
     let automaticLiveConnectionTask = automaticLiveConnectionTaskOwner.requestStop()
     let startupCookieSyncTask = startupCookieSyncTaskOwner.requestStop()
+    let cadencePruneTask = cadencePruneOwner.requestStop()
     let reconnectTask = await reconnectController.requestStop()
     await mutationDeliveryPump.suspend()
     let explicitMutationFlushTask = explicitMutationFlushOwner.requestStop()
@@ -7964,6 +7991,9 @@ public final class InstantRuntime: Sendable {
         receiverTask: receiverTask,
         streamWriterCatchUpTask: streamWriterCatchUpTask
       )
+      // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
+      await cadencePruneTask.wait()
+      cadencePruneOwner.resume()
       explicitMutationFlushOwner.resume()
       streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
@@ -7983,6 +8013,9 @@ public final class InstantRuntime: Sendable {
         receiverTask: receiverTask,
         streamWriterCatchUpTask: streamWriterCatchUpTask
       )
+      // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
+      await cadencePruneTask.wait()
+      cadencePruneOwner.resume()
       explicitMutationFlushOwner.resume()
       streamWriterCatchUpOwner.resume()
       await connectionGate.leave()

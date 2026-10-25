@@ -69,6 +69,11 @@ package final class InstantRuntimeExactTaskOwner: @unchecked Sendable {
     lock.withLock { running == nil }
   }
 
+  /// The running task, without stopping it; its `wait()` returns once it and every restart it took have finished.
+  func runningHandle() -> Handle {
+    lock.withLock { running ?? Handle(token: nil, task: nil) }
+  }
+
   private func takeRestartOperationOrFinish(
     token: UInt64
   ) -> (@Sendable () async -> Void)? {
@@ -92,6 +97,8 @@ package final class InstantRuntimeExactTaskOwner: @unchecked Sendable {
 package struct InstantRuntimeExactCloseIdleState: Sendable {
   var automaticLiveConnection: Bool
   var startupCookieSync: Bool
+  /// The cadence prune's task, off the frame applier (#1129).
+  var cadencePrune: Bool = true
   var reconnect: Bool
   var receiver: Bool
   var mutationDeliveryPump: Bool
@@ -101,6 +108,7 @@ package struct InstantRuntimeExactCloseIdleState: Sendable {
   var allIdle: Bool {
     automaticLiveConnection
       && startupCookieSync
+      && cadencePrune
       && reconnect
       && receiver
       && mutationDeliveryPump
@@ -112,6 +120,7 @@ package struct InstantRuntimeExactCloseIdleState: Sendable {
     var names: [String] = []
     if !automaticLiveConnection { names.append("automatic live connection") }
     if !startupCookieSync { names.append("startup cookie sync") }
+    if !cadencePrune { names.append("cadence prune") }
     if !reconnect { names.append("live reconnect") }
     if !receiver { names.append("live receiver") }
     if !mutationDeliveryPump { names.append("mutation delivery pump") }
