@@ -35,6 +35,7 @@ import Testing
 // - 2026-10-25: #1148: E09 stops the session's apply log, a diagnostics handler, so its "no sink" pass has none.
 // - 2026-10-25: #1150: E14 holds a per-page budget, tightened as each step of the fix lands.
 // - 2026-10-25: #1147: E03 holds a budget for Scribe's 64-line window, tightened as each step lands.
+// - 2026-10-25: #1149, #1146: E07 holds a launch budget, allocations and retained bytes a resident fact.
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_EXERCISES"] != nil))
 struct MemoryExercises {
@@ -391,6 +392,14 @@ struct MemoryExercises {
     MemoryReport.print(
       "E07.launch.resident", launch, label: Self.label,
       extra: [("residentFacts", String(triples)), ("retainedPerFactB", MemoryReport.ratio(launch.netLiveBytes, triples))]
+    )
+    // #1149 and #1146: the launch decoded each resident fact's computed json with JSONDecoder, so every fact kept its
+    // own copies of its entity's and attribute's ids: 3,244,353 allocations and 561.3 B retained a fact on the Mac mini.
+    // The bounds tighten with each step, toward #1149's 150 MB allocated and #1146's 400 B a fact.
+    #expect(launch.allocations < 2_600_000, "E07 allocated \(launch.allocations) times to launch.")
+    #expect(
+      launch.netLiveBytes < 540 * triples,
+      "E07 retained \(launch.netLiveBytes / max(1, triples)) B a resident fact."
     )
     await session.close()
   }
