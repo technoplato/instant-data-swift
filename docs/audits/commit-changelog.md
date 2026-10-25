@@ -1,3 +1,9 @@
+## 2026-10-25 09:37:01 EDT — scribe `cd9ac3ac59d69bbccedb6533473bde3b4049183b`
+Cut build 137: Scribe 0.1 (137) from main 0dfe43c34 (136's app code plus #1097's liveRoomKey schema declaration), instant-data-swift exactly 1.9.42; Dev and Mac 136 had stopped at the drift gate (#1174).
+
+## 2026-10-25 09:37:01 EDT — scribe `4a9c6976f12b7f71dcad2fcb06464e71bdef2d91`
+changelog(#1174): the CHANGELOG entry for build 137's cut cd9ac3ac5.
+
 ## 2026-10-25 09:23:45 EDT — scribe `cf7c379e32ff9ac816141dcd5fb7d6d2bccbe231`
 Schema (#1097, ADR 0094): recordings.liveRoomKey, the live recording's room id, set once by a manager and read by managers only; live-room-matrix 17/17 on the throwaway app; pushed to production 09:24:16-09:24:47, drift 0.
 
