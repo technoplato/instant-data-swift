@@ -13,6 +13,7 @@ import Testing
 //
 // History:
 // - 2026-10-24: #1147: the nested-limit pass: its cost, and its shortcut's equivalence with the general pass.
+// - 2026-10-24: #1147: the deferred-value hydration of an emission.
 
 @Suite
 struct RefreshCostTests {
@@ -83,6 +84,49 @@ struct RefreshCostTests {
         )
       }
     }
+  }
+
+  /// A selected page's text and words stay on disk until an emission shows them; hydrating an emission grouped and
+  /// mapped every attribute of the schema three times to find the two deferred ones: about 2.2 MB of the recorded refresh.
+  @Test("Hydrating a 64-row emission's deferred text allocates the same with 2,283 attributes as with 16")
+  func hydratingAnEmissionDoesNotMapTheSchema() {
+    let policy = InstantDeferredValueResidencyPolicy(attributeIDs: ["transcriptionSegments/text", "transcriptionSegments/wordsJSON"])
+    let deferred = [
+      InstantAttribute(id: "transcriptionSegments/text", namespace: "transcriptionSegments", name: "text", valueType: .string),
+      InstantAttribute(id: "transcriptionSegments/wordsJSON", namespace: "transcriptionSegments", name: "wordsJSON", valueType: .string),
+    ]
+    let small = deferred + Self.attributes(count: 16)
+    let large = deferred + Self.attributes(count: 2_283)
+    let plan = InstantQueryPlan(
+      id: "page", namespace: "transcriptionSegments",
+      selectedFields: ["recordingID", "segmentIndex", "text", "wordsJSON"]
+    )
+    let snapshots = (0..<64).map { row in
+      InstantEntitySnapshot(
+        id: "line-\(row)", namespace: "transcriptionSegments",
+        values: ["recordingID": .one(.string("recording")), "segmentIndex": .one(.number(Double(row)))]
+      )
+    }
+    let values = snapshots.flatMap { snapshot in
+      [
+        Self.triple(snapshot.id, "transcriptionSegments/text", .string("the words of \(snapshot.id)")),
+        Self.triple(snapshot.id, "transcriptionSegments/wordsJSON", .string("[{\"w\":\"\(snapshot.id)\"}]")),
+      ]
+    }
+    let emission = InstantQueryEmission(queryID: "page", sequence: 1, values: snapshots)
+    func hydrate(_ attributes: [InstantAttribute]) -> InstantQueryEmission {
+      _ = policy.hasRequestedAttributes(for: plan, attributes: attributes)
+      _ = policy.hydrationRequests(for: plan, values: snapshots, attributes: attributes)
+      return policy.hydrating(emission, for: plan, with: values, attributes: attributes)
+    }
+    expectNoDifference(hydrate(large), hydrate(small))
+    expectNoDifference(hydrate(large).values.first?.values["text"], .one(.string("the words of line-0")))
+    let withSmall = Self.bytesAllocated { _ = hydrate(small) }
+    let withLarge = Self.bytesAllocated { _ = hydrate(large) }
+    #expect(
+      withLarge <= withSmall + 4_096,
+      "Hydrating allocated \(withLarge) bytes with 2,283 attributes against \(withSmall) with 16."
+    )
   }
 
   // MARK: - Helpers
