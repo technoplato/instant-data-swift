@@ -1,3 +1,39 @@
+## 2026-10-24 20:46:57 EDT — scribe `4ef73ec5457eadaa3569fb507fa1fdc4cddc64f3`
+Merge (#1067) for build 130: held sideways, Scribe Playback's chrome sits in a narrow left column (chapters and controls out from the side, no Search) and the live recording's left column is the floating bar's rail; the build label rests where it is measured.
+
+## 2026-10-24 20:46:57 EDT — scribe `0c08a853c86fa0aac634d652c595cba2db113215`
+changelog(#1067): red, green, docs, tests and references of landscape-1067; PROGRESS.
+
+## 2026-10-24 20:46:57 EDT — scribe `32b952f06b032c3312045fdcccd3869398437c33`
+Test (#1067): the layout harness's iPhone landscape references beside the rail, recorded on the laptop's simulator.
+
+## 2026-10-24 20:46:57 EDT — scribe `4762ef47b083613e17f36e4e257cc72ccab00599`
+Test (#1067): the six sideways media timeline references, recorded on the laptop's renderer.
+
+## 2026-10-24 20:46:57 EDT — scribe `f95c583732a00197a499a5e90497b4765e59674d`
+Docs (#1067): the Build 130 (next) stories in Scribe's and Scribe Playback's What's New; Playback's project 130.
+
+## 2026-10-24 20:46:57 EDT — scribe `8a678f081979261a2dd6ca91427d24afea3781eb`
+Test (#1067): the media timeline harness turns sideways (before/after screenshots), two new layout harness cases.
+
+## 2026-10-24 20:46:57 EDT — scribe `dc26cda0dfa1881fd27ab6cfd02ba16b5929d68c`
+Docs (#1067): ADR 0086 amendment A, ADR 0015 section 26, the landscape audit and its index row.
+
+## 2026-10-24 20:46:57 EDT — scribe `4ce3978dad066984679146c0ebe66318b173f083`
+Green (#1067): the rail keeps the bar's 16-point margins and the status's one call (ArchitectureTests).
+
+## 2026-10-24 20:46:57 EDT — scribe `95cfcc19ff427e9cf56ce29e8ab2345ebeda918b`
+Green (#1067): the live recording held sideways: the docked bar drawn in the recording screen's column as its rail; the build label drawn where it is measured.
+
+## 2026-10-24 20:46:57 EDT — scribe `5202f311b9255b2a8a2f8c7d6a5b183b8c1612f7`
+Green (#1067): Scribe Playback held sideways: the chrome in a narrow column on the left, the words full height beside it.
+
+## 2026-10-24 20:46:57 EDT — scribe `539ad08cd4f32b73b2f0605d2c8eba0f00a2b722`
+Red (#1067): the live recording screen's landscape column is the bar's rail (tests and declarations only).
+
+## 2026-10-24 20:46:57 EDT — scribe `6826129c1fd2a23b8ab0bf47c71bdd7659c28816`
+Red (#1067): Scribe Playback's side column in a compact height (tests and declarations only).
+
 ## 2026-10-24 20:43:48 EDT — scribe `217851125cedaa127ee28ec684aa5a54f0f6a3f4`
 Merge (#1156 #1089) for build 130: the covered recordings list is no longer rewritten by a tick when a row's build is unknown; the screen's before/after outside XCTest.
 
