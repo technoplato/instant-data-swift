@@ -543,6 +543,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable () async -> Void)? = nil
   package var onLiveQueryOnceAcknowledgedForTesting:
     (@Sendable () async throws -> Void)? = nil
+  /// Runs after a reopened live query read its closed stored result and before it commits the reload (#1131), with the
+  /// query's registration key. Tests pause here to see what waits for that read.
+  package var onUnloadedLiveQueryResultReadForTesting:
+    (@Sendable (_ registrationKey: String) async -> Void)? = nil
   var onLocalMutationSupersessionPreparedForTesting:
     (@Sendable (_ predecessorID: String, _ newcomerID: String) async -> Void)? = nil
   var onLocalMutationPersistedBeforeStorePublicationForTesting:
@@ -6659,6 +6663,7 @@ public final class InstantRuntime: Sendable {
     do {
       recordActorHop(.persistence)
       guard let unloaded = try await persistence.unloadedLiveQueryResult(key: registrationKey) else { return }
+      await configuration.onUnloadedLiveQueryResultReadForTesting?(registrationKey)
       recordActorHop(.store)
       let residentEntityIDs = await store.entityIDsWithFacts(among: Set(unloaded.triples.map(\.entityID)))
       recordActorHop(.persistence)
