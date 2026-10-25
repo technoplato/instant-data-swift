@@ -1,3 +1,51 @@
+## 2026-10-25 16:05:23 EDT — scribe `22d77542c34ad88a0be0bfa62d1545c11d44c6fd`
+changelog(#1183): the schema 620f0fcc8, the mirror 26831803d, the sealer c2153c47e and 855bb7512, persistence c23ea12c8, the speech logs aba3ac078, the gate c6dae036f, 6c6ce2bd1 and 0b01d668e, the setting 024b4a962, the cleanup 3d578eca6, the docs ce1f32204
+
+## 2026-10-25 16:00:58 EDT — scribe `23f6d33b635cc196b3b0ebdc6307ca1974d7a04b`
+Merge origin/main into agent/claude/wife-blur-1183: main through Build 140's cut and #951's speaker moves
+
+## 2026-10-25 15:58:57 EDT — scribe `ce1f32204b64983e3d303e546dee62b5ecf566a6`
+docs(#1183): the voice filter: ADR 0097 amendment A (the Watch and the App Clip), FEATURES item 10 (draft), the story, the audit
+
+## 2026-10-25 15:58:48 EDT — scribe `3d578eca64cdc47245b2faa7a89cd44fd335c05c`
+chore(#1183): amendment A drops the post-transcription seal: the engine's voice checks and their wire, the policy, the word sealer go; the speech logs keep counts
+
+## 2026-10-25 15:33:56 EDT — scribe `0b01d668e943979072371a89b3896d7149d499d7`
+feat(#1183): green: the voice gate on the microphone: a voice the filter withholds never reaches a transcriber, the audio file or a server, and its stretch is a word-less line in its place (amendment A2-A5)
+
+## 2026-10-25 15:27:04 EDT — scribe `855bb7512a3d3d08f604209301343ad5efd0f76f`
+feat(#1183): green: sealAudio: HPKE to his public key, bound to the recording and the stretch, bytes not text (amendment A5)
+
+## 2026-10-25 15:26:45 EDT — scribe `024b4a962eb3ef96272f9eab6a4685ec8f94f7f6`
+feat(#1183): green: Settings > Transcription > Voices: the account's voice filter, synced through settingsAccounts.voiceFilter (amendment A1)
+
+## 2026-10-25 15:19:01 EDT — scribe `377c20700ad1656a5102ed422add5ff00e2149e1`
+schema(#1183): settingsAccounts.voiceFilter, the account's voice filter: an optional string, one of four choices by the rules (ADR 0097 amendment A1)
+
+## 2026-10-25 14:55:19 EDT — scribe `a646ee0ef6f7d069e90e8584d136bb5bf51ff812`
+feat(#1183): green: VoiceGateLine.withholdRest(): at the capture's end nothing undecided passes (VoicePrints, amendment A2)
+
+## 2026-10-25 14:43:27 EDT — scribe `6c6ce2bd10cc0c6a09d5fadf46872b70757e4bc6`
+feat(#1183): green: VoiceGateLine, the voice gate's delay line on the microphone's 48 kHz 16-bit buffers (VoicePrints, amendment A2)
+
+## 2026-10-25 14:39:16 EDT — scribe `c6dae036fd08f6d2537ff6f71782a096e38eb59b`
+feat(#1183): green: VoiceGate, the voice gate's pure decisions: a moment passes only when every window over it is an allowed voice (VoicePrints, amendment A2)
+
+## 2026-10-25 13:55:37 EDT — scribe `c23ea12c8e9cb6a97f53816a3479b43627a29204`
+feat(#1183): green: sealed lines persist and read back sealed; people carry sealsWords; his key's public half has its rows
+
+## 2026-10-25 13:53:05 EDT — scribe `aba3ac0787a1a7b47f78e576a011683e0d3fc05a`
+feat(#1183): green: the app tells On This iPhone and Your Mac who is sealed and reads each final's voice_seal; no speech log carries words
+
+## 2026-10-25 13:30:13 EDT — scribe `c2153c47e95dbac7d033ef2273955892efb52b74`
+feat(#1183): green: the sealer: HPKE to his key pair, the private half only in his iCloud Keychain, Face ID before a reveal
+
+## 2026-10-25 12:42:01 EDT — scribe `26831803dd296da7b59d6def61cff6e309fefbc4`
+feat(#1183): green: the mirror writes sealed lines blind and rewrites a late seal; scribe qa refuses sealed lines
+
+## 2026-10-25 12:09:45 EDT — scribe `620f0fcc82ca0ec14c59d154fe2260c0ef02cb96`
+feat(#1183): green: the sealed-words schema module; the rules refuse open words beside a seal; the generator adds each clause once
+
 ## 2026-10-25 15:59:11 EDT — scribe `88a3cebb2fcec7d4285dd1ee45bdab3c40aee280`
 release(#1188): cut Scribe 0.1 (140) and Scribe Playback 140 from main e72e42922 (#951 S1/S2b/S3/S4a, #839, #1097 landing A); instant-data-swift 1.9.42 unchanged
 
