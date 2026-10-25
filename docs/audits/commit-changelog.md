@@ -1,3 +1,24 @@
+## 2026-10-25 04:46:40 EDT — scribe `ccf35fd42b56dd466d815655be41e93773d0b3b9`
+Merge (#1078) for build 134: the playback's pinned name replacing another fades in Core Animation's render server, so following a live conversation stops drawing the whole Mac window at every frame. Its message cites the change-log commit as 25b6f5b0e; it is d0d484f7b20f558a05dcfd83682a234d9e4f4d76.
+
+## 2026-10-25 04:46:40 EDT — scribe `1eaf99111427def673196a7080e3a5840cae91cc`
+Docs (#1078): the hot-path audit's section 11 (before and after on one Mac, the frames on the Mac and an iPad, the behavior checks), PROGRESS, the Build 134 (next) story.
+
+## 2026-10-25 04:46:40 EDT — scribe `232eb0a8c38d11090bad8c12b836633b1d3b0882`
+Test (#1078): the fade's frames compare like for like (each render-server copy held at the time since its own change; the iPad reference's first name unanimated).
+
+## 2026-10-25 04:46:40 EDT — scribe `6027941462adf1e9f4755b7ca76d35a5263d5657`
+Green (#1078): PlaybackPinnedSpeakerFade: the replaced pinned name drawn once in its own hosting view and faded by CASpringAnimation(perceptualDuration: 0.2, bounce: 0); SwiftUI animates only a name appearing or leaving. The exercise's conversation 691 -> 142 ms of main thread per 2 s interval.
+
+## 2026-10-25 04:46:40 EDT — scribe `70e21445b5b1ce3db08dd7f2ff6f6b1f9ad1b546`
+Red (#1078): PlaybackPinnedNameFadeTests (a dialogue's layout passes and main-thread time per row against one speaker; the wheel and click hit tests; gated frames) and the layout harness's iPad frames and playback host.
+
+## 2026-10-25 04:46:40 EDT — scribe `4d912c1958525c87c46f0840bd3f0c547e997805`
+Plan (#1078): the claim for the harness's new playback host.
+
+## 2026-10-25 04:46:40 EDT — scribe `784d39589fdd34d09aebfa4be7086ddc46c10bfd`
+Plan (#1078): follow-live-1078 takes over 2026-10-24-audit-app-1078 (claims, channel note).
+
 ## 2026-10-25 04:43:49 EDT — instant-data-swift `4c19095964d772829d1778cc0a3626be683113e7`
 Green (#1149, #1146): the launch reads resident facts from their columns, one id string per entity and attribute: E07 3,244,330 -> 1,647,203 allocations, 635,296 -> 370,148 KB, 561.3 -> 457.5 B a fact, 540.7 -> 402.4 ms (Mac mini, release).
 
