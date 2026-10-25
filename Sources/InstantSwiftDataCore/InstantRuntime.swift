@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-25: a server apply's retry reuses its restated results' retractions and saves from its first attempt while
+//   the query-result and attribute revisions hold, and the first attempt works out the saves before the retractions'
+//   protection, so the retry, which plans holding the operation gate, no longer decodes and encodes them again (#1128).
 // - 2026-10-25: a prune batch checks at most a batch of the facts its results released and leaves the rest to the next
 //   batches, each its own hold of the operation gate, and decodes the results it may drop on the read connection first:
 //   the closed $files list's 75,640 facts were one 1.7 s hold in #1074's exercise (#1129).
@@ -1287,6 +1290,13 @@ private struct InstantAppliedServerTransaction: Sendable {
   var application: InstantServerTransactionApplicationResult
   var confirmedMutation: PendingMutation?
   var mergedAttributeCount: Int
+}
+
+/// The revisions a server apply's restated results were worked out at (#1128): their retractions and saves read only
+/// the stored results and the attributes, so a retry at the same two reuses them.
+struct InstantServerApplyRestatedRevisions: Equatable, Sendable {
+  var queryResult: Int64
+  var attribute: Int64
 }
 
 /// One revision-qualified hot-store snapshot used for a server-apply attempt.
@@ -2963,6 +2973,13 @@ public final class InstantRuntime: Sendable {
       InstantPersistedLiveQueryResult(replacement: $0, updatedAt: metadataUpdatedAt)
     }
 
+    // #1128: what the restated results came to (their retractions, and their saves' ownership rows and JSON), worked
+    // out from the stored results at a query-result and attribute revision. A retry at the same revisions reuses them:
+    // it plans holding the operation gate, and working them out again there decoded and encoded the whole result, 746 ms
+    // for the `$files` list's 75,640 facts in #1074's `server-apply` exercise. A local write, which is what makes an
+    // attempt stale, moves neither revision; the commit checks the query-result revision again.
+    var workedOutRetractions: (revisions: InstantServerApplyRestatedRevisions, value: InstantLiveQueryReplacementRetractions)?
+    var workedOutSaves: (revisions: InstantServerApplyRestatedRevisions, value: [InstantPreparedLiveQueryResultSave])?
     var initialSeed = initialSeed
     applyAttempts: for attemptIndex in 0..<maximumAttempts {
       let attempt = attemptIndex + 1
@@ -2991,28 +3008,11 @@ public final class InstantRuntime: Sendable {
         }
         await configuration.onServerApplySeedLoadedForTesting?(operationGateAlreadyHeld || holdsGateWhilePlanning)
         let compactState = seed.state
-        var authoritativeTransaction = baseAuthoritativeTransaction
-        if !liveQueryResultReplacements.isEmpty {
-          recordActorHop(.persistence)
-          guard let retractions = try await persistence.liveQueryReplacementRetractions(
-            for: liveQueryResultReplacements,
-            expectedQueryResultRevision: compactState.queryResultRevision
-          ) else { break planning }
-          await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
-            "retractions",
-            operationGateAlreadyHeld || holdsGateWhilePlanning
-          )
-          guard let protectedRetractions = try await persistence.protectingServerRetractions(
-            retractions.operations,
-            expectedOutboxRevision: compactState.outboxRevision,
-            processedTransactionID: processedTransactionID,
-            clearedSlots: retractions.clearedSlots
-          ) else { break planning }
-          authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
-        }
-        var footprint = Self.serverApplyFootprint(
-          operations: authoritativeTransaction.operations
+        let restatedRevisions = InstantServerApplyRestatedRevisions(
+          queryResult: compactState.queryResultRevision,
+          attribute: compactState.attributeRevision
         )
+        var authoritativeTransaction = baseAuthoritativeTransaction
         let changedMergedAttributes: [InstantAttribute]
         if attributesToMerge.isEmpty {
           changedMergedAttributes = []
@@ -3028,23 +3028,60 @@ public final class InstantRuntime: Sendable {
           }
         }
         let mergedAttributeCount = changedMergedAttributes.count
+        var retractions: InstantLiveQueryReplacementRetractions?
+        if !liveQueryResultReplacements.isEmpty {
+          if let workedOut = workedOutRetractions, workedOut.revisions == restatedRevisions {
+            retractions = workedOut.value
+          } else {
+            recordActorHop(.persistence)
+            guard let computed = try await persistence.liveQueryReplacementRetractions(
+              for: liveQueryResultReplacements,
+              expectedQueryResultRevision: compactState.queryResultRevision
+            ) else { break planning }
+            await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
+              "retractions",
+              operationGateAlreadyHeld || holdsGateWhilePlanning
+            )
+            workedOutRetractions = (restatedRevisions, computed)
+            retractions = computed
+          }
+        }
         // #932: the restated results' saves (their ownership rows and, when due, their JSON) are worked out here, outside
         // the operation gate, under the revisions the commit checks; it read 7,287 restated facts' rows and encoded their
         // values under the gate on every frame. A frame that changes attributes saves in the commit, as the merged
-        // attributes decide each result's nested limits there.
+        // attributes decide each result's nested limits there. #1128: before the retractions' protection, which a local
+        // write's outbox revision makes stale, so a first attempt that goes stale there has worked them out for its retry.
         var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
         if !persistedLiveQueryResults.isEmpty, mergedAttributeCount == 0 {
-          recordActorHop(.persistence)
-          guard let prepared = try await persistence.prepareLiveQueryResultSaves(
-            persistedLiveQueryResults,
-            expectedQueryResultRevision: compactState.queryResultRevision
-          ) else { break planning }
-          await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
-            "saves",
-            operationGateAlreadyHeld || holdsGateWhilePlanning
-          )
-          preparedQueryResults = prepared
+          if let workedOut = workedOutSaves, workedOut.revisions == restatedRevisions {
+            preparedQueryResults = workedOut.value
+          } else {
+            recordActorHop(.persistence)
+            guard let prepared = try await persistence.prepareLiveQueryResultSaves(
+              persistedLiveQueryResults,
+              expectedQueryResultRevision: compactState.queryResultRevision
+            ) else { break planning }
+            await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
+              "saves",
+              operationGateAlreadyHeld || holdsGateWhilePlanning
+            )
+            workedOutSaves = (restatedRevisions, prepared)
+            preparedQueryResults = prepared
+          }
         }
+        if let retractions {
+          recordActorHop(.persistence)
+          guard let protectedRetractions = try await persistence.protectingServerRetractions(
+            retractions.operations,
+            expectedOutboxRevision: compactState.outboxRevision,
+            processedTransactionID: processedTransactionID,
+            clearedSlots: retractions.clearedSlots
+          ) else { break planning }
+          authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
+        }
+        var footprint = Self.serverApplyFootprint(
+          operations: authoritativeTransaction.operations
+        )
         // Attribute shape changes can alter every optimistic operation on that attribute, even when
         // refresh-ok carries no triple operation. Treat the schema transition as a global server
         // apply so every active overlay is peeled before canonicalization and replayed afterward.
