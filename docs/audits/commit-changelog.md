@@ -1,3 +1,9 @@
+## 2026-10-24 21:21:42 EDT — scribe `2be9c1380`
+fix(#1159 #1067): the docked bar's side column is nil on the Watch, so build 130's Watch slice compiles.
+
+## 2026-10-24 21:21:42 EDT — scribe `7c7f6364fd4a3c8b9814570977ef54e28a0de171`
+changelog(#1159): the Watch guard fix 2be9c1380.
+
 ## 2026-10-24 21:01:25 EDT — scribe `2f77dd92108f2db4cae44ae191180007e43bca9e`
 Merge (#1156 #1101): the audit names what still grows after the fix.
 
