@@ -1,3 +1,33 @@
+## 2026-10-25 11:29:33 EDT — scribe `2a43c44baa21d8c303f5ea73881d806c32b452d8`
+changelog(#1176): the CHANGELOG entries for the guide, naming, renamed-recording, backfill and docs commits.
+
+## 2026-10-25 11:19:40 EDT — scribe `4d5f958429a9bffda307f70544ccaee79940b485`
+Docs (#1176): FEATURES item 26 (questions he asks, kept to learn from, his words linked), ADR 0064's amendment (sourceMoments widened), ADR 0095 as built with the backfill's measured recall.
+
+## 2026-10-25 11:18:33 EDT — scribe `d2987db017cbf89524ea25526a342cfd167542f9`
+Feat (#1176): the questions backfill's steps: prepare chunks, detect with Cursor Grok and the Grok CLI, merge with thread pairing, score against the hand-checked sample (recall 24/25), apply through scribe qa add.
+
+## 2026-10-25 11:18:32 EDT — scribe `1fe2fef09ace37bbbf03b99c4c29ff7ec584b34b`
+Green (#1176): the questions backfill's pure part: chunks, the detection prompt, the model's answers checked against each chunk, merges across overlaps, thread pairing, recall.
+
+## 2026-10-25 11:18:32 EDT — scribe `8d0494b3dbc1bf5ae7ce00b6fe5f20b914871ca9`
+Red (#1176): the questions backfill's tests.
+
+## 2026-10-25 11:18:32 EDT — scribe `2b9998a82fe9dfead23fda64131c46ac3d9284fc`
+Green (#1176): scribe qa reads a renamed recording's two folders as one recording, its fuller folder.
+
+## 2026-10-25 11:18:32 EDT — scribe `85065f103668adfcd7c9c28cbacce89765855ffc`
+Red (#1176): a renamed recording is one recording for scribe qa.
+
+## 2026-10-25 10:38:39 EDT — scribe `d564ca93c7e00efa3b12d990e1b506be4a8857b6`
+Green (#1176): a kept answer is named by its thread's listener (agentListeners.displayName); a re-run corrects it; lists keep one line per answer.
+
+## 2026-10-25 10:37:34 EDT — scribe `db37b7e64bbae7f2414824108e6d5b64a4c637a5`
+Red (#1176): an answer's name from its listener, a corrective re-run, one-line lists.
+
+## 2026-10-25 10:34:50 EDT — scribe `a94cef244a6ee5efad14ab66a380443669420eb6`
+Docs (#1176): the listener keeps every question he asks with its answer (scribe-answering rule 21, reference/questions.md).
+
 ## 2026-10-25 11:23:58 EDT — scribe `a2febc51bfcb968c4b292e512acd97b70b83cbb2`
 #1156 changelog entry for the field-check audit commit above.
 
