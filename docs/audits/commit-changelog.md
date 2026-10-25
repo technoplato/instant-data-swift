@@ -1,3 +1,15 @@
+## 2026-10-25 16:58:57 EDT — scribe `6482549d5d1c470028a112f41edf6b556b55a8f2`
+Merge (#1185): what plays now stays pinned at the top of the live recording screen, above the speaker name.
+
+## 2026-10-25 16:58:57 EDT — scribe `9808b980850f0dfae81440823b1c8850301f22d1`
+fix(#1185): green: chips hug their content; a clock tick only re-checks which songs play
+
+## 2026-10-25 16:58:57 EDT — scribe `6893b37dbbf88b03f105e340ad48f6930691bae3`
+feat(#1185): what plays now stays pinned at the top of the recording screen, above the speaker name
+
+## 2026-10-25 16:58:57 EDT — scribe `8a50caa2115a9d5d6f47774cfe783be9a05295ca`
+test(#1185): red: what plays now pins above the speaker name and leaves when it stops
+
 ## 2026-10-25 16:05:23 EDT — scribe `22d77542c34ad88a0be0bfa62d1545c11d44c6fd`
 changelog(#1183): the schema 620f0fcc8, the mirror 26831803d, the sealer c2153c47e and 855bb7512, persistence c23ea12c8, the speech logs aba3ac078, the gate c6dae036f, 6c6ce2bd1 and 0b01d668e, the setting 024b4a962, the cleanup 3d578eca6, the docs ce1f32204
 
