@@ -1,3 +1,9 @@
+## 2026-10-25 02:19:57 EDT — instant-data-swift `37b0286585a53c782cfe8c875e0c380f8c6f198d`
+Fix (#1128): a server apply's retry reuses its first attempt's retractions and saves at the same revisions; the $files answer's gate-held plan 521.45 -> 66.15 ms (Mac mini, release).
+
+## 2026-10-25 02:19:57 EDT — instant-data-swift `a4e0872376b456191f53753cf7a0946a0e21b4b8`
+Test (#1128): red: a server apply's retry works its restated results out again holding the operation gate.
+
 ## 2026-10-25 02:12:16 EDT — scribe `a115cd08c4ae0b23d8b990a9598a7e4e5956a129`
 Test (#1154): one symbol breathing with SwiftUI's own effect, as a floor exercise beside the stamp alone, so the hot-path exercises say what a breath costs iOS's main thread.
 

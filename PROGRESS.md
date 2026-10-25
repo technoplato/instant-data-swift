@@ -1,3 +1,15 @@
+## 2026-10-25 02:21:14 EDT — #1128 on main: a server apply's retry no longer works its restated results out under the gate (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** plan amendment 5 `3229127b`; red `a4e08723`, green `37b02865`; then this ledger.
+- **Measured** (Mac mini, release, fixture version 3; before: main `795a6dec` with the red test; same session): the
+  `$files` answer's plan held the gate 521.45 -> 66.15 ms and a write's worst wait there 495.59 -> 45.74 ms
+  (`server-apply`); plans in `recording` p50 27.01 -> 3.68 ms, worst 28.82 -> 28.69 ms. Both criteria met and marked.
+- **Checks:** red fails as designed ([retractions, retractions (gate held), saves (gate held)]); green passes with 544
+  tests in 9 suites in release, failing only the runner's known artifacts.
+- **Next:** #1129's third slice with #1122 (an in-place unload; its baseline from fix-storage-1076: the phone-shaped
+  prune writes 13,453 log frames on `9a4695e5`); 1.9.40 (its notes must say a store 1.9.40 opened cannot be written by
+  an older build, so going back needs the app's data deleted: fix-storage-1076's 02:12 note).
+
 ## 2026-10-25 02:03:25 EDT — #1129's second slice on main: a prune batch is bounded to a batch of facts (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** red `8725a7bb`, green `795a6dec` (plan amendment 4 `a5fe8379`), then this ledger.

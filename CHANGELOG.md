@@ -10,6 +10,31 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 2:21:14 a.m. EDT — `37b0286585a5` fix(#1128): green: a server apply's retry reuses the retractions and saves its first attempt worked out, so the plan it makes holding the operation gate no longer decodes and encodes the whole restated result
+
+- **Implementation commit:** `37b0286585a53c782cfe8c875e0c380f8c6f198d`
+- **Change:** fix(#1128): green: a server apply's retry reuses the retractions and saves its first attempt worked out, so the plan it makes holding the operation gate no longer decodes and encodes the whole restated result
+- **Details:**
+  - Mac mini, release, fixture v3 (before: main 795a6dec): the $files answer's plan holds the gate 521.45 -> 66.15 ms (criterion < 100), a write's worst wait there 495.59 -> 45.74 ms; recording plans p50 27.01 -> 3.68 ms (< 30), worst 28.82 -> 28.69 ms (< 40). Both criteria met. 544 tests in 9 suites pass in release apart from the runner's known artifacts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — performApplyServerTransaction's planning: saves before the protection, both reused across attempts at the same revisions; InstantServerApplyRestatedRevisions
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 2:21:14 a.m. EDT — `a4e0872376b4` test(#1128): red: a server apply's retry works its restated results out again holding the operation gate
+
+- **Implementation commit:** `a4e0872376b456191f53753cf7a0946a0e21b4b8`
+- **Change:** test(#1128): red: a server apply's retry works its restated results out again holding the operation gate
+- **Details:**
+  - Release, Mac mini: fails as designed; the retry's computations were [retractions, retractions (gate held), saves (gate held)]. A testing hook reports each computation and whether the attempt held the gate.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — onServerApplyRestatedResultsWorkedOutForTesting, called at both computations
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift` — the retry test and a recorder actor
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 2:03:02 a.m. EDT — `795a6dec1b67` fix(#1129): green: a prune batch checks at most a batch of a result's released facts and leaves the rest to the next batches, marked until the last, so one result is no longer one hold of the operation gate
 
 - **Implementation commit:** `795a6dec1b67da83d8ba0ee54ed8bdc40ce6322f`
