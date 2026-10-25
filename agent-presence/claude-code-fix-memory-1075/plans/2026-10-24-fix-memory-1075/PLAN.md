@@ -231,3 +231,16 @@ the entities whose ownership rows the save removes; new `takeOwnershipReleasedEn
 `residencySweepDecision(for:)`, which reads entity-level ownership with one `SELECT DISTINCT entity_id` per 500 and
 the outbox's two key tables); new `Tests/InstantSwiftDataCoreTests/InstantResidencySweepTests.swift`. The red is the
 running-session shape of `aRelaunchedStoreReadsTheLinesItKeepsOnDisk`, then MemoryLongRunReplay before and after.
+
+## Amendment 14 (2026-10-25 03:50 EDT, claude-code/fix-memory-1075@ld)
+
+**#1145 is parked** on branch `agent/claude/fix-memory-1075-sweep` (red `1ac14803`, wip `bdf17ef8`; not on main): with
+the sweep on, MemoryLongRunReplay failed at minute 0 because a strict update (`updateExisting`) of a released route
+chunk threw "No existing entity was found": local write validation reads only the facts in memory, filed as #1165, which
+#1145 now waits for. Amendment 13's claims are inactive until then; anyone may edit those functions.
+
+#1147 step 5 claims `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (`loadDeferredValues(attributeIDs:entityIDs:)`
+only): the store's deferred loads read through `InstantFactRowReader` (#1150's column reader) instead of
+`selectBatchedJSON` and `JSONDecoder`; `Sources/InstantSwiftDataCore/InstantFactRows.swift` (its failure messages name a
+fact read, not only the local read); `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E03's 64-line
+budget). S03 put about 3,000 allocations and 4.3 MB of a 64-line refresh in those loads.
