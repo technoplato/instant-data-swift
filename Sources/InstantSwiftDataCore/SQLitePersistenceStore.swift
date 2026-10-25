@@ -11090,7 +11090,7 @@ public actor SQLitePersistenceStore {
     let attributes = try loadAttributesWithoutTransaction(
       tracesStartupCollection: tracesStartupCollections
     )
-    var triplesSQL = "SELECT json FROM instant_triples"
+    var triplesSQL = "SELECT \(InstantFactRowReader.columns) FROM instant_triples"
     var tripleBindings: [SQLiteBinding] = []
     var whereClauses: [String] = []
     if deferredValueResidency.isEnabled {
@@ -11151,7 +11151,7 @@ public actor SQLitePersistenceStore {
       triplesSQL += " WHERE " + whereClauses.joined(separator: " AND ")
     }
     triplesSQL += " ORDER BY entity_id, attribute_id, value_json"
-    let triples: [InstantTriple] = try loadStateCollection(
+    let triples = try loadStateTriples(
       phase: "sqlite.state-load.triples",
       sql: triplesSQL,
       bindings: tripleBindings,
@@ -11237,6 +11237,56 @@ public actor SQLitePersistenceStore {
     )
     decodedOutboxBodyCount += mutations.count
     return mutations
+  }
+
+  /// The facts `sql` selects (it selects ``InstantFactRowReader/columns``), read from their columns (#1149): the launch
+  /// decoded each resident fact's computed json with `JSONDecoder`, about 24 allocations a fact, and each fact kept its own
+  /// copies of its entity's and attribute's ids in the store (#1146). Rows come in key order, so an entity's facts share
+  /// one id string.
+  private func loadStateTriples(
+    phase: String,
+    sql: String,
+    bindings: [SQLiteBinding],
+    tracesStartupCollection: Bool
+  ) throws -> [InstantTriple] {
+    let stopwatch = startupTrace.stopwatch()
+    do {
+      var statement: OpaquePointer?
+      try prepare(sql, statement: &statement)
+      defer { finishStatement(statement) }
+      try bind(bindings, to: statement)
+      guard let statement else {
+        throw persistenceError(operation: "decode persisted JSON rows", message: "SQLite prepared no statement.")
+      }
+      var triples: [InstantTriple] = []
+      var encodedByteCount = 0
+      var reader = InstantFactRowReader(decoder: decoder)
+      do {
+        try reader.read(statement, into: &triples) { _, byteCount in encodedByteCount += byteCount }
+      } catch let failure as InstantFactRowReader.ReadFailure {
+        throw persistenceError(
+          operation: "decode persisted JSON rows",
+          message: "SQLite fact row \(failure.row) could not be read (\(failure.operation)): \(failure.message)"
+        )
+      }
+      if tracesStartupCollection {
+        startupTrace.completed(
+          phase,
+          since: stopwatch,
+          metadata: [
+            "count": String(triples.count),
+            "decodeStrategy": "fact-columns",
+            "encodedByteCount": String(encodedByteCount),
+          ]
+        )
+      }
+      return triples
+    } catch {
+      if tracesStartupCollection {
+        startupTrace.failed(phase, error: error, since: stopwatch)
+      }
+      throw error
+    }
   }
 
   private func loadStateCollection<Value: Decodable & Sendable>(

@@ -146,13 +146,16 @@ struct InstantStartupTraceTests {
         "sqlite.state-load.triples",
       ]
     )
+    // The attributes decode as batched JSON; the facts are read from their columns (#1149).
     #expect(
       collectionEvents.allSatisfy {
-        $0.metadata["decodeStrategy"] == "batched-json-array"
-          && $0.metadata["decodeConcurrency"] == "2"
+        $0.phase == "sqlite.state-load.triples"
+          ? $0.metadata["decodeStrategy"] == "fact-columns"
+          : $0.metadata["decodeStrategy"] == "batched-json-array" && $0.metadata["decodeConcurrency"] == "2"
       }
     )
-    for event in collectionEvents where event.metadata["count"] != "0" {
+    for event in collectionEvents
+    where event.metadata["count"] != "0" && event.metadata["decodeStrategy"] == "batched-json-array" {
       let rowCount = try #require(Int(event.metadata["count", default: ""]))
       let batchCount = try #require(Int(event.metadata["decodeBatchCount", default: ""]))
       #expect(batchCount < rowCount)
@@ -188,7 +191,7 @@ struct InstantStartupTraceTests {
     } catch let error as InstantError {
       expectNoDifference(error.code, .persistenceFailed)
       expectNoDifference(error.operation, "decode persisted JSON rows")
-      #expect(error.message.contains("SQLite JSON rows 1-2 could not be decoded"))
+      #expect(error.message.contains("SQLite fact row 2 could not be read"))
       expectNoDifference(
         error.recovery,
         "Inspect the local SQLite cache at \(persistenceURL.path), then retry the command."
@@ -201,7 +204,7 @@ struct InstantStartupTraceTests {
     )
     #expect(
       failure.metadata["errorDescription"]?.contains(
-        "SQLite JSON rows 1-2 could not be decoded"
+        "SQLite fact row 2 could not be read"
       ) == true
     )
   }

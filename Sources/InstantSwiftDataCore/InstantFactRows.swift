@@ -7,6 +7,8 @@ import SQLite3
 // - 2026-10-25: a fact is read from its columns instead of the `json` the table computes for it (#1150): a history page's
 //   512 deferred values went from 23 allocations a fact to 2.
 // - 2026-10-25: the store's deferred loads read through it too (#1147); a failure is the caller's to report.
+// - 2026-10-25: the launch's resident facts read through it (#1149); attribute ids are kept by a hash of their bytes, so
+//   every fact of an attribute shares one string however many attributes a read meets (#1146).
 
 /// Reads facts from the fact table's rows (#1150).
 ///
@@ -25,16 +27,19 @@ struct InstantFactRowReader {
   struct ReadFailure: Error {
     var operation: String
     var message: String
+    /// The row's place in the statement's rows, from 1.
+    var row: Int
   }
 
   private let decoder: JSONDecoder
   private var entityID = ""
   private var txID = ""
-  private var attributeIDs: [String] = []
+  /// The attribute ids met so far, by a hash of their bytes (FNV-1a): a launch reads every resident fact, and a fact
+  /// that brought its own copy of its attribute's id kept it in the store (#1146).
+  private var attributeIDsByHash: [UInt64: [String]] = [:]
   /// Where a value's string with escapes is unescaped, kept from row to row.
   private var scratch: [UInt8] = []
-  /// Attribute ids kept for reuse; a read with more makes the rest anew.
-  private static let maximumAttributeIDs = 64
+  private var rows = 0
 
   init(decoder: JSONDecoder) {
     self.decoder = decoder
@@ -50,10 +55,12 @@ struct InstantFactRowReader {
     while true {
       let result = sqlite3_step(statement)
       if result == SQLITE_DONE { return }
+      rows += 1
       guard result == SQLITE_ROW else {
         throw ReadFailure(
           operation: "step a fact read",
-          message: SQLiteReadConnection.errorMessage(sqlite3_db_handle(statement))
+          message: SQLiteReadConnection.errorMessage(sqlite3_db_handle(statement)),
+          row: rows
         )
       }
       let valueText = Self.text(of: statement, column: 2)
@@ -85,13 +92,17 @@ struct InstantFactRowReader {
   }
 
   private mutating func attributeID(_ bytes: UnsafeBufferPointer<UInt8>) -> String {
-    for id in attributeIDs where Self.spells(id, bytes) {
-      return id
+    var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+    for byte in bytes {
+      hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+    }
+    if let ids = attributeIDsByHash[hash] {
+      for id in ids where Self.spells(id, bytes) {
+        return id
+      }
     }
     let id = String(decoding: bytes, as: UTF8.self)
-    if attributeIDs.count < Self.maximumAttributeIDs {
-      attributeIDs.append(id)
-    }
+    attributeIDsByHash[hash, default: []].append(id)
     return id
   }
 
@@ -102,7 +113,11 @@ struct InstantFactRowReader {
     do {
       return try decoder.decode(InstantValue.self, from: Data(text))
     } catch {
-      throw ReadFailure(operation: "decode a stored value", message: "A stored value could not be decoded: \(error)")
+      throw ReadFailure(
+        operation: "decode a stored value",
+        message: "A stored value could not be decoded: \(error)",
+        row: rows
+      )
     }
   }
 
