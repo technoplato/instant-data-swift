@@ -1,3 +1,9 @@
+## 2026-10-25 14:08:08 EDT — scribe `93dd93db12839e4019279564a3b6caad56da8253`
+Fix (#1100): a continued take's images answer is silent and empty in tests; #1100's green had made 30 RecordingListFeatureTests tests record an unimplemented RecordingImageDownloadClient.images (found by #1097's whole-bundle run).
+
+## 2026-10-25 09:33:51 EDT — scribe `efa03f1a3bb4ffe9b2074ef00d2ca7223f89c460`
+Fix (#1097): the Sync view's word for recordings.liveRoomKey ("Live room"), which ScribeSyncLedgerTests needs for every recording field in the schema.
+
 ## 2026-10-25 13:14:29 EDT — scribe `3dc654f6a4264e165fe4ed4b62cd817bddca9f07`
 cut(#1186): Scribe 0.1 (139) from main 41eb89e71: CURRENT_PROJECT_VERSION 139, What's New Build 139 dated (#1177, #962, #837, #1175). instant-data-swift 1.9.42 unchanged; production apps only.
 
