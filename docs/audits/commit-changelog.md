@@ -1,3 +1,45 @@
+## 2026-10-25 13:08:25 EDT — scribe `a20d9197c8fd9f4039a07a94311dfb7588ef4d7d`
+merge(#962): main into the branch before landing: What's New keeps #837's and #1177's Build 139 (next) stories with #962's; PROGRESS, CHANGELOG and the audits index keep every entry
+
+## 2026-10-25 13:07:27 EDT — scribe `894961f3d5964ffa9183ac578d070f405b8f1ae2`
+changelog(#962): red bc7cdd22d, green 4ab1744c3 c2e92d11f a2de16325 d3a0580d7, tests 6c525b958 902b251b5, docs 74decff36 1e6d41476 abc4ae050 70c3c6030; PROGRESS
+
+## 2026-10-25 11:43:19 EDT — scribe `70c3c6030bf893d35acd2d7b09d7bf968ddabe1b`
+docs(#962): the audits index row says word by word for build 139
+
+## 2026-10-25 11:43:01 EDT — scribe `abc4ae05093c3f20b83a7c3a18b637ad980085b6`
+docs(#962): word by word lands for build 139 (build 138 was cut at 7eda31ed6 meanwhile)
+
+## 2026-10-25 11:42:53 EDT — scribe `1e6d41476fefaa2de90fbcdbdad89f7cf0a12772`
+docs(#962): SwiftUI's explicit schedule never draws its last entry: the bracketed moments in ADR 0093's amendment and the audit
+
+## 2026-10-25 11:42:53 EDT — scribe `d3a0580d73a4c7ae8e14e69074e436bb17ee05dc`
+fix(#962): a played line's last word shows at its moment; the half-heard line's snapshot references
+
+## 2026-10-25 11:42:53 EDT — scribe `902b251b5e0f0266496a774b1497b2f31cf13b02`
+test(#962): PlayedWordsRevealTests imports ReadAlongCore for TranscriptWord
+
+## 2026-10-25 11:42:53 EDT — scribe `a2de163253e5e420e65ea33c185fedb4d7250065`
+fix(#962): a played row a pause trimmed reports its word timings at once, not when it leaves the screen
+
+## 2026-10-25 11:42:53 EDT — scribe `6c525b958023e8659124cc43a0a0c2f495cfca91`
+test(#962): a played row's redraw bound allows SwiftUI to size and draw an update apart (twice a word), still far from a frame's
+
+## 2026-10-25 11:42:53 EDT — scribe `74decff364bd27c85b2443ad0525f23b65e73277`
+docs(#962): word by word, as it is heard: ADR 0093 amendment, FEATURES 25, What's New 138, audit, report script
+
+## 2026-10-25 11:42:34 EDT — scribe `c2e92d11fb0f3babb2f86c9e055ae3502ebd1ffb`
+green(#962): a recording followed live logs each played line's arrival, as the recording's own screen does
+
+## 2026-10-25 11:42:34 EDT — scribe `4ab1744c354b64988a90e523ab025b82510bc625`
+green(#962): a played line shows word by word as the player reaches each word
+
+## 2026-10-25 11:42:34 EDT — scribe `bc7cdd22d184fcd4df12760cc4ff73839178d380`
+red(#962): a played line's words show one by one as the player reaches them
+
+## 2026-10-25 10:05:44 EDT — scribe `2c494241d689265a3a9d03c1ed644b78c9b19360`
+plan(#962): 962-played-words, what Playback plays shows in the recording word by word
+
 ## 2026-10-25 13:04:50 EDT — scribe `f209dd48888a80b123bb6eb60115a0dce7f6db14`
 changelog(#1177): red 5dca08a49, green 8ae1bb9cc (a silent microphone keeps the audio session, then holds), docs d94e82b74
 
