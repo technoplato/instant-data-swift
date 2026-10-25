@@ -1,3 +1,9 @@
+## 2026-10-25 08:01:33 EDT — realtime-voice `391c39bfbf79f901654fb728871d58b15e4949b4`
+What's New: Build 136's library story counts a line's four lock turns and gives the save wait as one in a hundred.
+
+## 2026-10-25 08:01:16 EDT — realtime-voice `b179a4df6671da2fc21a6deb426a8e6063c97fe3`
+Pin instant-data-swift exactly 1.9.42 in Scribe and Scribe Playback (one delivery claim per write, one-shot reads and compaction off the operation gate; no migration).
+
 ## 2026-10-25 07:59:41 EDT — instant-data-swift `e19b30a8c90023f51323cb05804563782b6555d0`
 Docs: the v1.9.42 release document; cut at main 239ba916 (last code commit 53979805); tagged v1.9.42 on its ledger commit.
 
