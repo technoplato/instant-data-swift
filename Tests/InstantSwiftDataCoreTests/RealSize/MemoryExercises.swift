@@ -33,6 +33,7 @@ import Testing
 //   instead of polling, so a pass counts the library's work and as little of the harness's as it can (the polling was
 //   under 1% of E03's refresh in the allocation-site recording, `MemorySiteExercises`).
 // - 2026-10-25: #1148: E09 stops the session's apply log, a diagnostics handler, so its "no sink" pass has none.
+// - 2026-10-25: #1150: E14 holds a per-page budget, tightened as each step of the fix lands.
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_EXERCISES"] != nil))
 struct MemoryExercises {
@@ -615,6 +616,12 @@ struct MemoryExercises {
       MemoryReport.print(
         "E14.read.local-history-page", measurement, label: Self.label,
         extra: [("pages", String(pages)), ("lines", String(lines)), ("lastPageRows", String(rows))]
+      )
+      // #1150: a page cost 19.5 MB on the Mac mini while each read rebuilt the schema's attribute index from all 2,283
+      // attributes; the bound tightens with each step, toward the issue's 4 MB.
+      #expect(
+        measurement.allocatedBytes < 13 * 1_024 * 1_024,
+        "E14 allocated \(measurement.allocatedBytes / 1_024) KB per 256-line page."
       )
     }
   }
