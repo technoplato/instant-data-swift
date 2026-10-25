@@ -3,6 +3,8 @@
 //                    reload of its closed stored result: on builds 121-126 one registration held the gate 5.0-7.8 s with
 //                    about 11 callers queued, and in the concurrency audit's exercises a registration held it 153 ms over
 //                    a 150 ms socket and 1,718 ms to reload the `$files` list's 75,640 facts.
+// 2026-10-24  #1131  A closed result loads back in bounded holds: with its read out of the gate, the `$files` reload's
+//                    commit still held it about 1.3 s.
 
 import CustomDump
 import Foundation
@@ -158,6 +160,119 @@ struct InstantObserverRegistrationGateTests {
   }
 }
 
+// MARK: - A reload in bounded holds
+
+extension InstantObserverRegistrationGateTests {
+  /// A closed result loads back in holds of a bounded size, and the registration's own hold loads none of it (#1131):
+  /// with 4 facts a hold, the 12-fact list loads back in one hold that moves its row and three that load its entities.
+  /// The `$files` list's 75,640 facts held the gate about 1.3 s in one hold after the read moved out of it.
+  @Test
+  func aClosedResultReloadsInBoundedHolds() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let holds = InstantGateHoldCounter()
+    let runtime = try await Self.runtime("observer-registration-reload-chunks", transport: session.transport) {
+      $0.liveQueryResultReloadChunkTripleCount = 4
+      $0.operationGateTimeline = holds.record
+    }
+    let keepAlive = try await Self.openClosePrune(runtime: runtime, session: session)
+    holds.reset()
+
+    let reopened = await runtime.observeQueryLease(TodoExample.query)
+    let first = try await InstantStoredResultReloadTests.emission(of: reopened.stream, operation: "reopen the list") {
+      _ in true
+    }
+
+    #expect(Set(["todo-1", "todo-2", "todo-3"]).isSubset(of: first.values.map(\.id)))
+    expectNoDifference(holds.count(of: "reload closed query result"), 4)
+    expectNoDifference(holds.count(of: "observe standard live query"), 1)
+
+    await reopened.cancel()
+    await keepAlive.cancel()
+    _ = try await runtime.closeConnection()
+  }
+
+  /// Between two holds of a reload, the prune keeps the reloading result: it is no open query's yet, and a prune that
+  /// unloaded it then would drop the entities its first holds loaded back.
+  @Test
+  func thePruneKeepsAResultWhileItReloads() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let pause = InstantPausePoint()
+    let runtime = try await Self.runtime("observer-registration-reload-prune", transport: session.transport) {
+      $0.liveQueryResultReloadChunkTripleCount = 4
+      $0.onUnloadedLiveQueryResultReloadChunkForTesting = { _, chunksDone in
+        if chunksDone == 1 { await pause.pauseOnce() }
+      }
+    }
+    let keepAlive = try await Self.openClosePrune(runtime: runtime, session: session)
+
+    let reopening = Task { await runtime.observeQueryLease(TodoExample.query) }
+    try await pause.waitUntilEntered(within: .seconds(10))
+    let pruned = try await runtime.pruneLiveQueryResults(
+      policy: InstantStoredResultReloadTests.productionPolicy,
+      now: InstantStoredResultReloadTests.pruneTime
+    )
+    pause.release()
+    let reopened = await reopening.value
+
+    expectNoDifference(pruned.unloadedQueryKeys, [], "#1131: the prune unloaded a result that was loading back")
+    let first = try await InstantStoredResultReloadTests.emission(of: reopened.stream, operation: "reopen the list") {
+      _ in true
+    }
+    #expect(
+      Set(["todo-1", "todo-2", "todo-3"]).isSubset(of: first.values.map(\.id)),
+      "the reopened list's first answer holds every stored row, not \(first.values.map(\.id))"
+    )
+
+    await reopened.cancel()
+    await keepAlive.cancel()
+    _ = try await runtime.closeConnection()
+  }
+
+  /// A second observer of a query whose closed result is loading back waits for that reload, and then shares the first
+  /// observer's subscription: it never answers from a half-loaded result, and nothing is sent twice.
+  @Test
+  func aSecondObserverWaitsForTheReloadOfItsQuery() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let pause = InstantPausePoint()
+    let runtime = try await Self.runtime("observer-registration-reload-second", transport: session.transport) {
+      $0.liveQueryResultReloadChunkTripleCount = 4
+      $0.onUnloadedLiveQueryResultReloadChunkForTesting = { _, chunksDone in
+        if chunksDone == 1 { await pause.pauseOnce() }
+      }
+    }
+    let keepAlive = try await Self.openClosePrune(runtime: runtime, session: session)
+
+    let first = Task { await runtime.observeQueryLease(TodoExample.query) }
+    try await pause.waitUntilEntered(within: .seconds(10))
+    let secondReturned = InstantPausePoint()
+    let second = Task {
+      let lease = await runtime.observeQueryLease(TodoExample.query)
+      secondReturned.release()
+      return lease
+    }
+    try await Task.sleep(for: .milliseconds(300))
+    let returnedDuringTheReload = secondReturned.isReleased
+    pause.release()
+    let firstLease = await first.value
+    let secondLease = await second.value
+
+    #expect(!returnedDuringTheReload, "#1131: a second observer answered while its query's result was half loaded")
+    for lease in [firstLease, secondLease] {
+      let answer = try await InstantStoredResultReloadTests.emission(of: lease.stream, operation: "reopen the list") {
+        _ in true
+      }
+      #expect(Set(["todo-1", "todo-2", "todo-3"]).isSubset(of: answer.values.map(\.id)))
+    }
+    let addQueries = await session.sentMessages().filter { $0.op == "add-query" }
+    expectNoDifference(addQueries.count, 3, "the keep-alive, the list, and the list reopened once")
+
+    await firstLease.cancel()
+    await secondLease.cancel()
+    await keepAlive.cancel()
+    _ = try await runtime.closeConnection()
+  }
+}
+
 // MARK: - Fixtures
 
 extension InstantObserverRegistrationGateTests {
@@ -235,6 +350,24 @@ extension InstantObserverRegistrationGateTests {
 struct InstantObserverRegistrationGateTestFailure: Error, CustomStringConvertible {
   var description: String
   init(_ description: String) { self.description = description }
+}
+
+/// How many times each holder took the operation gate, from the gate's timeline (#1074).
+final class InstantGateHoldCounter: @unchecked Sendable {
+  // SAFETY: `lock` guards `acquired`.
+  private let lock = NSLock()
+  private var acquired: [String: Int] = [:]
+
+  var record: @Sendable (AsyncSerialGate.TimelineEvent) -> Void {
+    { [weak self] event in
+      guard event.kind == .acquired, let self else { return }
+      self.lock.withLock { self.acquired[event.operation, default: 0] += 1 }
+    }
+  }
+
+  func reset() { lock.withLock { acquired = [:] } }
+
+  func count(of operation: String) -> Int { lock.withLock { acquired[operation, default: 0] } }
 }
 
 /// A point a task pauses at once until the test releases it.

@@ -442,6 +442,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
   /// waited; `nil` prunes everything at once.
   var liveQueryResultPruneBatchTripleCount: Int? = 5_000
+  /// How many of a closed result's facts one operation-gate hold loads back when its query reopens (#1131). The reload
+  /// of the `$files` list's 75,640 facts held the gate about 1.3 s in one hold on the Mac mini after its read moved out
+  /// of the gate; 2,048 facts are about 30 ms there.
+  var liveQueryResultReloadChunkTripleCount = 2_048
   /// How long a live query's stored result JSON may lag its newest result while the runtime runs (#566): one write
   /// per query per interval, the newest kept in memory meanwhile.
   var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
@@ -551,6 +555,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// query's registration key. Tests pause here to see what waits for that read.
   package var onUnloadedLiveQueryResultReadForTesting:
     (@Sendable (_ registrationKey: String) async -> Void)? = nil
+  /// Runs after each chunk of a closed result's reload left the operation gate (#1131), with the query's registration
+  /// key and how many chunks are done. Tests pause here, between two chunks.
+  package var onUnloadedLiveQueryResultReloadChunkForTesting:
+    (@Sendable (_ registrationKey: String, _ chunksDone: Int) async -> Void)? = nil
   var onLocalMutationSupersessionPreparedForTesting:
     (@Sendable (_ predecessorID: String, _ newcomerID: String) async -> Void)? = nil
   var onLocalMutationPersistedBeforeStorePublicationForTesting:
