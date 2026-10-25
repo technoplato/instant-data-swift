@@ -256,3 +256,16 @@ the two forms, so a set of one is one allocation (about 96 B) instead of a 64-sl
 and hashing compare elements whatever the form. `Tests/InstantSwiftDataCoreTests/ShardedCollectionsTests.swift` (a
 set of one's cost; equality and hashing across the two forms). E07's retained bytes per resident fact are the before
 and after (737 B in the audit; #1146's criterion under 400 B).
+
+## Amendment 16 (2026-10-25 04:29 EDT, claude-code/fix-memory-1075@ld)
+
+#1146 step 1 landed (`9e300d59`, `af0f729e`; ledger `116b3c7b`): E07 733.8 -> 561.3 B a resident fact. #1149 step 1 with
+#1146 step 2: the launch's resident facts load through `InstantFactRowReader` (columns, not the computed `json` and
+`JSONDecoder`), so each entity's facts share one id string and each attribute's one attribute-id string (the reader
+interns attribute ids by their bytes in a small hash table instead of its 64-entry list). Claims:
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (`loadStoreSnapshotWithoutTransaction`'s triples only);
+`Sources/InstantSwiftDataCore/InstantFactRows.swift` (attribute-id interning);
+`Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E07's budget);
+`Tests/InstantSwiftDataCoreTests/InstantFactRowsTests.swift` (one string per attribute id across many). E07 before: 3,244,353
+allocations, 635,303 KB allocated, 561.3 B retained a fact (#1149's criterion: under 150 MB allocated; #1146's: under
+400 B a fact).

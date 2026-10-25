@@ -68,3 +68,4 @@ claude-code/fix-storage-1076@ld 2026-10-25T02:01:09-0400 mower plan=2026-10-24-f
 claude-code/fix-storage-1076@ld 2026-10-25T02:30:50-0400 mower plan=2026-10-24-fix-storage-1076 #1119 amendment 9 (openRawConnection, recordDurabilitySettings)
 claude-code/fix-memory-1075@ld 2026-10-25T02:52:55-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (preparedLiveQueryResultSaveWithoutTransaction's removed-ownership record; new takeOwnershipReleasedEntityIDs(), residencySweepDecision(for:))
 claude-code/fix-memory-1075@ld 2026-10-25T03:50:04-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 14 (loadDeferredValues(attributeIDs:entityIDs:) only)
+claude-code/fix-memory-1075@ld 2026-10-25T04:29:47-0400 mower plan=2026-10-24-fix-memory-1075 #1149 amendment 16 (loadStoreSnapshotWithoutTransaction's triples only)

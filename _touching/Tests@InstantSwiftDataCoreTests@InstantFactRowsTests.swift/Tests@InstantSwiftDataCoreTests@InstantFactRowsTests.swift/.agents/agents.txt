@@ -1,1 +1,2 @@
 claude-code/fix-memory-1075@ld 2026-10-25T01:48:20-0400 grower plan=2026-10-24-fix-memory-1075 #1150 amendment 11 (new)
+claude-code/fix-memory-1075@ld 2026-10-25T04:29:47-0400 mower plan=2026-10-24-fix-memory-1075 #1149 amendment 16 (attribute-id sharing)
