@@ -6,6 +6,8 @@ import Foundation
 // - 2026-10-24: a sharded dictionary keeps one plain dictionary until it holds more than 32 entries, so it can hold a
 //   many-cardinality attribute's values: a recording links every line it holds, and each new line copied them all
 //   (#1152).
+// - 2026-10-25: a sharded set keeps one plain set until it holds more than 32 elements, so a set of one, as each
+//   entity's id holds, is one allocation instead of a 64-slot array and a set (#1146).
 
 /// How many shards a sharded collection splits its entries into.
 ///
@@ -21,10 +23,22 @@ private func shardIndex(_ key: some Hashable) -> Int {
   key.hashValue & (shardCount - 1)
 }
 
-/// A set whose elements live in shards, so a change to a copy copies one shard (#1007).
+/// How many elements a sharded set keeps in one plain set before it moves them into shards (#1146), as a sharded
+/// dictionary keeps its entries (#1152).
+private let setShardingThreshold = 32
+
+/// A set whose elements live in shards once it holds more than 32, so a change to a copy copies one shard (#1007,
+/// #1146).
 struct ShardedSet<Element: Hashable>: Sequence, ExpressibleByArrayLiteral {
-  /// Empty until the first insert, so an empty set costs nothing.
-  private var shards: [Set<Element>] = []
+  /// One plain set until it holds more than `setShardingThreshold` elements; then `shardCount` shards for good, however
+  /// many elements leave again. Every distinct value of an indexed attribute holds a set, each entity's id among them,
+  /// so a set of one is one allocation: the 64-slot array beside it cost about 640 B where the set is about 96 B (#1146).
+  fileprivate enum Storage {
+    case plain(Set<Element>)
+    case sharded([Set<Element>])
+  }
+
+  private var storage = Storage.plain([])
 
   init() {}
 
@@ -36,58 +50,136 @@ struct ShardedSet<Element: Hashable>: Sequence, ExpressibleByArrayLiteral {
     for element in elements { insert(element) }
   }
 
-  var count: Int { shards.reduce(0) { $0 + $1.count } }
-  var isEmpty: Bool { shards.allSatisfy(\.isEmpty) }
+  private init(plain set: Set<Element>) {
+    storage = .plain(set)
+    if set.count > setShardingThreshold { moveToShards() }
+  }
+
+  var count: Int {
+    switch storage {
+    case let .plain(set): set.count
+    case let .sharded(shards): shards.reduce(0) { $0 + $1.count }
+    }
+  }
+
+  var isEmpty: Bool {
+    switch storage {
+    case let .plain(set): set.isEmpty
+    case let .sharded(shards): shards.allSatisfy(\.isEmpty)
+    }
+  }
 
   func contains(_ element: Element) -> Bool {
-    shards.isEmpty ? false : shards[shardIndex(element)].contains(element)
+    switch storage {
+    case let .plain(set): set.contains(element)
+    case let .sharded(shards): shards[shardIndex(element)].contains(element)
+    }
   }
+
+  // The mutators take the payload out before they change it, so it is uniquely referenced and changes in place.
 
   @discardableResult
   mutating func insert(_ element: Element) -> Bool {
-    if shards.isEmpty { shards = Array(repeating: [], count: shardCount) }
-    return shards[shardIndex(element)].insert(element).inserted
+    switch storage {
+    case var .plain(set):
+      storage = .plain([])
+      let inserted = set.insert(element).inserted
+      storage = .plain(set)
+      if set.count > setShardingThreshold { moveToShards() }
+      return inserted
+    case var .sharded(shards):
+      storage = .plain([])
+      let inserted = shards[shardIndex(element)].insert(element).inserted
+      storage = .sharded(shards)
+      return inserted
+    }
   }
 
   @discardableResult
   mutating func remove(_ element: Element) -> Element? {
-    guard !shards.isEmpty else { return nil }
-    return shards[shardIndex(element)].remove(element)
+    switch storage {
+    case var .plain(set):
+      storage = .plain([])
+      let removed = set.remove(element)
+      storage = .plain(set)
+      return removed
+    case var .sharded(shards):
+      storage = .plain([])
+      let removed = shards[shardIndex(element)].remove(element)
+      storage = .sharded(shards)
+      return removed
+    }
   }
 
-  /// The elements both sets hold, shard by shard: equal elements share a shard in every sharded set.
+  /// The elements both sets hold: shard by shard when both are sharded, as equal elements share a shard; otherwise the
+  /// plain set's elements the other holds.
   func intersection(_ other: ShardedSet<Element>) -> ShardedSet<Element> {
-    guard !shards.isEmpty, !other.shards.isEmpty else { return ShardedSet() }
-    var result = ShardedSet()
-    result.shards = zip(shards, other.shards).map { $0.intersection($1) }
-    return result
+    switch (storage, other.storage) {
+    case let (.sharded(lhs), .sharded(rhs)):
+      var result = ShardedSet()
+      result.storage = .sharded(zip(lhs, rhs).map { $0.intersection($1) })
+      return result
+    case let (.plain(set), _):
+      return ShardedSet(plain: set.filter(other.contains))
+    case let (_, .plain(set)):
+      return ShardedSet(plain: set.filter(contains))
+    }
   }
 
-  func makeIterator() -> FlattenSequence<[Set<Element>]>.Iterator {
-    shards.joined().makeIterator()
+  private mutating func moveToShards() {
+    guard case let .plain(set) = storage else { return }
+    var shards = Array(repeating: Set<Element>(), count: shardCount)
+    for element in set {
+      shards[shardIndex(element)].insert(element)
+    }
+    storage = .sharded(shards)
   }
 
-  /// The set's shard at `index`, or an empty one before the first insert.
-  fileprivate func shard(at index: Int) -> Set<Element> {
-    shards.isEmpty ? [] : shards[index]
+  struct Iterator: IteratorProtocol {
+    fileprivate var plain: Set<Element>.Iterator?
+    fileprivate var sharded: FlattenSequence<[Set<Element>]>.Iterator?
+
+    mutating func next() -> Element? {
+      if plain != nil { return plain?.next() }
+      return sharded?.next()
+    }
+  }
+
+  func makeIterator() -> Iterator {
+    switch storage {
+    case let .plain(set): Iterator(plain: set.makeIterator(), sharded: nil)
+    case let .sharded(shards): Iterator(plain: nil, sharded: shards.joined().makeIterator())
+    }
   }
 }
 
 extension ShardedSet: Equatable {
   static func == (lhs: Self, rhs: Self) -> Bool {
-    (0..<shardCount).allSatisfy { lhs.shard(at: $0) == rhs.shard(at: $0) }
-  }
-}
-
-extension ShardedSet: Hashable {
-  func hash(into hasher: inout Hasher) {
-    for index in 0..<shardCount {
-      hasher.combine(shard(at: index))
+    switch (lhs.storage, rhs.storage) {
+    case let (.plain(lhs), .plain(rhs)): lhs == rhs
+    // Equal elements share a shard, so equal sets have equal shards.
+    case let (.sharded(lhs), .sharded(rhs)): lhs == rhs
+    default: lhs.count == rhs.count && lhs.allSatisfy(rhs.contains)
     }
   }
 }
 
+extension ShardedSet: Hashable {
+  /// The same for equal sets in either form: the elements' hashes combined in no order, and the count.
+  func hash(into hasher: inout Hasher) {
+    var elements = 0
+    for element in self {
+      var elementHasher = Hasher()
+      elementHasher.combine(element)
+      elements ^= elementHasher.finalize()
+    }
+    hasher.combine(count)
+    hasher.combine(elements)
+  }
+}
+
 extension ShardedSet: Sendable where Element: Sendable {}
+extension ShardedSet.Storage: Sendable where Element: Sendable {}
 
 /// How many entries a sharded dictionary keeps in one plain dictionary before it moves them into shards.
 ///
