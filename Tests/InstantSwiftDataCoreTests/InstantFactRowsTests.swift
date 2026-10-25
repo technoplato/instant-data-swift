@@ -5,15 +5,16 @@ import Testing
 @testable import InstantSwiftDataCore
 
 // #1150 (2026-10-25): a local read of a 256-line history page loads the page's deferred text and words through the read
-// connection, and each fact cost about 33 allocations: SQLite computing the row's `json` (#1121), a Swift string of
-// it, one joined string a batch, a `Data` copy and `JSONDecoder` (about 17,300 of a page's 23,979 on the Mac mini).
-// A fact read should cost its value's string and, for each new entity, its id.
+// connection, and each fact cost SQLite computing the row's `json` (#1121), a Swift string of it, one joined string a
+// batch, a `Data` copy and `JSONDecoder`: about 17,300 of a page's 23,979 allocations on the Mac mini, 23 a fact in the
+// test below. A fact read should cost its value's string and, when they change from the row before, its ids.
 //
 // Equality is checked with `#expect`: in a release build `expectNoDifference` reports through IssueReporting, which
 // records nothing outside debug builds.
 //
 // History:
 // - 2026-10-25: #1150: the reader's equivalence and cost.
+// - 2026-10-25: #1150: the stored value reader against `JSONDecoder`, and texts the writer does not write.
 
 @Suite
 struct InstantFactRowsTests {
@@ -74,6 +75,66 @@ struct InstantFactRowsTests {
     guard RealSizeBudget.isOptimized else { return }
     let allocations = try table.allocationsOfOneRead()
     #expect(allocations < 3 * 512, "Reading 512 deferred facts allocated \(allocations) times (\(allocations / 512) a fact).")
+  }
+
+  /// The stored text of every kind of value reads back as `JSONDecoder` reads it; the reader declines only what it does
+  /// not take apart byte for byte, which the row reader then hands to `JSONDecoder`.
+  @Test(arguments: [UInt64(21_150), 21_151, 21_152])
+  func aStoredValueReadsAsTheDecoderReadsIt(seed: UInt64) throws {
+    guard #available(iOS 18, macOS 15, macCatalyst 18, tvOS 18, watchOS 11, *) else { return }
+    var random = InfiniteWindowRandom(seed: seed)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    for round in 0..<500 {
+      let value = Self.randomValue(&random)
+      let text = Array(try InstantStoredJSON.stored(value, using: encoder).utf8)
+      let decoded = try JSONDecoder().decode(InstantValue.self, from: Data(text))
+      let read = text.withUnsafeBufferPointer { InstantStoredJSON.value(stored: $0) }
+      switch value {
+      case .json, .lookupRef:
+        #expect(read == nil, "round \(round): \(value) is JSONDecoder's to read")
+      default:
+        #expect(read == decoded, "round \(round): \(String(describing: read)) != \(decoded)")
+      }
+    }
+  }
+
+  /// Texts the writer does not write today, as an older store or another writer may have kept them.
+  @Test func storedTextsTheWriterDoesNotWrite() throws {
+    guard #available(iOS 18, macOS 15, macCatalyst 18, tvOS 18, watchOS 11, *) else { return }
+    func read(_ text: String) -> InstantValue? {
+      Array(text.utf8).withUnsafeBufferPointer { InstantStoredJSON.value(stored: $0) }
+    }
+    func decoded(_ text: String) throws -> InstantValue {
+      try JSONDecoder().decode(InstantValue.self, from: Data(text.utf8))
+    }
+    // Escapes JSONEncoder does not write, but JSON allows: they read as the decoder reads them.
+    for text in [
+      #"{"string":{"_0":"café 🎙 \/ A"}}"#,
+      #"{"string":{"_0":"\b\f\n\r\t\"\\"}}"#,
+      #"{"number":{"_0":-0.5e+2}}"#,
+      #"{"number":{"_0":1E3}}"#,
+      #"{"ref":{"_0":""}}"#,
+    ] {
+      #expect(read(text) == (try decoded(text)), "\(text)")
+    }
+    // Texts it declines, for `JSONDecoder` to read or refuse.
+    for text in [
+      #"{"string":{"_0":"\ud800"}}"#,
+      #"{"string":{"_0":"\x"}}"#,
+      #"{"string":{"_0":"unterminated}}"#,
+      "{\"string\":{\"_0\":\"raw \u{1} control\"}}",
+      #"{"number":{"_0":01}}"#,
+      #"{"number":{"_0":1.}}"#,
+      #"{"number":{"_0":+1}}"#,
+      #"{"number":{"_0":1e400}}"#,
+      #"{"bool":{"_0":true}} "#,
+      #"{"null":{}}x"#,
+      #"{"json":{"_0":{"k":1}}}"#,
+      #"{"string": {"_0":"spaced"}}"#,
+    ] {
+      #expect(read(text) == nil, "\(text)")
+    }
   }
 
   // MARK: - Helpers

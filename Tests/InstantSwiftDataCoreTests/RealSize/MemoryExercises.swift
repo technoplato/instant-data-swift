@@ -618,9 +618,9 @@ struct MemoryExercises {
         extra: [("pages", String(pages)), ("lines", String(lines)), ("lastPageRows", String(rows))]
       )
       // #1150: a page cost 19.5 MB on the Mac mini while each read rebuilt the schema's attribute index from all 2,283
-      // attributes; the bound tightens with each step, toward the issue's 4 MB.
+      // attributes (7.2 MB once it took the store's), and decoded its deferred values' computed JSON with JSONDecoder.
       #expect(
-        measurement.allocatedBytes < 13 * 1_024 * 1_024,
+        measurement.allocatedBytes < 4 * 1_024 * 1_024,
         "E14 allocated \(measurement.allocatedBytes / 1_024) KB per 256-line page."
       )
     }
