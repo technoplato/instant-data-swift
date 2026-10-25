@@ -82,3 +82,12 @@ New: `Tests/InstantSwiftDataCoreTests/RefreshCostTests.swift` (each step's one-t
 Test harness (no library change): `MemoryExercises.swift` (E04, E05, E09 and E10 build each line's entity before the
 counted passes; `MemoryExerciseSession.waitUntilAcknowledged` waits on the apply waiter) and `MemoryReplayServer.swift`
 (`MemoryApplyWaiter` parks waits on continuations the runtime's events resume, instead of polling).
+
+## Amendment 3 (2026-10-24 22:59 EDT, claude-code/fix-memory-1075@ld)
+
+#1147 step 1 landed (red `79707ad5`, green `a9751099`). Claimed now: `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift`,
+`RealSizeAllocations.start` and `stop` only (#1072's meter, its holds released at 20:55): one-thread counts take turns
+on a lock. The cost tests of a parallel bundle (`LinkSetWriteCostTests`, `RefreshCostTests`,
+`OutboxSupersessionSchemaCostTests`) share the one tally, and a second test's `start` reset the first's counts
+mid-measurement: `RefreshCostTests`' nested-limit test failed on the Mac mini whenever its hydration test measured at
+the same moment, passing alone.

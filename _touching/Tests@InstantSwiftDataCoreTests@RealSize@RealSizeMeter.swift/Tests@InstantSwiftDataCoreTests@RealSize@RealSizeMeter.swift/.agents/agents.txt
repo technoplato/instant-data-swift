@@ -1,1 +1,2 @@
 claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 grower plan=2026-10-24-lib-audit-1072 #1072 (new: per-operation time, CPU, instructions, allocations, bytes written, footprint and gate hold)
+claude-code/fix-memory-1075@ld 2026-10-24T22:59:45-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 3 (RealSizeAllocations.start/stop only: one-thread counts take turns)
