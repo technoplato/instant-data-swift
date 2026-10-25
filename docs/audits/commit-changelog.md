@@ -1,3 +1,24 @@
+## 2026-10-24 20:43:48 EDT — scribe `217851125cedaa127ee28ec684aa5a54f0f6a3f4`
+Merge (#1156 #1089) for build 130: the covered recordings list is no longer rewritten by a tick when a row's build is unknown; the screen's before/after outside XCTest.
+
+## 2026-10-24 20:43:48 EDT — scribe `e619b17fb21e5baef12d0072f6e581bab86a0b78`
+changelog(#1156 #1089): docs, red, green and docs entries.
+
+## 2026-10-24 20:43:48 EDT — scribe `8a4c18fdb38845e5990e53b23760e9a2b6146992`
+Docs (#1156 #1089): the audit's section on the covered list's per-tick rewrite.
+
+## 2026-10-24 20:43:48 EDT — scribe `4f6f3d95b7d8bec4b1a6e1aa8600c955a7f7d7de`
+Green (#1089): the live row takes a build only when the client knows one (an equal in-place write notified the whole list).
+
+## 2026-10-24 20:43:48 EDT — scribe `27b369df8b1d396f181c31bd2f593bd0ca60600f`
+Red (#1089): RecordingListCoveredReadsTests: a tick of the covering recording notifies none of the list view's reads.
+
+## 2026-10-24 20:43:48 EDT — scribe `f705883c6846cc91c7bf34a779328c1deaa81d4e`
+Plan (#1156 #1089): screen-heat-1156 amendment A and its claims.
+
+## 2026-10-24 20:43:48 EDT — scribe `4f7df5ec801c6985cab0ef941b708a63c07c1f20`
+Docs (#1156): the recording screen outside XCTest before and after (main thread 9.9% -> 3.6% silent, 28.5% -> 15.9% talking at 1,300 rows).
+
 ## 2026-10-24 20:25:52 EDT — instant-data-swift `4b31f891b07f3723484087fe56962d51b0c41edf`
 docs(#1072): say which fixture version produced each quoted number (the upload's single-call before numbers came from fixture version 2, the tail check from a synthetic-schema unit test; labels only, numbers unchanged).
 
