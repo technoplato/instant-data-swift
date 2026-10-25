@@ -158,3 +158,17 @@ leave, acquire, waiters), `Sources/InstantSwiftDataCore/InstantRuntime.swift` (t
 `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` (a `recording-deferred` exercise: `recording` with
 Scribe's configuration, segment text and words deferred). Measured by `recording-deferred`'s
 `gate.wait caller="check hydrated deferred query emission"` on the Mac mini, before and after.
+
+## Amendment 9 (2026-10-25 06:05 EDT, #1130)
+
+A write's delivery takes two pump passes, each opening with a retry turn under the operation gate at background
+priority: its own pass, and the one its `transact-ok` asks for, which finds nothing to claim. A pass now asks whether a
+retryable failure exists before it takes the gate for the retry window (`hasAutomaticFailedMutationRetryCandidate`,
+read without the gate, as the connection's opening already does), and a `transact-ok` asks for a pass only when a row
+waits to be claimed (a read-only `hasAutomaticDeliveryCandidate()` beside the claim's own
+`hasAutomaticDeliveryCandidateWithoutTransaction()`, the same query). The deadline wake, a connection's first pass, a
+write's own pass and a refusal's pass are unchanged, so an expired claim is still reclaimed at its deadline. Touching
+`Sources/InstantSwiftDataCore/InstantRuntime.swift` (`runAutomaticMutationPumpPass`, the `transactOK` case of the live
+event handler), `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (that read-only wrapper only, in the outbox
+reads: noted for fix-storage-1076 on the channel) and a new `Tests/InstantSwiftDataCoreTests/InstantDeliveryPassTests.swift`.
+Measured by `recording`'s delivery claim and retry-window counts on the Mac mini, before and after.
