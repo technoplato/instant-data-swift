@@ -2,6 +2,8 @@
 // 2026-10-24  #1129  Created. The cadence prune ran inside the frame applier, holding the server-apply gate: in #1074's
 //                    `prune-inline` exercise the refresh queued behind it applied after 1,815 ms against 45 ms for the
 //                    one before it, and every acknowledgement queued behind waited for maintenance too.
+// 2026-10-25  #1129  A result larger than a batch is released over several batches, marked until the last, and a
+//                    release a crash cuts short is finished when the store opens again.
 
 import CustomDump
 import Foundation
@@ -91,6 +93,140 @@ struct InstantPruneOffTheApplierTests {
     #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
 
     await observation.cancel()
+    _ = try? await runtime.closeConnection()
+  }
+
+  /// The prune's batch uses a result decoded on the read connection before the gate only while its row is the one read
+  /// (#1129): a result the server restated since is decoded again under the gate, so the batch releases the facts the
+  /// result holds now.
+  @Test
+  func aBatchDecodesAgainAResultRestatedSinceItsReadAhead() async throws {
+    let persistence = try SQLitePersistenceStore(fileURL: try InstantStoredResultReloadTests.temporaryCacheURL())
+    try await persistence.bootstrap()
+    try await InstantStoredResultReloadTests.save(
+      [InstantObserverRegistrationGateTests.closedResult(todos: 3, at: 1)],
+      in: persistence
+    )
+    let readAhead = try await persistence.readConnection.storedLiveQueryResults(keys: ["query-closed"])
+    #expect(readAhead.keys.sorted() == ["query-closed"])
+
+    try await InstantStoredResultReloadTests.save(
+      [InstantObserverRegistrationGateTests.closedResult(todos: 4, at: 2)],
+      in: persistence
+    )
+    let batch = try await persistence.liveQueryResultPruneBatch(
+      policy: InstantStoredResultReloadTests.productionPolicy,
+      now: InstantTimestamp(milliseconds: 3),
+      preservingQueryKeys: ["query-open-elsewhere"],
+      maximumRemovedTripleCount: nil,
+      carriedReleasedIdentities: [],
+      predecoded: readAhead
+    )
+
+    #expect(batch.removedQueryKeys == ["query-closed"])
+    #expect(
+      batch.releasedEntityIDs == ["todo-0", "todo-1", "todo-2", "todo-3"],
+      "#1129: the batch used a read-ahead of a row the server restated since: \(batch.releasedEntityIDs.sorted())"
+    )
+  }
+
+  /// A batch that leaves a result's facts for later batches marks the result until the batch that checks the last of
+  /// them (#1129): a crash between them leaves the mark for the store's next open.
+  @Test
+  func aBatchMarksTheResultWhoseFactsItLeftUntilTheLastAreChecked() async throws {
+    let url = try InstantPruneGateHoldTests.temporaryCacheURL()
+    try await InstantPruneGateHoldTests.seed(at: url)
+    let pause = InstantPausePoint()
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "prune-release-marked",
+      persistenceURL: url,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveQueryResultPruneBatchTripleCount = 100
+    configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in await pause.pauseOnce() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = await runtime.observeQueryLease(TodoExample.query)
+    let now = configuration.now()
+
+    let prune = Task {
+      try await runtime.pruneLiveQueryResults(policy: InstantStoredResultReloadTests.productionPolicy, now: now)
+    }
+    try await pause.waitUntilEntered(within: .seconds(10))
+    let markedBetweenBatches = try await runtime.persistence.pendingLiveQueryResultReleaseKeysForTesting()
+    pause.release()
+    _ = try await prune.value
+    let markedAfter = try await runtime.persistence.pendingLiveQueryResultReleaseKeysForTesting()
+
+    #expect(markedBetweenBatches == ["inactive-result-0"], "#1129: the batch left facts unchecked without a mark")
+    #expect(markedAfter.isEmpty, "#1129: the mark outlived the release: \(markedAfter)")
+
+    await observation.cancel()
+    _ = try? await runtime.closeConnection()
+  }
+
+  /// A release a crash cut short is finished when the store opens again (#1129): the batch that unloaded a result and
+  /// left its facts unchecked marked it, a collector meanwhile keeps the marked result's stored copy, and opening the
+  /// store drops the facts no stored result owns, as the batches the crash took would have.
+  @Test
+  func aReleaseCutShortIsFinishedWhenTheStoreOpensAgain() async throws {
+    let url = try InstantPruneGateHoldTests.temporaryCacheURL()
+    try await InstantPruneGateHoldTests.seed(at: url)
+    let now = InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+    do {
+      let persistence = try SQLitePersistenceStore(fileURL: url)
+      try await persistence.bootstrap()
+      // The first batch unloads the oldest result and checks none of its facts: what a crash right after it leaves.
+      var batch = try await persistence.liveQueryResultPruneBatch(
+        policy: InstantStoredResultReloadTests.productionPolicy,
+        now: now,
+        preservingQueryKeys: ["query-open-elsewhere"],
+        maximumRemovedTripleCount: 100,
+        carriedReleasedIdentities: []
+      )
+      #expect(batch.removedQueryKeys == ["inactive-result-0"])
+      batch.releasedIdentities = []
+      batch.pendingReleaseQueryKeys = batch.unloadedQueryKeys
+      let application = try await persistence.applyLiveQueryResultPruneBatch(
+        batch,
+        policy: InstantStoredResultReloadTests.productionPolicy,
+        now: now,
+        residentFacts: []
+      )
+      #expect(application != nil)
+      // A prune that would collect every unloaded copy keeps the marked one.
+      let open = (1..<InstantPruneGateHoldTests.resultCount).map { "inactive-result-\($0)" }
+      _ = try await persistence.liveQueryResultPruneBatch(
+        policy: InstantLiveQueryResultPruningPolicy(maxAgeMilliseconds: 0, maxEntries: 0, maxTripleCount: 0),
+        now: now,
+        preservingQueryKeys: Set(open),
+        maximumRemovedTripleCount: 100,
+        carriedReleasedIdentities: []
+      )
+      let marked = try await persistence.pendingLiveQueryResultReleaseKeysForTesting()
+      #expect(marked == ["inactive-result-0"], "#1129: the collector took the marked copy, or the mark went")
+    }
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "prune-release-cut-short",
+        persistenceURL: url,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: .local
+      )
+    )
+    let survivors = Set(await runtime.store.snapshot().triples.map(\.entityID))
+    let markedAfterOpen = try await runtime.persistence.pendingLiveQueryResultReleaseKeysForTesting()
+
+    #expect(!survivors.contains("prune-todo-0"), "#1129: a fact the interrupted release left unchecked stayed")
+    #expect(!survivors.contains("prune-todo-149"), "#1129: a fact the interrupted release left unchecked stayed")
+    #expect(survivors.contains("prune-todo-150"), "a result still stored keeps its facts")
+    #expect(survivors.contains("prune-todo-1000000"), "the split entity stays while its other result does")
+    #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
+    #expect(markedAfterOpen.isEmpty, "#1129: opening the store left the mark: \(markedAfterOpen)")
+
     _ = try? await runtime.closeConnection()
   }
 
