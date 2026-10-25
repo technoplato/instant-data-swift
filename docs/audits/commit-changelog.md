@@ -1,3 +1,9 @@
+## 2026-10-25 02:01:21 EDT — instant-data-swift `795a6dec1b67da83d8ba0ee54ed8bdc40ce6322f`
+Fix (#1129): a prune batch checks at most a batch of a result's released facts, the rest in later batches marked until the last; ownership read once per 500 entities; the results a batch may drop decoded before the gate. Worst prune hold 1,704.63 -> 397.21 ms (Mac mini, release).
+
+## 2026-10-25 02:01:21 EDT — instant-data-swift `8725a7bb470f5b700221f52d104220dcaa84f4ee`
+Test (#1129): red: a prune batch takes a whole result, however large (24 batches for 24 results at a 100-fact budget).
+
 ## 2026-10-25 01:50:46 EDT — scribe `282714354addab364d86738f7237c9f0106da72c`
 Feature (#962): a played line's Open and Copy by voice (playedLine.open, playedLine.copy), so every control has a voice command or a reason again.
 

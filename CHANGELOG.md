@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 2:03:02 a.m. EDT — `795a6dec1b67` fix(#1129): green: a prune batch checks at most a batch of a result's released facts and leaves the rest to the next batches, marked until the last, so one result is no longer one hold of the operation gate
+
+- **Implementation commit:** `795a6dec1b67da83d8ba0ee54ed8bdc40ce6322f`
+- **Change:** fix(#1129): green: a prune batch checks at most a batch of a result's released facts and leaves the rest to the next batches, marked until the last, so one result is no longer one hold of the operation gate
+- **Details:**
+  - Mac mini, release, fixture v3, v1.9.39 before: worst prune hold 1,704.63 -> 397.21 ms; a write's worst wait during the prune 1,608.72 -> 371.80 ms; the refresh behind the cadence prune 1,618.05 -> 58.41 ms (the one before: 44.60). Unbounded on the same build: 1,268.05 ms. Criterion (250 ms, 300 ms) not met yet: the $files batch's cascade of 75,640 ownership rows (149.72 ms) and its commit (96.28 ms) remain; #1122's in-place unload, folded into #1129, takes them next. Checks: 580 tests in 12 suites pass in release apart from the runner's known artifacts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the prune loop's pending chunks, the read-ahead decode, the chunk batch
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — set-based ownership read, the chunk apply, the release marker, the collector's skip, the startup finish
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — storedLiveQueryResults(keys:)
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — read-ahead, marker and cut-short-release tests
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 2:03:02 a.m. EDT — `8725a7bb470f` test(#1129): red: a prune batch takes a whole result, however large, so one result is one hold of the operation gate
+
+- **Implementation commit:** `8725a7bb470f5b700221f52d104220dcaa84f4ee`
+- **Change:** test(#1129): red: a prune batch takes a whole result, however large, so one result is one hold of the operation gate
+- **Details:**
+  - Release, Mac mini: fails as designed (24 batches for 24 results of about 450 facts at a 100-fact budget, at least 96 wanted); the end state holds. The closed $files list's 75,640 facts were one 1.7 s hold in #1074's prune exercise.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — the bounded-batch test and a batch counter
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 1:36:55 a.m. EDT — `9a4695e5e588` test(#1119): the shim counts the temporary database, its journal and a statement's transient files apart
 
 - **Implementation commit:** `9a4695e5e588cd97509cb319cd27e6169b14c412`

@@ -1,3 +1,23 @@
+## 2026-10-25 02:03:25 EDT — #1129's second slice on main: a prune batch is bounded to a batch of facts (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** red `8725a7bb`, green `795a6dec` (plan amendment 4 `a5fe8379`), then this ledger.
+- **Measured** (Mac mini, release, fixture version 3; v1.9.39 before): `prune`, the worst prune hold 1,704.63 ->
+  397.21 ms and a write's worst wait during the prune 1,608.72 -> 371.80 ms; `prune-inline`, the refresh queued behind
+  the cadence prune 1,618.05 -> 58.41 ms (the one before it: 44.60 ms). With batches unbounded on the same build (an
+  environment switch in a measurement-only copy): 1,268.05 ms, so the read-ahead decode and the set-based ownership
+  read alone save about 440 ms and the bounded batches the rest.
+- **Where the 397 ms is now** (phase timers in a measurement-only copy, same machine): the `$files` batch's cascade
+  delete of 75,640 ownership rows 149.72 ms and its commit 96.28 ms; the copy into the unloaded table only 7.31 ms;
+  choosing the batch 34.80 ms; the hot store's retraction of 5,000 facts 49.91 ms (also most of each later 57 ms batch).
+  #1129's criterion (no batch over 250 ms, no write waiting 300 ms) is not met yet.
+- **Checks:** red fails as designed (24 batches for 24 results, at least 96 wanted); green: 580 tests in 12 suites in
+  release, failing only the runner's known artifacts (CLI not built; `withKnownIssue` unrecordable in release; the 5
+  hidden issues the same as before). Not run: mutation checks of the marker tests; the whole bundle (with 1.9.40).
+- **Next:** #1129's third slice takes #1122 (offered by fix-storage-1076): a closed result unloaded in place, its
+  ownership rows deleted by the prune a bounded batch at a time instead of by one cascade, the unloaded mark replacing
+  the release marker. Meanwhile #1128 (red `30f88505` on branch `agent/claude/fix-gate-1128`, green uncommitted) runs
+  on the mini: red, green, then `server-apply` and `recording` before and after.
+
 ## 2026-10-25 01:45:00 EDT — #1123, #1125: the result JSON every 5 minutes; a stream resume asks only for what it has not seen (fix-storage-1076)
 
 - **Landed on main:** plans `2bece3c0`, `d4bcc804`; the exercises' knob `acbe277b`; #1123 red `78f625f8`, green
