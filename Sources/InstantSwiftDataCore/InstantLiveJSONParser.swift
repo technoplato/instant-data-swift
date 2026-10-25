@@ -5,6 +5,10 @@ import Foundation
 //   value tried each JSON kind in turn and each miss threw a `DecodingError` that recorded its coding path: three for
 //   every object, two for every array, one for every number. A server result restates each query's triples, so a frame
 //   threw thousands of errors, and decoding frames was 3% of one core on a device while recording.
+// - 2026-10-24: a frame's arrays are sized once, from one stack of pending elements, an escaped string reuses one byte
+//   buffer, and the short strings a frame repeats share one copy: a refresh's join rows are arrays of four-element
+//   arrays that grew by doubling, and every row restates its entity id and every attribute id, so a 64-line page's
+//   frame made about 111 allocations a line (#1147).
 
 /// Parses one received frame's JSON into ``InstantLiveJSONValue`` directly from its UTF-8 bytes (#1007).
 ///
@@ -19,6 +23,13 @@ struct InstantLiveJSONParser {
 
   private let bytes: UnsafeBufferPointer<UInt8>
   private var index = 0
+  /// The elements of every array being parsed, innermost last: each array is made once, at its size, from its slice.
+  private var elements: [InstantLiveJSONValue] = []
+  /// The bytes of the escaped string being parsed, kept between strings.
+  private var unescaped: [UInt8] = []
+  /// The strings of 16 to 64 bytes this frame has made, by a hash of their bytes: a refresh restates each row's entity
+  /// id with every fact and each attribute id in every row. Shorter strings are stored inline and cost nothing.
+  private var sharedStrings: [Int: String] = [:]
 
   private init(_ bytes: UnsafeBufferPointer<UInt8>) {
     self.bytes = bytes
@@ -112,16 +123,18 @@ struct InstantLiveJSONParser {
   private mutating func parseArray(depth: Int) -> InstantLiveJSONValue? {
     guard depth <= Self.maximumDepth else { return nil }
     index += 1
-    var array: [InstantLiveJSONValue] = []
     skipWhitespace()
     if index < bytes.count, bytes[index] == UInt8(ascii: "]") {
       index += 1
-      return .array(array)
+      return .array([])
     }
+    // This array's elements wait on the shared stack above any enclosing array's, and leave it when it ends.
+    let base = elements.count
+    defer { elements.removeSubrange(base...) }
     while true {
       skipWhitespace()
       guard let value = parseValue(depth: depth) else { return nil }
-      array.append(value)
+      elements.append(value)
       skipWhitespace()
       guard index < bytes.count else { return nil }
       switch bytes[index] {
@@ -129,7 +142,7 @@ struct InstantLiveJSONParser {
         index += 1
       case UInt8(ascii: "]"):
         index += 1
-        return .array(array)
+        return .array(Array(elements[base...]))
       default:
         return nil
       }
@@ -149,15 +162,19 @@ struct InstantLiveJSONParser {
       if byte == UInt8(ascii: "\"") {
         let run = UnsafeBufferPointer(rebasing: bytes[start..<index])
         index += 1
-        return Self.isValidUTF8(run) ? String(decoding: run, as: UTF8.self) : nil
+        return string(of: run)
       }
       if byte == UInt8(ascii: "\\") { break }
       if byte < 0x20 { return nil }
       index += 1
     }
     guard index < bytes.count else { return nil }
-    var utf8: [UInt8] = []
-    utf8.reserveCapacity(index - start + 16)
+    var utf8 = unescaped
+    unescaped = []
+    defer {
+      utf8.removeAll(keepingCapacity: true)
+      unescaped = utf8
+    }
     let leading = UnsafeBufferPointer(rebasing: bytes[start..<index])
     guard Self.isValidUTF8(leading) else { return nil }
     utf8.append(contentsOf: leading)
@@ -184,6 +201,24 @@ struct InstantLiveJSONParser {
       }
     }
     return nil
+  }
+
+  /// The string an unescaped run holds, or nil when it is not UTF-8: one this frame already made for the same bytes
+  /// when the run is 16 to 64 bytes long (#1147).
+  private mutating func string(of run: UnsafeBufferPointer<UInt8>) -> String? {
+    guard (16...64).contains(run.count) else {
+      return Self.isValidUTF8(run) ? String(decoding: run, as: UTF8.self) : nil
+    }
+    var hasher = Hasher()
+    hasher.combine(bytes: UnsafeRawBufferPointer(run))
+    let key = hasher.finalize()
+    // Equal bytes are the bytes of a string already checked, so a match is valid UTF-8 too.
+    if let shared = sharedStrings[key], shared.utf8.elementsEqual(run) { return shared }
+    guard Self.isValidUTF8(run) else { return nil }
+    let string = String(decoding: run, as: UTF8.self)
+    // A different string with the same hash keeps its place; this one goes unshared.
+    if sharedStrings[key] == nil { sharedStrings[key] = string }
+    return string
   }
 
   /// Appends the escape at `index` (a backslash) as UTF-8.
