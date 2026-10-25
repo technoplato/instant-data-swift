@@ -163,3 +163,12 @@ in the store's deferred loads (the same JSON path).
 #1150's 4 MB). Step 2 (named here before editing): the read connection reads a fact's columns instead of its computed
 `json`, with a value reader that inverts `InstantStoredJSON` and falls back to `JSONDecoder`; the store's deferred
 loads (#1147) after agreeing their part with fix-storage-1076.
+
+## Amendment 10 (2026-10-25 01:44 EDT, claude-code/fix-memory-1075@ld)
+
+#1150 step 1 (red `bcb90e4a`): with `queryLocally` on the store's own index, E14 went 19,548 -> 13,385 KB a page (Mac
+mini, release); S14 shows the other half of the rebuild in `prepareObservation`, which every observation open runs: it
+sorts all 2,283 attributes (`attributeSnapshot()`) and builds an `AttributeStore` from them to validate the plan, then
+hands the sorted array to hydration, which reads only the deferred attributes. Claims
+`Sources/InstantSwiftDataCore/InstantRuntime.swift` (`prepareObservation`'s schema snapshot, its validation and the
+two `attributes:` it passes to `hydratingDeferredValues` only; fix-gate-1074's #1131 registration is untouched).
