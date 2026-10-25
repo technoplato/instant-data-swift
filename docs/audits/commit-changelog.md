@@ -1,3 +1,5 @@
+## 2026-10-25 01:50:46 EDT — scribe `282714354addab364d86738f7237c9f0106da72c`
+Feature (#962): a played line's Open and Copy by voice (playedLine.open, playedLine.copy), so every control has a voice command or a reason again.
 ## 2026-10-25 01:36:19 EDT — instant-data-swift `9a4695e5e588cd97509cb319cd27e6169b14c412`
 Test (#1119): the storage shim counts the temporary database, its journal and a statement's transient files apart, so the phone-shaped exercise can say which kind of temporary file a write spills to.
 
