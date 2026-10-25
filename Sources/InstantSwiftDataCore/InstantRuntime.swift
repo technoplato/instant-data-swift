@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-25: a prune batch holds the server-apply gate as well as the operation gate, at background priority, so no
+//   batch commits inside a frame's apply, which made the frame plan again behind the next batch (#1129).
 // - 2026-10-25: a closed result larger than a prune batch is released over later batches, each deleting and checking
 //   the next whole entities of its released row's ownership rows; its batch deleted them all by cascade (#1129).
 // - 2026-10-25: a server apply's retry reuses its restated results' retractions and saves from its first attempt while
@@ -7222,6 +7224,15 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let releasing = (try? await persistence.hasReleasedLiveQueryResult()) ?? false
       let predecoded = releasing ? [:] : await predecodedPruneResults(policy: policy, now: now)
+      // #1129: a batch holds the server-apply gate too, at background priority, so none commits inside a frame's apply.
+      // One that did, between the apply's seed and its plan, made the frame plan again behind the next batch: the refresh
+      // queued behind the cadence prune applied after 217.81 ms against 44.22 ms in #1074's `prune-inline` exercise.
+      // Lock order is server apply, then operation. A close cancels the wait: the batches left wait for the next prune.
+      do {
+        try await serverApplyGate.enterUnlessCancelled(operation: "prune live query results", priority: .background)
+      } catch {
+        break
+      }
       await enterOperationGate(priority: .background)
       let application: InstantLiveQueryResultPruneBatchApplication
       var checkedReleasedChunk = false
@@ -7240,8 +7251,10 @@ public final class InstantRuntime: Sendable {
           lastRemoval = application
         }
         await leaveOperationGate()
+        await serverApplyGate.leave()
       } catch {
         await leaveOperationGate()
+        await serverApplyGate.leave()
         throw error
       }
       removedQueryKeys.append(contentsOf: application.result.removedQueryKeys)
