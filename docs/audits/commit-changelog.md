@@ -1,3 +1,39 @@
+## 2026-10-25 18:53:57 EDT — scribe `5d2c2127037c07d6d756f9d806bc9ee8b02a6773`
+changelog(#1183): the audit's comparison b00020f55 and the rules note a617e3430
+
+## 2026-10-25 18:53:30 EDT — scribe `53514313ef7060101337953ebb592077ae3c2322`
+merge(#1183): Play Sealed Voice (ADR 0097 amendment A-S1b), the Sync view's words for the voice filter's schema, the replays' findings
+
+## 2026-10-25 18:36:10 EDT — scribe `a617e3430c732132f49a408d86105b9cb21dba3b`
+docs(#1183): the audit adds short passing runs dropped to the rules tried (the same curve)
+
+## 2026-10-25 18:35:19 EDT — scribe `b00020f55f0b8e321fe7cc623daae92c7b0929cf`
+docs(#1183): the audit compares Everybody except her with Only Me on the same replay (68 of her words heard, 8.0% of his withheld, against 12 and 29.9%)
+
+## 2026-10-25 18:34:23 EDT — scribe `a1928a4d3db7157ddd5c3392391dd01edca45fd6`
+Merge origin/main into agent/claude/wife-blur-1183: main through #961 (screens name speakers from the shared rows only)
+
+## 2026-10-25 18:33:59 EDT — scribe `5ee6fabf3107b66d63ebe4a02f499cef76e6158a`
+changelog(#1183): the Sync view's words df6d9ee71 and cbfbde4a9, Play Sealed Voice 9f82fd0bd and 4984b4574, the docs 7216c95f3
+
+## 2026-10-25 18:33:42 EDT — scribe `7216c95f360a3ee111524d1721240dee21d14822`
+docs(#1183): Play Sealed Voice in What's New and ADR 0097 A8 (A-S1b; A-S1 landed); the gate's decision rules replayed
+
+## 2026-10-25 18:33:34 EDT — scribe `4984b4574e7d2205990083c02490388d84800058`
+feat(#1183): A-S1b: Play Sealed Voice in playback: a withheld line's audio opens after Face ID and plays from memory
+
+## 2026-10-25 18:33:24 EDT — scribe `9f82fd0bdd2f72b3e399fbdf1533df1a3a57df71`
+feat(#1183): A-S1b: the sealer opens a withheld stretch for him after Face ID, and the stretch's file has one path
+
+## 2026-10-25 18:03:33 EDT — scribe `cbfbde4a9eb7f50fb318e49deb8ab4f8130ac962`
+fix(#1183): green: the Sync view's words for the voice filter's schema: wordSealKeys, wordsSeal, sealedWords
+
+## 2026-10-25 17:49:49 EDT — scribe `df6d9ee71619844792b8da023e484f76bb59e9dc`
+test(#1183): red: the Sync view reads the voice filter's schema in plain words (wordSealKeys, wordsSeal, sealedWords)
+
+## 2026-10-25 17:49:16 EDT — scribe `5ec66e3c37839f39cc322af108d78665f351a097`
+plan(#1183): claim the Sync view's words for the voice filter's schema (ScribeSyncStatus.swift, its ledger test); channel: audit-app-1077's heads-up taken
+
 ## 2026-10-25 18:33:47 EDT — scribe `d33e3078607d32bfa5d950c2017f24fadc3d7906`
 Docs (#1097): landing B in the hot-paths audit's section 16 (the gate, the design, waves 5 and 6, the hypothesis), the Build 141 story, PROGRESS, ADR 0094's status; landed on main 98bd3191a for build 141.
 
