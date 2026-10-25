@@ -199,7 +199,7 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
           }
         }
         for (attributeID, stamps) in valueStamps[entityID] ?? [:] {
-          var present: [InstantValue: InstantTripleStamp] = [:]
+          var present: ShardedDictionary<InstantValue, InstantTripleStamp> = [:]
           for (value, previous) in stamps {
             if let previous {
               present[value] = previous

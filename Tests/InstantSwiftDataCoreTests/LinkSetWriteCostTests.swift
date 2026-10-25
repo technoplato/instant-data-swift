@@ -47,7 +47,7 @@ struct LinkSetWriteCostTests {
 
   /// The prepared copy gains the line and the indexes it was copied from keep exactly what they held, at every size a
   /// link set passes through as a recording grows.
-  @Test(arguments: [0, 1, 255, 256, 257, 2_318])
+  @Test(arguments: [0, 1, 31, 32, 33, 2_318])
   func aPreparedLineChangesOnlyItsCopy(linkedLines: Int) {
     let attributes = Self.attributes(count: 16)
     let installed = Self.indexes(linkedLines: ["recording": linkedLines], attributes: attributes)

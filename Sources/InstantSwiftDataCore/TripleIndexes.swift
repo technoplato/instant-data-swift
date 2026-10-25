@@ -7,6 +7,9 @@ import os
 // - 2026-10-24: the transaction-id interner every copy shares takes a lock around its state: copies written on two
 //   threads (the store actor and a refused write's component hydrated off it) raced on its array and dictionary
 //   (#1141).
+// - 2026-10-24: a many-cardinality slot keeps its values in a sharded dictionary, and the insert path writes a derived
+//   index shape only when it changes: each line linked to a long recording copied the recording's whole link set, and
+//   each such write copied the schema-sized shape map (#1152).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -481,7 +484,10 @@ enum InstantTripleInsertReplayPolicy: Equatable, Sendable {
 /// on Scribe word graphs (#044 / autoresearch).
 enum AttrSlot: Hashable, Codable, Sendable {
   case one(value: InstantValue, stamp: InstantTripleStamp)
-  case many([InstantValue: InstantTripleStamp])
+  /// In shards once it holds more than 32 values (#1152): a recording links each of its lines here, and a write prepared
+  /// on a copy of the store's indexes copied every link with its first change, so each new line cost the recording's
+  /// length. Coded as the plain dictionary it was.
+  case many(ShardedDictionary<InstantValue, InstantTripleStamp>)
 
   var count: Int {
     switch self {
@@ -1638,7 +1644,7 @@ struct TripleIndexes: Codable, Sendable {
     }
     for (attributeID, attributeValues) in values where !attributeIDs.contains(attributeID) {
       guard let slot = attributesByID[attributeID] else { continue }
-      var present: [InstantValue: InstantTripleStamp] = [:]
+      var present: ShardedDictionary<InstantValue, InstantTripleStamp> = [:]
       for value in attributeValues {
         if let stamp = slot[value] {
           present[value] = stamp
@@ -1997,7 +2003,7 @@ struct TripleIndexes: Codable, Sendable {
       )
 
     case .many:
-      var normalized: [InstantValue: InstantTripleStamp] = [:]
+      var normalized: ShardedDictionary<InstantValue, InstantTripleStamp> = [:]
       for value in Self.sortedByComparableKey(slot.keys) {
         guard let stamp = slot[value] else { continue }
         let normalizedValue = Self.normalizedValue(value, attribute: attribute)
@@ -4333,7 +4339,12 @@ private struct PreparedInclude {
           cardinalityOne: isCardinalityOne
         )
       }
-      derivedIndexAttributeShapes[triple.attributeID] = DerivedIndexAttributeShape(attribute)
+      // Written only when it changes, as `insertNewCardinalityOne` does (#1152): the map holds every attribute in the
+      // schema (2,283 on the phone), and writing an unchanged entry on a prepared copy of the indexes copied all of it.
+      let shape = DerivedIndexAttributeShape(attribute)
+      if derivedIndexAttributeShapes[triple.attributeID] != shape {
+        derivedIndexAttributeShapes[triple.attributeID] = shape
+      }
     }
   }
 

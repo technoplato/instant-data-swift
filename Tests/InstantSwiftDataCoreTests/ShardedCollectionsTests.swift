@@ -7,6 +7,9 @@ import Testing
 /// #1007: the store's secondary indexes keep their entries in shards so a prepared write copies only what it changes.
 /// A sharded set and a sharded dictionary answer every question exactly as a `Set` and a `Dictionary` holding the same
 /// entries do, and a copy changes independently of the value it was copied from.
+///
+/// #1152: a sharded dictionary keeps one plain dictionary until it holds more than 32 entries, so a many-cardinality
+/// slot can use one. Whichever form it holds, it answers, compares, hashes and codes as the plain dictionary does.
 @Suite
 struct ShardedCollectionsTests {
   @Test(arguments: [UInt64(71_007), 71_008, 71_009])
@@ -89,5 +92,69 @@ struct ShardedCollectionsTests {
     let empty: ShardedDictionary<InstantValue, Int> = [:]
     expectNoDifference(empty == ShardedDictionary(), true)
     expectNoDifference(empty.hashValue == ShardedDictionary<InstantValue, Int>().hashValue, true)
+  }
+
+  /// A dictionary that outgrew 32 entries and shrank again keeps its shards; one built with the same entries does not.
+  /// The two answer, compare, hash and code alike, and as the plain dictionary does, at every size around the threshold.
+  @Test(arguments: [0, 1, 31, 32, 33, 34, 130, 2_318])
+  func eitherFormAnswersAsTheSameDictionary(entries: Int) throws {
+    let plain = Dictionary(uniqueKeysWithValues: (0..<entries).map { (InstantValue.ref("line-\($0)"), $0) })
+    var shrunk = ShardedDictionary<InstantValue, Int>()
+    for index in 0..<max(entries, 200) { shrunk[.ref("line-\(index)")] = index }
+    for index in entries..<max(entries, 200) { shrunk[.ref("line-\(index)")] = nil }
+    let built = ShardedDictionary(plain)
+    var literal: ShardedDictionary<InstantValue, Int> = [:]
+    for (key, value) in plain { literal[key, default: -1] = value }
+
+    for form in [shrunk, built, literal] {
+      expectNoDifference(form.count, plain.count)
+      expectNoDifference(form.isEmpty, plain.isEmpty)
+      expectNoDifference(form.dictionary, plain)
+      expectNoDifference(Dictionary(uniqueKeysWithValues: form.map { ($0.key, $0.value) }), plain)
+      expectNoDifference(Set(form.keys), Set(plain.keys))
+      expectNoDifference(form.values.sorted(), plain.values.sorted())
+      expectNoDifference(form.first.map { plain[$0.key] == $0.value } ?? plain.isEmpty, true)
+      expectNoDifference(form == shrunk, true)
+      expectNoDifference(form.hashValue, shrunk.hashValue)
+      let coded = try JSONDecoder().decode([InstantValue: Int].self, from: JSONEncoder().encode(form))
+      expectNoDifference(coded, plain)
+      let decoded = try JSONDecoder().decode(ShardedDictionary<InstantValue, Int>.self, from: JSONEncoder().encode(plain))
+      expectNoDifference(decoded == form, true)
+    }
+    if entries > 0 {
+      var changed = built
+      changed[.ref("line-0")] = -1
+      expectNoDifference(changed == shrunk, false)
+      expectNoDifference(built[.ref("line-0")], 0)
+    }
+  }
+
+  /// One reference wide, as before it gained its small mode: the store keeps one per indexed attribute in maps that a
+  /// prepared write copies whole, so a wider dictionary would make every write copy more.
+  @Test func aShardedDictionaryIsOneReferenceWide() {
+    expectNoDifference(MemoryLayout<ShardedDictionary<InstantValue, ShardedSet<String>>>.size, MemoryLayout<Int>.size)
+    expectNoDifference(MemoryLayout<ShardedDictionary<String, InstantValue>>.size, MemoryLayout<Int>.size)
+  }
+
+  /// A many-cardinality slot codes as it did when its values were a plain dictionary, both ways.
+  @Test(arguments: [2, 33, 2_318])
+  func aManySlotCodesAsItsPlainDictionaryDid(values: Int) throws {
+    let stamps = Dictionary(
+      uniqueKeysWithValues: (0..<values).map {
+        (InstantValue.ref("line-\($0)"), InstantTripleStamp(txIDIndex: UInt32($0 % 7), txTimeMilliseconds: Int64($0)))
+      }
+    )
+    let slot = AttrSlot.many(ShardedDictionary(stamps))
+    let legacy = try JSONDecoder().decode(LegacyAttrSlot.self, from: JSONEncoder().encode(slot))
+    expectNoDifference(legacy, .many(stamps))
+    let decoded = try JSONDecoder().decode(AttrSlot.self, from: JSONEncoder().encode(LegacyAttrSlot.many(stamps)))
+    expectNoDifference(decoded == slot, true)
+    expectNoDifference(decoded.count, values)
+  }
+
+  /// `AttrSlot` as it was coded before #1152 moved its many values into a sharded dictionary.
+  private enum LegacyAttrSlot: Codable, Equatable {
+    case one(value: InstantValue, stamp: InstantTripleStamp)
+    case many([InstantValue: InstantTripleStamp])
   }
 }
