@@ -1,3 +1,42 @@
+## 2026-10-24 22:42:13 EDT — scribe `00ae2f133c5cdd00de851d4b1cb053cbd63a5a54`
+Merge (#962) for build 131: the played item's own audio in the recording's playback, in step with its lines, where the recording did not hear it (slice 3, ADR 0093 decision 9); 12 commits, tested on the laptop's heavy.sh (ps962-queue3, ps962-queue4) and the Mac mini.
+
+## 2026-10-24 22:42:13 EDT — scribe `e2cedb667898dd9a521704d6736503508af4f761`
+docs(#962): the audit's slice 3 section (books in one file each, the launch-trap guard, the heardBasis defect, the start order not reproduced for a local file, both runs); ADR 0093 decision 9 and its verification name the start order and the live tests
+
+## 2026-10-24 22:42:13 EDT — scribe `d4df0ee363117ef379ad7a2ad1c49a923ec25968`
+test(#962): the item player's start tests wait for the item to be ready, then read where it really plays
+
+## 2026-10-24 22:42:13 EDT — scribe `a4ca284fd5d556abfa7aaf92fde417580632ae7f`
+fix(#962): green: the played item starts where and as fast as it was asked once it is ready
+
+## 2026-10-24 22:42:13 EDT — scribe `0c89685fa3bf517ae1536043a6f5899a7c57555d`
+test(#962): red: the played item starts at the second it was asked for, and paused before it is ready it waits there
+
+## 2026-10-24 22:42:13 EDT — scribe `e7129998b03b1a0f7aa35af1d8ccbbc59d23dc7c`
+docs(#962): slice 3 ships in build 131 (the lab cut 130 at 7c07dc841 with slices 1-2): its own What's New section, FEATURES 25 says 131
+
+## 2026-10-24 22:42:13 EDT — scribe `02055f754225b6a0d5811f4e63bf6111ae756b6b`
+docs(#962): ADR 0093 decision 9, the item's own audio in the recording's playback; FEATURES 25 and What's New say so
+
+## 2026-10-24 22:42:13 EDT — scribe `8f44a067377c8731c443c6316e53f8526a0ee829`
+fix(#962): a playback with no played lines leaves the item player's state alone
+
+## 2026-10-24 22:42:13 EDT — scribe `8e5af21176326fcc31d46d875474811054ad800f`
+test(#962): the episode's audio waits for its words in the reducer, and the played item stops with the recording
+
+## 2026-10-24 22:42:13 EDT — scribe `8eabd996e77af2a11d7203103e3e6833b330e324`
+test(#962): the bootstrap list holds each attribute once
+
+## 2026-10-24 22:42:13 EDT — scribe `61471cad833ae89258bf4a4bd62c1479cc9c0002`
+fix(#962): slice 3's address tests await outside expectNoDifference too
+
+## 2026-10-24 22:42:13 EDT — scribe `306b19b6552696ade3ad8087d918c741309230b8`
+fix(#962): second review of slice 3: the item's audio waits for its words, stops with the recording, asks once
+
+## 2026-10-24 22:42:13 EDT — scribe `79992ba37e4eb78bb10d5b208b148278578c72b6`
+feat(#962): the played item's own audio in the recording's playback, in step with it, where the recording did not hear it
+
 ## 2026-10-24 22:04:54 EDT — instant-data-swift `33c5c042bb5df00613f3701f78dc09e21f5b8bf8`
 perf(#1152): a line linked to a long recording copies one shard of its link set, not all of it, and no schema-sized map
 
