@@ -1,3 +1,6 @@
+## 2026-10-25 00:36:21 EDT — scribe `45b083370996b47caa5f2d25297e011cc3135595`
+Pin instant-data-swift exactly 1.9.39 (a5c8da29) instead of 1.9.38 in Scribe and Scribe Playback (#1131, #1129, #1152, #1147): an observer's registration holds the operation gate only to record itself, a closed result reloads in bounded holds, the cadence prune leaves the frame applier; both lock files (pin and originHash only), installer 65/65, a Build 133 (next) story (build 132 was cut without it).
+
 ## 2026-10-25 00:34:38 EDT — scribe `db8b71d93822af15ae4b06bed956c226c1d8a78e`
 Cut Scribe 0.1 (132) from main 4aaebbcf3 (#1162): build number 132, What's New dated; carries #1068 (home screen recordings first) and #1101 (section update costs what changed); instant-data-swift exactly 1.9.38; Scribe Playback stays 130.
 
