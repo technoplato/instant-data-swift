@@ -1,3 +1,36 @@
+## 2026-10-25 18:26:11 EDT — scribe `8aec8ffba1fe26115766df3ac6bd721476fb178a`
+Merge (#951, #961): the live recording and playback name every speaker from the shared rows only, for build 141 (ADR 0096 amendment B).
+
+## 2026-10-25 18:26:11 EDT — scribe `ba5effd8c21bead69160fccb00c18f62ceca4b9d`
+Docs (#951): the audit's verification (red, green, the merged tree; #1185's idle-write diff noted).
+
+## 2026-10-25 18:26:11 EDT — scribe `22866e03594168f908f961faeb17297adf078ba8`
+Progress (#951): the live recording and playback name speakers from the shared rows only, for build 141.
+
+## 2026-10-25 18:26:11 EDT — scribe `7eaebafdb3cc81ed46bbdaf91152465ac85bc5db`
+Changelog (#951): CHANGELOG entries for the red, green, the clock fix and the docs.
+
+## 2026-10-25 18:26:11 EDT — scribe `3568dfd5f0a7ca9853ef98cdb51cf02c5dd3e0a0`
+Merge origin/main into agent/claude/speakers-live-961: main through #1183's Only Me and #1185's pinned now-playing bar.
+
+## 2026-10-25 18:26:11 EDT — scribe `a01603087e4b8b8771377c3c90edf685e6efec9c`
+Docs (#951, #961): What's New Build 141 (next) story; the audit's index row.
+
+## 2026-10-25 18:26:11 EDT — scribe `618e4ba24d258a98678d8c039d7e56537e692703`
+Docs (#951, #961): FEATURES item 14 (a name given, changed or removed anywhere is what every live recording and playback show); the audit.
+
+## 2026-10-25 18:26:11 EDT — scribe `87774ae04bbda6fb4916fbc7d1ba959ce81585eb`
+Fix (#951): the screens' row reader reads the clock only when a change arrives.
+
+## 2026-10-25 18:26:11 EDT — scribe `a147cca7a64bce6e3f4050c40e5fb51dff8f4e40`
+Green (#951, #961): once a screen has read the shared speaker rows only they name a speaker; a live rename shows at once and is logged once written.
+
+## 2026-10-25 18:26:11 EDT — scribe `9b86a199c3b0b31ff6a689c4c31b03776cf9997f`
+Red (#951, #961): the live screen and playback name a speaker from the shared rows only once they are read; a live rename shows at once.
+
+## 2026-10-25 18:26:11 EDT — scribe `6f9ca03a6edd657a61ebbd3d3fc5d149a401909d`
+Plan (#951, #961): the live screen and playback name lines from the shared speaker rows only (ADR 0096 amendment B); claims 5fcd99df0, 0795fd310.
+
 ## 2026-10-25 17:48:18 EDT — scribe `2b957a4843a73009ae8de415dbc392730c2025ee`
 merge(#1183): Only Me on the iPhone (ADR 0097 amendment A-S1): a voice filter decided on the device before any words exist, off by default
 
