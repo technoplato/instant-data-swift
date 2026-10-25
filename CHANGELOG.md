@@ -10,6 +10,35 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 10:02:12 p.m. EDT — `0b0650d94693` fix(#1131): green: an observer's registration sends its add-query after the operation gate and reads its closed result before it
+
+- **Implementation commit:** `0b0650d946934500b30973e37a80baf57e20c724`
+- **Change:** fix(#1131): green: an observer's registration sends its add-query after the operation gate and reads its closed result before it
+- **Details:**
+  - The live session records a registration and sends it in two steps (recordQueryRegistration / sendQueryRegistration, guarded by the socket generation); the standard observation, the infinite chunk and the one-shot read (#1135) send after leaving the gate. A closed result is read and decoded on the read connection before the gate; the commit checks the row it read is still stored, reads it again when replaced, and moves the stored JSON inside SQLite instead of encoding it again.
+  - Measured on the Mac mini (release, fixture v3), main ed161097 before and this tree after: observers.opening hold p50 154.24 -> 0.13 ms, worst 169.24 -> 8.50 ms over a 150 ms socket; a write's wait for the gate there p50 76.86 -> 0.00 ms; the $files registration 1,616.70 -> 1,488.23 ms (the reload's commit stays under the gate: the next slice).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — recordQueryRegistration and sendQueryRegistration replace registerQuery
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the three registrations send after the gate; the reload reads before it
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — unloadedLiveQueryResult(key:)
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the reload checks its row and moves the JSON
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 10:02:11 p.m. EDT — `5a7edf91a857` test(#1131): red: an observer's registration holds the operation gate across its add-query send and its closed result's read
+
+- **Implementation commit:** `5a7edf91a857832e047adce1c96509045558edb4`
+- **Change:** test(#1131): red: an observer's registration holds the operation gate across its add-query send and its closed result's read
+- **Details:**
+  - Three focused tests failed on main ed161097 as designed (Mac mini, release): while an add-query send stalls the gate is held by 'observe standard live query' and a write waits; while a reopened query reads its closed result the same; a second observer waits behind the first one's read. One test seam, onUnloadedLiveQueryResultReadForTesting.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — new: the three tests, a pause point and a socket that holds one op
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the test seam at the reload's read
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 8:26:47 p.m. EDT — `4b31f891b07f` docs(#1072): say which fixture version produced each quoted number
 
 - **Implementation commit:** `4b31f891b07f3723484087fe56962d51b0c41edf`

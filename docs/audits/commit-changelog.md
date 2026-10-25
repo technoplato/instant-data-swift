@@ -1,3 +1,9 @@
+## 2026-10-24 22:02:29 EDT — instant-data-swift `0b0650d946934500b30973e37a80baf57e20c724`
+Green (#1131, #1135): an observer's registration records itself under the operation gate and sends its add-query after it; a closed result is read and decoded before the gate. Over a 150 ms socket a registration held the gate p50 154 ms, now 0.13 ms (Mac mini, fixture v3).
+
+## 2026-10-24 22:02:29 EDT — instant-data-swift `5a7edf91a857832e047adce1c96509045558edb4`
+Red (#1131): an observer's registration holds the operation gate across its add-query send and its closed result's read (three focused tests).
+
 ## 2026-10-24 21:51:02 EDT — scribe `488975a2bf823659042ff13a5e63f5a6e4bd8235`
 Green (#1154): a duration alone waits for the widgets' 30 s budget; another device's heartbeats reload the recent-recordings widget 3 times a minute, was 12.
 

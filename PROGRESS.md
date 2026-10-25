@@ -1,3 +1,21 @@
+## 2026-10-24 22:02:29 EDT — #1131: an observer's registration sends after the operation gate (part 1 of 2)
+
+- **Landed on main:** red `5a7edf91` (three focused tests in `InstantObserverRegistrationGateTests`), green `0b0650d9`.
+  The live session records a registration under the gate and sends its add-query after it (also the infinite chunk and
+  the one-shot read, #1135); a closed result is read and decoded on the read connection before the gate, and its
+  commit moves the stored JSON inside SQLite instead of encoding it again.
+- **Measured** (Mac mini M4, release, fixture v3, main `ed161097` before): `observers.opening gate.hold holder="observe
+  standard live query"` p50 154.24 -> 0.13 ms, worst 169.24 -> 8.50 ms over a 150 ms socket; writes' gate wait there p50
+  76.86 -> 0.00 ms. The `$files` registration still holds the gate 1,488 ms (was 1,617): its reload's commit (1,068 ms
+  in SQLite, 208 ms in the store, scratch phase timing at real size) is part 2, in progress on
+  `agent/claude/fix-gate-1074`: the reload commits in bounded chunks under a per-key registration lease.
+- **Checked:** the 9 focused tests (the three new ones, `InstantStoredResultReloadTests`) pass in release on the mini;
+  the whole bundle in release shows only the environment's and release build's failures (CLI executable not built,
+  upstream checkouts absent, `withKnownIssue` not recorded in release) and one load flake (`aTinyReplaySamplesEveryMinute`
+  passes alone). The debug known-failing comparison is not run yet.
+- **Next:** #1131 part 2 (red `8002147c` local), then #1129, #1128, #1127, #1132, #1133. Owner fix-gate-1074
+  (worktree `~/Sync/worktrees/instant-fix-gate-1074`, runner `~/Library/Caches/fix-gate-1074` on the mini).
+
 ## 2026-10-24 20:17:30 EDT — #1072: lib-audit-1072 done: four releases, the audit, the budgets; cleanup
 
 - **Released today from this audit:** 1.9.35 (`c0a57a53`), 1.9.36 (`253a9507`), 1.9.37 (`b33dee9c`), 1.9.38
