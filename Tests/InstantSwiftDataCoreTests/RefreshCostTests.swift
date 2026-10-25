@@ -14,6 +14,7 @@ import Testing
 // History:
 // - 2026-10-24: #1147: the nested-limit pass: its cost, and its shortcut's equivalence with the general pass.
 // - 2026-10-24: #1147: the deferred-value hydration of an emission.
+// - 2026-10-24: #1147: a refresh frame's parse.
 
 @Suite
 struct RefreshCostTests {
@@ -129,7 +130,34 @@ struct RefreshCostTests {
     )
   }
 
+  /// Every refresh restates the whole page, so its frame's parse runs about 19 times a minute on the live window alone.
+  /// Each join row is an array of four-element arrays: growing every array by doubling, a byte buffer per escaped string
+  /// and a new string for every repeated id made about 111 allocations a line.
+  @Test("Decoding a 64-line page's refresh frame allocates under 50 times a line")
+  func decodingARefreshFrameCostsLittlePerLine() throws {
+    let rows = (0..<64).map { line in
+      RealSizeAccount.segment(
+        recordingID: RealSizeID.make(.recording, 1), line: line, revision: 4, serial: 0, id: RealSizeID.make(.segment, line)
+      ).joinRow()
+    }
+    let query = InstantLiveJSONValue.object(["transcriptionSegments": .object(["$": .object(["limit": .number(64)])])])
+    let frame = MemoryReplayServer.encoded(MemoryReplayServer.refreshFrame(query, rows: rows, tx: "1"))
+    let decoded = try InstantLiveMessage.decoded(fromFrame: frame)
+    expectNoDifference(decoded.op, "refresh-ok")
+    expectNoDifference(decoded, try JSONDecoder().decode(InstantLiveMessage.self, from: Data(frame.utf8)))
+    let allocations = Self.allocations { _ = try? InstantLiveMessage.decoded(fromFrame: frame) }
+    #expect(allocations < 50 * 64, "Decoding the 64-line frame allocated \(allocations) times (\(allocations / 64) a line).")
+  }
+
   // MARK: - Helpers
+
+  /// Allocations this thread makes per call of `body`.
+  static func allocations(iterations: Int = 10, _ body: () -> Void) -> Int {
+    body()
+    RealSizeAllocations.start(onCurrentThreadOnly: true)
+    for _ in 0..<iterations { body() }
+    return RealSizeAllocations.stop().allocations / iterations
+  }
 
   /// Bytes this thread allocates per call of `body`.
   static func bytesAllocated(iterations: Int = 10, _ body: () -> Void) -> Int {
