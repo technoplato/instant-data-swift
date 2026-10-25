@@ -1,3 +1,69 @@
+## 2026-10-24 23:54:59 EDT — scribe `fd589599d6a9223f030bc2e22410fde081c8d81e`
+Merge (#1068) to main for build 132: the home screen shows recordings first: a drawer (Reminders, Speakers, Recently Deleted), the map and a Filter menu in the toolbar, Back to Live on the list only while the recording reads back; the iPad drawer sized from its column and the sidebar's title large.
+
+## 2026-10-24 23:54:31 EDT — scribe `be1bfd7599d652fe4dbd23190f2bec11cce44dbe`
+changelog(#1068): docs 5f9db04c2.
+
+## 2026-10-24 23:54:20 EDT — scribe `5f9db04c2dcf1a985295633c729626e7650ce209`
+Docs (#1068): ADR 0092 and the audit say build 132.
+
+## 2026-10-24 23:53:25 EDT — scribe `9b863cf0a59544cbd24883c7e11ccf5f50109aff`
+changelog(#1068): entries for the branch's eighteen implementation commits.
+
+## 2026-10-24 23:52:33 EDT — scribe `470607f0ecd71d7b7a124172c50fdea0c2d7b6c1`
+Docs (#1068): the audit's before and after on the simulator and the PROGRESS entry.
+
+## 2026-10-24 23:09:03 EDT — scribe `c90e86c4f9300cb79c103d528040fc98381bc183`
+Test (#1068): the home screen's snapshot references and the four iPad references whose sidebar changed, recorded on the merged tree (run 2 passed 20/20).
+
+## 2026-10-24 21:32:12 EDT — scribe `ba21ac44f2016e24de52977be7c8d383719f2fc3`
+Docs (#1068): ADR 0092 and the audit say build 131.
+
+## 2026-10-24 20:20:23 EDT — scribe `be12c1dd735b04791a52908451e24974296b0e53`
+Fix (#1068): the iPad sidebar shows its title large, so the drawer's and the map's buttons no longer squeeze it to S...
+
+## 2026-10-24 20:20:23 EDT — scribe `98b4f2d94c820977cbbfa4d044b3ffb61f6ab06e`
+Green (#1068): the drawer's panel sizes itself from its column in the pass that lays it out (containerRelativeFrame).
+
+## 2026-10-24 20:06:32 EDT — scribe `3d0a98b99d9680b4747b16161cb1ff59842a6981`
+Red test (#1068): the drawer's panel width as a pure function of its column (the layout harness's iPad case drew it at 118 points in a 300-point sidebar).
+
+## 2026-10-24 18:46:18 EDT — scribe `0415ee724e593ed316699d572771020a85a6e9b6`
+Docs (#1068): ADR 0092 and the audit say build 130.
+
+## 2026-10-24 17:56:55 EDT — scribe `8ed944aa6c8a699ce028eb323f872362dbd69e01`
+Docs (#1068): ADR 0092, the audit and its index row say build 129.
+
+## 2026-10-24 16:41:12 EDT — scribe `9f25c93dd51a90cbf937feb61652cef4d04dfd6d`
+Docs (#1068): the What's New story, the audit's index row, ADR 0092 and the audit for the next build.
+
+## 2026-10-24 15:58:05 EDT — scribe `cdafbefa07b6658942eb28c8d26b8e1be2a57dd7`
+Docs (#1068): the scribe-hig skill's standing rules and list row name ADR 0092.
+
+## 2026-10-24 15:46:35 EDT — scribe `307f26abfb2049db1dbc695cac2b9b09d7dbf237`
+Fix (#1068): the Mac's drawer draws an opaque list (inset).
+
+## 2026-10-24 15:44:10 EDT — scribe `0c04fd63b1f6d2da8a696d0bf883f44328b9bcbf`
+Fix (#1068): Select and a filter's choice close the drawer.
+
+## 2026-10-24 15:39:50 EDT — scribe `32b1390c2255b72f05a4850ad2e6cc51fae0adea`
+Docs (#1068): the audit's broader checks and the skills' review.
+
+## 2026-10-24 15:36:23 EDT — scribe `03f741c800d7e5246a73add55826a6a103a2ad6d`
+Refactor (#1068): the toolbar asks whether there is anything to filter without building the speakers' list (swiftui-pro review).
+
+## 2026-10-24 15:27:09 EDT — scribe `62386d227f14bdc8f9d77fcd8d3c9e9f50f49b93`
+Docs (#1068): ADR 0092 (the home screen shows recordings first), ADR 0015's #451 amendment superseded, ADR 0038 and 0054 say where their rows went, the audit.
+
+## 2026-10-24 15:21:21 EDT — scribe `335cc2bfc23c598225b520df53af80e61b98713f`
+Test (#1068): the layout harness draws the home screen (recordings first, the drawer open, Without Audio on, the bar following or reading back).
+
+## 2026-10-24 15:21:12 EDT — scribe `357ca84a118a0a832e8478189de3ba940d5d3d0b`
+Green (#1068): recordings first; Reminders, Speakers and Recently Deleted in a drawer; the map and a Filter menu in the toolbar; Back to Live on browsing screens only while the recording reads back (#451 superseded).
+
+## 2026-10-24 14:56:50 EDT — scribe `c72425b0737e83010c58986caaa4dc1914250808`
+Red test (#1068): the home screen shows recordings first, with a drawer, the map and a filter in the toolbar, and Back to Live on the list only while the recording reads back (RecordingListDrawerTests, RecordingListFilterMenuTests, FloatingActionBarTests, RecordingListChromeTests).
+
 ## 2026-10-24 23:44:17 EDT — scribe `120a1e88782e5fb95cb78cba850c7925011a3ccf`
 changelog(#1101): red, green and docs.
 
