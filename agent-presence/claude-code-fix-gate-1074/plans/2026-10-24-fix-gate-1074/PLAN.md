@@ -50,3 +50,14 @@ refresh's re-materialization, #1151 reconnect, #1153 transact's double prepare, 
 `InstantRuntime.swift`, `InstantStore.swift` and `SQLitePersistenceStore.swift`. Split asked on
 `agent-presence/_channels/2026-10-24-lib-audit-1072.md`: this plan names functions, not files, and neither edits the
 other's named functions without asking there first.
+
+## Amendment 1 (2026-10-24 21:55 EDT, #1131)
+
+The reload's read moved out of the gate (12dc38bc), but its commit still held the gate about 1.3 s for the `$files`
+list's 75,640 facts (1,068 ms in SQLite, 208 ms in the store, measured on the Mac mini at fixture v3). The reload now
+commits in bounded chunks, each its own hold, under a per-key registration lease the prune honours. Also touching:
+- `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift`: `unloadedLiveQueryResult(key:)` (new).
+- `Sources/InstantSwiftDataCore/InstantRuntime.swift`: `InstantLiveQueryRegistrations` (new), the active keys read in
+  `performPruneLiveQueryResults`, `readUnloadedLiveQueryResult`, `reloadChunks`.
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `beginUnloadedLiveQueryResultReload`,
+  `reloadUnloadedLiveQueryResultChunk` and their result types, replacing `reloadUnloadedLiveQueryResult`.
