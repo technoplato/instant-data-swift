@@ -140,3 +140,21 @@ failed (`try?` today). A test holds every status change to "the published status
 publish, the auth publishers), `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` (a latest value per key)
 and the auth session observers' type; the tests that hold the gate through
 `onAuthSessionObservationHoldsOperationGateForTesting` move to a holder that still takes the gate.
+
+## Amendment 8 (2026-10-25 05:40 EDT, #1133)
+
+A hydration's re-check waits for the operation gate's holder unless the holder named what it writes, and only transact,
+the server apply's commit and a closed result's reload name theirs, after they enter: so it waits for prunes, claims,
+plans and the cache's VACUUM, which write no store facts it read. A holder now says what it writes as it takes the gate
+(`AsyncSerialGate.enter(...writes:)`, set on handoff, so no holder reads as writing everything between its entry and its
+first mark), and these say none: the server apply's snapshot, plan and catch-up holds, the acknowledgement, a standard
+observation's registration, the two local reads, the transient-retry window, an upload's record, the VACUUM, the
+delivery claim, the status and session reads' fallbacks and bootstrap's seed. A prune batch names the entities whose
+facts it releases, then none after its store commit. Adopting another connection's SQLite writes into the hot store reads
+as writing anything, whatever its holder named. Touching `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` (enter,
+leave, acquire, waiters), `Sources/InstantSwiftDataCore/InstantRuntime.swift` (those holders' entries, the gate helpers,
+`adoptPersistedStoreIfNeeded`, the prune batch functions and a test hook in the prune loop), a new
+`Tests/InstantSwiftDataCoreTests/InstantHydrationRecheckHolderTests.swift`, and
+`Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` (a `recording-deferred` exercise: `recording` with
+Scribe's configuration, segment text and words deferred). Measured by `recording-deferred`'s
+`gate.wait caller="check hydrated deferred query emission"` on the Mac mini, before and after.
