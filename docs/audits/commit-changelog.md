@@ -1,3 +1,6 @@
+## 2026-10-25 19:07:34 EDT — scribe `91b3debb3d781dedacc851bb39f10e5e4a732e25`
+Docs (#1077, #1097): the hot-paths audit's section 17 (where each of its 26 findings stands: 7 landed awaiting device checks, 3 in part, 1 in progress, 15 open), section 16 with wave 7 (landing B's suites rebuilt and run on main after its merge: 13 list tests, 3 beat tests, 63 durability tests, all pass), the index row's status; on main with change log f363a073e.
+
 ## 2026-10-25 18:56:51 EDT — scribe `364d6336177489f4062ff26fa0db26a9596177d1`
 progress(#1183): Only Me on the iPhone and Play Sealed Voice landed for build 141; the voice gate measured; next A-S1c
 
