@@ -1,3 +1,39 @@
+## 2026-10-25 19:28:03 EDT — scribe `66cb9b7227bd2cba8d3f76e46632f5c5070bdb4d`
+Merge (#1084): drain-1084 onto main for build 141: the durability lane runs every step in the reduce that returned it, so none is a root pass.
+
+## 2026-10-25 19:27:41 EDT — scribe `193bdb1bed412c065cba387e03df0a954f0bd8cf`
+Changelog (#1084): the red, the green, the docs and the test fix below in CHANGELOG.md.
+
+## 2026-10-25 19:27:12 EDT — scribe `5174aafb9196beed5ed3c38954031c3f55d75812`
+Docs (#1084): the drain-steps audit's section 7 (the merged tree compared line by line; the store exercise on the simulator, Release: the recording's store alone 714 -> 414 actions a minute, its main thread 9.37% -> 5.88% of a core), its index row, the story's numbers, PROGRESS.
+
+## 2026-10-25 19:16:37 EDT — scribe `ea9cfb4eca034f95882bf0ebdeb80eb76e6c23d7`
+Merge (#1084): main into agent/claude/drain-1084 before landing (#1097 landing B, #1183, #951, #1185).
+
+## 2026-10-25 17:25:43 EDT — scribe `7777089da5ec28a9912c6c1249a5d82d2fb5dfeb`
+Test (#1084): realRouteProducerEntersTheBoundedLaneInTheSameRootAction reads the lane's head, in flight or queued (plan amendment B).
+
+## 2026-10-25 17:25:27 EDT — scribe `be8085dff71eae126f3f03e14ab528d4df191bcc`
+Plan (#1084): amendment B: one list test reads the lane's head; the claim line.
+
+## 2026-10-25 16:16:23 EDT — scribe `e2c3590893676f0588697c956662f7f65274aef4`
+Merge (#1084): main into agent/claude/drain-1084 (build 140's cut, #1097 landing A).
+
+## 2026-10-25 16:15:42 EDT — scribe `4aba7b70610c7cd2221657bc5130487b9e6a2984`
+Docs (#1084): the drain-steps audit's section 6 (two drain steps per save on build 137; a replayed talking minute 1,251 -> 639 root passes, lane steps 612 -> 0), its index row, the Build 141 (next) story, PROGRESS.
+
+## 2026-10-25 16:01:43 EDT — scribe `704d313558a7529c186bddad6ee31bdc01f1441a`
+Perf (#1084): green: the durability lane runs the steps its state methods return in the reduce that returned them; only delegates reach the parent as actions.
+
+## 2026-10-25 16:01:01 EDT — scribe `0737424b16aac09c1df23de96a8fafebb1f3bb4d`
+Plan (#1084): amendment A: two strict end-of-test skips in RecordingListTests become non-strict; the claim line.
+
+## 2026-10-25 14:51:59 EDT — scribe `4d836767a7a289b995609938cc3f72a72f426165`
+Test (#1084): red: a talking minute with its saves finishing sends no lane step through the root; a save's end and an interim's debounce start the next save in their own reduce.
+
+## 2026-10-25 13:28:20 EDT — scribe `ff90d74fa1d0638ac7d18c49a1e8c3cb2237ec7a`
+Plan (#1084): 2026-10-25-drain-1084, the durability lane runs its own steps with no root pass; claims and channel notes.
+
 ## 2026-10-25 19:15:42 EDT — scribe `8508a24d7bb023147ed0091c87195b5d9d160aef`
 Merge (#951, #1185): S2c, a broadcast voice named after the item that was playing (ADR 0096 amendment C), and two fixes to #1185 (the Watch slice; the idle bookkeeping write).
 
