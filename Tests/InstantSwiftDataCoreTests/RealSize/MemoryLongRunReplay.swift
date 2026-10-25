@@ -41,6 +41,8 @@ import Testing
 // - 2026-10-24: #1075: the smoke test runs in the measurement pass (`.measurement`, #1021): its apply waiter listens on the
 //   process-wide diagnostics hub, which the bundle's parallel tests reconfigure, and it timed out in whole-bundle runs
 //   (passing alone).
+// - 2026-10-25: #1145: the two-hour replay holds #1145's criterion: resident facts within 2,000 of minute 5 and the
+//   heap growing under 3 MB an hour.
 
 @Suite(.serialized)
 struct MemoryLongRunReplaySmokeTests {
@@ -74,6 +76,15 @@ struct MemoryLongRunReplay {
       shape: shape, minutes: minutes, workload: .scribe, label: label, sampleEvery: sampleEvery
     )
     #expect(samples.last?.minute == minutes)
+    // #1145: a long session's memory is what a relaunch's would be. The memory audit measured 56,109 -> 71,211 resident
+    // facts from minute 5 to 120 and +12.1 MB of heap an hour (Mac mini, release), every row this device wrote staying in
+    // memory after the server acknowledged it.
+    if minutes >= 60, let first = samples.first(where: { $0.minute == 5 }), let last = samples.last {
+      let hours = Double(last.minute - first.minute) / 60
+      let heapPerHour = Double(last.heapInUse - first.heapInUse) / 1_048_576 / hours
+      #expect(last.triples - first.triples < 2_000, "Resident facts went \(first.triples) -> \(last.triples).")
+      #expect(heapPerHour < 3, "The heap grew \(String(format: "%.1f", heapPerHour)) MB an hour.")
+    }
   }
 }
 
