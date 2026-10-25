@@ -126,3 +126,13 @@ it through the outbox diff of that row alone, bumps only the outbox revision and
 private helper), `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (one row-addressed removal of a failed
 mutation with no materialized effect), `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardCostTests.swift`
 (new: the red and green). The existing `InstantFailedMutationDiscardTests` must stay green.
+
+## Amendment 7 (2026-10-24 20:24 EDT, claude-code/lib-audit-1072@halfjew22): which fixture produced each number
+
+The 1.9.35 release document and the audit's last section label every number as fixture version 3. The upload's
+single-call "before" columns are report2's, which ran on version 2 (its text transaction ids kept 783 accepted writes
+the phone does not have; the upload reads no outbox row, and the version 3 recording before the fix measured the same
+17 ms of gate per upload). The tail check's 1.6 MB is a unit test on a synthetic schema in debug, not the fixture, and
+the interner row is a race test. The numbers stay; only their labels change. Claims, documents only:
+`docs/releases/v1.9.35.md`, `docs/releases/v1.9.38.md`, `docs/audits/2026-10-24-whole-store-cost-audit.md` and the
+1.9.38 entry of `PROGRESS.md`; then the ledger.
