@@ -1,3 +1,9 @@
+## 2026-10-24 21:39:28 EDT — scribe `b72befcf0c1bf4d832a9d12b722e4617a0711b18`
+Docs (#1077): the audit of Scribe's own hot paths, 26 anti-patterns ranked by measured cost (#1078-#1102, #1154), a design and a hypothesis for each, the exercises' simulator baseline.
+
+## 2026-10-24 21:39:28 EDT — scribe `6fb9e9f603be204ced7cea7e31389567c273474f`
+Test (#1077): Scribe's own hot paths as exercises in the layout harness, driven at the iPhone's measured rates.
+
 ## 2026-10-24 21:21:42 EDT — scribe `2be9c1380`
 fix(#1159 #1067): the docked bar's side column is nil on the Watch, so build 130's Watch slice compiles.
 
