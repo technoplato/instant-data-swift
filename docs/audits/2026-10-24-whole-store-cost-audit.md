@@ -136,6 +136,25 @@ about a millisecond a minute. The CPU and footprint rows move within the shared 
 last ten minutes ran under other agents' load); the per-holder gate time is the direct measure. After the fix, the
 largest holder is the outbox pump's claim: 402-524 ms of every minute, about 60% of the gate (#1108, #1114).
 
+## After the audit: what shipped the same evening
+
+Each red, then green, measured on the fixture's version 3, Mac mini M4, release; each version pinned in the consuming
+app and its Playback app on the app's main:
+
+| Version | Fix | Before | After |
+| --- | --- | --- | --- |
+| 1.9.35 | uploads, reads by id, deletes and evictions read the file records only while observed (#1072) | upload 16.8 ms, 107,142 allocations | 0.07 ms, 237 |
+| 1.9.36 | the pump's candidate read and continuation check search a partial index of claimable rows (#1108) | 3,218 SQLite steps beside 400 refused writes | the same as beside 7 (74) |
+| 1.9.37 | the transaction-id interner every index copy shares takes a lock (#1141, a data race) | segmentation fault in the race test | passes, 3 of 3 under Thread Sanitizer |
+| 1.9.38 | a write's tail check reads only its own attributes (#1108) | 1.6 MB allocated per write (debug) | flat across schema sizes |
+| 1.9.38 | the delivery's overlay check seeks its flag; the tail read finds the newest id in an index (#1108, #1114) | 1,866 KB of the outbox read per write in delivery | under the exercise's threshold |
+| 1.9.38 | a refused write that left no effect is discarded by its row (#1103) | 112 ms on the launch-time store, 1.7 s after a whole `$files` load | 0.33 ms at both sizes |
+
+Over a recording's first ten minutes the claim's share of the operation gate went from 569 ms a minute (1.9.35) to 90
+ms (1.9.38), and the gate's whole hold from 898 to 306 ms. The partial index costs two log frames (8 KB) per write, a
+page on the save and one on the claim (#1076's `eachStepOfALiveWrite`: 36 outbox frames per write, 34 before); #1115
+proposes a layout that serves the claim without it.
+
 ## Next steps, as a performance and isolation expert would take them
 
 Posted on #1072, measured where the numbers above allow:
