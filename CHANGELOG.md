@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 3:48:39 a.m. EDT — `6590a7e42b60` perf(#1129): a prune batch removes or checks 1,000 facts instead of 5,000, so a write or a refresh that arrives during one waits for less
+
+- **Implementation commit:** `6590a7e42b60fc8c11afa6e0aeda0bbecebb830a`
+- **Change:** perf(#1129): a prune batch removes or checks 1,000 facts instead of 5,000, so a write or a refresh that arrives during one waits for less
+- **Details:**
+  - Mac mini, release, fixture v3 (9581503d before): prune holds p50 73.54 -> 14.73 ms, worst 112.82 -> 75.15 ms; a write's worst wait 71.89 -> 40.40 ms; recording acks p99 280.37 -> 126.71 ms; the refresh behind the cadence prune 136.47 -> 110.71 ms (the one before 38.26 ms); 516 tests in 8 suites pass in release.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — liveQueryResultPruneBatchTripleCount 5,000 -> 1,000
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 3:48:39 a.m. EDT — `9581503dd24e` fix(#1129): green: a prune batch holds the server-apply gate as well as the operation gate, so no batch commits inside a frame's apply
+
+- **Implementation commit:** `9581503dd24e3520d572510bbd552c564a53039b`
+- **Change:** fix(#1129): green: a prune batch holds the server-apply gate as well as the operation gate, so no batch commits inside a frame's apply
+- **Details:**
+  - Mac mini, release, fixture v3 (slice 3 before): the refresh behind the cadence prune 217.81 -> 136.47 ms (no retry; its snapshot wait 81.68 -> 2.26 ms); recording acks p99 521.53 -> 280.37 ms; 558 tests in 12 suites pass in release apart from the runner's known artifacts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — pruneLiveQueryResults takes the server-apply gate per batch
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 3:48:38 a.m. EDT — `1d09aac1b4bc` test(#1129): red: a prune batch commits inside a server apply that is between its seed and its plan
+
+- **Implementation commit:** `1d09aac1b4bc210c09f072226d7534b388a37873`
+- **Change:** test(#1129): red: a prune batch commits inside a server apply that is between its seed and its plan
+- **Details:**
+  - Release, Mac mini: fails as designed (the prune ran its batches inside the apply; the apply took 2 seeds).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — the prune-inside-apply test
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 3:03:14 a.m. EDT — `743640fdd714` test(#1131): the observer-send test acknowledges its local write, so a slow run no longer trips the write's acknowledgement deadline
 
 - **Implementation commit:** `743640fdd714fe91f13748213aafb46a35534b81`

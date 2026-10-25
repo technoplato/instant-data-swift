@@ -1,3 +1,20 @@
+## 2026-10-25 03:48:39 EDT — #1129's fourth and fifth slices on main: no prune batch inside a frame's apply; 1,000-fact batches (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** red `1d09aac1`, green `9581503d` (a batch holds the server-apply gate too, at
+  background priority); `6590a7e4` (batches of 1,000 facts, not 5,000); then this ledger. Scribe main: the 1.9.40 pin
+  `fb5aad45e` (build 134) and its changelog `3107c96b7`.
+- **Measured** (Mac mini, release, fixture version 3): with the gate, the refresh behind the cadence prune 217.81 ->
+  136.47 ms and recording acks p99 521.53 -> 280.37 ms; with 1,000-fact batches, prune holds p50 73.54 -> 14.73 ms and
+  worst 112.82 -> 75.15 ms, a write's worst wait during the prune 40.40 ms, recording acks p99 126.71 ms, the refresh
+  110.71 ms against 38.26 ms for the one before it. #1129's third part is still not met; the worst hold left is the
+  batch that unloads the `$files` result (its copy and the old row's freed pages), which #1122's in-place unload
+  (fix-storage-1076) removes.
+- **#1127 measured on main `6590a7e4`:** recording acks p99 177.77 ms (< 300), reads through the server p99 187.26 ms
+  (< 500), 90 of 90 writes accepted; but with observers registering over a 150 ms socket, acks p99 1,648.01 ms (target
+  300): the remaining #1127 work.
+- **Mini:** the shared temp-dir sweep removed 7,677 test stores (5,588.9 MB), 19,907 -> 25,504 MB free.
+- **Next:** #1127 (acknowledgements behind registrations), then #1132, #1133.
+
 ## 2026-10-25 03:03:14 EDT — #1129's third slice on main: a large closed result is released over bounded batches from a re-keyed row (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 6 `fd59f3a9`; red `a565f0b7`, green `68d37d42`; the #1131 test

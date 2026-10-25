@@ -1,3 +1,12 @@
+## 2026-10-25 03:46:30 EDT — instant-data-swift `6590a7e42b60fc8c11afa6e0aeda0bbecebb830a`
+Perf (#1129): prune batches of 1,000 facts, not 5,000; holds p50 73.54 -> 14.73 ms, recording acks p99 280.37 -> 126.71 ms (Mac mini, release).
+
+## 2026-10-25 03:38:53 EDT — instant-data-swift `9581503dd24e3520d572510bbd552c564a53039b`
+Fix (#1129): a prune batch holds the server-apply gate too, so none commits inside a frame's apply; the refresh behind the cadence prune 217.81 -> 136.47 ms.
+
+## 2026-10-25 03:38:53 EDT — instant-data-swift `1d09aac1b4bc210c09f072226d7534b388a37873`
+Test (#1129): red: a prune batch commits inside a server apply that is between its seed and its plan.
+
 ## 2026-10-25 03:29:06 EDT — scribe `fb5aad45eb6c559dc4ded93054d9971bfdf2fe37`
 Pin instant-data-swift exactly 1.9.40 (da9771bc) instead of 1.9.39 in Scribe and Scribe Playback: bounded prune batches, a retry that reuses its plan's work, each fact stored once; both lock files (pin and originHash only), installer 65/65, a Build 134 (next) story with the no-going-back warning.
 
