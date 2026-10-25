@@ -1,3 +1,21 @@
+## 2026-10-24 22:52:24 EDT — scribe `7f781ee1d06cb0cba777580c43aa3d8bd1d60f3d`
+Merge (#412) for build 131: the live recording screen's vertical stamp drawn in parts, its digits changed by Core Animation's render server (no main-thread wake per frame).
+
+## 2026-10-24 22:52:24 EDT — scribe `820bc9d23bc081f2e8ea0c2e883e6446f73ffcbc`
+Docs (#412): the stamp's audit sections 7 and 8 (build 124's ledger, the parts' look fix, the render server), PROGRESS, What's New 131.
+
+## 2026-10-24 22:52:24 EDT — scribe `b1f5488cb8dd32c579d62f3b8438a352af86dd09`
+Green (#412): RecordingStampSchedule and the view's motion: counters and scheduled digit changes played by the render server.
+
+## 2026-10-24 22:52:24 EDT — scribe `87e1e2a8da4ca550d5507b2e44ee6901f282b427`
+Red (#412): the render server's tests (schedule vs Words.text, no frames while live, frozen-time pixels vs SwiftUI); declarations only.
+
+## 2026-10-24 22:52:24 EDT — scribe `435c5bca79fab52ed9d2c3b27d918869cb828d74`
+Green (#412): RecordingStampGlyphs: the stamp's line in parts, pictures from the line's own glyphs drawn in the stamp's window.
+
+## 2026-10-24 22:52:24 EDT — scribe `24571acd30aaeef30a7484f46880c146b8134b65`
+Red (#412): aFrameDrawsNoText and the parts' look tests; declarations only.
+
 ## 2026-10-24 22:44:11 EDT — scribe `c2bc2e93b7021bac1def983b74f73e41365c5bb9`
 docs(#962): the audit's first device measurement: build 130 on the iPad, 4 played lines at 0.2-12.3 s, the first line's 12.3 s taken apart (Playback's 3 s start row, 1.5 s App Group, two reads of 4 s and 3 s)
 
