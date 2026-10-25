@@ -1,3 +1,18 @@
+## 2026-10-25 04:44:25 EDT — #1149 step 1 on main: the launch 635 -> 370 MB allocated, a resident fact 457.5 B (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plans `9de7a73f`, `b6e0ab02`; red `a48fe943`, green `4c190959`; then this
+  ledger commit.
+- **Measured (Mac mini, release, fixture v3), E07's launch of 54,720 resident facts:** 3,244,330 -> 1,647,203
+  allocations, 635,296 -> 370,148 KB allocated, retained 29,993 -> 24,447 KB (561.3 -> 457.5 B a fact), live peak 44.7 ->
+  33.7 MB, wall 540.7 -> 402.4 ms. Since the audit: 579 MB -> 370 MB (#1149's criterion under 150 MB, not met) and 733.8
+  -> 457.5 B a fact (#1146's under 400 B, not met).
+- **Checks:** InstantFactRowsTests (4), InstantStartupTraceTests (7, the triples phase now `fact-columns`), 9 store suites
+  (426 tests): no new failure in the release run.
+- **Next (for whoever continues):** #1149: the launch's remaining cost (decoding every loaded result to find retained
+  entities, binding every retained id; the audit's design: compute them in SQL); #1146: not indexing the primary key in
+  the value map; #1147: the frame parse (about 2,300 of a refresh's 6,171 allocations), then the save's previous-facts
+  reads through the column reader; #1145 after #1165; #1144 and #1151 untouched.
+
 ## 2026-10-25 04:28:23 EDT — #1146 step 1 on main: a resident fact 733.8 -> 561.3 B (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plan amendment 15 `ad12b921`; red `9e300d59`, green `af0f729e`; then this ledger

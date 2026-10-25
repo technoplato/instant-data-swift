@@ -1,3 +1,15 @@
+## 2026-10-25 04:43:49 EDT — instant-data-swift `4c19095964d772829d1778cc0a3626be683113e7`
+Green (#1149, #1146): the launch reads resident facts from their columns, one id string per entity and attribute: E07 3,244,330 -> 1,647,203 allocations, 635,296 -> 370,148 KB, 561.3 -> 457.5 B a fact, 540.7 -> 402.4 ms (Mac mini, release).
+
+## 2026-10-25 04:43:49 EDT — instant-data-swift `a48fe9433b019f0999e749cd68fa2da4fb694586`
+Red (#1149, #1146): E07's launch over a 2.6 million-allocation, 540 B-a-fact budget (3,244,330; 561.3 B).
+
+## 2026-10-25 04:32:46 EDT — instant-data-swift `b6e0ab029583c09b4e0aa9d8152586cfb8795b00`
+Plan (#1149): claim the startup trace test's triples-phase expectations.
+
+## 2026-10-25 04:29:48 EDT — instant-data-swift `9de7a73f673647f00649588e24a6548f7ac8ac94`
+Plan (#1149, #1146): amendment 16: the launch's facts through the column reader, ids shared.
+
 ## 2026-10-25 04:40:16 EDT — scribe `8797e6fb19facb47830777134a9e5a934e54e619`
 Merge (#1084): screen-heat-1084 onto main for build 134: the durability lane leaves out its drain step while a save is in flight.
 

@@ -10,6 +10,30 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 4:44:25 a.m. EDT — `4c19095964d7` perf(#1149 #1146): green: the launch reads its resident facts from their columns, one id string per entity and attribute
+
+- **Implementation commit:** `4c19095964d772829d1778cc0a3626be683113e7`
+- **Change:** Perf (#1149, #1146): the launch reads its resident facts from their columns, one id string per entity and attribute
+- **Details:**
+  - loadStoreSnapshotWithoutTransaction reads through InstantFactRowReader; attribute ids interned by a byte hash. E07: 3,244,330 -> 1,647,203 allocations, 635,296 -> 370,148 KB, 561.3 -> 457.5 B retained a fact, 540.7 -> 402.4 ms.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — loadStateTriples; Sources/InstantSwiftDataCore/InstantFactRows.swift::attribute-id interning; Tests/InstantSwiftDataCoreTests/InstantStartupTraceTests.swift::fact-columns phase
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 4:44:24 a.m. EDT — `a48fe9433b01` test(#1149 #1146): red: E07's launch allocates 3,244,330 times and retains 561 B a resident fact
+
+- **Implementation commit:** `a48fe9433b019f0999e749cd68fa2da4fb694586`
+- **Change:** Test (#1149, #1146): red: E07's launch allocates 3,244,330 times and retains 561 B a resident fact
+- **Details:**
+  - E07 holds a launch budget (allocations, retained bytes a resident fact), tightened per step (Mac mini, release, fixture v3).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — E07's launch budget
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 4:28:23 a.m. EDT — `af0f729e5ff3` perf(#1146): green: a sharded set keeps one plain set until it holds more than 32 elements
 
 - **Implementation commit:** `af0f729e5ff301ee2e2c4e881c5056c3c8144ee1`
