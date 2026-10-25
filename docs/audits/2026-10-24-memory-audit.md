@@ -41,6 +41,21 @@ At the phone's write rate (213-238 facts a minute against the replay's 130) that
 17.9 MB per upload on main d937ce43); #1072's f83e9448 took it to 118 allocations and 31 KB, measured by the same
 exercise.
 
+## Fixed since the audit
+
+Each fix lands red then green on main; before and after come from the same exercise on the same day, Mac mini, release,
+fixture version 3 (phone shape), the before on main as it stood when the fix started.
+
+| Issue | Finding | Commits | Exercise | Before | After |
+| --- | --- | --- | --- | --- | --- |
+| #1152 | M13 | red `ccdbc47b`, green `33c5c042` | E04 final line on the 2,318-line recording vs a new recording | 7,255 vs 6,786 KB (+6.9%) | 6,636 vs 6,456 KB (+2.8%) |
+
+- **#1152:** a many-cardinality slot keeps its values in a `ShardedDictionary` (one plain dictionary up to 32 entries,
+  then 64 shards), so a line linked to a long recording copies one shard of the link set; `insert` writes a derived
+  index shape only when it changes. The cost test (`LinkSetWriteCostTests`, one thread, one line prepared on a copy):
+  256,368 -> 31,842 bytes at 2,318 links (a new recording 28,687), 177,736 -> 12,250 bytes at 2,283 attributes (equal
+  to 16).
+
 ## How it was measured
 
 **Exercises.** `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E00-E14, run only with

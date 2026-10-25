@@ -1,3 +1,12 @@
+## 2026-10-24 22:04:54 EDT — instant-data-swift `33c5c042bb5df00613f3701f78dc09e21f5b8bf8`
+perf(#1152): a line linked to a long recording copies one shard of its link set, not all of it, and no schema-sized map
+
+## 2026-10-24 22:04:54 EDT — instant-data-swift `ccdbc47be7f0230ca788fc115b72e62221e732df`
+test(#1152): red: a line linked to a long recording copies the recording's whole link set, and the schema-sized shape map
+
+## 2026-10-24 21:15:58 EDT — instant-data-swift `03129234fbf39cf51b906a7e65695ca2bd48a0d0`
+plan(#1075): fix-memory-1075 claims #1152's link-set copy (sharded collections' small mode, AttrSlot's many storage, insert's derived-shape write), then the memory fixes in order
+
 ## 2026-10-24 22:02:29 EDT — instant-data-swift `0b0650d946934500b30973e37a80baf57e20c724`
 Green (#1131, #1135): an observer's registration records itself under the operation gate and sends its add-query after it; a closed result is read and decoded before the gate. Over a 150 ms socket a registration held the gate p50 154 ms, now 0.13 ms (Mac mini, fixture v3).
 

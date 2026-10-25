@@ -1,3 +1,21 @@
+## 2026-10-24 22:06:03 EDT — #1152: a line linked to a long recording no longer copies the recording's link set (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plan `03129234`; red `ccdbc47b`, green `33c5c042` (rebased onto #1131's
+  `b63e7aeb`); then this ledger commit.
+- **What changed:** a many-cardinality slot keeps its values in a `ShardedDictionary` (one plain dictionary up to 32
+  entries, then 64 shards; one array, so the type stays one reference wide), and `insert` writes a derived index shape
+  only when it changes.
+- **Measured (Mac mini, release, fixture version 3, phone shape):** one line prepared on a copy of the indexes (one
+  thread): 2,318 links 256,368 -> 31,842 bytes against a new recording's 27,564 -> 28,687; 2,283 attributes 177,736 ->
+  12,250 bytes, equal to 16. E04, same-day before on main `8cfbbbd6`: final line 6,786 -> 6,456 KB, final line on the
+  2,318-line recording 7,255 -> 6,636 KB (+6.9% -> +2.8% over a new recording; #1152's criterion, within 5%, met).
+- **Checks:** the cost tests red then green; ShardedCollections, write scaling, membership cost, prepare copy cost and
+  entity write scope suites in release; whole core bundle (debug, mini) on the same tree before the rebase: 1,463 tests,
+  2 failing (`binaryCodecRemovesBase64AndJSONCPU`, listed; the memory replay smoke test, the diagnostics-hub flake
+  lib-audit-1072 reported on main, fixed next under #1075).
+- **Next:** the smoke test into the measurement pass; #1147 (a page refresh re-materializes the page) with an
+  allocation-site sampler (`MemoryAllocationSites`) to attribute its 23,555 allocations first.
+
 ## 2026-10-24 22:02:29 EDT — #1131: an observer's registration sends after the operation gate (part 1 of 2)
 
 - **Landed on main:** red `5a7edf91` (three focused tests in `InstantObserverRegistrationGateTests`), green `0b0650d9`.

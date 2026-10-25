@@ -10,6 +10,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 10:05:48 p.m. EDT — `33c5c042bb5d` perf(#1152): a line linked to a long recording copies one shard of its link set, not all of it, and no schema-sized map
+
+- **Implementation commit:** `33c5c042bb5df00613f3701f78dc09e21f5b8bf8`
+- **Change:** Perf (#1152): a line linked to a long recording copies one shard of its link set, not all of it, and no schema-sized map
+- **Details:**
+  - AttrSlot's many values live in a ShardedDictionary: one plain dictionary up to 32 entries, then 64 shards, one array either way so the type stays one reference wide. The insert path writes a derived index shape only when it changes. Unit: 2,318 links 256,368 -> 31,842 bytes (new recording 28,687); 2,283 attributes 177,736 -> 12,250 (equal to 16). E04 (fixture v3, phone shape, same-day before): final line 6,786 -> 6,456 KB, on the 2,318-line recording 7,255 -> 6,636 KB (+6.9% -> +2.8% over a new recording).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ShardedCollections.swift` — the dictionary's small mode, first, coding, order-independent hash
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — AttrSlot.many on a ShardedDictionary; insert's guarded shape write
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the rollback capture builds its restored many slot as one
+  - `Tests/InstantSwiftDataCoreTests/ShardedCollectionsTests.swift` — either form answers, compares, hashes and codes alike; one reference wide; a many slot codes as before
+  - `Tests/InstantSwiftDataCoreTests/LinkSetWriteCostTests.swift` — the copy guard's sizes around the threshold
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 10:05:47 p.m. EDT — `ccdbc47be7f0` test(#1152): red: a line linked to a long recording copies the recording's whole link set, and the schema-sized shape map
+
+- **Implementation commit:** `ccdbc47be7f0230ca788fc115b72e62221e732df`
+- **Change:** Test (#1152): red: a line linked to a long recording copies the recording's whole link set, and the schema-sized shape map
+- **Details:**
+  - One-thread allocation counts of one finished line prepared on a copy of the store's indexes (release, Mac mini): 256,368 bytes on a recording holding 2,318 lines against 27,564 on a new recording; 177,736 bytes with 2,283 attributes against 14,672 with 16. A guard test checks the copy gains the line and the original keeps what it held.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/LinkSetWriteCostTests.swift` — new: the cost tests and the copy guard
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 10:02:12 p.m. EDT — `0b0650d94693` fix(#1131): green: an observer's registration sends its add-query after the operation gate and reads its closed result before it
 
 - **Implementation commit:** `0b0650d946934500b30973e37a80baf57e20c724`
