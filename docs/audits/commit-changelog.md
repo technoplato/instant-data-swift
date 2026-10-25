@@ -1,3 +1,24 @@
+## 2026-10-25 13:04:50 EDT — scribe `f209dd48888a80b123bb6eb60115a0dce7f6db14`
+changelog(#1177): red 5dca08a49, green 8ae1bb9cc (a silent microphone keeps the audio session, then holds), docs d94e82b74
+
+## 2026-10-25 13:03:53 EDT — scribe `d32a25949494548b32af85b3a7d05b0a2f70e2bc`
+merge(#1177): main into the branch: What's New keeps #837's and #1177's Build 139 (next) stories under one heading; PROGRESS keeps both entries
+
+## 2026-10-25 13:02:42 EDT — scribe `d94e82b743472fcdf47061d52c8ce76f7b7f97eb`
+docs(#1177): ADR 0011's amendment (a silent microphone never makes Scribe release the session), the audit's trace and verification, What's New (Build 139 (next)), the audits index, PROGRESS
+
+## 2026-10-25 12:17:18 EDT — scribe `407a21666fb9f0da9c5272915fda49925c7dab19`
+plan(#1177): claims for RecordingTests.swift's silent-microphone test, the PROGRESS.md entry and the CHANGELOG.md entries; channel note (Build 139 (next), shared with #839)
+
+## 2026-10-25 12:15:16 EDT — scribe `8ae1bb9ccae728793ded9788d51a6f94e5f0687c`
+fix(#1177): green: a silent microphone keeps the audio session: one engine restart, then a listening hold shown as the microphone in use elsewhere
+
+## 2026-10-25 12:15:16 EDT — scribe `5dca08a493ecde8378e5a920c858b75eee6e5274`
+test(#1177): red: a silent microphone never releases the audio session; one engine restart on the kept session, then a listening hold shown as the microphone in use elsewhere
+
+## 2026-10-25 10:40:26 EDT — scribe `6a8d9d95c7fb4ebaeffeddc75cc4ca15edd0c082`
+plan(#1177): 2026-10-25-dictation-loop-1177, a silent microphone never releases the audio session; claims, channel note
+
 ## 2026-10-25 12:32:03 EDT — scribe `08db89f6342536222c9b2239a12d10f428955224`
 changelog(#1175): CHANGELOG entries for 13a4cb74c, 01f6c8ff2, fa57937d7; PROGRESS entry
 
