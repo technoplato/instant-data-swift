@@ -2,6 +2,7 @@
 // 2026-10-25  #1132  Created. connectionStatus(), observeConnectionStatus() and observeAuthSession() queued on the
 //                    operation gate for reads that need no exclusion: an auth observer's median wait was 1.7-10.7 s on
 //                    builds 121-126, and #1074's recording exercise measured connectionStatus() at 1,815 ms p99.
+// 2026-10-25  #1132  The gate-held reads' deadlines are 30 s: a loaded debug bundle runs a trivial test in 4.8 s.
 
 import Foundation
 import Testing
@@ -36,13 +37,15 @@ struct InstantStatusReadsOffTheGateTests {
     }
     try await held.waitUntilEntered(within: .seconds(10))
 
-    let status = await InstantObserverRegistrationGateTests.finishes(within: .seconds(2)) {
+    // 30 s, not 2: under a loaded debug bundle a trivial test took 4.8 s (1.9.42's check), and a read that waits for the
+    // gate never finishes while the holder holds it, so only a failure takes this long.
+    let status = await InstantObserverRegistrationGateTests.finishes(within: .seconds(30)) {
       _ = try await runtime.connectionStatus()
     }
-    let statusObservation = await InstantObserverRegistrationGateTests.finishes(within: .seconds(2)) {
+    let statusObservation = await InstantObserverRegistrationGateTests.finishes(within: .seconds(30)) {
       _ = try await runtime.observeConnectionStatus()
     }
-    let sessionObservation = await InstantObserverRegistrationGateTests.finishes(within: .seconds(2)) {
+    let sessionObservation = await InstantObserverRegistrationGateTests.finishes(within: .seconds(30)) {
       _ = try await runtime.observeAuthSession()
     }
     held.release()

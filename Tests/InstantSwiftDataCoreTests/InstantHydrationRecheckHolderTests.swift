@@ -3,6 +3,7 @@
 //                    unless the holder named what it writes, and only transact, the server apply's commit and a closed
 //                    result's reload did: on build 118 the re-check waited 5,282 ms behind holders that write no store
 //                    facts (plans, prunes, claims, the cache's VACUUM).
+// 2026-10-25  #1133  The hydrated emission's deadline is 30 s: a loaded debug bundle runs a trivial test in 4.8 s.
 
 import Foundation
 import Testing
@@ -112,8 +113,9 @@ struct InstantHydrationRecheckHolderTests {
   static let attributes = [idAttribute, titleAttribute, bodyAttribute]
 
   /// Observes a page whose body is read without the gate. When that read is done, starts `holder` and waits until it
-  /// pauses at `held`, holding the gate; then whether the hydrated emission arrives within 5 s, before `held` is
-  /// released.
+  /// pauses at `held`, holding the gate; then whether the hydrated emission arrives within 30 s (a loaded debug bundle
+  /// runs a trivial test in 4.8 s; a re-check that waits for the gate never ends while the holder holds it), before
+  /// `held` is released.
   static func hydratesWhileHeld(
     _ name: String,
     configure: (inout InstantRuntimeConfiguration) -> Void,
@@ -161,7 +163,7 @@ struct InstantHydrationRecheckHolderTests {
         return false
       }
       group.addTask {
-        try? await Task.sleep(for: .seconds(5))
+        try? await Task.sleep(for: .seconds(30))
         return false
       }
       let first = await group.next() ?? false

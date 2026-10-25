@@ -3,6 +3,7 @@
 //                    holding the operation gate: 58 holds and about 1 s of gate a minute in #1074's recording exercise,
 //                    holds of 1.2 s on a phone (build 121).
 // 2026-10-25  #1134  A read during a write's commit waits for it without the gate.
+// 2026-10-25  #1134  The gate-held read's deadline is 30 s: a loaded debug bundle missed 2 s (1.9.42's check).
 
 import Foundation
 import Testing
@@ -32,7 +33,9 @@ struct InstantOneShotReadGateTests {
     try await held.waitUntilEntered(within: .seconds(10))
 
     let rows = OneShotReadRows()
-    let read = await InstantObserverRegistrationGateTests.finishes(within: .seconds(2)) {
+    // 30 s, not 2: under a loaded debug bundle a trivial test took 4.8 s (1.9.42's check), and a read that waits for the
+    // gate never finishes while the holder holds it, so only a failure takes this long.
+    let read = await InstantObserverRegistrationGateTests.finishes(within: .seconds(30)) {
       rows.set(try await runtime.query(TodoExample.query).map(\.id))
     }
     held.release()
