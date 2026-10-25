@@ -1,3 +1,12 @@
+## 2026-10-25 00:12:28 EDT — scribe `4aaebbcf3811284794ddcfb5510ec72c992fb033`
+Merge (#412): the stamp's frozen-time test fix and the audit's merged-tree checks (24 of 24 on the merged tree).
+
+## 2026-10-25 00:12:28 EDT — scribe `cd0506944ff5361c4e2daf41110a0f99fefa4112`
+Docs (#412): audit section 8.5, the merged tree checked twice; PROGRESS's tests line.
+
+## 2026-10-25 00:12:28 EDT — scribe `da438cfa0d5f6bb5a0e0e07b0d2c4f05f43ca846`
+Test (#412): theRenderServerDrawsWhatSwiftUIsTextDrew reads each moment from the schedule the layers show (a case under load outlasted its 30 s schedule).
+
 ## 2026-10-25 00:04:53 EDT — instant-data-swift `7da3ad9d81a2e80b24bb1811b561b814fd8f47a3`
 Docs (#1131 #1129 #1152 #1147): the v1.9.39 release document.
 
