@@ -2633,6 +2633,7 @@ public final class InstantRuntime: Sendable {
       entityIDs.formUnion(policy.directEntityIDs(in: transaction))
       entityIDs.formUnion(try await store.resolvedMutationEntityIDs(in: transaction))
       if policy.requiresEntityDiscovery(in: transaction),
+        await mayChangeDeferredValuesItDoesNotName(transaction, policy: policy),
         let preview = try? await store.prepareCurrent(transaction)
       {
         entityIDs.formUnion(preview.result.changedEntityIDs)
@@ -2644,6 +2645,35 @@ public final class InstantRuntime: Sendable {
       attributeIDs: policy.attributeIDs,
       entityIDs: entityIDs
     )
+  }
+
+  /// Whether preparing `transaction` can change the deferred values of entities it does not name, so a throwaway prepare
+  /// must find them before the real one (#1153). Only a delete or a lookup can. A delete in a namespace whose delete
+  /// reaches no namespace holding a configured attribute cannot: Scribe's finished line deletes its `liveLines` row,
+  /// which links to nothing, and its preview found nothing to load while copying everything the real prepare copies.
+  private func mayChangeDeferredValuesItDoesNotName(
+    _ transaction: InstantStoreTransaction,
+    policy: InstantDeferredValueResidencyPolicy
+  ) async -> Bool {
+    let attributes = await store.preparationBase().attributes
+    var deferredNamespaces: Set<String> = []
+    for attributeID in policy.attributeIDs {
+      // A configured attribute the schema does not know could be anywhere.
+      guard let attribute = attributes.exactAttribute(id: attributeID) ?? attributes[attributeID] else { return true }
+      deferredNamespaces.insert(attribute.namespace)
+    }
+    for operation in transaction.operations {
+      switch operation {
+      case let .deleteEntityInNamespace(_, namespace):
+        if attributes.deleteCanReach(deferredNamespaces, from: namespace) { return true }
+      case .deleteEntity, .deleteEntityByLookup, .requireEntityMissingByLookup, .requireEntityExistsByLookup,
+        .mergeByLookup, .insertByLookup, .retractByLookup, .ruleParamsByLookup:
+        return true
+      case .requireEntityMissing, .requireEntityExists, .requireTripleExists, .merge, .insert, .retract, .ruleParams:
+        continue
+      }
+    }
+    return false
   }
 
   private static func monotonicOutboxTimestamp(
