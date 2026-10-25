@@ -1,3 +1,23 @@
+## 2026-10-25 00:04:53 EDT — instant-data-swift `7da3ad9d81a2e80b24bb1811b561b814fd8f47a3`
+Docs (#1131 #1129 #1152 #1147): the v1.9.39 release document.
+
+## 2026-10-25 00:04:53 EDT — instant-data-swift `e1ea434cccce88771f9c9cf964986608fd0653fe`
+Green (#1129): the cadence prune runs in a task of its own, after the frame applier let go of the refresh.
+
+## 2026-10-25 00:04:53 EDT — instant-data-swift `4278f2f87b19432290c9cecd0f5649b70983fae0`
+Red (#1129): a refresh that triggers the cadence prune waits for it, and so does the next frame.
+
+## 2026-10-25 00:04:53 EDT — instant-data-swift `821e592afda092449e961ad63b4999b8c19ef9ba`
+Green (#1131): the last observer leaving before its add-query went out sends it first, so the wire reads add then remove.
+
+## 2026-10-25 00:04:53 EDT — instant-data-swift `fb3bc4072e53d641296fc997a77a3cf10826c7ed`
+Red (#1131): an observation that ends before its owed add-query went out puts remove-query alone on the wire.
+
+## 2026-10-25 00:04:53 EDT — instant-data-swift `ffd14777e407598b46be6c9424481f319cf13f16`
+Green (#1131): a closed result loads back in bounded holds under a per-key registration lease; the $files registration's own hold 1,617 -> 24 ms.
+
+## 2026-10-25 00:04:53 EDT — instant-data-swift `d55e72fd0239203fde78c40a3484200c4e3fb0fd`
+Red (#1131): a closed result's reload commits in one hold of the operation gate, the size of the whole result.
 ## 2026-10-24 23:54:59 EDT — scribe `fd589599d6a9223f030bc2e22410fde081c8d81e`
 Merge (#1068) to main for build 132: the home screen shows recordings first: a drawer (Reminders, Speakers, Recently Deleted), the map and a Filter menu in the toolbar, Back to Live on the list only while the recording reads back; the iPad drawer sized from its column and the sidebar's title large.
 

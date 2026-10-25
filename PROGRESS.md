@@ -1,3 +1,22 @@
+## 2026-10-25 00:04:53 EDT — 1.9.39: observer registration and the cadence prune leave their holds; a page refresh costs less (release owner fix-gate-1074)
+
+- **Released:** v1.9.39, tagged on this ledger commit, built on main `ba733bd9` (last code commit `3e787d2d`); main has
+  moved since (fix-storage-1076's #1118 and #1124), so the tag sits on a release branch whose tree is `ba733bd9`'s code
+  plus the release document `7da3ad9d` and this ledger; both are cherry-picked onto main. Document:
+  `docs/releases/v1.9.39.md`.
+- **Carries:** #1131 (red `5a7edf91`, green `0b0650d9`; red `d55e72fd`, green `ffd14777`; red `fb3bc407`, green
+  `821e592a`), #1129's first slice (red `4278f2f8`, green `e1ea434c`), #1152 (`ccdbc47b`, `33c5c042`), #1147 steps 1-3
+  (`79707ad5`, `a9751099`, `63b65c80`, `553cb332`, `40280360`, `3e787d2d`), and `496ff990`, `a42ea364`, `bc7cf4a4`.
+- **Measured** (Mac mini, release, fixture v3; main `ed161097` before): a registration over a 150 ms socket holds the
+  gate p50 154.24 -> 0.11 ms; the `$files` list's registration 1,616.70 -> 23.74 ms, its reload in 38 holds of at most
+  78.77 ms; the refresh behind the cadence prune 1,723 -> 1,618 ms (it waits for the one `$files` batch now; #1129's
+  bounded batches are next). fix-memory-1075's: E04 +6.9% -> +2.8%; E03 22,769 -> 12,236 KB a 64-line refresh.
+- **Checks:** `RealSizeBudgetTests` in release on `ba733bd9` (13 known issues); the whole bundle in debug on `ba733bd9`
+  with known-failing compare: 1,478 tests, 3 failing (one listed; #1147's two cost tests, whose bounds hold only in
+  release, told to fix-memory-1075). At the ssh session's open-file limit of 256 the bundle failed 30 more tests with
+  "unable to open database file"; release runs on the mini need `ulimit -n 4096`.
+- **Next:** pin Scribe and Playback to 1.9.39 on Scribe's main; #1129's bounded batches and read-ahead decode (red
+  `c7a9f523` on `agent/claude/fix-gate-1074`), then #1128.
 ## 2026-10-24 23:55:00 EDT — #1118, #1124: the writer checkpoints every 4,000 frames; the live socket counts its bytes (fix-storage-1076)
 
 - **Landed on main:** plan `a12c5cd9`; #1118 red `bedd3104`, green `56538ac5`; #1124 plan `0182e9e1`, red `94b8747b`,
