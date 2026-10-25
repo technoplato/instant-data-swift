@@ -1,3 +1,18 @@
+## 2026-10-25 18:33:47 EDT — scribe `d33e3078607d32bfa5d950c2017f24fadc3d7906`
+Docs (#1097): landing B in the hot-paths audit's section 16 (the gate, the design, waves 5 and 6, the hypothesis), the Build 141 story, PROGRESS, ADR 0094's status; landed on main 98bd3191a for build 141.
+
+## 2026-10-25 17:27:52 EDT — scribe `87cd57b1a95bba1d14d254b4cbc8d8534daa8a56`
+Feat (#1097, ADR 0094): the mirror's meta.json length is the longer of the row's and the newest beat's, so scribe state stays current while the row is written once a minute; mirror suite 711/711 after merging main.
+
+## 2026-10-25 17:25:52 EDT — scribe `f4c879f7d1985f71db04917230adc57730aeeb61`
+Test (#1097): landing B in two list tests: a stored gap difference writes the take's duration with each gap write; landing A's publisher test reads a durable duration at 5 and a beat at 10.
+
+## 2026-10-25 16:05:52 EDT — scribe `0334ec000b979868e9edbe80908b7a966a4a35ec`
+Fix (#1097, ADR 0094): green: the row's duration at a take's first beat, each minute crossed and every capture gap change; the 5 s beats between are RecordingMetadataWrite.durationBeat (own lane key, no Instant write: the library returns before planning, not journaled, not in durationSaves), still the chunker's and the copy's heartbeat in lane order.
+
+## 2026-10-25 16:03:20 EDT — scribe `cff8fe1fd481621252db031e2a9bd5df1ece218f`
+Test (#1097): red: landing B's minute, late-tick, gap-change and beat tests (RecordingListDurableMinuteTests, RecordingDurationBeatTests).
+
 ## 2026-10-25 18:26:11 EDT — scribe `8aec8ffba1fe26115766df3ac6bd721476fb178a`
 Merge (#951, #961): the live recording and playback name every speaker from the shared rows only, for build 141 (ADR 0096 amendment B).
 
