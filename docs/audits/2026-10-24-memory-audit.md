@@ -49,12 +49,20 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
 | Issue | Finding | Commits | Exercise | Before | After |
 | --- | --- | --- | --- | --- | --- |
 | #1152 | M13 | red `ccdbc47b`, green `33c5c042` | E04 final line on the 2,318-line recording vs a new recording | 7,255 vs 6,786 KB (+6.9%) | 6,636 vs 6,456 KB (+2.8%) |
+| #1147 (steps 1-3) | M2, M9 | `79707ad5`/`a9751099`, `63b65c80`/`553cb332`, `40280360`/`3e787d2d` | E03 64-line refresh, one line changed | 23,947 allocations, 22,769 KB | 16,280 allocations, 12,236 KB |
 
 - **#1152:** a many-cardinality slot keeps its values in a `ShardedDictionary` (one plain dictionary up to 32 entries,
   then 64 shards), so a line linked to a long recording copies one shard of the link set; `insert` writes a derived
   index shape only when it changes. The cost test (`LinkSetWriteCostTests`, one thread, one line prepared on a copy):
   256,368 -> 31,842 bytes at 2,318 links (a new recording 28,687), 177,736 -> 12,250 bytes at 2,283 attributes (equal
   to 16).
+- **#1147, three steps so far** (criterion not met yet): the nested-limit pass takes a shortcut for a query with no nested
+  include (it built maps of the schema and the page twice per refresh, about 6.5 MB); hydration looks up only its
+  configured attributes (three groupings of the schema per emission); the frame parser sizes arrays once, reuses its
+  escape buffer and shares a frame's repeated ids (E01's 64-line frame 7,124 -> 2,339 allocations, the `$files`
+  answer 548,414 -> 160,779). An allocation-site recording (`MemorySiteExercises`) attributes what remains.
+- **Harness corrections (#1147):** the apply waiter no longer polls inside a counted pass, E04, E05, E09 and E10 build
+  each line before their passes, and one-thread cost tests take turns on the counter's tally.
 
 ## How it was measured
 

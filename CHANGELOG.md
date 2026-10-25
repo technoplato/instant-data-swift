@@ -10,6 +10,114 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 11:35:08 p.m. EDT — `3e787d2da21a` perf(#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy
+
+- **Implementation commit:** `3e787d2da21a7dd8fc4d0dec9d805f4606be126b`
+- **Change:** Perf (#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy
+- **Details:**
+  - 64-line refresh frame 7,126 -> 2,339 allocations; whole $files answer 548,414 -> 160,779 allocations (58.9 -> 27.8 MB); E03 64-line refresh 21,119 -> 16,280 allocations.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveJSONParser.swift` — the element stack, the escape buffer, shared short strings
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:07 p.m. EDT — `40280360f761` test(#1147): red: decoding a 64-line page's refresh frame allocates 111 times a line
+
+- **Implementation commit:** `40280360f76138e6925a13ae6c8fcdb95cccdeea`
+- **Change:** Test (#1147): red: decoding a 64-line page's refresh frame allocates 111 times a line
+- **Details:**
+  - One decode of a 64-line refresh frame: 7,126 allocations (release, Mac mini), as E01 measured.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RefreshCostTests.swift` — the frame decode cost test
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:07 p.m. EDT — `553cb332a99f` perf(#1147): hydrating a page's deferred text looks up only the configured attributes, not the whole schema
+
+- **Implementation commit:** `553cb332a99f6156656be50995d59fd2cc447822`
+- **Change:** Perf (#1147): hydrating a page's deferred text looks up only the configured attributes
+- **Details:**
+  - The policy finds its configured attributes in one pass over the schema and searches the selected fields instead of a set per row. E03 64-line refresh 16,384 -> 12,671 KB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/DeferredValueResidency.swift` — configured attributes only, no per-row set
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:06 p.m. EDT — `63b65c801ac9` test(#1147): red: hydrating a page's deferred text maps the whole schema three times per emission
+
+- **Implementation commit:** `63b65c801ac94117f003298b7f3025e1783d9eb0`
+- **Change:** Test (#1147): red: hydrating a page's deferred text maps the whole schema three times per emission
+- **Details:**
+  - One 64-row emission's hydration: 5,077,592 bytes with 2,283 attributes against 212,520 with 16 (release, Mac mini).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RefreshCostTests.swift` — the hydration cost test
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:06 p.m. EDT — `a42ea3640d6c` test(#1147): one-thread allocation counts take turns, so cost tests the bundle runs at once stop resetting each other
+
+- **Implementation commit:** `a42ea3640d6cb5dd64f2469f23df3a500d21e27e`
+- **Change:** Test (#1147): one-thread allocation counts take turns
+- **Details:**
+  - Cost tests that count their own thread shared one tally, so two measuring at once in a parallel bundle reset each other; a one-thread start now waits for the other's stop.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift` — RealSizeAllocations start and stop take a turn lock
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:05 p.m. EDT — `a9751099e68d` perf(#1147): a page with no nested include passes the nested-limit pass without maps of the schema or the page
+
+- **Implementation commit:** `a9751099e68d66c2c432a0d38337f918cfcc3d46`
+- **Change:** Perf (#1147): a page with no nested include passes the nested-limit pass without maps of the schema or the page
+- **Details:**
+  - A query whose nodes include nothing and whose rows fit their limits keeps its rows without the general pass's maps; the general pass looks attributes up only for the triples' ids and searches the schema once per include. E03 64-line refresh 22,769 -> 16,384 KB (Mac mini, release, fixture v3).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` — the shortcut, the triples' own attribute lookup, the general pass without schema maps
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:05 p.m. EDT — `79707ad52668` test(#1147): red: the nested-limit pass costs a page with no nested include 3.2 MB, maps of the whole schema and page
+
+- **Implementation commit:** `79707ad52668d0bab20eec3604dede3e072f2e6f`
+- **Change:** Test (#1147): red: the nested-limit pass costs a page with no nested include 3.2 MB
+- **Details:**
+  - One call on a 64-row page it keeps whole: 3,244,385 bytes with 2,283 attributes against 558,529 with 16 (release, Mac mini).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RefreshCostTests.swift` — new: the nested-limit cost test
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:05 p.m. EDT — `496ff990f300` test(#1147): the memory exercises' allocations by call site, and waits that no longer poll inside a counted pass
+
+- **Implementation commit:** `496ff990f30011ab40b842abae68d0495acec3ef`
+- **Change:** Test (#1147): the memory exercises' allocations by call site, and waits that no longer poll inside a counted pass
+- **Details:**
+  - MemoryAllocationSites records every allocation's return addresses through libmalloc's logger hook and names them with atos; MemorySiteExercises prints E03's refresh and E04's final line by call site. The apply waiter parks on continuations; E04, E05, E09 and E10 build each line before their counted passes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryAllocationSites.swift` — new: the allocation-site sampler
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:35:04 p.m. EDT — `bc7cf4a43219` test(#1075): the memory replay's smoke test runs in the measurement pass, alone
+
+- **Implementation commit:** `bc7cf4a43219f56b208cc9794ae7cdd5c4928e6c`
+- **Change:** Test (#1075): the memory replay's smoke test runs in the measurement pass, alone
+- **Details:**
+  - Its apply waiter listens on the process-wide diagnostics hub, which the bundle's parallel tests reconfigure; it timed out in whole-bundle runs and passed alone. .measurement runs it in the measurement pass.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryLongRunReplay.swift` — the smoke test's .measurement trait
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 10:05:48 p.m. EDT — `33c5c042bb5d` perf(#1152): a line linked to a long recording copies one shard of its link set, not all of it, and no schema-sized map
 
 - **Implementation commit:** `33c5c042bb5df00613f3701f78dc09e21f5b8bf8`

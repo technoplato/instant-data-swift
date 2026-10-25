@@ -1,3 +1,42 @@
+## 2026-10-24 23:33:52 EDT — instant-data-swift `3e787d2da21a7dd8fc4d0dec9d805f4606be126b`
+perf(#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy
+
+## 2026-10-24 23:33:52 EDT — instant-data-swift `40280360f76138e6925a13ae6c8fcdb95cccdeea`
+test(#1147): red: decoding a 64-line page's refresh frame allocates 111 times a line
+
+## 2026-10-24 23:20:39 EDT — instant-data-swift `13f9535e6de9bb90c74bd8ae6b1f0ddc0a298f39`
+plan(#1147): amendment 4 claims the frame parser: sized arrays, one escape buffer, a frame's repeated ids shared
+
+## 2026-10-24 23:18:59 EDT — instant-data-swift `553cb332a99f6156656be50995d59fd2cc447822`
+perf(#1147): hydrating a page's deferred text looks up only the configured attributes, not the whole schema
+
+## 2026-10-24 23:18:59 EDT — instant-data-swift `63b65c801ac94117f003298b7f3025e1783d9eb0`
+test(#1147): red: hydrating a page's deferred text maps the whole schema three times per emission
+
+## 2026-10-24 23:18:59 EDT — instant-data-swift `a42ea3640d6cb5dd64f2469f23df3a500d21e27e`
+test(#1147): one-thread allocation counts take turns, so cost tests the bundle runs at once stop resetting each other
+
+## 2026-10-24 23:18:59 EDT — instant-data-swift `df43f54e41c286ffe119b79747339fb32fdcdf34`
+plan(#1147): amendment 3 claims RealSizeAllocations' start and stop: one-thread counts take turns so parallel cost tests stop resetting each other
+
+## 2026-10-24 22:51:53 EDT — instant-data-swift `a9751099e68d66c2c432a0d38337f918cfcc3d46`
+perf(#1147): a page with no nested include passes the nested-limit pass without maps of the schema or the page
+
+## 2026-10-24 22:51:53 EDT — instant-data-swift `79707ad52668d0bab20eec3604dede3e072f2e6f`
+test(#1147): red: the nested-limit pass costs a page with no nested include 3.2 MB, maps of the whole schema and page
+
+## 2026-10-24 22:38:31 EDT — instant-data-swift `496ff990f30011ab40b842abae68d0495acec3ef`
+test(#1147): the memory exercises' allocations by call site, and waits that no longer poll inside a counted pass
+
+## 2026-10-24 22:38:31 EDT — instant-data-swift `f7ec91836e5d20186fe33bad03d3d6f03de6105f`
+plan(#1147): amendment 2 claims the nested-limit pass, the hydration's schema-wide maps, their cost tests and the memory harness's waits; asks fix-gate-1074 and fix-storage-1076 about the next two steps
+
+## 2026-10-24 22:08:12 EDT — instant-data-swift `bc7cf4a43219f56b208cc9794ae7cdd5c4928e6c`
+test(#1075): the memory replay's smoke test runs in the measurement pass, alone
+
+## 2026-10-24 22:07:41 EDT — instant-data-swift `b153f6ce182bfa12270178285312a1695dfa80d9`
+plan(#1075 #1147): amendment 1 claims the replay smoke test's move into the measurement pass and two test-only files that print each exercise's allocations by call site
+
 ## 2026-10-24 23:22:45 EDT — scribe `03f076bac120f7fe95fe3e90eaa58edd53744c07`
 Docs (#1077): the audit's dated section: #1154 part A, the exercises' gate, #1078 diagnosed on the Mac.
 

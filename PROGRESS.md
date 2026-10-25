@@ -1,3 +1,23 @@
+## 2026-10-24 23:35:30 EDT — #1147: a page refresh costs less of the page: three steps on main (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plan amendments `b153f6ce`, `f7ec9183`, `df43f54e`, `13f9535e`; harness and
+  allocation-site sampler `496ff990`; the smoke test into the measurement pass `bc7cf4a4` (#1075); one-thread counts
+  take turns `a42ea364`; step 1 (nested-limit pass) red `79707ad5`, green `a9751099`; step 2 (hydration's schema maps)
+  red `63b65c80`, green `553cb332`; step 3 (frame parser) red `40280360`, green `3e787d2d`; then this ledger commit.
+- **Measured (Mac mini, release, fixture version 3, same harness):** E03 64-line refresh with one line changed 23,947
+  -> 16,280 allocations and 22,769 -> 12,236 KB; 256 lines 85,831 -> 60,919 allocations, 49,434 -> 34,195 KB. Cost tests
+  (one thread): the nested-limit pass 3,244,385 B -> under 64 KB at 2,283 attributes; one hydration 5,077,592 B -> equal
+  at 2,283 and 16 attributes; a 64-line frame's decode 7,126 -> 2,339 allocations; the whole `$files` answer's decode
+  548,414 -> 160,779 allocations (58.9 -> 27.8 MB).
+- **Found on the way:** the one-thread allocation counter shared one tally, so cost tests measuring at once in a
+  parallel bundle reset each other (fixed); IssueReporting records Swift Testing issues only in debug builds, so two
+  `withKnownIssue` tests fail in any release build (pre-existing, told to the release owner).
+- **Open in #1147:** the classification's deferred-value loads and the persisted result's ownership diff (about 3,000
+  and 5,100 allocations of a refresh) wait on fix-storage-1076's answer about the fact rows (#1121, #1123); the emission
+  hydration's re-read of unchanged rows is next on my side. #1147's criterion (under 5,000 allocations and 4 MB) is
+  not met yet.
+- **Next:** #1145 (the hot store keeps every row written during a session) while fix-storage-1076 answers.
+
 ## 2026-10-24 22:06:03 EDT — #1152: a line linked to a long recording no longer copies the recording's link set (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plan `03129234`; red `ccdbc47b`, green `33c5c042` (rebased onto #1131's
