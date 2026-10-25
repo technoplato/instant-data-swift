@@ -192,3 +192,10 @@ scratch, discarded at a crash, and the journal holds only the pages a transactio
 - New `Tests/InstantSwiftDataCoreTests/InstantServerApplyTempJournalTests.swift`.
 - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (only if the test fails on main): `openRawConnection(fileURL:vfs:)`
   and `recordDurabilitySettings`.
+
+## Amendment 10 (2026-10-25 04:09 EDT, #1115 slice 2)
+
+The partial effect normalization index names `optimistic_effect_receipt_fingerprint` in its predicate, so the two test
+helpers that roll a store back to its shape before migration 0020 (they drop that column) must drop the index too, and
+put back the full one such a store had. Claimed: `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift`:
+`restorePreReceiptAuthorityOutboxSchema(cacheURL:)` and `restorePreServerApplyAndReceiptAuthorityOutboxSchema(cacheURL:)`.

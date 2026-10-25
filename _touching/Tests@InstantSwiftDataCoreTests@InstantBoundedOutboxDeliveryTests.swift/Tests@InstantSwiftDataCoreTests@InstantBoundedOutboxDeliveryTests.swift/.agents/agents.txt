@@ -20,3 +20,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:26:30-0400
 claude-opus-5.5-stale-writes 2026-09-30T00:50:43-04:00 grower plan=2026-09-29-stale-writes #113 #296
 claude-opus-5.5-fast-drain 2026-10-01T03:36:11-04:00 mower plan=2026-10-01-library-77 #303 test-race fixes
 claude-code-no-words-990-sync 2026-10-21T22:19:55-04:00 grower plan=2026-10-21-claim-lease-990 #990
+claude-code/fix-storage-1076@ld 2026-10-25T04:09:02-0400 mower plan=2026-10-24-fix-storage-1076 #1115 amendment 10 (two schema-rollback helpers)
