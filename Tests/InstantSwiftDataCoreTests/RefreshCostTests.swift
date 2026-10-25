@@ -12,7 +12,7 @@ import Testing
 // in the count.
 //
 // History:
-// - 2026-10-24: #1147: the nested-limit pass.
+// - 2026-10-24: #1147: the nested-limit pass: its cost, and its shortcut's equivalence with the general pass.
 
 @Suite
 struct RefreshCostTests {
@@ -39,6 +39,50 @@ struct RefreshCostTests {
       "The pass allocated \(withLarge) bytes with 2,283 attributes against \(withSmall) with 16."
     )
     #expect(withLarge <= 64 * 1_024, "The pass allocated \(withLarge) bytes for a 64-row page it keeps whole.")
+  }
+
+  /// Wherever the shortcut for queries with no nested include applies, it keeps exactly what the general pass keeps:
+  /// rows of other namespaces left out, links to rows outside the result dropped, rows past a limit sorted by the general
+  /// pass, attributes the schema does not declare named by their ids.
+  @Test(arguments: [UInt64(81_147), 81_148, 81_149, 81_150])
+  func theShortcutKeepsWhatTheGeneralPassKeeps(seed: UInt64) {
+    var random = InfiniteWindowRandom(seed: seed)
+    let attributes = Self.attributes(count: 40) + [
+      InstantAttribute(
+        id: "transcriptionSegments/links", namespace: "transcriptionSegments", name: "links", valueType: .ref,
+        isRequired: false, cardinality: .many, linkNamespace: "transcriptionSegments"
+      ),
+      InstantAttribute(
+        id: "server-attribute-7f3a", namespace: "transcriptionSegments", name: "opaque", valueType: .string
+      ),
+    ]
+    for round in 0..<200 {
+      var triples: [InstantTriple] = []
+      for row in 0..<random.int(0...12) {
+        let id = "line-\(random.int(0...15))"
+        triples.append(Self.triple(id, "transcriptionSegments/segmentIndex", .number(Double(random.int(0...9)))))
+        if random.chance(30) { triples.append(Self.triple(id, "transcriptionSegments/links", .ref("line-\(random.int(0...15))"))) }
+        if random.chance(20) { triples.append(Self.triple(id, "server-attribute-7f3a", .string("row \(row)"))) }
+        if random.chance(15) { triples.append(Self.triple("other-\(row)", "other/field-30", .string("elsewhere"))) }
+        if random.chance(10) { triples.append(Self.triple("unknown-\(row)", "undeclared/field", .string("?"))) }
+      }
+      let limit = random.chance(30) ? "" : #","limit":\#(random.int(0...10))"#
+      let otherNode = random.chance(25) ? #","other":{"$":{}}"# : ""
+      let key = #"{"transcriptionSegments":{"$":{"order":{"segmentIndex":"desc"}\#(limit)}}\#(otherNode)}"#
+      for queryKey in [key, "not-json", #"{"transcriptionSegments":{"$":{}},"x":1}"#] {
+        let label = "round \(round) key \(queryKey)"
+        expectNoDifference(
+          InstantLiveQueryNestedLimit.limitedTriples(queryKey: queryKey, triples: triples, attributes: attributes),
+          InstantLiveQueryNestedLimit.generalLimitedTriplesForTesting(queryKey: queryKey, triples: triples, attributes: attributes),
+          "\(label)"
+        )
+        expectNoDifference(
+          InstantLiveQueryNestedLimit.retainedEntityIDs(queryKey: queryKey, triples: triples, attributes: attributes),
+          InstantLiveQueryNestedLimit.generalRetainedEntityIDsForTesting(queryKey: queryKey, triples: triples, attributes: attributes),
+          "\(label)"
+        )
+      }
+    }
   }
 
   // MARK: - Helpers
