@@ -1,3 +1,22 @@
+## 2026-10-25 05:08:28 EDT — #1115 slice 2 landed: the outbox's rare-state indexes are partial (fix-storage-1076)
+
+- **Landed on main:** red `84a6195b`, green `12f487e1` (plan amendments 8 `4637c507` and 10 `4d8ca298`). Ready for 1.9.40.
+- **What:** the synchronization blocker, effect normalization and delivery metadata indexes hold only the rare rows
+  they find (literal versions; the queries they serve name the same predicates); each open rebuilds a full or
+  other-version one in a single transaction (`ensureRareStateIndexes()`), so a version bump needs no migration.
+- **Measured (laptop, Apple M1 Max, release; its run of the tree before matched the mini's):** `eachStepOfALiveWrite`
+  outbox frames per write 30.00 -> 23.00 (save 12 -> 9, ack 4 -> 3, echo 12 -> 9; #1115's criterion is at most 24),
+  all log frames 51.9 -> 44.9; the simulated hour's SQLite writes 1,157.8 -> 1,006.5 MB, full fsyncs 211 -> 184,
+  checkpoints 70 -> 61; the phone-shaped store's outbox frames 32.33 -> 24.93 per write.
+- **Checked (Mac mini, release):** the outbox suites and the bundle fail exactly what the red tree fails (the release
+  runner's known kinds) except the red test; a bundle-only allocation jump in `discardFailedMutation` (3,368 -> 7,973)
+  was other suites allocating in parallel: alone, both trees allocate 1,660 and green runs 2% fewer instructions.
+  After the rebase over 63 main commits the green was rerun (v1115): same failures; three new prints there are
+  fix-gate-1074's stale #1132 tests, also on the red tree.
+- **All fixes so far against main before them:** the hour's SQLite writes 1,577 -> 1,006.5 MB (-36%), full fsyncs
+  1,069 -> 184 (-83%), log frames per write 64.5 -> 44.9 (-30%), the store 68.0 -> 22.4 MB on the synthetic store.
+- **Next:** the final cleanup and report. Owner fix-storage-1076.
+
 ## 2026-10-25 04:47:14 EDT — #1132 on main: status and auth reads leave the operation gate; #1127 attributed (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 7 `dd0b1257`; red `21730c33`, green `de2388ec`; then this ledger.

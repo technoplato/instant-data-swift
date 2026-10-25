@@ -457,6 +457,7 @@ before (main) and after (the fix) in the same session; the raw lines are in
 | #1123 | a changing result's JSON written at most every 5 minutes, not 30 s (`ea51a8d8`) | `steps-btrees echo btree=instant_live_query_results framesPerWrite=3.90`; `walFrames=54.9`; hour `sqliteWrittenMB=1268.8 dbWrittenMB=82.8` | `1.00`; `51.9`; `1157.7`, `40.2` | landed; criterion (under 1) not met: each refresh's count and time update stays |
 | #1125 | a resumed stream append asks only for the unseen bytes, Range requests the server confirms (`76ef174a`) | a resume fetches every file whole (`InstantStreamFileTransportTests`: 10 bytes for 2 unseen) | 2 bytes | landed; not measured against a real server |
 | #1119 | measured; tests only (`375beb42`): the baseline's echo temp writes were the temporary database's rollback journal; on main no measured echo stages or writes a temporary file | `phone-shaped echo tempjournalWriteKB=222.3 tempjournalTruncates=2.324` (baseline tree with the temp kinds, laptop) | none: p1 (phone-shaped, mini); an echo with the next write saved and a backlog's first echo (t1119o, mini) | criterion met on main; the commit that stopped the staging is not identified; no source change |
+| #1115 slice 2 | the blocker, effect normalization and delivery metadata indexes partial on the rare states they find, their queries naming the same literal predicates (`12f487e1`) | laptop: `steps-outbox all outboxFramesPerWrite=30.00` (save 12, claim 2, ack 4, echo 12); `steps all walFrames=51.9`; hour `sqliteWrittenMB=1157.8 fullSyncs=211`; phone-shaped outbox `32.33` | `23.00` (save 9, claim 2, ack 3, echo 9); `44.9`; `1006.5`, `184`; `24.93` | landed; criterion (at most 24) met |
 | #1120 alone | the upsert on the old rowid table | `4.16`, `2.67`; echo `1.76`; `64.5` | `4.38`, `2.67`; echo `1.32`; `64.9` | not landed alone: the recording's hot rows sat on the table's last page under REPLACE |
 
 The simulated hour with #1118, #1115's slice 1 and #1121 together, against main before them (mini, synthetic store):
@@ -464,6 +465,8 @@ SQLite bytes 1,577 -> 1,269 MB (-20%), drive bytes 1,774 -> 1,281 MB (-28%), ful
 copies 159.8 -> 82.8 MB, the store's growth 12.0 -> 3.5 MB an hour, a power loss's reach 3 -> 13 lines.
 With #1123 as well: SQLite bytes 1,158 MB (-27% against main), drive bytes 1,170 MB (-34%), full fsyncs 211 (-80%),
 checkpoint copies 40.2 MB (-75%), log frames per write 51.9 (64.5 on main).
+With #1115's slice 2 as well (the laptop, whose run of the tree before it matched the mini's within 0.1 MB): SQLite
+bytes 1,006.5 MB (-36% against main's 1,577), full fsyncs 184 (-83% against 1,069), log frames per write 44.9 (64.5).
 
 What the power-loss reach means: `synchronous = NORMAL` syncs the log only at a checkpoint, so a power loss (not an app
 crash) can take the commits since the last one; the store opens consistent either way

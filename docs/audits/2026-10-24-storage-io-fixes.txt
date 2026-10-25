@@ -1345,3 +1345,436 @@ STORAGEIO phone-shaped file dbMB=458.95 walMB=0.03 pages=117491 freePages=65846 
 # Test run with 1 test in 1 suite passed after 0.178 seconds.
 # Test run with 1 test in 1 suite passed after 0.115 seconds.
 # Test run with 13 tests in 4 suites passed after 0.574 seconds.
+
+## run=x1115a: #1115 slice 2 before: laptop (Apple M1 Max, 64 GB, macOS 26.5.2, arm64e), release; tree 7bb3b789 = main 09a53121 plus the red test (landed as 67541522 after a rebase). Its source label read ca928227 at first: lane 2's same-build run took lane 1's newest label; the run used lane 2's 7bb3b789 build
+# source: 7bb3b789 measure (kept) STORAGEIO_EXERCISES=1
+# 2026-10-25 02:50:47 start 7bb3b789 measure (kept; label corrected from ca928227, lane 1) StorageIOExercises/eachStepOfALiveWrite StorageIOExercises/theStoreOverASimulatedHour StorageIOExercises/liveWritesOnThePhoneShapedStore
+# 2026-10-25 02:50:52 build exit 0
+# StorageIOExercises/eachStepOfALiveWrite exit 0 after 19 s unrecordedFailures=0
+# StorageIOExercises/theStoreOverASimulatedHour exit 0 after 605 s unrecordedFailures=0
+# StorageIOExercises/liveWritesOnThePhoneShapedStore exit 0 after 81 s unrecordedFailures=0
+# 2026-10-25 03:02:37 done
+STORAGEIO steps settings writes=300 lines=50 recordingLines=7000 pageLines=256 storeFacts=119893 seedSeconds=1
+STORAGEIO steps save count=300 dbWriteKB=3.0 dbWrites=0.8 dbSyncs=0.007 dbFullSyncs=0.007 dbSyncMs=0.011 dbTruncates=0.007 dbReadKB=0.1 walWriteKB=73.2 walWrites=18.2 walSyncs=0.010 walFullSyncs=0.010 walSyncMs=0.030 walTruncates=0.003 walReadKB=3.1 walFrames=18.2 walDistinctPages=0.4 checkpointPages=0.8 walRestarts=0.003 logicalKB=2.25 cpuMs=3.50
+STORAGEIO steps-calls save call=loadOutboxMutations transactions=1.00 pages=0.00
+STORAGEIO steps-calls save call=saveLocalMutation transactions=1.00 pages=18.20
+STORAGEIO steps claim count=300 dbWriteKB=0.0 dbWrites=0.0 dbSyncs=0.000 dbReadKB=0.0 walWriteKB=16.8 walWrites=4.2 walSyncs=0.007 walFullSyncs=0.007 walSyncMs=0.009 walTruncates=0.007 walFrames=4.2 walDistinctPages=0.3 checkpointPages=0.0 walRestarts=0.007 logicalKB=0.00 cpuMs=1.07
+STORAGEIO steps-calls claim call=claimAutomaticOutboxDeliveryWindow transactions=1.00 pages=4.17
+STORAGEIO steps ack count=300 dbWriteKB=1.5 dbWrites=0.4 dbSyncs=0.003 dbFullSyncs=0.003 dbSyncMs=0.007 dbTruncates=0.003 walWriteKB=28.8 walWrites=7.2 walSyncs=0.003 walFullSyncs=0.003 walSyncMs=0.014 walReadKB=1.5 walFrames=7.2 walDistinctPages=0.4 checkpointPages=0.4 walRestarts=0.000 logicalKB=0.00 cpuMs=0.61
+STORAGEIO steps-calls ack call=acceptOutboxMutation transactions=1.00 pages=7.17
+STORAGEIO steps echo count=300 dbWriteKB=2.7 dbWrites=0.7 dbSyncs=0.003 dbFullSyncs=0.003 dbSyncMs=0.008 dbTruncates=0.003 dbReadKB=0.3 walWriteKB=89.8 walWrites=22.3 walSyncs=0.007 walFullSyncs=0.007 walSyncMs=0.019 walTruncates=0.003 walReadKB=2.7 walFrames=22.3 walDistinctPages=0.5 checkpointPages=0.7 walRestarts=0.003 logicalKB=0.00 cpuMs=8.65
+STORAGEIO steps-calls echo call=beginServerApplyPlan transactions=1.00 pages=0.00
+STORAGEIO steps-calls echo call=commitServerApplyPlan transactions=1.00 pages=22.33
+STORAGEIO steps-calls echo call=extendServerApplyPlanWithAppendedLocalMutations transactions=1.00 pages=0.00
+STORAGEIO steps-calls echo call=finishServerApplyPlan transactions=1.00 pages=0.00
+STORAGEIO steps-calls echo call=loadServerApplyBodyPage transactions=2.00 pages=0.00
+STORAGEIO steps prune count=3 dbWriteKB=0.0 dbWrites=0.0 dbSyncs=0.000 dbReadKB=0.0 walFrames=0.0 walDistinctPages=0.0 checkpointPages=0.0 walRestarts=0.000 logicalKB=0.00 cpuMs=0.00
+STORAGEIO steps-calls prune call=liveQueryResultPruneBatch transactions=0.01 pages=0.00
+STORAGEIO steps all count=300 dbWriteKB=7.2 dbWrites=1.8 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.027 dbTruncates=0.013 dbReadKB=0.5 walWriteKB=208.7 walWrites=51.9 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.072 walTruncates=0.013 walReadKB=7.3 walFrames=51.9 walDistinctPages=0.7 checkpointPages=1.8 walRestarts=0.013 logicalKB=2.25 amplification=96.1 processLogicalWriteKB=217.7 processDiskWriteKB=228.7 cpuMs=51.23
+STORAGEIO steps wire sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=126.07 sentDeflatedKB=0.32 receivedDeflatedKB=13.51 escapedSlashBytes=903.2 refreshTriples=894.9 changedTriples=9.0
+STORAGEIO steps-btrees save btree=instant_triples framesPerWrite=2.82
+STORAGEIO steps-btrees save btree=(free or other) framesPerWrite=1.20
+STORAGEIO steps-btrees save btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_delivery_metadata_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_effect_entities framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_effect_entities_lookup_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_effect_normalization_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_global_effect_order_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_server_apply_watermark_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_synchronization_blocker_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_write_keys framesPerWrite=1.00
+STORAGEIO steps-reads save btree=instant_triples readKBPerWrite=0.1 distinctPages=6
+STORAGEIO steps-reads save btree=instant_triples_lookup readKBPerWrite=0.0 distinctPages=2
+STORAGEIO steps-outbox save outboxFramesPerWrite=12.00 framesPerWrite=18.20 outboxBtrees=12
+STORAGEIO steps-btrees claim btree=(free or other) framesPerWrite=1.04
+STORAGEIO steps-btrees claim btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees claim btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees claim btree=sqlite_schema framesPerWrite=0.67
+STORAGEIO steps-btrees claim btree=instant_live_query_triples framesPerWrite=0.24
+STORAGEIO steps-btrees claim btree=instant_live_query_triples_identity_idx framesPerWrite=0.21
+STORAGEIO steps-outbox claim outboxFramesPerWrite=2.00 framesPerWrite=4.17 outboxBtrees=2
+STORAGEIO steps-btrees ack btree=(free or other) framesPerWrite=1.05
+STORAGEIO steps-btrees ack btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_outbox_delivery_metadata_idx framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_outbox_server_apply_watermark_idx framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_sync_metadata framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=sqlite_schema framesPerWrite=0.67
+STORAGEIO steps-btrees ack btree=instant_live_query_triples framesPerWrite=0.23
+STORAGEIO steps-btrees ack btree=instant_live_query_triples_identity_idx framesPerWrite=0.21
+STORAGEIO steps-outbox ack outboxFramesPerWrite=4.00 framesPerWrite=7.17 outboxBtrees=4
+STORAGEIO steps-btrees echo btree=(free or other) framesPerWrite=3.27
+STORAGEIO steps-btrees echo btree=instant_live_query_triples_identity_idx framesPerWrite=2.77
+STORAGEIO steps-btrees echo btree=instant_live_query_triples framesPerWrite=1.61
+STORAGEIO steps-btrees echo btree=instant_live_query_results framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_delivery_metadata_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_effect_entities framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_effect_entities_lookup_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_effect_normalization_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_global_effect_order_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_server_apply_watermark_idx framesPerWrite=1.00
+STORAGEIO steps-reads echo btree=instant_live_query_results readKBPerWrite=0.2 distinctPages=15
+STORAGEIO steps-reads echo btree=instant_live_query_triples readKBPerWrite=0.0 distinctPages=3
+STORAGEIO steps-reads echo btree=instant_live_query_triples_identity_idx readKBPerWrite=0.0 distinctPages=3
+STORAGEIO steps-outbox echo outboxFramesPerWrite=12.00 framesPerWrite=22.33 outboxBtrees=12
+STORAGEIO steps-reads prune btree=instant_unloaded_live_query_results readKBPerWrite=0.0 distinctPages=1
+STORAGEIO steps-outbox prune outboxFramesPerWrite=0.00 framesPerWrite=0.00 outboxBtrees=0
+STORAGEIO steps-outbox all outboxFramesPerWrite=30.00 framesPerWrite=51.87 outboxBtrees=12
+STORAGEIO steps file dbMB=22.45 walMB=1.15 pages=5748 freePages=96 freeMB=0.38
+STORAGEIO steps-store btree btree=instant_triples pages=4970 unusedPct=9.9
+STORAGEIO steps-store btree btree=instant_live_query_results pages=224 unusedPct=0.2
+STORAGEIO steps-store btree btree=instant_triples_lookup pages=203 unusedPct=11.5
+STORAGEIO steps-store btree btree=instant_live_query_triples pages=89 unusedPct=14.1
+STORAGEIO steps-store btree btree=instant_live_query_triples_identity_idx pages=89 unusedPct=14.1
+STORAGEIO steps-store btree btree=sqlite_schema pages=6 unusedPct=34.5
+STORAGEIO steps-store btree btree=instant_attributes pages=4 unusedPct=37.7
+STORAGEIO steps-store btree btree=instant_application_persistence_migrations pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_auth_sessions pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_files pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_files_app_idx pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_local_ids pages=1 unusedPct=99.8
+STORAGEIO hour start minute=0 storeFacts=119008 dbMB=22.43 walMB=0.00 pages=5741 freePages=0 freeMB=0.00 walAutocheckpoint=4000
+STORAGEIO hour minute minute=5 writes=450 dbMB=22.45 walMB=13.47 pages=5748 freePages=46 freeMB=0.18 intervalWrites=450 dbWriteKB=5.8 dbWrites=1.4 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.039 dbTruncates=0.011 dbReadKB=13.4 walWriteKB=209.9 walWrites=52.2 walSyncs=0.024 walFullSyncs=0.024 walSyncMs=0.156 walTruncates=0.011 walReadKB=6.2 walFrames=52.2 walDistinctPages=0.6 checkpointPages=1.4 walRestarts=0.013 processLogicalWriteKB=217.4 processDiskWriteKB=192.6 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=137.22 sentDeflatedKB=0.32 receivedDeflatedKB=14.68 escapedSlashBytes=982.0 refreshTriples=973.7 changedTriples=9.0
+STORAGEIO hour minute minute=10 writes=900 dbMB=22.82 walMB=11.86 pages=5843 freePages=67 freeMB=0.26 intervalWrites=450 dbWriteKB=5.9 dbWrites=1.5 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.021 dbTruncates=0.013 dbReadKB=28.4 walWriteKB=211.4 walWrites=52.6 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.060 walTruncates=0.013 walReadKB=10.4 walFrames=52.5 walDistinctPages=0.8 checkpointPages=1.5 walRestarts=0.013 processLogicalWriteKB=219.5 processDiskWriteKB=215.9 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=216.83 sentDeflatedKB=0.32 receivedDeflatedKB=23.04 escapedSlashBytes=1544.5 refreshTriples=1536.2 changedTriples=9.0
+STORAGEIO hour minute minute=15 writes=1350 dbMB=23.78 walMB=11.75 pages=6087 freePages=401 freeMB=1.57 intervalWrites=450 dbWriteKB=11.3 dbWrites=2.8 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.030 dbTruncates=0.013 dbReadKB=191.0 walWriteKB=215.8 walWrites=53.7 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.062 walTruncates=0.013 walReadKB=31.0 walFrames=53.6 walDistinctPages=1.6 checkpointPages=2.8 walRestarts=0.013 processLogicalWriteKB=229.7 processDiskWriteKB=218.2 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=89.87 sentDeflatedKB=0.32 receivedDeflatedKB=9.73 escapedSlashBytes=647.8 refreshTriples=639.5 changedTriples=9.0
+STORAGEIO hour minute minute=20 writes=1800 dbMB=23.78 walMB=9.39 pages=6087 freePages=397 freeMB=1.55 intervalWrites=450 dbWriteKB=6.2 dbWrites=1.6 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.027 dbTruncates=0.013 dbReadKB=0.1 walWriteKB=209.7 walWrites=52.1 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.059 walTruncates=0.013 walReadKB=6.2 walFrames=52.1 walDistinctPages=0.9 checkpointPages=1.6 walRestarts=0.013 processLogicalWriteKB=217.8 processDiskWriteKB=228.1 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=104.26 sentDeflatedKB=0.32 receivedDeflatedKB=11.28 escapedSlashBytes=749.5 refreshTriples=741.2 changedTriples=9.0
+STORAGEIO hour minute minute=25 writes=2250 dbMB=23.78 walMB=8.02 pages=6087 freePages=175 freeMB=0.68 intervalWrites=450 dbWriteKB=7.9 dbWrites=2.0 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.037 dbTruncates=0.013 dbReadKB=0.4 walWriteKB=212.1 walWrites=52.7 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.077 walTruncates=0.013 walReadKB=8.0 walFrames=52.7 walDistinctPages=0.9 checkpointPages=2.0 walRestarts=0.013 processLogicalWriteKB=222.0 processDiskWriteKB=215.5 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=183.88 sentDeflatedKB=0.32 receivedDeflatedKB=19.64 escapedSlashBytes=1312.0 refreshTriples=1303.7 changedTriples=9.0
+STORAGEIO hour minute minute=30 writes=2700 dbMB=24.45 walMB=8.25 pages=6260 freePages=435 freeMB=1.70 intervalWrites=450 dbWriteKB=10.9 dbWrites=2.7 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.032 dbTruncates=0.013 dbReadKB=417.5 walWriteKB=215.4 walWrites=53.5 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.106 walTruncates=0.013 walReadKB=52.1 walFrames=53.5 walDistinctPages=1.5 checkpointPages=2.7 walRestarts=0.013 processLogicalWriteKB=228.5 processDiskWriteKB=219.6 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=169.28 sentDeflatedKB=0.32 receivedDeflatedKB=18.08 escapedSlashBytes=1208.9 refreshTriples=1200.6 changedTriples=9.0
+STORAGEIO hour minute minute=35 writes=3150 dbMB=24.45 walMB=5.76 pages=6260 freePages=435 freeMB=1.70 intervalWrites=450 dbWriteKB=6.0 dbWrites=1.5 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.054 dbTruncates=0.013 dbReadKB=0.0 walWriteKB=209.4 walWrites=52.1 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.188 walTruncates=0.013 walReadKB=6.0 walFrames=52.1 walDistinctPages=0.8 checkpointPages=1.5 walRestarts=0.013 processLogicalWriteKB=218.2 processDiskWriteKB=191.7 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=71.38 sentDeflatedKB=0.32 receivedDeflatedKB=7.85 escapedSlashBytes=517.0 refreshTriples=508.7 changedTriples=9.0
+STORAGEIO hour minute minute=40 writes=3600 dbMB=24.45 walMB=3.61 pages=6260 freePages=214 freeMB=0.84 intervalWrites=450 dbWriteKB=6.4 dbWrites=1.6 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.044 dbTruncates=0.013 dbReadKB=0.1 walWriteKB=210.3 walWrites=52.3 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.070 walTruncates=0.013 walReadKB=6.4 walFrames=52.3 walDistinctPages=0.9 checkpointPages=1.6 walRestarts=0.013 processLogicalWriteKB=221.9 processDiskWriteKB=174.8 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=151.00 sentDeflatedKB=0.32 receivedDeflatedKB=16.21 escapedSlashBytes=1079.5 refreshTriples=1071.2 changedTriples=9.0
+STORAGEIO hour minute minute=45 writes=4050 dbMB=24.48 walMB=1.81 pages=6271 freePages=4 freeMB=0.02 intervalWrites=450 dbWriteKB=6.5 dbWrites=1.6 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.025 dbTruncates=0.013 dbReadKB=209.3 walWriteKB=210.9 walWrites=52.4 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.092 walTruncates=0.013 walReadKB=25.0 walFrames=52.4 walDistinctPages=0.8 checkpointPages=1.6 walRestarts=0.013 processLogicalWriteKB=221.5 processDiskWriteKB=219.1 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=230.62 sentDeflatedKB=0.32 receivedDeflatedKB=24.55 escapedSlashBytes=1642.0 refreshTriples=1633.7 changedTriples=9.0
+STORAGEIO hour minute minute=50 writes=4500 dbMB=25.64 walMB=2.35 pages=6563 freePages=385 freeMB=1.50 intervalWrites=450 dbWriteKB=12.4 dbWrites=3.1 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.035 dbTruncates=0.013 dbReadKB=48.7 walWriteKB=216.1 walWrites=53.7 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.081 walTruncates=0.013 walReadKB=38.1 walFrames=53.7 walDistinctPages=1.6 checkpointPages=3.1 walRestarts=0.013 processLogicalWriteKB=232.3 processDiskWriteKB=229.8 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=56.62 sentDeflatedKB=0.32 receivedDeflatedKB=6.27 escapedSlashBytes=412.5 refreshTriples=404.2 changedTriples=9.0
+STORAGEIO hour minute minute=55 writes=4950 dbMB=25.64 walMB=0.67 pages=6563 freePages=379 freeMB=1.48 intervalWrites=450 dbWriteKB=6.6 dbWrites=1.6 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.029 dbTruncates=0.013 dbReadKB=0.1 walWriteKB=211.2 walWrites=52.5 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.064 walTruncates=0.013 walReadKB=6.6 walFrames=52.5 walDistinctPages=0.8 checkpointPages=1.6 walRestarts=0.013 processLogicalWriteKB=221.1 processDiskWriteKB=200.9 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=118.12 sentDeflatedKB=0.32 receivedDeflatedKB=12.73 escapedSlashBytes=847.0 refreshTriples=838.7 changedTriples=9.0
+STORAGEIO hour minute minute=60 writes=5400 dbMB=25.64 walMB=14.51 pages=6563 freePages=157 freeMB=0.61 intervalWrites=450 dbWriteKB=5.7 dbWrites=1.4 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.032 dbTruncates=0.011 dbReadKB=0.7 walWriteKB=210.7 walWrites=52.4 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.059 walTruncates=0.011 walReadKB=5.8 walFrames=52.4 walDistinctPages=0.9 checkpointPages=1.4 walRestarts=0.011 processLogicalWriteKB=219.5 processDiskWriteKB=178.8 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=197.74 sentDeflatedKB=0.32 receivedDeflatedKB=21.05 escapedSlashBytes=1409.5 refreshTriples=1401.2 changedTriples=9.0
+STORAGEIO hour total minutes=60 writes=5400 logicalMB=11.84 sqliteWrittenMB=1157.8 walWrittenMB=1117.5 dbWrittenMB=40.3 tempWrittenMB=0.0 transientWrittenMB=0.0 processLogicalWriteMB=1173.2 processDiskWriteMB=1092.0 amplification=97.8 syncs=211 fullSyncs=211 syncSeconds=0.67 walRestarts=71 checkpoints=70 powerLossReachLines=13 powerLossReachSeconds=52 fileGrowthMB=3.21 pagesEnd=6563 freePagesEnd=157 sentMB=6.08 receivedMB=758.85 storeFacts=134309 cpuSeconds=316.8
+STORAGEIO phone-shaped-prune line15 walFrames=13496 walWriteKB=54300.4 dbReadKB=86087.9 cpuMs=1136.07 applyLiveQueryResultPruneBatch=13431 applyReleasedLiveQueryResultFacts=65 liveQueryResultPruneBatch=0
+STORAGEIO phone-shaped-prune line30 walFrames=0 walWriteKB=0.0 dbReadKB=224.0 cpuMs=0.40 liveQueryResultPruneBatch=0
+STORAGEIO phone-shaped-prune line45 walFrames=0 walWriteKB=0.0 dbReadKB=0.0 cpuMs=0.27 liveQueryResultPruneBatch=0
+STORAGEIO phone-shaped settings writes=250 lines=50 shape=recordings:352,lines:8712,others:3400,files:9455,fileRecords:4264,refused:663,open:48,closed:355,attributes:2283 storeFacts=816 openSeconds=69
+STORAGEIO phone-shaped save count=250 dbWriteKB=3.6 dbWrites=0.9 dbSyncs=0.008 dbFullSyncs=0.008 dbSyncMs=0.030 dbTruncates=0.008 dbReadKB=0.7 walWriteKB=83.0 walWrites=20.6 walSyncs=0.012 walFullSyncs=0.012 walSyncMs=0.120 walTruncates=0.004 walReadKB=3.7 walFrames=20.6 walDistinctPages=0.6 checkpointPages=0.9 walRestarts=0.004 logicalKB=3.26 cpuMs=2.00
+STORAGEIO phone-shaped echo count=200 dbWriteKB=11.1 dbWrites=2.8 dbSyncs=0.004 dbFullSyncs=0.004 dbSyncMs=0.022 dbTruncates=0.004 dbReadKB=0.5 walWriteKB=86.8 walWrites=21.6 walSyncs=0.004 walFullSyncs=0.004 walSyncMs=0.014 walReadKB=11.1 walFrames=21.6 walDistinctPages=0.8 checkpointPages=2.8 walRestarts=0.000 logicalKB=0.00 cpuMs=6.40
+STORAGEIO phone-shaped prune count=3 dbWriteKB=136.8 dbWrites=34.2 dbSyncs=0.012 dbFullSyncs=0.012 dbSyncMs=0.242 dbTruncates=0.012 dbReadKB=345.2 walWriteKB=217.2 walWrites=54.0 walSyncs=0.024 walFullSyncs=0.024 walSyncMs=0.086 walTruncates=0.012 walReadKB=220.9 stmtjournalWriteKB=21.7 stmtjournalWrites=8.6 stmtjournalSyncs=0.000 walFrames=54.0 walDistinctPages=23.3 checkpointPages=34.2 walRestarts=0.012 logicalKB=0.00 cpuMs=4.55
+STORAGEIO phone-shaped deliver count=250 dbWriteKB=0.0 dbWrites=0.0 dbSyncs=0.000 dbReadKB=0.0 walWriteKB=41.9 walWrites=10.4 walSyncs=0.008 walFullSyncs=0.008 walSyncMs=0.009 walTruncates=0.008 walFrames=10.4 walDistinctPages=0.5 checkpointPages=0.0 walRestarts=0.004 logicalKB=0.00 cpuMs=2.25
+STORAGEIO phone-shaped all count=250 dbWriteKB=151.5 dbWrites=37.9 dbSyncs=0.024 dbFullSyncs=0.024 dbSyncMs=0.293 dbTruncates=0.024 dbReadKB=346.7 walWriteKB=450.4 walWrites=112.0 walSyncs=0.048 walFullSyncs=0.048 walSyncMs=0.228 walTruncates=0.024 walReadKB=235.7 stmtjournalWriteKB=21.7 stmtjournalWrites=8.6 stmtjournalSyncs=0.000 walFrames=111.9 walDistinctPages=23.6 checkpointPages=37.9 walRestarts=0.024 processLogicalWriteKB=629.9 processDiskWriteKB=708.7 cpuMs=24.86
+STORAGEIO phone-shaped-calls all call=acceptOutboxMutation transactions=1.00 pages=10.58
+STORAGEIO phone-shaped-calls all call=applyLiveQueryResultPruneBatch transactions=0.05 pages=53.72
+STORAGEIO phone-shaped-calls all call=applyReleasedLiveQueryResultFacts transactions=0.00 pages=0.26
+STORAGEIO phone-shaped-calls all call=beginServerApplyPlan transactions=0.80 pages=0.00
+STORAGEIO phone-shaped-calls all call=claimAutomaticOutboxDeliveryWindow transactions=2.00 pages=5.20
+STORAGEIO phone-shaped-calls all call=commitServerApplyPlan transactions=0.80 pages=21.56
+STORAGEIO phone-shaped-calls all call=extendServerApplyPlanWithAppendedLocalMutations transactions=0.80 pages=0.00
+STORAGEIO phone-shaped-calls all call=finishServerApplyPlan transactions=0.80 pages=0.00
+STORAGEIO phone-shaped-calls all call=liveQueryResultPruneBatch transactions=0.06 pages=0.00
+STORAGEIO phone-shaped-calls all call=loadOutboxMutations transactions=1.00 pages=0.00
+STORAGEIO phone-shaped-calls all call=loadServerApplyBodyPage transactions=1.60 pages=0.00
+STORAGEIO phone-shaped-calls all call=saveLocalMutation transactions=1.00 pages=20.62
+STORAGEIO phone-shaped-wire received-refresh-ok framesPerWrite=0.80 KBPerWrite=51.06 largestKB=123.0
+STORAGEIO phone-shaped-wire received-transact-ok framesPerWrite=1.00 KBPerWrite=0.10 largestKB=0.1
+STORAGEIO phone-shaped-wire sent-transact framesPerWrite=1.00 KBPerWrite=1.97 largestKB=2.6
+STORAGEIO phone-shaped-btrees all btree=(free or other) framesPerWrite=36.31
+STORAGEIO phone-shaped-btrees all btree=instant_unloaded_live_query_results framesPerWrite=27.92
+STORAGEIO phone-shaped-btrees all btree=instant_outbox framesPerWrite=4.27
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_write_keys_lookup_idx framesPerWrite=4.06
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_delivery_idx framesPerWrite=3.80
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_delivery_metadata_idx framesPerWrite=3.80
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_server_apply_watermark_idx framesPerWrite=3.80
+STORAGEIO phone-shaped-btrees all btree=instant_live_query_triples_identity_idx framesPerWrite=3.56
+STORAGEIO phone-shaped-btrees all btree=sqlite_schema framesPerWrite=3.25
+STORAGEIO phone-shaped-btrees all btree=instant_sync_metadata framesPerWrite=2.85
+STORAGEIO phone-shaped-btrees all btree=instant_triples framesPerWrite=2.69
+STORAGEIO phone-shaped-btrees all btree=instant_live_query_triples framesPerWrite=2.22
+STORAGEIO phone-shaped-reads save btree=instant_outbox_global_effect_order_idx readKBPerWrite=0.2 distinctPages=11
+STORAGEIO phone-shaped-reads save btree=instant_live_query_triples_identity_idx readKBPerWrite=0.1 distinctPages=4
+STORAGEIO phone-shaped-reads save btree=instant_outbox readKBPerWrite=0.0 distinctPages=3
+STORAGEIO phone-shaped-reads save btree=instant_outbox_write_keys readKBPerWrite=0.0 distinctPages=3
+STORAGEIO phone-shaped-reads save btree=instant_outbox_delivery_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads save btree=instant_outbox_delivery_metadata_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads save btree=instant_outbox_effect_normalization_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads save btree=instant_outbox_server_apply_watermark_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-outbox save outboxFramesPerWrite=13.29 framesPerWrite=20.62 outboxBtrees=12
+STORAGEIO phone-shaped-reads echo btree=instant_live_query_triples readKBPerWrite=0.1 distinctPages=8
+STORAGEIO phone-shaped-reads echo btree=sqlite_autoindex_instant_outbox_1 readKBPerWrite=0.1 distinctPages=7
+STORAGEIO phone-shaped-reads echo btree=(free or other) readKBPerWrite=0.1 distinctPages=6
+STORAGEIO phone-shaped-reads echo btree=instant_live_query_triples_identity_idx readKBPerWrite=0.0 distinctPages=3
+STORAGEIO phone-shaped-reads echo btree=instant_outbox readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads echo btree=instant_triples readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads echo btree=instant_outbox_server_apply_failed_idx readKBPerWrite=0.0 distinctPages=1
+STORAGEIO phone-shaped-outbox echo outboxFramesPerWrite=10.89 framesPerWrite=21.56 outboxBtrees=12
+STORAGEIO phone-shaped-reads prune btree=(free or other) readKBPerWrite=213.8 distinctPages=5728
+STORAGEIO phone-shaped-reads prune btree=instant_unloaded_live_query_results readKBPerWrite=126.5 distinctPages=2875
+STORAGEIO phone-shaped-reads prune btree=instant_live_query_triples_identity_idx readKBPerWrite=1.2 distinctPages=27
+STORAGEIO phone-shaped-reads prune btree=sqlite_autoindex_instant_sync_metadata_1 readKBPerWrite=1.1 distinctPages=1
+STORAGEIO phone-shaped-reads prune btree=instant_live_query_triples readKBPerWrite=1.0 distinctPages=31
+STORAGEIO phone-shaped-reads prune btree=instant_triples readKBPerWrite=0.7 distinctPages=33
+STORAGEIO phone-shaped-reads prune btree=sqlite_autoindex_instant_unloaded_live_query_results_1 readKBPerWrite=0.5 distinctPages=9
+STORAGEIO phone-shaped-reads prune btree=sqlite_autoindex_instant_live_query_results_1 readKBPerWrite=0.2 distinctPages=1
+STORAGEIO phone-shaped-outbox prune outboxFramesPerWrite=0.01 framesPerWrite=53.98 outboxBtrees=1
+STORAGEIO phone-shaped-reads deliver btree=instant_outbox_server_apply_watermark_idx readKBPerWrite=0.0 distinctPages=1
+STORAGEIO phone-shaped-outbox deliver outboxFramesPerWrite=5.92 framesPerWrite=10.41 outboxBtrees=5
+STORAGEIO phone-shaped-outbox all outboxFramesPerWrite=32.33 framesPerWrite=111.94 outboxBtrees=12
+STORAGEIO phone-shaped file dbMB=239.93 walMB=10.97 pages=61422 freePages=48680 freeMB=190.16 growthPages=0 freePagesStart=43084
+
+## run=x1115b: #1115 slice 2 after: laptop, release; tree f772e612 = the green before amendment 10's test-helper fix (the same library code as a2d647e4 and 49012032)
+# source: f772e612 measure (kept) STORAGEIO_EXERCISES=1
+# 2026-10-25 04:17:04 start f772e612 measure (kept) StorageIOExercises/eachStepOfALiveWrite StorageIOExercises/theStoreOverASimulatedHour StorageIOExercises/liveWritesOnThePhoneShapedStore
+# 2026-10-25 04:17:11 build exit 0
+# StorageIOExercises/eachStepOfALiveWrite exit 0 after 19 s unrecordedFailures=0
+# StorageIOExercises/theStoreOverASimulatedHour exit 0 after 346 s unrecordedFailures=0
+# StorageIOExercises/liveWritesOnThePhoneShapedStore exit 0 after 15 s unrecordedFailures=0
+# 2026-10-25 04:23:31 done
+STORAGEIO steps settings writes=300 lines=50 recordingLines=7000 pageLines=256 storeFacts=119893 seedSeconds=2
+STORAGEIO steps save count=300 dbWriteKB=1.4 dbWrites=0.3 dbSyncs=0.003 dbFullSyncs=0.003 dbSyncMs=0.005 dbTruncates=0.003 dbReadKB=0.1 walWriteKB=61.2 walWrites=15.2 walSyncs=0.007 walFullSyncs=0.007 walSyncMs=0.032 walTruncates=0.003 walReadKB=1.4 walFrames=15.2 walDistinctPages=0.4 checkpointPages=0.3 walRestarts=0.003 logicalKB=2.25 cpuMs=3.54
+STORAGEIO steps-calls save call=loadOutboxMutations transactions=1.00 pages=0.00
+STORAGEIO steps-calls save call=saveLocalMutation transactions=1.00 pages=15.20
+STORAGEIO steps claim count=300 dbWriteKB=1.6 dbWrites=0.4 dbSyncs=0.003 dbFullSyncs=0.003 dbSyncMs=0.012 dbTruncates=0.003 dbReadKB=0.0 walWriteKB=16.8 walWrites=4.2 walSyncs=0.007 walFullSyncs=0.007 walSyncMs=0.049 walTruncates=0.003 walReadKB=1.6 walFrames=4.2 walDistinctPages=0.3 checkpointPages=0.4 walRestarts=0.003 logicalKB=0.00 cpuMs=1.13
+STORAGEIO steps-calls claim call=claimAutomaticOutboxDeliveryWindow transactions=1.00 pages=4.17
+STORAGEIO steps ack count=300 dbWriteKB=0.0 dbWrites=0.0 dbSyncs=0.000 dbReadKB=0.0 walWriteKB=24.8 walWrites=6.2 walSyncs=0.003 walFullSyncs=0.003 walSyncMs=0.004 walTruncates=0.003 walFrames=6.2 walDistinctPages=0.4 checkpointPages=0.0 walRestarts=0.003 logicalKB=0.00 cpuMs=0.64
+STORAGEIO steps-calls ack call=acceptOutboxMutation transactions=1.00 pages=6.17
+STORAGEIO steps echo count=300 dbWriteKB=2.7 dbWrites=0.7 dbSyncs=0.003 dbFullSyncs=0.003 dbSyncMs=0.019 dbTruncates=0.003 dbReadKB=0.0 walWriteKB=77.8 walWrites=19.3 walSyncs=0.003 walFullSyncs=0.003 walSyncMs=0.024 walReadKB=2.7 walFrames=19.3 walDistinctPages=0.5 checkpointPages=0.7 walRestarts=0.000 logicalKB=0.00 cpuMs=8.80
+STORAGEIO steps-calls echo call=beginServerApplyPlan transactions=1.00 pages=0.00
+STORAGEIO steps-calls echo call=commitServerApplyPlan transactions=1.00 pages=19.33
+STORAGEIO steps-calls echo call=extendServerApplyPlanWithAppendedLocalMutations transactions=1.00 pages=0.00
+STORAGEIO steps-calls echo call=finishServerApplyPlan transactions=1.00 pages=0.00
+STORAGEIO steps-calls echo call=loadServerApplyBodyPage transactions=2.00 pages=0.00
+STORAGEIO steps prune count=3 dbWriteKB=0.0 dbWrites=0.0 dbSyncs=0.000 dbReadKB=0.0 walFrames=0.0 walDistinctPages=0.0 checkpointPages=0.0 walRestarts=0.000 logicalKB=0.00 cpuMs=0.00
+STORAGEIO steps-calls prune call=liveQueryResultPruneBatch transactions=0.01 pages=0.00
+STORAGEIO steps all count=300 dbWriteKB=5.7 dbWrites=1.4 dbSyncs=0.010 dbFullSyncs=0.010 dbSyncMs=0.035 dbTruncates=0.010 dbReadKB=0.2 walWriteKB=180.5 walWrites=44.9 walSyncs=0.020 walFullSyncs=0.020 walSyncMs=0.109 walTruncates=0.010 walReadKB=5.8 walFrames=44.9 walDistinctPages=0.7 checkpointPages=1.4 walRestarts=0.010 logicalKB=2.25 amplification=82.9 processLogicalWriteKB=188.6 processDiskWriteKB=196.2 cpuMs=51.83
+STORAGEIO steps wire sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=126.07 sentDeflatedKB=0.32 receivedDeflatedKB=13.51 escapedSlashBytes=903.2 refreshTriples=894.9 changedTriples=9.0
+STORAGEIO steps-btrees save btree=instant_triples framesPerWrite=2.82
+STORAGEIO steps-btrees save btree=(free or other) framesPerWrite=1.20
+STORAGEIO steps-btrees save btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_effect_entities framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_effect_entities_lookup_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_global_effect_order_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_server_apply_watermark_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_write_keys framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_outbox_write_keys_lookup_idx framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=instant_sync_metadata framesPerWrite=1.00
+STORAGEIO steps-btrees save btree=sqlite_autoindex_instant_outbox_1 framesPerWrite=1.00
+STORAGEIO steps-reads save btree=instant_triples readKBPerWrite=0.1 distinctPages=5
+STORAGEIO steps-reads save btree=instant_triples_lookup readKBPerWrite=0.0 distinctPages=2
+STORAGEIO steps-outbox save outboxFramesPerWrite=9.00 framesPerWrite=15.20 outboxBtrees=9
+STORAGEIO steps-btrees claim btree=(free or other) framesPerWrite=1.04
+STORAGEIO steps-btrees claim btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees claim btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees claim btree=sqlite_schema framesPerWrite=0.67
+STORAGEIO steps-btrees claim btree=instant_live_query_triples framesPerWrite=0.24
+STORAGEIO steps-btrees claim btree=instant_live_query_triples_identity_idx framesPerWrite=0.21
+STORAGEIO steps-outbox claim outboxFramesPerWrite=2.00 framesPerWrite=4.17 outboxBtrees=2
+STORAGEIO steps-btrees ack btree=(free or other) framesPerWrite=1.05
+STORAGEIO steps-btrees ack btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_outbox_server_apply_watermark_idx framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=instant_sync_metadata framesPerWrite=1.00
+STORAGEIO steps-btrees ack btree=sqlite_schema framesPerWrite=0.67
+STORAGEIO steps-btrees ack btree=instant_live_query_triples framesPerWrite=0.23
+STORAGEIO steps-btrees ack btree=instant_live_query_triples_identity_idx framesPerWrite=0.21
+STORAGEIO steps-outbox ack outboxFramesPerWrite=3.00 framesPerWrite=6.17 outboxBtrees=3
+STORAGEIO steps-btrees echo btree=(free or other) framesPerWrite=3.27
+STORAGEIO steps-btrees echo btree=instant_live_query_triples_identity_idx framesPerWrite=2.77
+STORAGEIO steps-btrees echo btree=instant_live_query_triples framesPerWrite=1.61
+STORAGEIO steps-btrees echo btree=instant_live_query_results framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_delivery_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_effect_entities framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_effect_entities_lookup_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_global_effect_order_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_server_apply_watermark_idx framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_write_keys framesPerWrite=1.00
+STORAGEIO steps-btrees echo btree=instant_outbox_write_keys_lookup_idx framesPerWrite=1.00
+STORAGEIO steps-reads echo btree=instant_live_query_triples_identity_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO steps-outbox echo outboxFramesPerWrite=9.00 framesPerWrite=19.33 outboxBtrees=9
+STORAGEIO steps-reads prune btree=instant_unloaded_live_query_results readKBPerWrite=0.0 distinctPages=1
+STORAGEIO steps-outbox prune outboxFramesPerWrite=0.00 framesPerWrite=0.00 outboxBtrees=0
+STORAGEIO steps-outbox all outboxFramesPerWrite=23.00 framesPerWrite=44.87 outboxBtrees=9
+STORAGEIO steps file dbMB=22.45 walMB=8.33 pages=5748 freePages=96 freeMB=0.38
+STORAGEIO steps-store btree btree=instant_triples pages=4970 unusedPct=9.9
+STORAGEIO steps-store btree btree=instant_live_query_results pages=224 unusedPct=0.2
+STORAGEIO steps-store btree btree=instant_triples_lookup pages=203 unusedPct=11.5
+STORAGEIO steps-store btree btree=instant_live_query_triples pages=89 unusedPct=14.1
+STORAGEIO steps-store btree btree=instant_live_query_triples_identity_idx pages=89 unusedPct=14.1
+STORAGEIO steps-store btree btree=sqlite_schema pages=6 unusedPct=33.6
+STORAGEIO steps-store btree btree=instant_attributes pages=4 unusedPct=37.7
+STORAGEIO steps-store btree btree=instant_application_persistence_migrations pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_auth_sessions pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_files pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_files_app_idx pages=1 unusedPct=99.8
+STORAGEIO steps-store btree btree=instant_local_ids pages=1 unusedPct=99.8
+STORAGEIO hour start minute=0 storeFacts=119008 dbMB=22.43 walMB=0.00 pages=5741 freePages=0 freeMB=0.00 walAutocheckpoint=4000
+STORAGEIO hour minute minute=5 writes=450 dbMB=22.45 walMB=1.17 pages=5748 freePages=46 freeMB=0.18 intervalWrites=450 dbWriteKB=5.9 dbWrites=1.5 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.039 dbTruncates=0.011 dbReadKB=13.4 walWriteKB=181.7 walWrites=45.2 walSyncs=0.024 walFullSyncs=0.024 walSyncMs=0.072 walTruncates=0.011 walReadKB=6.4 walFrames=45.2 walDistinctPages=0.6 checkpointPages=1.5 walRestarts=0.013 processLogicalWriteKB=189.8 processDiskWriteKB=180.3 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=137.22 sentDeflatedKB=0.32 receivedDeflatedKB=14.68 escapedSlashBytes=982.0 refreshTriples=973.7 changedTriples=9.0
+STORAGEIO hour minute minute=10 writes=900 dbMB=22.82 walMB=2.97 pages=5843 freePages=67 freeMB=0.26 intervalWrites=450 dbWriteKB=5.1 dbWrites=1.3 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.060 dbTruncates=0.011 dbReadKB=30.3 walWriteKB=183.2 walWrites=45.6 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.082 walTruncates=0.011 walReadKB=8.8 walFrames=45.5 walDistinctPages=0.8 checkpointPages=1.3 walRestarts=0.011 processLogicalWriteKB=190.6 processDiskWriteKB=172.0 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=216.83 sentDeflatedKB=0.32 receivedDeflatedKB=23.04 escapedSlashBytes=1544.5 refreshTriples=1536.2 changedTriples=9.0
+STORAGEIO hour minute minute=15 writes=1350 dbMB=23.78 walMB=6.77 pages=6087 freePages=401 freeMB=1.57 intervalWrites=450 dbWriteKB=11.5 dbWrites=2.9 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.021 dbTruncates=0.011 dbReadKB=162.4 walWriteKB=187.6 walWrites=46.6 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.052 walTruncates=0.011 walReadKB=61.5 walFrames=46.6 walDistinctPages=1.6 checkpointPages=2.9 walRestarts=0.011 processLogicalWriteKB=201.7 processDiskWriteKB=197.5 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=89.87 sentDeflatedKB=0.32 receivedDeflatedKB=9.73 escapedSlashBytes=647.8 refreshTriples=639.5 changedTriples=9.0
+STORAGEIO hour minute minute=20 writes=1800 dbMB=23.78 walMB=7.85 pages=6087 freePages=397 freeMB=1.55 intervalWrites=450 dbWriteKB=5.5 dbWrites=1.4 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.018 dbTruncates=0.011 dbReadKB=0.1 walWriteKB=181.5 walWrites=45.1 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.128 walTruncates=0.011 walReadKB=5.5 walFrames=45.1 walDistinctPages=0.9 checkpointPages=1.4 walRestarts=0.011 processLogicalWriteKB=189.2 processDiskWriteKB=179.2 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=104.26 sentDeflatedKB=0.32 receivedDeflatedKB=11.28 escapedSlashBytes=749.5 refreshTriples=741.2 changedTriples=9.0
+STORAGEIO hour minute minute=25 writes=2250 dbMB=23.78 walMB=9.98 pages=6087 freePages=175 freeMB=0.68 intervalWrites=450 dbWriteKB=7.1 dbWrites=1.8 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.022 dbTruncates=0.011 dbReadKB=0.5 walWriteKB=183.9 walWrites=45.7 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.103 walTruncates=0.011 walReadKB=7.1 walFrames=45.7 walDistinctPages=0.9 checkpointPages=1.8 walRestarts=0.011 processLogicalWriteKB=193.2 processDiskWriteKB=206.2 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=183.88 sentDeflatedKB=0.32 receivedDeflatedKB=19.64 escapedSlashBytes=1312.0 refreshTriples=1303.7 changedTriples=9.0
+STORAGEIO hour minute minute=30 writes=2700 dbMB=24.45 walMB=13.52 pages=6260 freePages=435 freeMB=1.70 intervalWrites=450 dbWriteKB=9.3 dbWrites=2.3 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.031 dbTruncates=0.011 dbReadKB=427.7 walWriteKB=187.2 walWrites=46.5 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.063 walTruncates=0.011 walReadKB=44.8 walFrames=46.5 walDistinctPages=1.5 checkpointPages=2.3 walRestarts=0.011 processLogicalWriteKB=199.2 processDiskWriteKB=180.8 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=169.28 sentDeflatedKB=0.32 receivedDeflatedKB=18.08 escapedSlashBytes=1208.9 refreshTriples=1200.6 changedTriples=9.0
+STORAGEIO hour minute minute=35 writes=3150 dbMB=24.45 walMB=14.43 pages=6260 freePages=435 freeMB=1.70 intervalWrites=450 dbWriteKB=5.3 dbWrites=1.3 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.038 dbTruncates=0.011 dbReadKB=0.1 walWriteKB=181.3 walWrites=45.1 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.073 walTruncates=0.011 walReadKB=5.3 walFrames=45.1 walDistinctPages=0.8 checkpointPages=1.3 walRestarts=0.011 processLogicalWriteKB=188.9 processDiskWriteKB=185.6 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=71.38 sentDeflatedKB=0.32 receivedDeflatedKB=7.85 escapedSlashBytes=517.0 refreshTriples=508.7 changedTriples=9.0
+STORAGEIO hour minute minute=40 writes=3600 dbMB=24.45 walMB=15.50 pages=6260 freePages=214 freeMB=0.84 intervalWrites=450 dbWriteKB=5.4 dbWrites=1.4 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.049 dbTruncates=0.011 dbReadKB=0.8 walWriteKB=182.1 walWrites=45.3 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.098 walTruncates=0.011 walReadKB=5.4 walFrames=45.3 walDistinctPages=0.9 checkpointPages=1.4 walRestarts=0.011 processLogicalWriteKB=191.1 processDiskWriteKB=173.3 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=151.00 sentDeflatedKB=0.32 receivedDeflatedKB=16.21 escapedSlashBytes=1079.5 refreshTriples=1071.2 changedTriples=9.0
+STORAGEIO hour minute minute=45 writes=4050 dbMB=24.48 walMB=1.42 pages=6271 freePages=4 freeMB=0.02 intervalWrites=450 dbWriteKB=6.9 dbWrites=1.7 dbSyncs=0.013 dbFullSyncs=0.013 dbSyncMs=0.031 dbTruncates=0.013 dbReadKB=212.1 walWriteKB=182.8 walWrites=45.4 walSyncs=0.027 walFullSyncs=0.027 walSyncMs=0.078 walTruncates=0.013 walReadKB=25.9 walFrames=45.4 walDistinctPages=0.8 checkpointPages=1.7 walRestarts=0.013 processLogicalWriteKB=192.6 processDiskWriteKB=195.6 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=230.62 sentDeflatedKB=0.32 receivedDeflatedKB=24.55 escapedSlashBytes=1642.0 refreshTriples=1633.7 changedTriples=9.0
+STORAGEIO hour minute minute=50 writes=4500 dbMB=25.64 walMB=5.23 pages=6563 freePages=385 freeMB=1.50 intervalWrites=450 dbWriteKB=11.7 dbWrites=2.9 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.025 dbTruncates=0.011 dbReadKB=46.8 walWriteKB=187.9 walWrites=46.7 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.057 walTruncates=0.011 walReadKB=42.0 walFrames=46.7 walDistinctPages=1.7 checkpointPages=2.9 walRestarts=0.011 processLogicalWriteKB=202.8 processDiskWriteKB=198.2 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=56.62 sentDeflatedKB=0.32 receivedDeflatedKB=6.27 escapedSlashBytes=412.5 refreshTriples=404.2 changedTriples=9.0
+STORAGEIO hour minute minute=55 writes=4950 dbMB=25.64 walMB=6.92 pages=6563 freePages=379 freeMB=1.48 intervalWrites=450 dbWriteKB=5.8 dbWrites=1.4 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.071 dbTruncates=0.011 dbReadKB=0.0 walWriteKB=183.0 walWrites=45.5 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.119 walTruncates=0.011 walReadKB=5.8 walFrames=45.5 walDistinctPages=0.8 checkpointPages=1.4 walRestarts=0.011 processLogicalWriteKB=191.2 processDiskWriteKB=173.5 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=118.12 sentDeflatedKB=0.32 receivedDeflatedKB=12.73 escapedSlashBytes=847.0 refreshTriples=838.7 changedTriples=9.0
+STORAGEIO hour minute minute=60 writes=5400 dbMB=25.64 walMB=8.35 pages=6563 freePages=157 freeMB=0.61 intervalWrites=450 dbWriteKB=6.0 dbWrites=1.5 dbSyncs=0.011 dbFullSyncs=0.011 dbSyncMs=0.044 dbTruncates=0.011 dbReadKB=0.5 walWriteKB=182.5 walWrites=45.4 walSyncs=0.022 walFullSyncs=0.022 walSyncMs=0.113 walTruncates=0.011 walReadKB=6.1 walFrames=45.4 walDistinctPages=1.0 checkpointPages=1.5 walRestarts=0.011 processLogicalWriteKB=191.3 processDiskWriteKB=199.7 sentFrames=1.00 sentKB=1.15 receivedFrames=2.00 receivedKB=197.74 sentDeflatedKB=0.32 receivedDeflatedKB=21.05 escapedSlashBytes=1409.5 refreshTriples=1401.2 changedTriples=9.0
+STORAGEIO hour total minutes=60 writes=5400 logicalMB=11.84 sqliteWrittenMB=1006.5 walWrittenMB=968.9 dbWrittenMB=37.6 tempWrittenMB=0.0 transientWrittenMB=0.0 processLogicalWriteMB=1020.4 processDiskWriteMB=985.3 amplification=85.0 syncs=184 fullSyncs=184 syncSeconds=0.67 walRestarts=62 checkpoints=61 powerLossReachLines=15 powerLossReachSeconds=60 fileGrowthMB=3.21 pagesEnd=6563 freePagesEnd=157 sentMB=6.08 receivedMB=758.85 storeFacts=134309 cpuSeconds=311.1
+STORAGEIO phone-shaped-prune line15 walFrames=13498 walWriteKB=54308.5 dbReadKB=85755.9 cpuMs=1124.17 applyLiveQueryResultPruneBatch=13433 applyReleasedLiveQueryResultFacts=65 liveQueryResultPruneBatch=0
+STORAGEIO phone-shaped-prune line30 walFrames=0 walWriteKB=0.0 dbReadKB=224.0 cpuMs=0.40 liveQueryResultPruneBatch=0
+STORAGEIO phone-shaped-prune line45 walFrames=0 walWriteKB=0.0 dbReadKB=0.0 cpuMs=0.26 liveQueryResultPruneBatch=0
+STORAGEIO phone-shaped settings writes=250 lines=50 shape=recordings:352,lines:8712,others:3400,files:9455,fileRecords:4264,refused:663,open:48,closed:355,attributes:2283 storeFacts=816 openSeconds=1
+STORAGEIO phone-shaped save count=250 dbWriteKB=0.0 dbWrites=0.0 dbSyncs=0.000 dbReadKB=0.6 walWriteKB=70.9 walWrites=17.6 walSyncs=0.008 walFullSyncs=0.008 walSyncMs=0.009 walTruncates=0.008 walReadKB=0.0 walFrames=17.6 walDistinctPages=0.6 checkpointPages=0.0 walRestarts=0.008 logicalKB=3.26 cpuMs=1.73
+STORAGEIO phone-shaped echo count=200 dbWriteKB=2.2 dbWrites=0.6 dbSyncs=0.004 dbFullSyncs=0.004 dbSyncMs=0.020 dbTruncates=0.004 dbReadKB=0.5 walWriteKB=77.1 walWrites=19.2 walSyncs=0.004 walFullSyncs=0.004 walSyncMs=0.010 walReadKB=2.3 walFrames=19.2 walDistinctPages=0.8 checkpointPages=0.6 walRestarts=0.000 logicalKB=0.00 cpuMs=6.14
+STORAGEIO phone-shaped prune count=3 dbWriteKB=136.3 dbWrites=34.1 dbSyncs=0.012 dbFullSyncs=0.012 dbSyncMs=0.191 dbTruncates=0.012 dbReadKB=343.9 walWriteKB=217.2 walWrites=54.0 walSyncs=0.024 walFullSyncs=0.024 walSyncMs=0.045 walTruncates=0.012 walReadKB=220.9 stmtjournalWriteKB=22.1 stmtjournalWrites=8.8 stmtjournalSyncs=0.000 walFrames=54.0 walDistinctPages=23.1 checkpointPages=34.1 walRestarts=0.012 logicalKB=0.00 cpuMs=4.50
+STORAGEIO phone-shaped deliver count=250 dbWriteKB=12.8 dbWrites=3.2 dbSyncs=0.008 dbFullSyncs=0.008 dbSyncMs=0.032 dbTruncates=0.008 dbReadKB=0.0 walWriteKB=41.2 walWrites=10.3 walSyncs=0.012 walFullSyncs=0.012 walSyncMs=0.065 walTruncates=0.004 walReadKB=12.8 walFrames=10.3 walDistinctPages=0.6 checkpointPages=3.2 walRestarts=0.004 logicalKB=0.00 cpuMs=2.69
+STORAGEIO phone-shaped all count=250 dbWriteKB=151.3 dbWrites=37.8 dbSyncs=0.024 dbFullSyncs=0.024 dbSyncMs=0.242 dbTruncates=0.024 dbReadKB=345.2 walWriteKB=420.7 walWrites=104.6 walSyncs=0.048 walFullSyncs=0.048 walSyncMs=0.129 walTruncates=0.024 walReadKB=236.0 stmtjournalWriteKB=22.1 stmtjournalWrites=8.8 stmtjournalSyncs=0.000 walFrames=104.6 walDistinctPages=23.5 checkpointPages=37.8 walRestarts=0.024 processLogicalWriteKB=600.4 processDiskWriteKB=650.0 cpuMs=21.76
+STORAGEIO phone-shaped-calls all call=acceptOutboxMutation transactions=1.00 pages=8.58
+STORAGEIO phone-shaped-calls all call=applyLiveQueryResultPruneBatch transactions=0.05 pages=53.73
+STORAGEIO phone-shaped-calls all call=applyReleasedLiveQueryResultFacts transactions=0.00 pages=0.26
+STORAGEIO phone-shaped-calls all call=beginServerApplyPlan transactions=0.80 pages=0.00
+STORAGEIO phone-shaped-calls all call=claimAutomaticOutboxDeliveryWindow transactions=2.00 pages=5.20
+STORAGEIO phone-shaped-calls all call=commitServerApplyPlan transactions=0.80 pages=19.16
+STORAGEIO phone-shaped-calls all call=extendServerApplyPlanWithAppendedLocalMutations transactions=0.80 pages=0.00
+STORAGEIO phone-shaped-calls all call=finishServerApplyPlan transactions=0.80 pages=0.00
+STORAGEIO phone-shaped-calls all call=liveQueryResultPruneBatch transactions=0.06 pages=0.00
+STORAGEIO phone-shaped-calls all call=loadOutboxMutations transactions=1.00 pages=0.00
+STORAGEIO phone-shaped-calls all call=loadServerApplyBodyPage transactions=1.60 pages=0.00
+STORAGEIO phone-shaped-calls all call=saveLocalMutation transactions=1.00 pages=17.62
+STORAGEIO phone-shaped-wire received-refresh-ok framesPerWrite=0.80 KBPerWrite=51.06 largestKB=123.0
+STORAGEIO phone-shaped-wire received-transact-ok framesPerWrite=1.00 KBPerWrite=0.10 largestKB=0.1
+STORAGEIO phone-shaped-wire sent-transact framesPerWrite=1.00 KBPerWrite=1.97 largestKB=2.6
+STORAGEIO phone-shaped-btrees all btree=(free or other) framesPerWrite=36.83
+STORAGEIO phone-shaped-btrees all btree=instant_unloaded_live_query_results framesPerWrite=27.43
+STORAGEIO phone-shaped-btrees all btree=instant_outbox framesPerWrite=4.27
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_write_keys_lookup_idx framesPerWrite=4.06
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_delivery_idx framesPerWrite=3.80
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_server_apply_watermark_idx framesPerWrite=3.80
+STORAGEIO phone-shaped-btrees all btree=instant_live_query_triples_identity_idx framesPerWrite=3.54
+STORAGEIO phone-shaped-btrees all btree=sqlite_schema framesPerWrite=3.25
+STORAGEIO phone-shaped-btrees all btree=instant_sync_metadata framesPerWrite=2.85
+STORAGEIO phone-shaped-btrees all btree=instant_triples framesPerWrite=2.69
+STORAGEIO phone-shaped-btrees all btree=instant_live_query_triples framesPerWrite=2.22
+STORAGEIO phone-shaped-btrees all btree=instant_outbox_effect_entities framesPerWrite=1.80
+STORAGEIO phone-shaped-reads save btree=instant_outbox_global_effect_order_idx readKBPerWrite=0.2 distinctPages=11
+STORAGEIO phone-shaped-reads save btree=instant_live_query_triples_identity_idx readKBPerWrite=0.1 distinctPages=4
+STORAGEIO phone-shaped-reads save btree=instant_outbox readKBPerWrite=0.0 distinctPages=3
+STORAGEIO phone-shaped-reads save btree=instant_outbox_write_keys readKBPerWrite=0.0 distinctPages=3
+STORAGEIO phone-shaped-reads save btree=instant_outbox_delivery_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads save btree=instant_outbox_server_apply_watermark_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads save btree=instant_outbox_write_keys_lookup_idx readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads save btree=sqlite_autoindex_instant_outbox_1 readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-outbox save outboxFramesPerWrite=10.29 framesPerWrite=17.62 outboxBtrees=9
+STORAGEIO phone-shaped-reads echo btree=instant_live_query_triples readKBPerWrite=0.1 distinctPages=8
+STORAGEIO phone-shaped-reads echo btree=sqlite_autoindex_instant_outbox_1 readKBPerWrite=0.1 distinctPages=7
+STORAGEIO phone-shaped-reads echo btree=(free or other) readKBPerWrite=0.1 distinctPages=6
+STORAGEIO phone-shaped-reads echo btree=instant_live_query_triples_identity_idx readKBPerWrite=0.0 distinctPages=3
+STORAGEIO phone-shaped-reads echo btree=instant_outbox readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads echo btree=instant_triples readKBPerWrite=0.0 distinctPages=2
+STORAGEIO phone-shaped-reads echo btree=instant_outbox_effect_normalization_idx readKBPerWrite=0.0 distinctPages=1
+STORAGEIO phone-shaped-reads echo btree=instant_outbox_server_apply_failed_idx readKBPerWrite=0.0 distinctPages=1
+STORAGEIO phone-shaped-outbox echo outboxFramesPerWrite=8.49 framesPerWrite=19.16 outboxBtrees=9
+STORAGEIO phone-shaped-reads prune btree=(free or other) readKBPerWrite=213.1 distinctPages=5727
+STORAGEIO phone-shaped-reads prune btree=instant_unloaded_live_query_results readKBPerWrite=126.0 distinctPages=2876
+STORAGEIO phone-shaped-reads prune btree=instant_live_query_triples_identity_idx readKBPerWrite=1.2 distinctPages=27
+STORAGEIO phone-shaped-reads prune btree=sqlite_autoindex_instant_sync_metadata_1 readKBPerWrite=1.1 distinctPages=1
+STORAGEIO phone-shaped-reads prune btree=instant_live_query_triples readKBPerWrite=0.9 distinctPages=31
+STORAGEIO phone-shaped-reads prune btree=instant_triples readKBPerWrite=0.7 distinctPages=33
+STORAGEIO phone-shaped-reads prune btree=sqlite_autoindex_instant_unloaded_live_query_results_1 readKBPerWrite=0.5 distinctPages=9
+STORAGEIO phone-shaped-reads prune btree=sqlite_autoindex_instant_live_query_results_1 readKBPerWrite=0.2 distinctPages=1
+STORAGEIO phone-shaped-outbox prune outboxFramesPerWrite=0.01 framesPerWrite=53.99 outboxBtrees=1
+STORAGEIO phone-shaped-reads deliver btree=instant_outbox_server_apply_watermark_idx readKBPerWrite=0.0 distinctPages=1
+STORAGEIO phone-shaped-outbox deliver outboxFramesPerWrite=4.65 framesPerWrite=10.25 outboxBtrees=4
+STORAGEIO phone-shaped-outbox all outboxFramesPerWrite=24.93 framesPerWrite=104.55 outboxBtrees=9
+STORAGEIO phone-shaped file dbMB=239.93 walMB=5.92 pages=61422 freePages=48722 freeMB=190.32 growthPages=0 freePagesStart=43126
+
+## run=r1115b: #1115 slice 2's red: laptop, release, 7bb3b789 (landed as 84a6195b)
+# 2026-10-25 02:34:01 start 7bb3b789 measure StorageIOExercises/aLiveWriteWritesNoRareStateIndex StorageIOExercises/aWritesOutboxRowsWriteNoBTreeTwice
+# 2026-10-25 02:45:15 build exit 0
+# StorageIOExercises/aLiveWriteWritesNoRareStateIndex exit 0 after 1 s unrecordedFailures=1
+# StorageIOExercises/aWritesOutboxRowsWriteNoBTreeTwice exit 1 after 0 s unrecordedFailures=0
+# 2026-10-25 02:45:16 done
+
+## run=mini-1115: #1115 slice 2's suites, bundles and budgets on the Mac mini, release (summaries; the failing-test lists of red and green match, except the red test)
+# run fbr: 7bb3b789 measure 
+# 2026-10-25 04:10:00 start 7bb3b789 measure  free=23G InstantBoundedOutboxDeliveryTests InstantOutbox|InstantServerApply|InstantMutation|InstantSynchronization|InstantFailedMutation
+# 2026-10-25 04:15:10 build exit 0 free=23G
+# InstantBoundedOutboxDeliveryTests exit 1 after 20 s unrecordedFailures=11 load=5.33
+# InstantOutbox|InstantServerApply|InstantMutation|InstantSynchronization|InstantFailedMutation exit 1 after 23 s unrecordedFailures=15 load=4.89
+# 2026-10-25 04:15:53 done
+# failed: Test run with 63 tests in 1 suite failed after 19.108 seconds with 12 issues.
+# failed: Test run with 129 tests in 15 suites failed after 23.396 seconds with 7 issues.
+# run fbg: a2d647e4 measure 
+# 2026-10-25 04:16:01 start a2d647e4 measure  free=23G InstantBoundedOutboxDeliveryTests InstantOutbox|InstantServerApply|InstantMutation|InstantSynchronization|InstantFailedMutation StorageIOExercises/aLiveWriteWritesNoRareStateIndex StorageIOExercises/aWritesOutboxRowsWriteNoBTreeTwice InstantOutboxRareStateIndexTests
+# 2026-10-25 04:21:27 build exit 0 free=23G
+# InstantBoundedOutboxDeliveryTests exit 1 after 20 s unrecordedFailures=11 load=5.48
+# InstantOutbox|InstantServerApply|InstantMutation|InstantSynchronization|InstantFailedMutation exit 1 after 24 s unrecordedFailures=14 load=5.54
+# StorageIOExercises/aLiveWriteWritesNoRareStateIndex exit 0 after 0 s unrecordedFailures=0 load=5.54
+# StorageIOExercises/aWritesOutboxRowsWriteNoBTreeTwice exit 0 after 0 s unrecordedFailures=0 load=5.54
+# InstantOutboxRareStateIndexTests exit 0 after 0 s unrecordedFailures=0 load=5.54
+# 2026-10-25 04:22:11 done
+# failed: Test run with 63 tests in 1 suite failed after 19.174 seconds with 12 issues.
+# failed: Test run with 132 tests in 16 suites failed after 23.717 seconds with 6 issues.
+# ok: Test run with 1 test in 1 suite passed after 0.146 seconds.
+# ok: Test run with 1 test in 1 suite passed after 0.141 seconds.
+# ok: Test run with 3 tests in 1 suite passed after 0.024 seconds.
+# run u1115r: 7bb3b789 measure 
+# 2026-10-25 04:28:50 start 7bb3b789 measure  free=23G InstantSwiftDataCoreTests
+# 2026-10-25 04:34:05 build exit 0 free=23G
+# InstantSwiftDataCoreTests exit 1 after 342 s unrecordedFailures=35 load=6.00
+# 2026-10-25 04:39:47 done
+# failed: Test run with 1504 tests in 165 suites failed after 341.492 seconds with 182 issues (including 21 known issues).
+# run u1115g: a2d647e4 measure  (kept) 
+# 2026-10-25 04:23:01 start a2d647e4 measure  (kept)  free=23G InstantSwiftDataCoreTests
+# 2026-10-25 04:23:05 build exit 0 free=23G
+# InstantSwiftDataCoreTests exit 1 after 340 s unrecordedFailures=34 load=2.92
+# 2026-10-25 04:28:45 done
+# failed: Test run with 1507 tests in 166 suites failed after 339.716 seconds with 184 issues (including 23 known issues).
+# run br1115: 7bb3b789 measure  (kept) 
+# 2026-10-25 04:41:22 start 7bb3b789 measure  (kept)  free=22G RealSizeBudgetTests RealSizeBudgetTests
+# 2026-10-25 04:41:25 build exit 0 free=22G
+# RealSizeBudgetTests exit 0 after 9 s unrecordedFailures=0 load=7.70
+# RealSizeBudgetTests exit 0 after 8 s unrecordedFailures=0 load=7.27
+# 2026-10-25 04:41:42 done
+# ━ Test run with 1 test in 1 suite passed after 8.318 seconds with 13 known issues.
+# ━ Test run with 1 test in 1 suite passed after 8.096 seconds with 13 known issues.
+# run bg1115: a2d647e4 measure 
+# 2026-10-25 04:41:46 start a2d647e4 measure  free=22G RealSizeBudgetTests RealSizeBudgetTests
+# 2026-10-25 04:47:14 build exit 0 free=23G
+# RealSizeBudgetTests exit 0 after 8 s unrecordedFailures=0 load=3.95
+# RealSizeBudgetTests exit 0 after 8 s unrecordedFailures=0 load=3.95
+# 2026-10-25 04:47:30 done
+# ━ Test run with 1 test in 1 suite passed after 7.924 seconds with 13 known issues.
+# ━ Test run with 1 test in 1 suite passed after 7.850 seconds with 13 known issues.
+# run v1115: 49012032 measure 
+# 2026-10-25 04:48:32 start 49012032 measure  free=23G StorageIOExercises/aLiveWriteWritesNoRareStateIndex StorageIOExercises/aWritesOutboxRowsWriteNoBTreeTwice InstantOutboxRareStateIndexTests InstantBoundedOutboxDeliveryTests InstantOutbox|InstantServerApply|InstantMutation|InstantSynchronization|InstantFailedMutation InstantSwiftDataCoreTests
+# 2026-10-25 04:54:06 build exit 0 free=23G
+# StorageIOExercises/aLiveWriteWritesNoRareStateIndex exit 0 after 0 s unrecordedFailures=0 load=7.26
+# StorageIOExercises/aWritesOutboxRowsWriteNoBTreeTwice exit 0 after 1 s unrecordedFailures=0 load=7.26
+# InstantOutboxRareStateIndexTests exit 0 after 0 s unrecordedFailures=0 load=7.26
+# InstantBoundedOutboxDeliveryTests exit 1 after 18 s unrecordedFailures=11 load=5.77
+# InstantOutbox|InstantServerApply|InstantMutation|InstantSynchronization|InstantFailedMutation exit 1 after 22 s unrecordedFailures=14 load=4.84
+# InstantSwiftDataCoreTests exit 1 after 339 s unrecordedFailures=39 load=2.35
+# 2026-10-25 05:00:26 done
+# ok: Test run with 1 test in 1 suite passed after 0.147 seconds.
+# ok: Test run with 1 test in 1 suite passed after 0.127 seconds.
+# ok: Test run with 3 tests in 1 suite passed after 0.024 seconds.
+# failed: Test run with 63 tests in 1 suite failed after 18.069 seconds with 11 issues.
+# failed: Test run with 135 tests in 16 suites failed after 21.776 seconds with 6 issues.
+# failed: Test run with 1520 tests in 168 suites failed after 339.042 seconds with 184 issues (including 22 known issues).
+# run a1115r: 67541522 measure 
+# 2026-10-25 05:01:20 start 67541522 measure  free=22G BenchmarkTests InstantCrossSDKRuntimeBenchmarkTests InstantStoreTests
+# 2026-10-25 05:06:37 build exit 0 free=22G
+# BenchmarkTests exit 0 after 6 s unrecordedFailures=4 load=4.48
+# InstantCrossSDKRuntimeBenchmarkTests exit 0 after 0 s unrecordedFailures=2 load=4.48
+# InstantStoreTests exit 1 after 9 s unrecordedFailures=6 load=7.07
+# 2026-10-25 05:06:52 done
+# ok: Test run with 6 tests in 3 suites passed after 5.238 seconds.
+# ok: Test run with 3 tests in 1 suite passed after 0.160 seconds.
+# failed: Test run with 379 tests in 1 suite failed after 8.787 seconds with 116 issues (including 1 known issue).
+# discardFailedMutation at the phone size, the budget suite alone:
+# br1115 phone op=discardFailedMutation n=3 wallMs=0.35 wallMaxMs=0.37 cpuMs=0.36 instructionsM=5.96 allocations=1660
+# br1115 phone op=discardFailedMutation n=3 wallMs=0.35 wallMaxMs=0.37 cpuMs=0.35 instructionsM=5.99 allocations=1660
+# bg1115 phone op=discardFailedMutation n=3 wallMs=0.34 wallMaxMs=0.35 cpuMs=0.34 instructionsM=5.84 allocations=1660
+# bg1115 phone op=discardFailedMutation n=3 wallMs=0.33 wallMaxMs=0.35 cpuMs=0.33 instructionsM=5.83 allocations=1660
+# discardFailedMutation at the phone size, in the bundles:
+# u1115r phone op=discardFailedMutation n=3 wallMs=0.40 wallMaxMs=0.42 cpuMs=1.62 instructionsM=19.10 allocations=3368
+# u1115g phone op=discardFailedMutation n=3 wallMs=0.37 wallMaxMs=0.39 cpuMs=1.50 instructionsM=23.50 allocations=7973

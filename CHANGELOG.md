@@ -10,6 +10,36 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 5:07:42 a.m. EDT — `12f487e137c0` perf(#1115): green: the outbox's rare-state indexes are partial on the states they find, so a live write writes none of them
+
+- **Implementation commit:** `12f487e137c0918c4c75a402da4636a13c586600`
+- **Change:** perf(#1115): green: the outbox's rare-state indexes are partial on the states they find, so a live write writes none of them
+- **Details:**
+  - The three indexes are partial on exactly their states, with the versions as literals; the queries they serve (the claim's candidate read and continuation check, the reduction's checks, the two unknown-effect reads) name the same predicates, and on a schema-only copy of the phone's store every query that uses them keeps its plan.
+  - Each open puts them in place as defined (ensureRareStateIndexes(): full, missing or other-version indexes rebuilt in one transaction), so a version bump needs no migration. Measured on the laptop (release): outbox frames per write 30.00 -> 23.00, all log frames 51.9 -> 44.9, the simulated hour's SQLite writes 1,157.8 -> 1,006.5 MB, full fsyncs 211 -> 184; the bundle's failures match the red tree's on the Mac mini.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the partial index definitions, ensureRareStateIndexes(), the literal predicates in the queries they serve
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — currentVersion's note
+  - `Sources/InstantSwiftDataCore/InstantOptimisticEffectFootprint.swift` — currentVersion's note
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxRareStateIndexTests.swift` — definitions, the rebuild from older indexes, the plans (new)
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — the two pre-0020 rollback helpers put migration 0014's full normalization index back
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 5:07:41 a.m. EDT — `84a6195b886f` test(#1115): red: a live write's save, acknowledgement and echo write all three rare-state indexes, 30 outbox frames per write
+
+- **Implementation commit:** `84a6195b886f358fbd19a097dd3cbff3d3415ddc`
+- **Change:** test(#1115): red: a live write's save, acknowledgement and echo write all three rare-state indexes, 30 outbox frames per write
+- **Details:**
+  - A live write is saved at the current versions with its receipt, so the synchronization blocker, effect normalization and delivery metadata indexes never return it, yet as full indexes they held it: 7 of the outbox's 30 frames per write on eachStepOfALiveWrite (laptop and Mac mini alike).
+  - The new test asks that a live write writes none of them; the existing one now asks for #1115's criterion, at most 24 outbox frames per write; both share OutboxBTreeFrames.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` — the rare-state test, the bound 30 -> 24, the shared measurement
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 4:47:14 a.m. EDT — `de2388ec6d1d` fix(#1132): green: connectionStatus, observeConnectionStatus and observeAuthSession answer without the operation gate
 
 - **Implementation commit:** `de2388ec6d1d2d27f2991d4ac90a01533e5c828e`

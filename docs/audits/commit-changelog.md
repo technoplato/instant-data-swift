@@ -1,3 +1,9 @@
+## 2026-10-25 05:07:22 EDT — instant-data-swift `12f487e137c0918c4c75a402da4636a13c586600`
+Green (#1115 slice 2): the outbox's synchronization blocker, effect normalization and delivery metadata indexes are partial on the rare states they find, so a live write writes none of them: outbox frames per write 30.00 -> 23.00 (criterion at most 24), all log frames 51.9 -> 44.9, the simulated hour's SQLite writes 1,157.8 -> 1,006.5 MB and full fsyncs 211 -> 184 (laptop, release).
+
+## 2026-10-25 05:07:22 EDT — instant-data-swift `84a6195b886f358fbd19a097dd3cbff3d3415ddc`
+Red (#1115 slice 2): a live write's save, acknowledgement and echo write all three rare-state indexes, 30 outbox frames per write.
+
 ## 2026-10-25 05:02:56 EDT — scribe `230aa58f2`
 Cut Scribe 0.1 (134) and Scribe Playback 0.1 (134) from main 59638fbfa: instant-data-swift exactly 1.9.40, #1078, #1084, #1154 fix 1 (#1167).
 
@@ -108,6 +114,9 @@ Plan (#1145): claim the two-hour replay's test for #1145's criterion.
 
 ## 2026-10-25 02:52:55 EDT — instant-data-swift `18416b6d3ff4a4b3f4ba24e10241d689ecbdd097`
 Plan (#1145): amendment 13: the residency sweep's files and functions (inactive since amendment 14).
+
+## 2026-10-25 04:09:03 EDT — instant-data-swift `4d8ca2981409f1c135fbc81af6bdfecc6a3ea230`
+Plan (#1115): amendment 10 claims the two pre-0020 schema-rollback helpers the partial normalization index affects.
 
 ## 2026-10-25 03:56:41 EDT — instant-data-swift `375beb425efad9a32a17f05236496183bd099899`
 Test (#1119): an echo with the next write already saved, and a backlog's first echo, write no temporary file on main (guards). At the audit's baseline the echo's 222 KB of temp writes were all the temporary database's rollback journal; on main no measured case stages or writes one, so the temporary-journal change is not made.
