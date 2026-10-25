@@ -1,3 +1,24 @@
+## 2026-10-25 00:12:18 EDT — instant-data-swift `c9403d9e0a8631439e27eb507c9a2df488112d67`
+Green (#1121, #1120): each fact is stored once, keyed by the fact itself (WITHOUT ROWID), its json computed when read; a re-saved fact is upserted in place. On a scratch copy of the phone's store, 174,817 facts 127.1 -> 40.7 MB, every fact identical; the save's fact frames 6.82 -> 2.87 per write (Mac mini, synthetic store).
+
+## 2026-10-25 00:09:16 EDT — instant-data-swift `8e237559df90551d38bf2e6b0774c8ff4d0ef654`
+Red (#1121, #1120): the fact table keeps each fact's columns, a json copy of the row and its key's index; a re-saved entity moves its rows.
+
+## 2026-10-24 23:54:22 EDT — instant-data-swift `c343c563a19bf44765fe4a404b92dc1d4f7b8cf0`
+Green (#1115, slice 1): the outbox's key tables are WITHOUT ROWID and one delivery index replaces the deadline and candidate indexes: outbox frames per write 36 -> 30 (Mac mini, synthetic store).
+
+## 2026-10-24 23:51:46 EDT — instant-data-swift `8101f0b902f91322d982d637e548eb878265e2fd`
+Red (#1115): a write's save and echo write the key tables' duplicate key indexes, and its claim two delivery indexes.
+
+## 2026-10-25 00:45:01 EDT — instant-data-swift `f7c27994c7128a5215fe26b64694837788ba7a3e`
+plan(#1076 #1120): amendment 5 claims transactionsPersistOnlyChangedRows' expected counts.
+
+## 2026-10-25 00:05:36 EDT — instant-data-swift `9eb6debf3e3a78118a5340f6328ed014e6f08c43`
+plan(#1076 #1121 #1120): amendment 4 claims the fact table's rebuild, the fact writers, the two rowid cursors and their tests.
+
+## 2026-10-24 23:50:27 EDT — instant-data-swift `c9c40f560bdc1aeff49b6782bbebdb317b14b2d5`
+plan(#1076 #1115): amendment 3 claims #1115's first slice (the key tables WITHOUT ROWID, one delivery index).
+
 ## 2026-10-25 00:41:14 EDT — instant-data-swift `c3add5170c07ea37a67a503a4b669e630f8ba520`
 test(#1150): the allocation sites of a long recording's local history page (S14), beside E03's and E04's
 

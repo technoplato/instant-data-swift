@@ -10,6 +10,62 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 12:58:54 a.m. EDT — `c9403d9e0a86` perf(#1121 #1120): green: each fact is stored once, keyed by the fact itself, its json computed when read; a re-saved fact is upserted where it is
+
+- **Implementation commit:** `c9403d9e0a8631439e27eb507c9a2df488112d67`
+- **Change:** perf(#1121 #1120): green: each fact is stored once, keyed by the fact itself, its json computed when read; a re-saved fact is upserted where it is
+- **Details:**
+  - Migration 0032 rebuilds instant_triples WITHOUT ROWID with json a VIRTUAL generated column, checked against the old table inside its transaction before the old one goes; the fact writers upsert in place without a stored json; the reconciliation and application-migration passes walk a snapshot of keys. Measured: on a scratch copy of the phone's store through the library's own bootstrap (laptop), 174,817 facts identical, 127.1 -> 40.7 MB, bootstrap 1.7 s; on the Mac mini (synthetic store) the save's fact frames 6.82 -> 2.87 per write, all frames 58.5 -> 54.9, the fact table 65.4 -> 19.4 MB, the hour's SQLite bytes 1,514 -> 1,269 MB and drive bytes 1,574 -> 1,281 MB, full fsyncs 268 -> 226.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — migration 0032, the fact writers, the key-snapshot passes
+  - `Sources/InstantSwiftDataCore/InstantStoredJSON.swift` — only a value's text is written
+  - `Tests/InstantSwiftDataCoreTests/InstantFactLayoutDeviceStoreTests.swift` — the device-store proof (INSTANT_1121_STORE)
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — an update inserts one fact row
+  - `Tests/InstantSwiftDataCoreTests/DeferredValueResidencyTests.swift` — corrupts the value's text
+  - `Tests/InstantSwiftDataCoreTests/InstantStartupTraceTests.swift` — corrupts the value's text
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:58:54 a.m. EDT — `8e237559df90` test(#1121 #1120): red: each fact is stored three times over (its columns, a json copy of the row, its key's index), and a re-saved entity moves its rows
+
+- **Implementation commit:** `8e237559df90551d38bf2e6b0774c8ff4d0ef654`
+- **Change:** test(#1121 #1120): red: each fact is stored three times over (its columns, a json copy of the row, its key's index), and a re-saved entity moves its rows
+- **Details:**
+  - eachFactIsStoredOnce (one b-tree keyed by the fact, json computed, at most 70 pages for 1,600 facts), aStoreInTheOldLayoutIsRebuiltWithEveryFact (a store rewritten in the 0001 layout is rebuilt with every fact), and #1120's re-save test for the new layout (one leaf, no other fact b-tree). Red on the Mac mini: rowid table plus key index; the re-save wrote 3 fact-table frames and 1 key-index frame.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFactLayoutTests.swift` — the layout and the migration guard
+  - `Tests/InstantSwiftDataCoreTests/InstantFactInPlaceUpsertTests.swift` — a re-saved entity writes one leaf
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:58:53 a.m. EDT — `c343c563a19b` perf(#1115): green: a write's key rows and effect entities live in WITHOUT ROWID tables, and one delivery index replaces the deadline and candidate indexes
+
+- **Implementation commit:** `c343c563a19bf44765fe4a404b92dc1d4f7b8cf0`
+- **Change:** perf(#1115): green: a write's key rows and effect entities live in WITHOUT ROWID tables, and one delivery index replaces the deadline and candidate indexes
+- **Details:**
+  - Migration 0030 rebuilds instant_outbox_write_keys and instant_outbox_effect_entities WITHOUT ROWID (a row whose write is gone is not carried over); migration 0031 replaces the deadline index and the candidate partial index with instant_outbox_delivery_idx (claim state, delivery state, deadline, creation order), and the ready condition says a ready row has no deadline so the candidate read stops at its limit. Measured on the Mac mini (release, synthetic 7,000-line store): eachStepOfALiveWrite outbox frames 36.00 -> 30.00 per write (save 15 -> 12, claim 3 -> 2, echo 14 -> 12), all log frames 64.5 -> 58.5. OutboxClaimScaleTests and the page-churn suite pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — migrations 0030 and 0031, the delivery index, the ready condition
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxPageChurnTests.swift` — the key rows' content instead of their rowid; the index list
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:58:53 a.m. EDT — `8101f0b902f9` test(#1115): red: a write's save and echo write the key tables' duplicate key indexes, and its claim two delivery indexes
+
+- **Implementation commit:** `8101f0b902f91322d982d637e548eb878265e2fd`
+- **Change:** test(#1115): red: a write's save and echo write the key tables' duplicate key indexes, and its claim two delivery indexes
+- **Details:**
+  - One live write at a time through save, claim, acknowledgement and echo (StorageIOWriteCycle on a small store), each step's log frames read by outbox b-tree through the audit's VFS shim. Red on the Mac mini: 6 frames per write on the key tables' primary-key indexes and #1108's candidate index, 36 outbox frames per write. The shim now decides at each call whether a file counts.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` — the per-b-tree frames of one write's four steps
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOCounters.swift` — counting decided per call, not at open
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 12:45:41 a.m. EDT — `c3add5170c07` test(#1150): the allocation sites of a long recording's local history page (S14), beside E03's and E04's
 
 - **Implementation commit:** `c3add5170c07ea37a67a503a4b669e630f8ba520`

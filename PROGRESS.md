@@ -1,3 +1,32 @@
+## 2026-10-25 01:05:00 EDT — #1115 slice 1, #1121, #1120: the outbox's key tables and each fact stored once (fix-storage-1076)
+
+- **Landed on main:** plans `c9c40f56`, `9eb6debf`, `f7c27994`; #1115 red `8101f0b9`, green `c343c563`; #1121 and
+  #1120 red `8e237559`, green `c9403d9e`. Ready for 1.9.40.
+- **#1115 slice 1:** migration 0030 rebuilds the write-key and effect-entity tables WITHOUT ROWID (each was keyed by its
+  whole row and kept it twice); 0031 puts `instant_outbox_delivery_idx` (claim state, delivery state, deadline,
+  creation order) in place of the deadline index and #1108's candidate index. `eachStepOfALiveWrite` (Mac mini,
+  release, synthetic 7,000-line store): outbox frames per write 36.00 -> 30.00 (save 15 -> 12, claim 3 -> 2, ack 4,
+  echo 14 -> 12). The criterion (24) needs the next slices: the bodies in their own table, then partial indexes.
+- **#1121 (with #1120):** migration 0032 rebuilds `instant_triples` WITHOUT ROWID on (entity, attribute, value) with
+  `json` a VIRTUAL generated column, checked against the old table in its transaction before the old one goes; the
+  fact writers upsert in place; the reconciliation and application-migration passes walk a snapshot of keys. Proven
+  on a scratch copy of the phone's store through the library's own bootstrap (laptop, credentials deleted, copy
+  deleted after): 174,817 facts identical, fact table 127.1 -> 40.7 MB, bootstrap 1.7 s with the other pending
+  migrations, 79,768 free pages afterwards for `compactLocalCache`'s VACUUM. On the mini: the save's fact frames 6.82
+  -> 2.87 per write (#1120's criterion, at most 3: met), all frames 58.5 -> 54.9 per write, the synthetic store 68.0 ->
+  22.4 MB.
+- **The hour now** (`theStoreOverASimulatedHour`, mini, synthetic store; main before #1118 -> now): SQLite bytes 1,577 ->
+  1,269 MB, drive bytes 1,774 -> 1,281 MB, full fsyncs 1,069 -> 226, the store's growth 12.0 -> 3.5 MB an hour; a power
+  loss can reach back 13 lines (52 s of writes).
+- **Checks:** red then green for each; the whole core bundle in release on the rebased tree (1,493 tests): only the
+  release runner's categories (CLI executable not built; `withKnownIssue` not recorded in release; upstream checkouts
+  absent; the real-size allocation budgets, the same as on main), and the list of `expectNoDifference` differences a
+  release run prints equals main's. One load timeout (`InstantLiveConnectionSurvivalTests`) passes alone three times.
+  Lesson: a whole-bundle run must not set `STORAGEIO_EXERCISES=1` (the exercises' shim then counts every test, and
+  the 256-file limit runs out); the runner sets `ulimit -n 4096`.
+- **Next:** #1123 (a changing result's JSON rewritten every 30 s; what-if runs going), then #1125, #1122, #1119, #1115's
+  next slices. Owner fix-storage-1076.
+
 ## 2026-10-25 00:48:13 EDT — 1.9.39 pinned in Scribe and Scribe Playback; #1129's second slice red and green (release owner fix-gate-1074)
 
 - **Scribe main:** plan `195529326`, pin `45b083370` (both `Package.swift` exact 1.9.39; both `Package.resolved`: the
