@@ -60,3 +60,13 @@ phases as each starts; fix-memory-1075 (plan 03129234) names #1147's persisted-r
 touches none of them. #1115 is the outbox's functions (lib-audit-1072 released them at 20:55; #1115 names them here and
 on the channel before editing). #1122 (the prune's unload copy) and #1123 (a changing result's JSON rewrite) sit in
 fix-gate-1074's prune and fix-memory-1075's result build: each is split on the channel by function before either edits.
+
+## Amendment 1 (2026-10-24 22:50 EDT, #1120)
+
+A re-saved entity's facts are updated where their rows are. Claimed now:
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `insertTripleWithoutTransaction` (an in-place upsert for
+  `INSERT OR REPLACE`; a deferred attribute's other values deleted, not its own) and `saveTripleDiffWithoutTransaction`
+  (the facts it rewrites). Leaf functions only: their callers (`saveLocalMutation`, `commitServerApplyPlan`,
+  `commitClaimedTerminalFailure`, the closed-result reload, the snapshot diff) are unchanged.
+- New, test-only: `Tests/InstantSwiftDataCoreTests/InstantFactInPlaceUpsertTests.swift` (in the `StorageIOExercises`
+  suite: a re-saved entity keeps its rows and its keys, counted by the audit's VFS shim).
