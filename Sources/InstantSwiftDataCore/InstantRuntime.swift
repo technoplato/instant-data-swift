@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-25: a delivery pass takes the retry window's gate turn only when a failed write waits to be retried, and a
+//   write's acknowledgement asks for a pass only when a write waits to be claimed or retried: delivery took two claims
+//   and two retry turns per write (#1130).
 // - 2026-10-25: the gate holders that write no store facts say so as they take the gate (the server apply's snapshot,
 //   plan and catch-up, the acknowledgement, a registration, the local reads, the retry window, an upload's record, the
 //   VACUUM, the delivery claim, the status reads), and a prune batch names the entities it releases, so a hydration's
@@ -9389,7 +9392,13 @@ public final class InstantRuntime: Sendable {
       await mutationServerErrorBackoff.recordAcceptance(of: clientEventID)
       await liveSession.forgetEarlierOffers(of: clientEventID)
       await resolveParkedRefusalsIfNeeded()
-      await startLiveMutationDeliveryIfNeeded()
+      // #1130: the write this answers was claimed and sent by its own pass. Another pass is needed only when a write
+      // waits to be claimed (a claim with no room in flight, or a probe after a transient error, left some) or a failed
+      // write waits to be retried; asking every time doubled the claims. Upstream `Reactor.js` settles the mutation
+      // on `transact-ok` and flushes nothing.
+      if await automaticDeliveryWorkWaits() {
+        await startLiveMutationDeliveryIfNeeded()
+      }
 
     case let .streamAppend(append):
       guard let delivery = await liveSession.takeDeliveredStreamAppend(
@@ -10060,6 +10069,21 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Whether a delivery pass would find work (#1130): a row to claim, or a failed write to retry. Read without the
+  /// operation gate, in one persistence turn; a write that lands after it asks for its own pass, and a read that fails
+  /// asks for a pass, as before.
+  private func automaticDeliveryWorkWaits() async -> Bool {
+    let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
+    do {
+      return try await withPersistence { persistence in
+        try persistence.hasAutomaticDeliveryCandidate()
+          || persistence.hasAutomaticFailedMutationRetryCandidate(excludingMutationIDs: reservedMutationIDs)
+      }
+    } catch {
+      return true
+    }
+  }
+
   /// Runs one fair pump turn: one bounded retry transition followed by one
   /// bounded delivery claim/send. Returning continuation to the coalescing
   /// pump yields between turns instead of holding the operation gate across a
@@ -10071,10 +10095,19 @@ public final class InstantRuntime: Sendable {
     var retryNeedsBackoff = false
     do {
       try Task.checkCancellation()
-      if let hasMoreCandidates = try await retryOnePersistedTransientMutationFailureWindow() {
-        retryNeedsContinuation = hasMoreCandidates
-      } else {
-        retryNeedsBackoff = true
+      // #1130: the retry window takes the operation gate at background priority, and every pass took it, so a write's
+      // delivery queued behind it though nothing had failed (176 turns for 88 writes in #1074's recording exercise).
+      // The read the connection's opening makes says whether a failure waits; one that lands after it waits for the
+      // next pass, as one that landed just after the gated window did. (A transient server error does not land here:
+      // it releases its claim and schedules the pass that sends it again.)
+      let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
+      recordActorHop(.persistence)
+      if try await persistence.hasAutomaticFailedMutationRetryCandidate(excludingMutationIDs: reservedMutationIDs) {
+        if let hasMoreCandidates = try await retryOnePersistedTransientMutationFailureWindow() {
+          retryNeedsContinuation = hasMoreCandidates
+        } else {
+          retryNeedsBackoff = true
+        }
       }
     } catch is CancellationError {
       return .finished

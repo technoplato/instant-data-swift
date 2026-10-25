@@ -17801,6 +17801,12 @@ public actor SQLitePersistenceStore {
     ) != 0
   }
 
+  /// Whether the pump has a row to claim now: the claim's own candidate read, outside any claim (#1130). A write's
+  /// acknowledgement asks for another delivery pass only when one waits, or a failed write waits to be retried.
+  func hasAutomaticDeliveryCandidate() throws -> Bool {
+    try readTransaction { try hasAutomaticDeliveryCandidateWithoutTransaction() }
+  }
+
   private func hasAutomaticDeliveryCandidateWithoutTransaction() throws -> Bool {
     try selectInt64(Self.automaticDeliveryCandidateExistsSQL, Self.automaticDeliveryCandidateExistsBindings) != 0
   }
