@@ -1,3 +1,12 @@
+## 2026-10-25 11:23:58 EDT — scribe `a2febc51bfcb968c4b292e512acd97b70b83cbb2`
+#1156 changelog entry for the field-check audit commit above.
+
+## 2026-10-25 11:23:58 EDT — scribe `6d61063594bdd78452f0f1a77e8a035c691e9e2d`
+#1156 field check recorded in the audit: flat per action behind Picture in Picture; in front while live the main thread still grows with the timeline; the cable run that names it.
+
+## 2026-10-25 11:23:58 EDT — scribe `a83570a08a83f3d309c689b8b37f1a1abb0e88ce`
+#1156 plan and claims for the field-check audit section.
+
 ## 2026-10-25 11:14:37 EDT — scribe `7eda31ed62c8d95c4b51c88930dae0503814bc1a`
 Scribe 0.1 (138) cut from main a56142d2f (#1182): #1173 lead-in, #1176 sync labels, production apps only (#1179); instant-data-swift 1.9.42.
 
