@@ -102,61 +102,50 @@ struct InstantObserverRegistrationGateTests {
     _ = try await runtime.closeConnection()
   }
 
-  /// A closed result that changed between the reload's read and its commit is not committed from the stale read: here
-  /// a second observer reopened the same query, the server answered it with a new row, the query closed again and was
-  /// pruned again, all while the first reload's read waited. The first observer answers with the newer result.
+  /// A reload begins from the closed result stored now, not the one it read before the operation gate (#1131): here the
+  /// query was answered again with a fourth todo and unloaded again after the read. A second observer cannot do this
+  /// meanwhile, since it waits for the first one's registration (``aSecondObserverWaitsForTheReloadOfItsQuery()``),
+  /// but a reload never commits a row it did not read.
   @Test
-  func aReloadWhoseStoredResultChangedReadsItAgain() async throws {
-    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
-    let pause = InstantPausePoint()
-    let runtime = try await Self.runtime("observer-registration-reload-changed", transport: session.transport) {
-      $0.onUnloadedLiveQueryResultReadForTesting = { _ in await pause.pauseOnce() }
-    }
-    let keepAlive = try await Self.openClosePrune(runtime: runtime, session: session)
+  func aReloadBeginsFromTheRowStoredNowNotTheOneItRead() async throws {
+    let persistence = try SQLitePersistenceStore(fileURL: try InstantStoredResultReloadTests.temporaryCacheURL())
+    try await persistence.bootstrap()
+    try await InstantStoredResultReloadTests.save([Self.closedResult(todos: 3, at: 1)], in: persistence)
+    try await Self.unloadEverything(in: persistence, at: 2)
+    let read = try #require(try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed"))
 
-    // The first reopening reads the closed result and waits.
-    let first = Task { await runtime.observeQueryLease(TodoExample.query) }
-    try await pause.waitUntilEntered()
+    try await InstantStoredResultReloadTests.save([Self.closedResult(todos: 4, at: 3)], in: persistence)
+    try await Self.unloadEverything(in: persistence, at: 4)
+    let begun = try #require(try await persistence.beginUnloadedLiveQueryResultReload(read))
 
-    // Meanwhile the query reopens, the server restates it with a fourth row, and it closes and is pruned again.
-    let meanwhile = await Self.finishes(within: .seconds(10)) {
-      let second = await runtime.observeQueryLease(TodoExample.query)
-      await session.enqueue(
-        liveReactorAddQueryOK(
-          query: try await InstantStoredResultReloadTests.registeredQuery(number: 3, in: session),
-          processedTransactionID: "tx-list-again",
-          result: InstantStoredResultReloadTests.todoResult([
-            ("todo-1", "one", 1), ("todo-2", "two", 2), ("todo-3", "three", 3), ("todo-4", "four", 4),
-          ])
-        )
-      )
-      _ = try await InstantStoredResultReloadTests.emission(of: second.stream, operation: "show the restated list") {
-        $0.values.map(\.id).contains("todo-4")
-      }
-      await second.cancel()
-      try await InstantStoredResultReloadTests.waitForOp("remove-query", count: 2, in: session)
-      let pruned = try await runtime.pruneLiveQueryResults(
-        policy: InstantStoredResultReloadTests.productionPolicy,
-        now: InstantStoredResultReloadTests.pruneTime
-      )
-      expectNoDifference(pruned.unloadedQueryKeys.count, 1)
-    }
-    #expect(meanwhile.finished, "#1131: a second observer of the query waited for the first one's reload read")
+    #expect(begun.readAgain)
+    expectNoDifference(Set(begun.result.triples.map(\.entityID)), ["todo-0", "todo-1", "todo-2", "todo-3"])
+    #expect(try await persistence.unloadedLiveQueryResult(key: "query-closed") == nil, "the row is a stored result again")
+  }
 
-    pause.release()
-    try await meanwhile.work.value
-    let reopened = await first.value
-    let answer = try await InstantStoredResultReloadTests.emission(of: reopened.stream, operation: "reopen the list") {
-      _ in true
-    }
-    #expect(
-      Set(["todo-1", "todo-2", "todo-3", "todo-4"]).isSubset(of: answer.values.map(\.id)),
-      "#1131: the reload committed the result it read before the query closed again: \(answer.values.map(\.id))"
+  /// A chunk of a reload writes nothing once a server answer replaced the row the reload moved back (#1131): the
+  /// server's facts stand, and the entities the answer left out stay out.
+  @Test
+  func aReloadChunkWritesNothingOnceAServerAnswerReplacedItsRow() async throws {
+    let persistence = try SQLitePersistenceStore(fileURL: try InstantStoredResultReloadTests.temporaryCacheURL())
+    try await persistence.bootstrap()
+    try await InstantStoredResultReloadTests.save([Self.closedResult(todos: 3, at: 1)], in: persistence)
+    try await Self.unloadEverything(in: persistence, at: 2)
+    let read = try #require(try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed"))
+    let begun = try #require(try await persistence.beginUnloadedLiveQueryResultReload(read))
+
+    try await InstantStoredResultReloadTests.save([Self.closedResult(todos: 1, at: 5)], in: persistence)
+    let entityTriples = Dictionary(grouping: begun.result.triples, by: \.entityID)
+    let chunk = try await persistence.reloadUnloadedLiveQueryResultChunk(
+      key: "query-closed",
+      rowTripleCount: begun.rowTripleCount,
+      rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
+      entityTriples: entityTriples,
+      ownedFacts: begun.result.triples,
+      residentEntityIDs: []
     )
 
-    await reopened.cancel()
-    await keepAlive.cancel()
-    _ = try await runtime.closeConnection()
+    #expect(chunk == nil)
   }
 }
 
@@ -326,6 +315,27 @@ extension InstantObserverRegistrationGateTests {
     )
     expectNoDifference(pruned.unloadedQueryKeys.count, 1)
     return keepAlive
+  }
+
+  /// The result of `query-closed` with `todos` todos, stored at `time`.
+  static func closedResult(todos: Int, at time: Int64) -> InstantPersistedLiveQueryResult {
+    InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: "query-closed",
+        triples: (0..<todos).flatMap { InstantStoredResultReloadTests.todoTriples(index: $0) },
+        pageInfo: nil
+      ),
+      updatedAt: InstantTimestamp(milliseconds: time)
+    )
+  }
+
+  /// The session prune with another query open, which unloads every stored result (#1006).
+  static func unloadEverything(in persistence: SQLitePersistenceStore, at time: Int64) async throws {
+    _ = try await persistence.pruneLiveQueryResults(
+      policy: InstantStoredResultReloadTests.productionPolicy,
+      now: InstantTimestamp(milliseconds: time),
+      preservingQueryKeys: ["query-open-elsewhere"]
+    )
   }
 
   /// Starts `body` and says whether it finished within `limit`; the caller awaits `work` once whatever it waits for is

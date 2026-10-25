@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-24: a closed result loads back in operation-gate holds of at most 2,048 facts under a per-key registration
+//   lease the prune honours, and the registration's own hold loads none of it; the $files list's reload held the gate
+//   about 1.3 s in one commit after its read moved out, and its registration now holds it 24 ms (#1131).
 // - 2026-10-24: registering an observer holds the operation gate only to record the registration and commit a closed
 //   result's reload: its add-query goes out after the gate, and the closed result is read and decoded on the read
 //   connection before it; one registration held the gate 5.0-7.8 s on builds 121-126, and 1,617 ms for the $files
@@ -54,6 +57,7 @@
 
 import Foundation
 import IssueReporting
+import os
 
 package struct InstantLiveInfiniteQueryChunkObservation: Sendable {
   package var stream: AsyncStream<InstantQueryEmission>
@@ -1581,6 +1585,8 @@ public final class InstantRuntime: Sendable {
   /// The in-memory counters behind ``connectionHealth()`` (#482).
   private let connectionHealthRecorder = InstantConnectionHealthRecorder()
   private let liveQueryResultState = InstantLiveQueryResultState()
+  /// The live queries whose registration is loading a closed result back, which the prune keeps (#1131).
+  private let liveQueryRegistrations = InstantLiveQueryRegistrations()
   private let endedOneShotQueries = InstantEndedOneShotQueries()
   /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
   private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
@@ -5391,11 +5397,15 @@ public final class InstantRuntime: Sendable {
       liveRegistration = nil
     }
 
-    // #1131: the gate holds the registration's record and a closed result's reload commit only. A closed result is read
-    // before it, and the add-query goes out after it.
-    var unloadedLookup = UnloadedLiveQueryResultLookup.notFound
+    // #1131: the registration's own hold records it and installs its observation, nothing more. A closed result loads
+    // back before it, in holds of its own, under the key's registration lease (the prune keeps the result meanwhile, and
+    // a second observer of the query waits for it); the add-query goes out after it.
+    var registrationLease: InstantLiveQueryRegistrations.Lease?
+    defer { if let registrationLease { liveQueryRegistrations.end(registrationLease) } }
     if let liveRegistration {
-      unloadedLookup = await lookUpUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan)
+      registrationLease = await liveQueryRegistrations.begin(liveRegistration.key)
+      guard !Task.isCancelled else { return Self.finishedQueryObservationLease() }
+      let reloaded = await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan)
       do {
         try await enterOperationGateUnlessCancelled(
           operation: "observe standard live query",
@@ -5408,9 +5418,11 @@ public final class InstantRuntime: Sendable {
         await leaveOperationGate()
         return Self.finishedQueryObservationLease()
       }
-    }
-    if let liveRegistration {
-      await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan, lookup: unloadedLookup)
+      // A prune whose batch had captured the open queries before this lease could unload the result after the read
+      // above found none: the check under this hold catches it, as before #1131.
+      if !reloaded {
+        await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan, holdingOperationGate: true)
+      }
     }
     recordActorHop(.store)
     let localRegistrationStopwatch = configuration.startupTrace.stopwatch()
@@ -5533,6 +5545,7 @@ public final class InstantRuntime: Sendable {
     // #1131: the record lands under the gate, where the prune reads the active queries; the send waits for the socket
     // outside it, so a stalled socket holds no other caller.
     let owedSend = await liveSession.recordQueryRegistration(query, key: registrationKey)
+    if let registrationLease { liveQueryRegistrations.end(registrationLease) }
     await leaveOperationGate()
     do {
       if let owedSend {
@@ -5683,17 +5696,25 @@ public final class InstantRuntime: Sendable {
     }
 
     // A page whose answer about the rows above it must come from the server never seeds from a stored result. A closed
-    // one is read before the gate, which holds only its reload's commit (#1131).
-    let unloadedLookup: UnloadedLiveQueryResultLookup? = seedsFromStoredResult
-      ? await lookUpUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan)
-      : nil
-    try await enterOperationGateUnlessCancelled(
-      operation: "observe live infinite query chunk",
-      priority: .interactive
-    )
+    // one loads back before the registration's hold, under the key's registration lease, as a standard query's does
+    // (#1131). Retained first, so the reload records the page info it brings back.
+    let registrationLease = await liveQueryRegistrations.begin(registrationKey)
+    defer { liveQueryRegistrations.end(registrationLease) }
     await liveQueryResultState.retain(key: registrationKey)
-    if let unloadedLookup {
-      await reloadUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan, lookup: unloadedLookup)
+    let reloaded = seedsFromStoredResult
+      ? await reloadUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan)
+      : false
+    do {
+      try await enterOperationGateUnlessCancelled(
+        operation: "observe live infinite query chunk",
+        priority: .interactive
+      )
+    } catch {
+      await liveQueryResultState.release(key: registrationKey)
+      throw error
+    }
+    if seedsFromStoredResult, !reloaded {
+      await reloadUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan, holdingOperationGate: true)
     }
     let existingPageInfo: InstantQueryPageInfo?
     do {
@@ -5764,6 +5785,7 @@ public final class InstantRuntime: Sendable {
     }
     // #1131: recorded under the gate, sent after it, as a standard query's registration is.
     let owedSend = await liveSession.recordQueryRegistration(query, key: registrationKey)
+    liveQueryRegistrations.end(registrationLease)
     await leaveOperationGate()
     do {
       if let owedSend {
@@ -6666,101 +6688,144 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  /// What a reopened live query found of its closed stored result before it took the operation gate (#1131).
-  enum UnloadedLiveQueryResultLookup: Sendable {
-    /// Nothing was unloaded under the key when it looked; the reload looks again under the gate.
-    case notFound
-    /// The closed result, read and decoded on the read connection.
-    case found(InstantUnloadedLiveQueryResultRead, readMilliseconds: Int)
-    /// The read connection could not read; the reload reads on the store's own connection under the gate, as it did
-    /// before #1131.
-    case unread
-  }
-
-  /// Reads `registrationKey`'s closed stored result on the read connection, before the caller takes the operation gate
-  /// (#1131). The reload read and decoded it holding the gate: 1,617 ms for the `$files` list's 75,640 facts in #1074's
-  /// `server-apply` exercise, while every write and acknowledgement waited.
-  private func lookUpUnloadedLiveQueryResult(registrationKey: String, plan: InstantQueryPlan) async
-    -> UnloadedLiveQueryResultLookup
-  {
-    let started = ContinuousClock.now
-    do {
-      guard let read = try await persistence.readConnection.unloadedLiveQueryResult(key: registrationKey) else {
-        return .notFound
-      }
-      let readMilliseconds = InstantServerApplyGateTimeline.milliseconds(from: started, to: .now)
-      await configuration.onUnloadedLiveQueryResultReadForTesting?(registrationKey)
-      return .found(read, readMilliseconds: readMilliseconds)
-    } catch {
-      InstantDiagnostics.shared.record(
-        error: error,
-        subsystem: "instant-swift-data-core",
-        category: "query",
-        event: "query.local-read-connection-failed",
-        message: "#1131 The local read connection could not read a closed query's stored result; the reload reads it on the store.",
-        metadata: ["namespace": plan.namespace, "registrationKey": registrationKey],
-        correlationID: plan.id
-      )
-      return .unread
-    }
-  }
-
   /// Loads `registrationKey`'s result back if a prune unloaded it when its query closed, before the query's first
-  /// local answer (#1006). The caller holds the operation gate; `lookup` is what it read before taking it (#1131).
+  /// local answer (#1006). The caller holds the key's registration lease (``InstantLiveQueryRegistrations``), so the
+  /// prune keeps the result while it loads, and does not hold the operation gate (#1131).
   ///
   /// Upstream `subscribeQuery` loads a closed query's stored result (`querySubs.waitForKeyToLoad`) and answers from it
   /// before the server does. Here the result owns its facts again, and its entities that left the store come back, so
   /// a reopened list, and every page of a paged one (its page info is stored with it), shows what it showed when it
   /// closed instead of waiting for the server, one round trip per page. The server's answer replaces it as for any
   /// stored result.
+  ///
+  /// The read and decode run on the read connection with no gate, and the rest in operation-gate holds of at most
+  /// ``InstantRuntimeConfiguration/liveQueryResultReloadChunkTripleCount`` facts, so a write waits for one chunk. One
+  /// registration used to hold the gate for all of it: 1,617 ms for the `$files` list's 75,640 facts in #1074's
+  /// `server-apply` exercise (main ed161097, Mac mini, fixture v3), while every write and acknowledgement waited. Each
+  /// chunk is a reload of some of the result's entities, as one taking the gate a moment later would make, and the
+  /// query registers only once every chunk is in, so no server answer of it lands in between.
+  ///
+  /// - Parameter holdingOperationGate: The caller's own hold, which this reload then shares, every chunk in it: the
+  ///   registration's check, under its hold, for a result a prune unloaded after the read before the gate found none.
+  /// - Returns: Whether a closed result was found.
+  @discardableResult
   private func reloadUnloadedLiveQueryResult(
     registrationKey: String,
     plan: InstantQueryPlan,
-    lookup: UnloadedLiveQueryResultLookup
-  ) async {
+    holdingOperationGate: Bool = false
+  ) async -> Bool {
     let started = ContinuousClock.now
+    var holds: [Int] = []
+    var found = false
     do {
-      let unloaded: InstantUnloadedLiveQueryResultRead
+      let read: InstantUnloadedLiveQueryResultRead
       let readMilliseconds: Int
-      switch lookup {
-      case let .found(read, milliseconds):
-        unloaded = read
-        readMilliseconds = milliseconds
-      case .notFound, .unread:
-        // One indexed lookup when nothing is unloaded, as before #1131; a result a prune unloaded since the lookup, or
-        // one the read connection could not read, is read here, holding the gate.
+      if holdingOperationGate {
+        // One indexed lookup when nothing is unloaded, the store's own connection's view under the gate.
         recordActorHop(.persistence)
-        guard let read = try await persistence.unloadedLiveQueryResult(key: registrationKey) else { return }
-        await configuration.onUnloadedLiveQueryResultReadForTesting?(registrationKey)
-        unloaded = read
+        guard let stored = try await persistence.unloadedLiveQueryResult(key: registrationKey) else { return false }
+        read = stored
         readMilliseconds = 0
+      } else {
+        guard let stored = try await readUnloadedLiveQueryResult(key: registrationKey, plan: plan) else { return false }
+        read = stored.0
+        readMilliseconds = stored.1
       }
-      recordActorHop(.store)
-      let residentEntityIDs = await store.entityIDsWithFacts(among: Set(unloaded.result.triples.map(\.entityID)))
-      recordActorHop(.persistence)
-      guard
-        let reload = try await persistence.reloadUnloadedLiveQueryResult(
-          unloaded,
-          residentEntityIDs: residentEntityIDs
-        )
-      else { return }
-      if !reload.restoredTriples.isEmpty {
-        recordActorHop(.store)
-        let prepared = try await store.prepareCurrent(
-          InstantStoreTransaction(
-            id: "reload-\(configuration.makeID())",
-            operations: reload.restoredTriples.map(InstantTripleOperation.insert)
-          )
-        )
-        _ = await store.commitAndPublish(prepared)
+      found = true
+      await configuration.onUnloadedLiveQueryResultReadForTesting?(registrationKey)
+
+      // The row comes back first; it writes no store facts.
+      if !holdingOperationGate {
+        try await enterOperationGateUnlessCancelled(operation: "reload closed query result", priority: .interactive)
+        operationGate.markHolderWrites([])
       }
-      if reload.storeChanged {
-        installedStoreRevisions.install(
-          storeRevision: reload.storeRevision,
-          attributeRevision: reload.attributeRevision
-        )
+      var holdStarted = ContinuousClock.now
+      let begun: InstantUnloadedLiveQueryResultReloadStart?
+      do {
+        recordActorHop(.persistence)
+        begun = try await persistence.beginUnloadedLiveQueryResultReload(read)
+      } catch {
+        if !holdingOperationGate { await leaveOperationGate() }
+        throw error
       }
-      await liveQueryResultState.record(reload.result)
+      if !holdingOperationGate { await leaveOperationGate() }
+      holds.append(InstantServerApplyGateTimeline.milliseconds(from: holdStarted, to: .now))
+      guard let begun else { return true }
+
+      let chunks = Self.reloadChunks(
+        of: begun.result.triples,
+        maximumTripleCount: configuration.liveQueryResultReloadChunkTripleCount
+      )
+      var restoredFromResult = 0
+      var restoredFromSQLite = 0
+      var stoppedEarly = false
+      for (index, entityTriples) in chunks.enumerated() {
+        if !holdingOperationGate {
+          try await enterOperationGateUnlessCancelled(operation: "reload closed query result", priority: .interactive)
+        }
+        holdStarted = ContinuousClock.now
+        var publication: InstantStorePublicationTicket?
+        do {
+          recordActorHop(.store)
+          let residentEntityIDs = await store.entityIDsWithFacts(among: Set(entityTriples.keys))
+          // #1006: a read made without the gate waits for this hold only when it read an entity the chunk brings back.
+          operationGate.markHolderWrites(Set(entityTriples.keys).subtracting(residentEntityIDs))
+          let ownedFacts = entityTriples.values.joined().filter {
+            begun.unownedFacts.isEmpty || !begun.unownedFacts.contains(InstantLiveTripleIdentity($0))
+          }
+          recordActorHop(.persistence)
+          guard
+            let chunk = try await persistence.reloadUnloadedLiveQueryResultChunk(
+              key: registrationKey,
+              rowTripleCount: begun.rowTripleCount,
+              rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
+              entityTriples: entityTriples,
+              ownedFacts: ownedFacts,
+              residentEntityIDs: residentEntityIDs
+            )
+          else {
+            stoppedEarly = true
+            if !holdingOperationGate { await leaveOperationGate() }
+            break
+          }
+          if !chunk.restoredTriples.isEmpty {
+            recordActorHop(.store)
+            let prepared = try await store.prepareCurrent(
+              InstantStoreTransaction(
+                id: "reload-\(configuration.makeID())",
+                operations: chunk.restoredTriples.map(InstantTripleOperation.insert)
+              )
+            )
+            if holdingOperationGate {
+              _ = await store.commitAndPublish(prepared)
+            } else {
+              // Observers refresh after the hold, as a server apply's do (#473).
+              publication = await store.commitDeferringPublication(prepared).publication
+            }
+          }
+          if chunk.storeChanged {
+            installedStoreRevisions.install(storeRevision: chunk.storeRevision, attributeRevision: chunk.attributeRevision)
+          }
+          restoredFromResult += chunk.restoredFromResultEntityCount
+          restoredFromSQLite += chunk.restoredFromSQLiteEntityCount
+        } catch {
+          if !holdingOperationGate { await leaveOperationGate() }
+          if let publication {
+            recordActorHop(.store)
+            _ = await store.publishCommittedChanges(publication)
+          }
+          throw error
+        }
+        if !holdingOperationGate { await leaveOperationGate() }
+        holds.append(InstantServerApplyGateTimeline.milliseconds(from: holdStarted, to: .now))
+        if let publication {
+          recordActorHop(.store)
+          _ = await store.publishCommittedChanges(publication)
+        }
+        await configuration.onUnloadedLiveQueryResultReloadChunkForTesting?(registrationKey, index + 1)
+      }
+      // A reload a server answer stopped leaves the answer's page info, which its apply recorded.
+      if !stoppedEarly { await liveQueryResultState.record(begun.result) }
       InstantDiagnostics.shared.record(
         .info,
         subsystem: "instant-swift-data-core",
@@ -6768,18 +6833,26 @@ public final class InstantRuntime: Sendable {
         event: "live-query-result.reloaded",
         message: "#1006 Loaded a closed query's stored result back for its new subscription.",
         metadata: [
-          // Under the operation gate, from the reload's start; the read before the gate is `readMilliseconds` (#1131).
           "elapsedMilliseconds": String(InstantServerApplyGateTimeline.milliseconds(from: started, to: .now)),
+          // #1131: the read runs with no gate; the rest in `gateHoldCount` holds, the longest `longestGateHoldMilliseconds`.
           "readMilliseconds": String(readMilliseconds),
-          "readAgain": String(reload.readAgain),
+          "gateHoldCount": String(holds.count),
+          "longestGateHoldMilliseconds": String(holds.max() ?? 0),
+          "totalGateHoldMilliseconds": String(holds.reduce(0, +)),
+          "readAgain": String(begun.readAgain),
+          "stoppedEarly": String(stoppedEarly),
+          "inRegistrationHold": String(holdingOperationGate),
           "namespace": plan.namespace,
           "registrationKey": registrationKey,
-          "restoredFromResultEntityCount": String(reload.restoredFromResultEntityCount),
-          "restoredFromSQLiteEntityCount": String(reload.restoredFromSQLiteEntityCount),
-          "tripleCount": String(reload.result.triples.count),
+          "restoredFromResultEntityCount": String(restoredFromResult),
+          "restoredFromSQLiteEntityCount": String(restoredFromSQLite),
+          "tripleCount": String(begun.result.triples.count),
         ],
         correlationID: plan.id
       )
+    } catch is CancellationError {
+      // A chunk not yet in stays out; the result is a stored result no open query holds, which the next prune unloads.
+      return found
     } catch {
       InstantDiagnostics.shared.record(
         error: error,
@@ -6791,6 +6864,54 @@ public final class InstantRuntime: Sendable {
         correlationID: plan.id
       )
     }
+    return found
+  }
+
+  /// `key`'s closed stored result, decoded, and how long the read took: on the read connection (#1131), or on the
+  /// store's own connection when that one cannot read. Neither takes the operation gate.
+  private func readUnloadedLiveQueryResult(
+    key: String,
+    plan: InstantQueryPlan
+  ) async throws -> (InstantUnloadedLiveQueryResultRead, Int)? {
+    let started = ContinuousClock.now
+    let read: InstantUnloadedLiveQueryResultRead?
+    do {
+      read = try await persistence.readConnection.unloadedLiveQueryResult(key: key)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query.local-read-connection-failed",
+        message: "#1131 The local read connection could not read a closed query's stored result; reading it on the store.",
+        metadata: ["namespace": plan.namespace, "registrationKey": key],
+        correlationID: plan.id
+      )
+      recordActorHop(.persistence)
+      read = try await persistence.unloadedLiveQueryResult(key: key)
+    }
+    return read.map { ($0, InstantServerApplyGateTimeline.milliseconds(from: started, to: .now)) }
+  }
+
+  /// `triples` grouped by entity into chunks of about `maximumTripleCount` facts, an entity never split (#1131).
+  private static func reloadChunks(
+    of triples: [InstantTriple],
+    maximumTripleCount: Int
+  ) -> [[String: [InstantTriple]]] {
+    var chunks: [[String: [InstantTriple]]] = []
+    var chunk: [String: [InstantTriple]] = [:]
+    var chunkTripleCount = 0
+    for (entityID, entityTriples) in Dictionary(grouping: triples, by: \.entityID).sorted(by: { $0.key < $1.key }) {
+      if !chunk.isEmpty, chunkTripleCount + entityTriples.count > max(1, maximumTripleCount) {
+        chunks.append(chunk)
+        chunk = [:]
+        chunkTripleCount = 0
+      }
+      chunk[entityID] = entityTriples
+      chunkTripleCount += entityTriples.count
+    }
+    if !chunk.isEmpty { chunks.append(chunk) }
+    return chunks
   }
 
   private func liveQueryPageInfo(for registrationKey: String) async -> InstantQueryPageInfo? {
@@ -7021,7 +7142,8 @@ public final class InstantRuntime: Sendable {
     now: InstantTimestamp,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
-    let activeQueryKeys = await liveSession.activeQueryKeys()
+    // A registration loading its closed result back records itself with the live session only when it is done (#1131).
+    let activeQueryKeys = await liveSession.activeQueryKeys().union(liveQueryRegistrations.keys)
     if let onActiveKeysCaptured =
       configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting
     {
@@ -16957,6 +17079,62 @@ private extension String {
 ///
 /// Bounded to the newest 256: a query that ended earlier than that has its late answer applied, as every late answer
 /// was before.
+/// The live queries whose registration is under way, one at a time per key (#1131). A registration loads its query's
+/// closed result back in several operation-gate holds before it records itself with the live session, so meanwhile the
+/// prune keeps that result (it is no open query's yet), and a second observer of the same query waits for the first
+/// one's registration instead of answering from a half-loaded result.
+///
+/// A lock, not an actor: the prune reads the keys while it holds the operation gate, without a hop, and a lease is given
+/// back in the same synchronous step as the registration it covers. Each critical section is a dictionary access, the
+/// "tiny, local isolation domain" a lock is for (Point-Free ep358 at 4:01).
+final class InstantLiveQueryRegistrations: Sendable {
+  struct Lease: Sendable {
+    fileprivate let key: String
+    fileprivate let id: UInt64
+  }
+
+  private struct State: Sendable {
+    var lastID: UInt64 = 0
+    var holders: [String: (id: UInt64, waiters: [CheckedContinuation<Void, Never>])] = [:]
+  }
+
+  private let state = OSAllocatedUnfairLock(initialState: State())
+
+  /// Takes `key`'s lease, first waiting for another registration of the same key to give it back. A wait is bounded by
+  /// that registration's reload and its gate holds, and is not cancelled with its caller.
+  func begin(_ key: String) async -> Lease {
+    while true {
+      let lease: Lease? = state.withLock { state in
+        guard state.holders[key] == nil else { return nil }
+        state.lastID &+= 1
+        state.holders[key] = (state.lastID, [])
+        return Lease(key: key, id: state.lastID)
+      }
+      if let lease { return lease }
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        let resumesNow = state.withLock { state -> Bool in
+          guard state.holders[key] != nil else { return true }
+          state.holders[key]?.waiters.append(continuation)
+          return false
+        }
+        if resumesNow { continuation.resume() }
+      }
+    }
+  }
+
+  /// Gives `lease` back, once: a later call, or one after the key went to another lease, does nothing.
+  func end(_ lease: Lease) {
+    let waiters = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+      guard state.holders[lease.key]?.id == lease.id else { return [] }
+      return state.holders.removeValue(forKey: lease.key)?.waiters ?? []
+    }
+    for waiter in waiters { waiter.resume() }
+  }
+
+  /// The keys whose registration is under way.
+  var keys: Set<String> { state.withLock { Set($0.holders.keys) } }
+}
+
 actor InstantEndedOneShotQueries {
   private var order: [String] = []
   private var keys: Set<String> = []
