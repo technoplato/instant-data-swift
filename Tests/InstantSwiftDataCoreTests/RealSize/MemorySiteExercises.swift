@@ -13,6 +13,7 @@ import Testing
 //
 // History:
 // - 2026-10-24: #1147: the refresh of an open page (E03) and a finished line (E04).
+// - 2026-10-25: #1150: a page of a long recording's history read locally (E14).
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_SITES"] != nil))
 struct MemorySiteExercises {
@@ -77,6 +78,28 @@ struct MemorySiteExercises {
         for index in 2..<(2 + iterations) { try await write(index) }
       }
       MemoryAllocationSites.print("S04.final-line-long-recording", recording, top: 60, iterations: iterations)
+    }
+  }
+
+  /// E14's local read of the longest recording's history, one 256-line page, four times.
+  @Test func s14LocalHistoryPageSites() async throws {
+    try await MemoryExerciseSession.open(MemoryExercises.shape, label: "s14").closing { context in
+      let (recordingID, lines) = MemoryExercises.longestRecording
+      let pages = max(1, (lines + 255) / 256)
+      func plan(_ page: Int) -> InstantQueryPlan {
+        InstantQueryPlan(
+          id: "s14-history", namespace: "transcriptionSegments",
+          filters: [.equals(field: "recordingID", value: .string(recordingID))],
+          order: InstantQueryOrder("segmentIndex", .descending), offset: (page % pages) * 256, limit: 256,
+          selectedFields: RealSizeAccount.segmentFields.filter { $0 != "id" }
+        )
+      }
+      for page in 0..<2 { _ = try await context.runtime.queryLocally(plan(page)) }
+      let iterations = 4
+      let recording = try await MemoryAllocationSites.record {
+        for page in 2..<(2 + iterations) { _ = try await context.runtime.queryLocally(plan(page)) }
+      }
+      MemoryAllocationSites.print("S14.local-history-page", recording, top: 60, iterations: iterations)
     }
   }
 }
