@@ -2,6 +2,7 @@
 // - 2026-10-23: added (#1006): local reads read SQLite on their own read-only connection, beside the writer.
 // - 2026-10-24: a reopened query reads its closed stored result here, before it takes the operation gate (#1131).
 // - 2026-10-24: the prune reads and decodes its next batch's stored results here, before it takes the gate (#1129).
+// - 2026-10-25: fact rows are read by `InstantFactRowReader` (#1150).
 
 import Foundation
 import SQLite3
@@ -56,20 +57,21 @@ actor SQLiteReadConnection {
     let attributePlaceholders = Array(repeating: "?", count: attributeList.count).joined(separator: ", ")
     var triples: [InstantTriple] = []
     var encodedByteCount = 0
+    var reader = InstantFactRowReader(decoder: decoder, path: fileURL.path)
     try readTransaction { connection in
       for batch in Self.batches(of: entityIDs) {
         let entityPlaceholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
-        let rows = try Self.selectTexts(
+        try Self.withStatement(
           """
-          SELECT json FROM instant_triples
+          SELECT \(InstantFactRowReader.columns) FROM instant_triples
           WHERE attribute_id IN (\(attributePlaceholders)) AND entity_id IN (\(entityPlaceholders))
           ORDER BY entity_id, attribute_id, value_json
           """,
           bindings: attributeList + batch,
           on: connection
-        )
-        encodedByteCount += rows.reduce(0) { $0 + $1.utf8.count }
-        triples.append(contentsOf: try decodeTriples(rows))
+        ) { statement in
+          try reader.read(statement, into: &triples) { _, byteCount in encodedByteCount += byteCount }
+        }
       }
     }
     let (valueCount, byteCount) = (triples.count, encodedByteCount)
@@ -113,23 +115,24 @@ actor SQLiteReadConnection {
     var triples: [InstantTriple] = []
     var deferredCount = 0
     var deferredByteCount = 0
+    var reader = InstantFactRowReader(decoder: decoder, path: fileURL.path)
     try readTransaction { connection in
       for batch in Self.batches(of: entityIDs) {
         let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
-        let rows = try Self.selectTexts(
+        try Self.withStatement(
           """
-          SELECT json FROM instant_triples WHERE entity_id IN (\(placeholders))\(attributeCondition)
+          SELECT \(InstantFactRowReader.columns) FROM instant_triples WHERE entity_id IN (\(placeholders))\(attributeCondition)
           ORDER BY entity_id, attribute_id, value_json
           """,
           bindings: batch + attributeList,
           on: connection
-        )
-        let decoded = try decodeTriples(rows)
-        for (row, triple) in zip(rows, decoded) where deferredAttributeIDs.contains(triple.attributeID) {
-          deferredCount += 1
-          deferredByteCount += row.utf8.count
+        ) { statement in
+          try reader.read(statement, into: &triples) { triple, byteCount in
+            guard deferredAttributeIDs.contains(triple.attributeID) else { return }
+            deferredCount += 1
+            deferredByteCount += byteCount
+          }
         }
-        triples.append(contentsOf: decoded)
       }
     }
     if deferredCount > 0 {
@@ -286,20 +289,6 @@ actor SQLiteReadConnection {
     return opened
   }
 
-  private func decodeTriples(_ rows: [String]) throws -> [InstantTriple] {
-    guard !rows.isEmpty else { return [] }
-    let array = "[" + rows.joined(separator: ",") + "]"
-    do {
-      return try decoder.decode([InstantTriple].self, from: Data(array.utf8))
-    } catch {
-      throw Self.failure(
-        operation: "decode rows on the local read connection",
-        message: "\(rows.count) stored rows could not be decoded: \(error)",
-        path: fileURL.path
-      )
-    }
-  }
-
   private static func batches(of ids: Set<String>) -> [[String]] {
     let sorted = ids.sorted()
     return stride(from: 0, to: sorted.count, by: batchSize).map {
@@ -313,12 +302,13 @@ actor SQLiteReadConnection {
     }
   }
 
-  /// The first column of every row `sql` selects, as text.
-  private static func selectTexts(
+  /// `sql` prepared with `bindings`, for `body` to step; finalized after.
+  private static func withStatement<Result>(
     _ sql: String,
     bindings: [String],
-    on connection: OpaquePointer
-  ) throws -> [String] {
+    on connection: OpaquePointer,
+    _ body: (OpaquePointer) throws -> Result
+  ) throws -> Result {
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
       throw failure(operation: "prepare a local read", message: errorMessage(connection), path: nil)
@@ -330,27 +320,38 @@ actor SQLiteReadConnection {
         throw failure(operation: "bind a local read", message: errorMessage(connection), path: nil)
       }
     }
-    var texts: [String] = []
-    while true {
-      let result = sqlite3_step(statement)
-      if result == SQLITE_DONE { break }
-      guard result == SQLITE_ROW else {
-        throw failure(operation: "step a local read", message: errorMessage(connection), path: nil)
+    return try body(statement)
+  }
+
+  /// The first column of every row `sql` selects, as text.
+  private static func selectTexts(
+    _ sql: String,
+    bindings: [String],
+    on connection: OpaquePointer
+  ) throws -> [String] {
+    try withStatement(sql, bindings: bindings, on: connection) { statement in
+      var texts: [String] = []
+      while true {
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { break }
+        guard result == SQLITE_ROW else {
+          throw failure(operation: "step a local read", message: errorMessage(connection), path: nil)
+        }
+        if let text = sqlite3_column_text(statement, 0) {
+          texts.append(String(cString: text))
+        }
       }
-      if let text = sqlite3_column_text(statement, 0) {
-        texts.append(String(cString: text))
-      }
+      return texts
     }
-    return texts
   }
 
   /// SQLite's message with its extended result code, which names the failure ("disk I/O error" alone does not).
-  private static func errorMessage(_ connection: OpaquePointer) -> String {
+  static func errorMessage(_ connection: OpaquePointer?) -> String {
     let message = sqlite3_errmsg(connection).map { String(cString: $0) } ?? "Unknown SQLite error."
     return "\(message) (SQLite \(sqlite3_extended_errcode(connection)))"
   }
 
-  private static func failure(operation: String, message: String, path: String?) -> InstantError {
+  static func failure(operation: String, message: String, path: String?) -> InstantError {
     InstantError(
       code: .persistenceFailed,
       operation: operation,
