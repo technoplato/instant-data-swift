@@ -1,3 +1,18 @@
+## 2026-10-25 08:22:15 EDT — scribe `f61030e837a3c4f89c9a4632b0bd7cfa17c5790f`
+Docs (#1100): the hot-paths audit's section 14 (design, schema push and backfill, the wire measurement, red and green, the bundle diff), Build 136's story, the PROGRESS entry.
+
+## 2026-10-25 07:30:09 EDT — scribe `03715b760713182517a9f7ce38f0a02ee70a1203`
+Test (#1100): the store tests' typed list fixture links its image as the recording's preview, as the image writer now does.
+
+## 2026-10-25 07:13:56 EDT — scribe `deb9caa7412e8a7278ab978f993cfc3f58d9715b`
+Fix (#1100): green: the recordings list reads a recording's audio row and newest image through two has-one links (audioAttachment, previewImage) that the writers set in the row's own transaction, and a continued take reads every image of its recording; a refresh carries 24 attachment rows instead of 2,892 for 12 recordings x 240 images (13 KB instead of 1.67 MB of JSON, throwaway app).
+
+## 2026-10-25 07:04:44 EDT — scribe `7116e838127c1f1c2dc455f7b8d90b79d2faa2a4`
+Test (#1100): red's inserted-triple accessor and the wire exercise (scripts/perf/list-refresh-payload-1100.mjs, throwaway app only).
+
+## 2026-10-25 06:44:02 EDT — scribe `3e063a3ee226b05b1eafe1bb557cb49daab290e7`
+Test (#1100): red: the list's queries include only has-one links, Stop and an image write link the recording's previews in their own transactions, the list reads the audio through its link, a continued take shows every image.
+
 ## 2026-10-25 08:01:33 EDT — realtime-voice `391c39bfbf79f901654fb728871d58b15e4949b4`
 What's New: Build 136's library story counts a line's four lock turns and gives the save wait as one in a hundred.
 
