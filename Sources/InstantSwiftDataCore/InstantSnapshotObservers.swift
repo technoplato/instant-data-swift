@@ -1,3 +1,7 @@
+// History:
+// - 2026-10-25: a registry may keep each key's latest published value, for an observer that registers later to start
+//   from it in the same turn as any publish (#1132).
+
 import Foundation
 
 actor InstantSnapshotObservers<Key: Hashable & Sendable, Value: Sendable> {
@@ -7,6 +11,26 @@ actor InstantSnapshotObservers<Key: Hashable & Sendable, Value: Sendable> {
   }
 
   private var observers: [UUID: Observer] = [:]
+  /// Whether this registry keeps each key's latest value (#1132): off for registries whose values are large lists.
+  private let keepsLatest: Bool
+  private var latest: [Key: Value] = [:]
+
+  init(keepsLatest: Bool = false) {
+    self.keepsLatest = keepsLatest
+  }
+
+  /// An observation of `key` that starts from its latest published value, in this registry's turn, so it can neither
+  /// miss a publish nor start from an older read (#1132); nil while no value is known.
+  func observeLatest(key: Key) -> AsyncStream<Value>? {
+    guard let value = latest[key] else { return nil }
+    return observe(key: key, current: value)
+  }
+
+  /// A first value read for `key` before any publish, unless a publish came first (#1132).
+  func seedLatest(_ value: Value, for key: Key) {
+    guard keepsLatest, latest[key] == nil else { return }
+    latest[key] = value
+  }
 
   func observe(key: Key, current value: Value) -> AsyncStream<Value> {
     observeLease(key: key, current: value).stream
@@ -37,6 +61,7 @@ actor InstantSnapshotObservers<Key: Hashable & Sendable, Value: Sendable> {
   }
 
   func publish(_ value: Value, for key: Key) {
+    if keepsLatest { latest[key] = value }
     for observer in observers.values where observer.key == key {
       observer.continuation.yield(value)
     }

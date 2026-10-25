@@ -52,21 +52,21 @@ struct InstantOperationGateAwaitTests {
   func aMainActorCallerCannotHoldTheOperationGateWhileMainIsBusy() async throws {
     let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
     let release = Release()
-    var configuration = InstantRuntimeConfiguration(
+    let configuration = InstantRuntimeConfiguration(
       appID: "operation-gate-main-actor",
       persistenceURL: FileManager.default.temporaryDirectory
         .appendingPathComponent("operation-gate-main-actor-\(UUID().uuidString).sqlite"),
       initialAttributes: TodoExample.attributes
     )
-    configuration.onAuthSessionObservationHoldsOperationGateForTesting = {
-      enteredContinuation.yield(())
-      await release.wait()
-    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
-    // 1. A main-actor caller takes the gate and suspends inside it, as Scribe's root view does.
+    // 1. A main-actor caller of a runtime call that takes the gate suspends inside it, as Scribe's root view's auth
+    // observation did until #1132 took that read off the gate.
     let observing = Task { @MainActor in
-      _ = try await runtime.observeAuthSession()
+      await runtime.holdingOperationGateForTesting {
+        enteredContinuation.yield(())
+        await release.wait()
+      }
     }
     var enteredIterator = entered.makeAsyncIterator()
     _ = await enteredIterator.next()
@@ -111,6 +111,6 @@ struct InstantOperationGateAwaitTests {
     #expect(!mainFinished.isReleased, "the write waited for the main thread")
     unblockMain.signal()
     await mainBusy.value
-    _ = try await observing.value
+    await observing.value
   }
 }

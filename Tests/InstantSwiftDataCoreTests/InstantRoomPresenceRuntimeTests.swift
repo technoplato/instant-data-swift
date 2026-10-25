@@ -21,8 +21,7 @@ struct InstantRoomPresenceRuntimeTests {
     let session = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
     ])
-    var configuration = try roomConfiguration(appID: "room-presence-gate", transport: session.transport)
-    configuration.onAuthSessionObservationHoldsOperationGateForTesting = { await gateHolder.parkIfArmed() }
+    let configuration = try roomConfiguration(appID: "room-presence-gate", transport: session.transport)
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     try await withRoomCleanup({ await gateHolder.release() }) {
       _ = try await runtime.connect()
@@ -30,8 +29,8 @@ struct InstantRoomPresenceRuntimeTests {
       try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
 
       await gateHolder.arm()
-      let observation = Task { try await runtime.observeAuthSession() }
-      try await waitForRoom("observeAuthSession to hold the operation gate") { await gateHolder.parkedCount == 1 }
+      let observation = Task { await runtime.holdingOperationGateForTesting { await gateHolder.parkIfArmed() } }
+      try await waitForRoom("the test holder to hold the operation gate") { await gateHolder.parkedCount == 1 }
 
       _ = try await instantLiveWithTimeout(
         operation: "publish presence while the operation gate is held",
@@ -43,7 +42,7 @@ struct InstantRoomPresenceRuntimeTests {
         await session.sentMessages().contains { $0.op == "set-presence" }
       }
       await gateHolder.release()
-      _ = try await observation.value
+      await observation.value
       _ = try await runtime.closeConnection()
     }
   }
@@ -1085,8 +1084,8 @@ actor RoomTopicRecorder {
   }
 }
 
-/// Parks whoever enters it while armed, until `release()`. Through `onAuthSessionObservationHoldsOperationGateForTesting`
-/// it holds the operation gate; through `onLiveReceiverEventAcquiredForTesting` it holds the applier on a frame.
+/// Parks whoever enters it while armed, until `release()`. Through `holdingOperationGateForTesting` it holds the operation
+/// gate; through `onLiveReceiverEventAcquiredForTesting` it holds the applier on a frame.
 actor RoomTestGate {
   private var isArmed = false
   private var isReleased = false

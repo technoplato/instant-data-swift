@@ -78,16 +78,15 @@ struct InstantLocalReadTests {
     let url = try Self.temporaryCacheURL()
     try await Self.seed(url, lines: (0..<5).map { Self.line($0, recordingID: "recording-1") })
     let holder = GateHolder()
-    var configuration = Self.configuration(url, lookup: false, defersText: false)
-    configuration.onAuthSessionObservationHoldsOperationGateForTesting = { await holder.hold() }
+    let configuration = Self.configuration(url, lookup: false, defersText: false)
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
-    let holding = Task { _ = try await runtime.observeAuthSession() }
+    let holding = Task { await runtime.holdingOperationGateForTesting { await holder.hold() } }
     await holder.waitUntilHeld()
     let read = Answer { try await runtime.queryLocally(Self.recordingLines("recording-1")) }
     let answered = await read.value(within: .seconds(5))
     await holder.release()
-    _ = try await holding.value
+    await holding.value
     await read.finish()
     expectNoDifference(answered?.values.count, 5, "#1006: the local read answered while the gate was held")
   }

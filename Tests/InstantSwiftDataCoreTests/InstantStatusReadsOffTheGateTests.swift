@@ -57,4 +57,68 @@ struct InstantStatusReadsOffTheGateTests {
 
     _ = try? await runtime.closeConnection()
   }
+
+  /// What a status read answers equals a read under the gate after each change the status shows (#1132): a
+  /// connection, a local write, its acknowledgement, a write the server refused, and a close. Every writer of what the
+  /// status reads computes a status under the gate, which is what the read answers from.
+  @Test
+  func aStatusReadAnswersWhatAReadUnderTheGateWould() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "status-snapshot-coverage",
+      persistenceURL: try InstantStoredResultReloadTests.temporaryCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    var differences: [String] = []
+    func check(_ step: String) async throws {
+      let answered = try await runtime.connectionStatus()
+      let underTheGate = try await runtime.connectionStatusUnderTheGateForTesting()
+      if answered != underTheGate {
+        differences.append("\(step): answered \(answered), under the gate \(underTheGate)")
+      }
+    }
+
+    try await check("bootstrap")
+    _ = try await runtime.connect()
+    try await check("a connection")
+    try await InstantOfflineRuntimeFixture.createTodo("accepted", in: runtime)
+    try await check("a local write")
+    try await InstantConnectionStateTruthTests.waitUntil("the write to reach the socket") {
+      await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-accepted" }
+    }
+    await session.enqueue(
+      InstantLiveMessage(op: "transact-ok", clientEventID: "tx-accepted", fields: ["tx-id": .string("server-accepted")])
+    )
+    try await InstantConnectionStateTruthTests.waitUntil("the server to accept the write") {
+      await runtime.pendingMutations().isEmpty
+    }
+    try await check("its acknowledgement")
+    try await InstantOfflineRuntimeFixture.createTodo("refused", in: runtime)
+    try await InstantConnectionStateTruthTests.waitUntil("the refused write to reach the socket") {
+      await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-refused" }
+    }
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "tx-refused",
+        fields: [
+          "message": .string("permission denied"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    // Waits on the outbox, not a status read under the gate, which would refresh what the next read answers from.
+    try await InstantConnectionStateTruthTests.waitUntil("the refusal to land") {
+      await runtime.outboxMutations().contains { $0.id == "tx-refused" && $0.status == .failed }
+    }
+    try await check("a refused write")
+    _ = try await runtime.closeConnection()
+    try await check("a close")
+
+    #expect(differences.isEmpty, "#1132: \(differences.joined(separator: "; "))")
+  }
 }

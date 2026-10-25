@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-25: connectionStatus(), observeConnectionStatus() and observeAuthSession() no longer take the operation
+//   gate: they answer from the latest status inputs and session the writers computed under it, and the registries hand
+//   a new observer their latest value in the same turn as any publish (#1132).
 // - 2026-10-25: a prune batch holds the server-apply gate as well as the operation gate, at background priority, so no
 //   batch commits inside a frame's apply, which made the frame plan again behind the next batch (#1129).
 // - 2026-10-25: a closed result larger than a prune batch is released over later batches, each deleting and checking
@@ -826,8 +829,22 @@ public struct InstantRuntimeConfiguration: Sendable {
 
 private actor InstantAuthSessionObservers {
   private var continuations: [UUID: AsyncStream<InstantAuthSession?>.Continuation] = [:]
+  /// The latest session published or seeded (#1132): `.some(nil)` signed out, `nil` not known yet.
+  private var latest: InstantAuthSession??
+
+  /// An observation that starts from the latest session, in this registry's turn; nil while none is known.
+  func observeLatest() -> AsyncStream<InstantAuthSession?>? {
+    guard let latest else { return nil }
+    return observe(current: latest)
+  }
+
+  /// The session bootstrap read, unless a writer published one first.
+  func seedLatest(_ session: InstantAuthSession?) {
+    if latest == nil { latest = .some(session) }
+  }
 
   func observe(current session: InstantAuthSession?) -> AsyncStream<InstantAuthSession?> {
+    latest = .some(session)
     let id = UUID()
     let stream = AsyncStream<InstantAuthSession?>.makeStream(bufferingPolicy: .bufferingNewest(1))
     continuations[id] = stream.continuation
@@ -839,6 +856,7 @@ private actor InstantAuthSessionObservers {
   }
 
   func yield(_ session: InstantAuthSession?) {
+    latest = .some(session)
     for continuation in continuations.values {
       continuation.yield(session)
     }
@@ -1579,7 +1597,13 @@ public final class InstantRuntime: Sendable {
   let outbox: InstantOutbox
   private let authSessionObservers = InstantAuthSessionObservers()
   private let connectionStatusObservers =
-    InstantSnapshotObservers<String, InstantConnectionStatus>()
+    InstantSnapshotObservers<String, InstantConnectionStatus>(keepsLatest: true)
+  /// The SQLite half of the connection status as the last status computed under the operation gate read it, or nil
+  /// before the first and after one that could not be read (#1132). Every writer of those rows computes a status under
+  /// the gate, so `connectionStatus()` answers from this with the live session's state read now, waiting for neither
+  /// the gate nor a write in SQLite; it queued on the gate for six reads, 1,815 ms p99 behind a prune in #1074's
+  /// recording exercise.
+  private let latestConnectionStatusInputs = OSAllocatedUnfairLock<InstantConnectionStatusInputs?>(initialState: nil)
   private let mutationLifecycleObservers =
     InstantSnapshotObservers<String, InstantMutationLifecycleEvent>()
   private let roomPresenceObservers =
@@ -2036,6 +2060,8 @@ public final class InstantRuntime: Sendable {
         }
       }
 
+      // #1132: the first status and session, so the reads and observations that follow answer without the gate.
+      await runtime.seedStatusAndSessionReads()
       runtime.startUserCookieSyncOnStartup()
       if bootstrapSynchronizationBlocker == nil {
         runtime.startAutomaticLiveConnectionIfNeeded()
@@ -2516,6 +2542,9 @@ public final class InstantRuntime: Sendable {
         if let connectionStatus = saved.connectionStatus {
           operationGate.markHolderPhase("publish status")
           await publishConnectionStatus(from: connectionStatus)
+        } else {
+          // #1132: the write changed what the status reads; the next status read reads it again.
+          latestConnectionStatusInputs.withLock { $0 = nil }
         }
         return InstantLocalWriteCommit(result: committed.prepared.result, publication: committed.publication)
       }
@@ -7674,6 +7703,21 @@ public final class InstantRuntime: Sendable {
     await operationGate.waiterCount
   }
 
+  /// The connection status read under the operation gate (tests only), as `connectionStatus()` read it before #1132,
+  /// for a test to compare with what `connectionStatus()` answers now.
+  @concurrent
+  package func connectionStatusUnderTheGateForTesting() async throws -> InstantConnectionStatus {
+    await enterOperationGate(operation: "test status read")
+    do {
+      let status = try await connectionStatusWithGateHeld()
+      await leaveOperationGate()
+      return status
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
   /// Holds the operation gate while `body` runs (tests only), as any holder does: a test pauses inside `body` to show
   /// what waits for the gate and what does not (#1132).
   @concurrent
@@ -7856,6 +7900,10 @@ public final class InstantRuntime: Sendable {
 
   @concurrent
   public func connectionStatus() async throws -> InstantConnectionStatus {
+    if let inputs = latestConnectionStatusInputs.withLock({ $0 }) {
+      return await connectionStatus(from: inputs)
+    }
+    // Before the first status, or after one that could not be read: read it under the gate, as before (#1132).
     await operationGate.enter()
     do {
       let status = try await connectionStatusWithGateHeld()
@@ -7872,9 +7920,15 @@ public final class InstantRuntime: Sendable {
 
   @concurrent
   public func observeConnectionStatus() async throws -> AsyncStream<InstantConnectionStatus> {
+    // #1132: the registry's latest published status, in the same turn as any publish, so the observer can neither miss
+    // one nor start from a stale read; the gate held for this read guarded exactly that.
+    if let stream = await connectionStatusObservers.observeLatest(key: configuration.appID) {
+      return stream
+    }
     await operationGate.enter()
     do {
       let status = try await connectionStatusWithGateHeld()
+      await connectionStatusObservers.seedLatest(status, for: configuration.appID)
       let stream = await connectionStatusObservers.observe(
         key: configuration.appID,
         current: status
@@ -8283,14 +8337,41 @@ public final class InstantRuntime: Sendable {
     pendingMutationCount knownPendingMutationCount: Int? = nil
   ) async throws -> InstantConnectionStatus {
     let keys = connectionStatusKeys
-    let inputs = try await withPersistence { persistence in
-      try Self.connectionStatusInputs(
-        in: persistence,
-        keys: keys,
-        knownPendingMutationCount: knownPendingMutationCount
-      )
+    let inputs: InstantConnectionStatusInputs
+    do {
+      inputs = try await withPersistence { persistence in
+        try Self.connectionStatusInputs(
+          in: persistence,
+          keys: keys,
+          knownPendingMutationCount: knownPendingMutationCount
+        )
+      }
+    } catch {
+      latestConnectionStatusInputs.withLock { $0 = nil }
+      throw error
     }
+    latestConnectionStatusInputs.withLock { $0 = inputs }
     return await connectionStatus(from: inputs)
+  }
+
+  /// Forgets the remembered status inputs before a write of what they read that publishes no status (#1132): the
+  /// connection's lifecycle (opened, closed, errored) and a write's failure. The next status read reads under the gate.
+  private func forgetConnectionStatusInputs() {
+    latestConnectionStatusInputs.withLock { $0 = nil }
+  }
+
+  /// Reads the first connection status and auth session for the reads and observations that answer without the
+  /// operation gate (#1132); one that cannot be read leaves its read to the gate, as before.
+  private func seedStatusAndSessionReads() async {
+    await enterOperationGate(operation: "seed status and session reads")
+    if let status = try? await connectionStatusWithGateHeld() {
+      await connectionStatusObservers.seedLatest(status, for: configuration.appID)
+    }
+    do {
+      let session = try await persistence.loadAuthSession(key: authSessionKey)
+      await authSessionObservers.seedLatest(session)
+    } catch {}
+    await leaveOperationGate()
   }
 
   /// The SQLite half of a connection status, read inside one persistence turn (#403). These six reads were six
@@ -8383,6 +8464,7 @@ public final class InstantRuntime: Sendable {
   private func publishConnectionStatus(
     from inputs: InstantConnectionStatusInputs
   ) async -> InstantConnectionStatus {
+    latestConnectionStatusInputs.withLock { $0 = inputs }
     let status = await connectionStatus(from: inputs)
     await publishConnectionStatus(status)
     return status
@@ -8430,6 +8512,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func saveOpenedConnectionMetadataWithGateHeld() async throws {
+    forgetConnectionStatusInputs()
     let keys = connectionStatusKeys
     let now = configuration.now()
     try await withPersistence { persistence in
@@ -8442,6 +8525,7 @@ public final class InstantRuntime: Sendable {
   private func saveOpenedConnectionMetadataPublishingStatusWithGateHeld() async throws
     -> InstantConnectionStatus
   {
+    forgetConnectionStatusInputs()
     let keys = connectionStatusKeys
     let now = configuration.now()
     let inputs = try await withPersistence { persistence in
@@ -8456,6 +8540,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func saveClosedConnectionMetadataWithGateHeld() async throws {
+    forgetConnectionStatusInputs()
     let keys = connectionStatusKeys
     let now = configuration.now()
     try await withPersistence { persistence in
@@ -8464,6 +8549,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func saveErroredConnectionMetadataWithGateHeld(message: String) async throws {
+    forgetConnectionStatusInputs()
     let keys = connectionStatusKeys
     let now = configuration.now()
     try await withPersistence { persistence in
@@ -10367,6 +10453,11 @@ public final class InstantRuntime: Sendable {
 
   @concurrent
   public func observeAuthSession() async throws -> AsyncStream<InstantAuthSession?> {
+    // #1132: the latest session the writers published (or bootstrap read), handed over in the same turn as any publish:
+    // the gate it held was only so a reader could not load the session, lose a race to a writer and register late.
+    if let stream = await authSessionObservers.observeLatest() {
+      return stream
+    }
     await operationGate.enter()
     do {
       await configuration.onAuthSessionObservationHoldsOperationGateForTesting?()
@@ -15099,6 +15190,8 @@ public final class InstantRuntime: Sendable {
       let keys = connectionStatusKeys
       let now = configuration.now()
       let hasTerminalFailures = !terminalFailures.isEmpty
+      // #1132: the turn may write the opened state; it publishes the status it read after, if it could read one.
+      forgetConnectionStatusInputs()
       let settled = try await withPersistence { persistence in
         let remainingFailedMutationCount = try persistence.countOutboxMutations(status: .failed)
         if !hasTerminalFailures, remainingFailedMutationCount == 0 {
@@ -15128,6 +15221,9 @@ public final class InstantRuntime: Sendable {
       }
       if let connectionStatus = settled.connectionStatus {
         await publishConnectionStatus(from: connectionStatus)
+      } else {
+        // #1132: the settlement changed what the status reads; the next status read reads it again.
+        latestConnectionStatusInputs.withLock { $0 = nil }
       }
       let remainingCounts = try settled.counts.get()
       let remainingPendingCount = remainingCounts.pending
@@ -15754,6 +15850,7 @@ public final class InstantRuntime: Sendable {
     recordsConnectionFailure: Bool
   ) -> [InstantPersistenceMetadataEntry] {
     guard recordsConnectionFailure else { return [] }
+    forgetConnectionStatusInputs()
     let now = configuration.now()
     return [
       InstantPersistenceMetadataEntry(
@@ -16364,6 +16461,7 @@ public final class InstantRuntime: Sendable {
         shouldClearConnectionFailure
         ? [connectionLastErrorMetadataKey]
         : []
+      if shouldClearConnectionFailure { forgetConnectionStatusInputs() }
 
       recordActorHop(.persistence)
       let didSave: Bool
