@@ -1,3 +1,28 @@
+## 2026-10-25 08:04:00 EDT — fix-gate-1074 hands off: what is done, what is left, how to continue
+
+- **Released by this session (release owner since 1.9.39):** v1.9.39, v1.9.40, v1.9.41 (tag on `e90f69e5`), v1.9.42
+  (tag on `bda87836`); each pinned in Scribe and Scribe Playback (1.9.42: Scribe `b179a4df6`, Build 136 next).
+- **Done, criteria met:** #1131, #1128, #1132, #1133, #1130, #1134 (both slices), #1136; #1127 criterion 1; #1129
+  parts 1-2; #1138 criterion 1 (by measurement, no code).
+- **Open, with the reason:**
+  - #1129 part 3 and #1138 criterion 2: the `$files` unload's long SQLite turn (#1122's in-place unload, claimed by
+    fix-storage-1076) and, for #1138, the `$files` answer's one-transaction commit (412.50 ms worst persistence-actor
+    wait): a reader actor for ungated reads or bounded commit transactions, a redesign.
+  - #1127 (observers part): question to the lab (channel 2026-10-25 04:09): pipeline the pump's sends, or change the
+    exercise's socket model.
+  - #1137: its criterion is the iPhone's collector; the `launch` exercise does not reproduce the 5.5-6.8 s hold.
+  - #1140: scoped on the issue (cancel the receiver before the server-apply gate in `closeConnection()`; cancellation
+    between pre-commit pages; `enterUnlessCancelled` for the catch-up; a focused test with a cancellable pause in
+    `onServerApplyPreparedBeforeCommitForTesting`).
+  - #1139, #1142, #1143: need their exercises first (a CPU-load variant; a task count per write; five no-op handlers).
+    #1142's `waitForAllPendingMutations` change alters a public parameter that Scribe passes (`pollInterval: 100 ms`).
+  - #1168 (filed): an explicit-flush test's loaded-run race, before #1133 as after it.
+- **To continue:** contention exercises run with `scripts/contention-exercises/run-contention-exercises.sh` (`--only`
+  names: recording, recording-deferred, prune, prune-inline, server-apply, observers, compaction, compaction-main-hop,
+  launch); the release gate is `scripts/known-failing-tests.sh run/compare` in debug plus the `InstantSwiftDataTests`
+  bundle in debug (its release link fails on the Xcode beta) and `RealSizeBudgetTests` in release
+  (`INSTANT_REAL_SIZE_BUDGETS=1`).
+
 ## 2026-10-25 07:59:54 EDT — v1.9.42 released (fix-gate-1074, the release owner)
 
 - **Release:** `docs/releases/v1.9.42.md` (`e19b30a8`), cut at main `239ba916`, last code commit `53979805`, carrying
