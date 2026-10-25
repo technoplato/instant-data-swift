@@ -149,6 +149,35 @@ struct InstantObserverRegistrationGateTests {
   }
 }
 
+// MARK: - The wire's order
+
+extension InstantObserverRegistrationGateTests {
+  /// A registration whose last observer leaves before its owed add-query went out sends that add-query first, then
+  /// its remove-query (#1131): the wire reads add then remove, as upstream's synchronous `ws.send` at subscription made
+  /// it, and the late send after them sends nothing. Under load an infinite query's frozen chunk was evicted that fast
+  /// and the wire read remove alone (`liveWindowEvictsAndCancelsOppositeCursorChunkInBothDirections`).
+  @Test
+  func anUnregistrationBeforeTheOwedSendSendsAddThenRemove() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let live = InstantRuntimeLiveSession()
+    try await live.open(
+      request: InstantLiveSessionRequest(appID: "observer-registration-wire-order"),
+      transport: session.transport,
+      makeID: { UUID().uuidString.lowercased() }
+    )
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let key = try InstantLiveQueryEncoder.registrationKey(for: query)
+
+    let owed = try #require(await live.recordQueryRegistration(query, key: key))
+    _ = try await live.unregisterQuery(key: key, clientEventID: "event-remove")
+    try await live.sendQueryRegistration(owed, clientEventID: "event-late")
+
+    let ops = await session.sentMessages().map(\.op).filter { $0 != "init" }
+    expectNoDifference(ops, ["add-query", "remove-query"])
+    await live.close()
+  }
+}
+
 // MARK: - A reload in bounded holds
 
 extension InstantObserverRegistrationGateTests {
