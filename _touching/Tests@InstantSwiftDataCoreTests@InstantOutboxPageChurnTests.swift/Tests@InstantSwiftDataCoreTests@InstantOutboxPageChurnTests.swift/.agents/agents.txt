@@ -1,0 +1,1 @@
+claude-code/fix-storage-1076@ld 2026-10-24T23:50:26-0400 mower plan=2026-10-24-fix-storage-1076 #1115 amendment 3 (the rowid read and the index list)

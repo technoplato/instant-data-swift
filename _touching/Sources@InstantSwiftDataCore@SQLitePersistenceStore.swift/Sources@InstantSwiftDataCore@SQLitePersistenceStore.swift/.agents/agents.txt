@@ -60,3 +60,4 @@ claude-code/fix-gate-1074@ld 2026-10-24T21:11:36-0400 mower plan=2026-10-24-fix-
 claude-code/fix-storage-1076@ld 2026-10-24T22:27:43-0400 mower plan=2026-10-24-fix-storage-1076 #1118 (openRawConnection, recordDurabilitySettings, a testing accessor, the checkpoint constant; amended per issue)
 claude-code/fix-gate-1074@ld 2026-10-24T23:01:44-0400 mower plan=2026-10-24-fix-gate-1074 #1129 amendment 2 (liveQueryResultPruneBatch, applyLiveQueryResultPruneBatch and their WithoutTransaction bodies, the ownership check, the prune batch types)
 claude-code/fix-storage-1076@ld 2026-10-24T22:48:45-0400 mower plan=2026-10-24-fix-storage-1076 #1120 amendment 1 (insertTripleWithoutTransaction, saveTripleDiffWithoutTransaction)
+claude-code/fix-storage-1076@ld 2026-10-24T23:50:26-0400 mower plan=2026-10-24-fix-storage-1076 #1115 amendment 3 (bootstrap's migrations and delivery index re-assert, readyForDeliveryCondition, deliveryCandidateIndexSQL, the candidate SQL's doc comments)

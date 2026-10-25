@@ -79,3 +79,22 @@ The live socket counts its frames and bytes by op, each way, and the device log 
 - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift`: `InstantURLSessionLiveWebSocket.send` and `receive`
   (each frame counted where its size is already known) and their codecs `encodedFrame` / `decodedFrame` (unchanged).
 - New, test-only: `Tests/InstantSwiftDataCoreTests/InstantWireMeterTests.swift`.
+
+## Amendment 3 (2026-10-25 00:05 EDT, #1115 slice 1)
+
+#1118 and #1124 landed (`56538ac5`, `887f3bb2`); #1120 is held for #1121 (measured neutral on the hot path). #1115's first
+slice cuts two of the outbox's b-trees from every write and one from every claim, without touching any statement's
+columns: the write-key and effect-entity tables become WITHOUT ROWID (each kept its whole row twice, as the table and
+as its primary key's index), and the delivery candidate partial index folds into the deadline index as one
+`(delivery_claim_state, delivery_state, delivery_claim_deadline_ms, created_at_ms, mutation_id)` index. Claimed:
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `bootstrap`'s migration list (two new migrations) and its
+  re-assert of the delivery candidate index, `readyForDeliveryCondition`, `deliveryCandidateIndexSQL` (becomes the
+  folded index), and the doc comments of `automaticDeliveryCandidatesSQL` and `automaticDeliveryCandidateExistsSQL`.
+- `Tests/InstantSwiftDataCoreTests/InstantOutboxPageChurnTests.swift`: the rowid read in
+  `anAcknowledgementUpdatesItsBookkeepingRowsInPlace` (a WITHOUT ROWID table has none) and the index list in
+  `theOutboxKeepsNoIndexItsStatementsCannotUse`.
+- `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOCounters.swift`: whether a file is counted is decided at each call
+  from the watched directory, not once at open, so a store another test left open is not counted.
+- New, test-only: `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` (in the `StorageIOExercises`
+  suite: one write's save, claim, acknowledgement and echo, frames per outbox b-tree, through the audit's VFS shim).
+Next slices, each amended here first: the bodies in their own table, then partial indexes on what that makes cheap.
