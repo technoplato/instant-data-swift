@@ -1,5 +1,10 @@
 import Foundation
 
+// History:
+// - 2026-10-24: hydration looks up only the configured attributes, found in one pass over the schema: it grouped and
+//   mapped every attribute (2,283 on the phone) three times per hydrated emission, about 2.2 MB of a 64-line refresh,
+//   and built a set of the selected fields for every row (#1147).
+
 package struct InstantDeferredValueHydrationRequest: Hashable, Sendable {
   package var namespace: String
   package var attributeIDs: Set<String>
@@ -96,7 +101,7 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
     attributes: [InstantAttribute]
   ) -> [InstantDeferredValueHydrationRequest] {
     guard isEnabled else { return [] }
-    let attributesByNamespace = Dictionary(grouping: attributes, by: \.namespace)
+    let configured = configuredAttributes(in: attributes)
     var entityIDsByAttributeID: [String: Set<String>] = [:]
     let roots = if let rootEntityIDs {
       values.filter { rootEntityIDs.contains($0.id) }
@@ -108,14 +113,13 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
       namespace: plan.namespace,
       selectedFields: plan.selectedFields,
       includes: plan.includes,
-      attributesByNamespace: attributesByNamespace,
+      attributesByNamespace: configured.byNamespace,
       into: &entityIDsByAttributeID
     )
 
-    let attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
     var attributeIDsByBatch: [DeferredValueHydrationBatchKey: Set<String>] = [:]
     for (attributeID, entityIDs) in entityIDsByAttributeID where !entityIDs.isEmpty {
-      guard let attribute = attributesByID[attributeID] else { continue }
+      guard let attribute = configured.byID[attributeID] else { continue }
       let key = DeferredValueHydrationBatchKey(
         namespace: attribute.namespace,
         entityIDs: entityIDs.sorted()
@@ -141,7 +145,7 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
       namespace: plan.namespace,
       selectedFields: plan.selectedFields,
       includes: plan.includes,
-      attributesByNamespace: Dictionary(grouping: attributes, by: \.namespace)
+      attributesByNamespace: configuredAttributes(in: attributes).byNamespace
     )
   }
 
@@ -190,17 +194,16 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
     attributes: [InstantAttribute]
   ) -> InstantQueryEmission {
     guard !triples.isEmpty else { return emission }
-    let attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    let configured = configuredAttributes(in: attributes)
     var valuesByEntity: [DeferredValueEntityKey: [String: InstantMaterializedValue]] = [:]
     for triple in triples {
-      guard let attribute = attributesByID[triple.attributeID] else { continue }
+      guard let attribute = configured.byID[triple.attributeID] else { continue }
       let key = DeferredValueEntityKey(
         namespace: attribute.namespace,
         entityID: triple.entityID
       )
       valuesByEntity[key, default: [:]][attribute.name] = .one(triple.value)
     }
-    let attributesByNamespace = Dictionary(grouping: attributes, by: \.namespace)
     var hydrated = emission
     hydrated.values = emission.values.map { snapshot in
       hydrate(
@@ -208,7 +211,7 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
         namespace: plan.namespace,
         selectedFields: plan.selectedFields,
         includes: plan.includes,
-        attributesByNamespace: attributesByNamespace,
+        attributesByNamespace: configured.byNamespace,
         valuesByEntity: valuesByEntity
       )
     }
@@ -311,17 +314,10 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
     guard snapshot.namespace == namespace else { return snapshot }
     let key = DeferredValueEntityKey(namespace: snapshot.namespace, entityID: snapshot.id)
     if let values = valuesByEntity[key] {
-      let requestedFieldNames = Set(
-        requestedAttributes(
-          namespace: namespace,
-          selectedFields: selectedFields,
-          attributesByNamespace: attributesByNamespace
-        )
-        .map(\.name)
-      )
-      for fieldName in requestedFieldNames {
-        if let value = values[fieldName] {
-          snapshot.values[fieldName] = value
+      for attribute in attributesByNamespace[namespace] ?? []
+      where isRequested(attribute, selectedFields: selectedFields) {
+        if let value = values[attribute.name] {
+          snapshot.values[attribute.name] = value
         }
       }
     }
@@ -389,12 +385,30 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
     selectedFields: [String]?,
     attributesByNamespace: [String: [InstantAttribute]]
   ) -> [InstantAttribute] {
-    let selectedFields = selectedFields.map(Set.init)
-    return (attributesByNamespace[namespace] ?? []).filter { attribute in
-      attributeIDs.contains(attribute.id)
-        && (selectedFields?.contains(attribute.name) ?? true)
-    }
+    (attributesByNamespace[namespace] ?? []).filter { isRequested($0, selectedFields: selectedFields) }
   }
+
+  /// Whether a configured attribute is among the fields a query selects (all of them when it names none). A query
+  /// selects a few fields, so the array is searched instead of made a set for every row.
+  private func isRequested(_ attribute: InstantAttribute, selectedFields: [String]?) -> Bool {
+    attributeIDs.contains(attribute.id) && (selectedFields?.contains(attribute.name) ?? true)
+  }
+
+  /// The configured attributes the schema declares, by id and by namespace in the schema's order: a few entries found in
+  /// one pass over the schema, where grouping and mapping all of it cost about 2.2 MB per hydrated emission (#1147).
+  private func configuredAttributes(in attributes: [InstantAttribute]) -> ConfiguredAttributes {
+    var configured = ConfiguredAttributes()
+    for attribute in attributes where attributeIDs.contains(attribute.id) && configured.byID[attribute.id] == nil {
+      configured.byID[attribute.id] = attribute
+      configured.byNamespace[attribute.namespace, default: []].append(attribute)
+    }
+    return configured
+  }
+}
+
+private struct ConfiguredAttributes {
+  var byID: [String: InstantAttribute] = [:]
+  var byNamespace: [String: [InstantAttribute]] = [:]
 }
 
 private struct DeferredValueHydrationBatchKey: Hashable {
