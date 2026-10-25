@@ -1,3 +1,6 @@
+## 2026-10-24 22:57:36 EDT — scribe `7abb3d20ad3f48d178c49afc70cf572193310702`
+Cut Scribe 0.1 (131) from main 7f781ee1d: CURRENT_PROJECT_VERSION 131, What's New dated (#962 slice 3, #1154 part A, #412); instant-data-swift exactly 1.9.38; Scribe Playback stays 130.
+
 ## 2026-10-24 22:52:24 EDT — scribe `7f781ee1d06cb0cba777580c43aa3d8bd1d60f3d`
 Merge (#412) for build 131: the live recording screen's vertical stamp drawn in parts, its digits changed by Core Animation's render server (no main-thread wake per frame).
 
