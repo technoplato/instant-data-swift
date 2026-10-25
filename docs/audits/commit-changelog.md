@@ -1,3 +1,12 @@
+## 2026-10-24 20:47:11 EDT — scribe `0ed624cf887dca29854525ae7104fcacc9e82431`
+Merge (#1156): the audit's open items.
+
+## 2026-10-24 20:47:11 EDT — scribe `f58e9525a2345d9db4a2455863ad6983f01eea40`
+changelog(#1156): the docs entry.
+
+## 2026-10-24 20:47:11 EDT — scribe `cfb4eb8e8222d7c19ed2e74b41c7c2dfcd80d7d4`
+Docs (#1156): the lab's device check recipe and build 124 baseline (5.4% / 9.1% / 24.5% main thread at minutes 5 / 60 / 150), the flat per-action costs ranked with TCA's send-loop correction.
+
 ## 2026-10-24 20:46:57 EDT — scribe `4ef73ec5457eadaa3569fb507fa1fdc4cddc64f3`
 Merge (#1067) for build 130: held sideways, Scribe Playback's chrome sits in a narrow left column (chapters and controls out from the side, no Search) and the live recording's left column is the floating bar's rail; the build label rests where it is measured.
 
