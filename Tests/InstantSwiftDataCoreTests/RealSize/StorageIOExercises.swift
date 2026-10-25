@@ -10,6 +10,8 @@
 // - 2026-10-24: the hour prints the store's own checkpoint setting, its checkpoints, and the most lines written between
 //   two of them, which is what a power loss can take (#1118).
 // - 2026-10-25: `STORAGEIO_RESULT_JSON_INTERVAL_MS` sets how often a changing result's JSON is written, for #1123.
+// - 2026-10-25: a write cycle can save each write before the previous one's echo, as a phone saves its next interim
+//   while the server's answer to the last is on its way, so the echo's apply rebases a pending write (#1119).
 
 import Compression
 import Foundation
@@ -940,16 +942,26 @@ struct StorageIOWriteCycle {
   }
 
   /// One transcript line's six writes, each saved, claimed, sent, acknowledged and echoed before the next.
-  mutating func writeLine(into ledger: StorageIOLedger, alsoInto second: StorageIOLedger? = nil) async throws {
+  ///
+  /// With `overlapping`, each write after the line's first is saved before the previous one's echo, as a phone saves its
+  /// next interim while the server's answer to the last is on its way: the echo's apply then rebases a pending write
+  /// (#1119). Each claim still takes the one write it delivers.
+  mutating func writeLine(
+    into ledger: StorageIOLedger,
+    alsoInto second: StorageIOLedger? = nil,
+    overlapping: Bool = false
+  ) async throws {
     let ledgers = [ledger] + (second.map { [$0] } ?? [])
     func record(_ step: StorageIOStep, _ measured: StorageIOProbe, logicalBytes: Int = 0) {
       for ledger in ledgers { ledger.record(step, measured, logicalBytes: logicalBytes) }
     }
-    for write in script.nextLineWrites() {
-      clock.advance(by: millisecondsPerWrite)
-      let save = StorageIOProbe.start()
-      _ = try await runtime.transact(write, createdAt: clock.now())
-      record(.save, save.stop(), logicalBytes: write.storageIOLogicalByteCount)
+    let writes = script.nextLineWrites()
+    var savedCount = 0
+    for (index, write) in writes.enumerated() {
+      if savedCount == index {
+        try await save(write, record: record)
+        savedCount += 1
+      }
 
       claimSequence += 1
       let token = "storage-io-claim-\(claimSequence)"
@@ -1002,6 +1014,12 @@ struct StorageIOWriteCycle {
             changedTriples: operations.count
           )
         }
+        if overlapping, savedCount == index + 1, index + 1 < writes.count {
+          try await save(writes[index + 1], record: record)
+          savedCount += 1
+          let waiting = await runtime.pendingMutationCount()
+          #expect(waiting > 0, "a write waits while the echo applies")
+        }
         let echo = StorageIOProbe.start()
         _ = try await runtime.applyServerTransactionMergingAttributesForTesting(
           frame.transaction,
@@ -1011,6 +1029,17 @@ struct StorageIOWriteCycle {
         record(.echo, echo.stop())
       }
     }
+  }
+
+  /// Saves `write` a write's time after the last one.
+  private func save(
+    _ write: InstantStoreTransaction,
+    record: (StorageIOStep, StorageIOProbe, Int) -> Void
+  ) async throws {
+    clock.advance(by: millisecondsPerWrite)
+    let probe = StorageIOProbe.start()
+    _ = try await runtime.transact(write, createdAt: clock.now())
+    record(.save, probe.stop(), write.storageIOLogicalByteCount)
   }
 
   /// The session prune, as the runtime runs it about once a minute while a recording writes.
