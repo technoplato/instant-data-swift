@@ -10,6 +10,102 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 8:09:28 p.m. EDT — `ee1578458406` docs(#1108 #1114 #1103): the v1.9.38 release document: a write's tail check reads only its own attributes, the overlay check and the tail read stop walking the outbox, a refused write's discard removes its row alone; carries 1.9.37
+
+- **Implementation commit:** `ee1578458406a16463706df0557681f050e909c2`
+- **Change:** Docs (#1108, #1114, #1103): the v1.9.38 release document
+- **Details:**
+  - Release focus, measurements, what stays the same, checks (whole bundle 1,457 tests, 2 failing, both passing alone), not run.
+- **Files:**
+  - `docs/releases/v1.9.38.md` — new: the release document
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:28 p.m. EDT — `3c9fbe763253` test(#1103): the discard meets its real-size budget: its known issue goes and its ceiling tightens
+
+- **Implementation commit:** `3c9fbe76325346181567672edf2b3734e343f6f2`
+- **Change:** Test (#1103): the discard meets its real-size budget: its known issue goes and its ceiling tightens
+- **Details:**
+  - The budgets reported the discard's known issue as not recorded once fixed; the ceiling is now 5,000 allocations and 20 ms.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeBudgetTests.swift` — the discard rule
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:28 p.m. EDT — `8b08fa519ca7` fix(#1103): green: a discard of a failed write whose receipt records no materialized effect removes its row alone and keeps the cached store
+
+- **Implementation commit:** `8b08fa519ca7b01b2c640ab3f7e1dd01ccd7c982`
+- **Change:** Fix (#1103): green: a discard of a failed write whose receipt records no materialized effect removes its row alone and keeps the cached store
+- **Details:**
+  - Reads its one row, validates its receipt, deletes it under the revision checks, bumps only the outbox revision, advances the cache; 0.33 ms and 1,641 allocations at both sizes against 112 ms and 585,459 on the launch-time store.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — discardFailedMutationByItsRow; SQLitePersistenceStore.swift: removeFailedMutationWithoutEffect
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:27 p.m. EDT — `8956bb6af5a2` test(#1103): red: discarding a refused write that left no effect reads no other outbox row and keeps the cached store
+
+- **Implementation commit:** `8956bb6af5a29d5ca6570d5492c58fc490590859`
+- **Change:** Test (#1103): red: discarding a refused write that left no effect reads no other outbox row and keeps the cached store
+- **Details:**
+  - On the old code one discard and the write after it count one whole-outbox read, one full store load and one full state rebuild.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardCostTests.swift` — new: the cost test
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:26 p.m. EDT — `aacf4b3eeed1` fix(#1108 #1114): green: the delivery's overlay check seeks the overlay flag, and the supersession tail read finds the newest id in an index first
+
+- **Implementation commit:** `aacf4b3eeed1ebddc690e996d0c6e24f539ac1b7`
+- **Change:** Fix (#1108, #1114): green: the delivery's overlay check seeks the overlay flag, and the supersession tail read finds the newest id in an index first
+- **Details:**
+  - The flag tested = 1 searches an index; the tail reads the newest id from a covering index and then that row (24 pages against 1,336). Delivery's outbox reads per write 1,866 KB -> under the exercise's threshold.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the overlay check and tail read SQL, history
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:26 p.m. EDT — `1807ddee1526` test(#1108 #1114): red: the delivery's overlay check and the supersession tail read walk every outbox row
+
+- **Implementation commit:** `1807ddee1526e6982d9ab16bf969655d3b9a3473`
+- **Change:** Test (#1108, #1114): red: the delivery's overlay check and the supersession tail read walk every outbox row
+- **Details:**
+  - The overlay check 5,709 SQLite steps beside 400 refused writes against 58 beside 7; the tail read's plan scans the table and sorts.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/OutboxClaimScaleTests.swift` — the overlay and tail tests; SQLitePersistenceStore.swift: the two statements as constants, a step hook
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:25 p.m. EDT — `d094932c4dd7` fix(#1108): green: a write's tail-replacement check looks up only its own inserted attributes, and none for a write that is not all inserts
+
+- **Implementation commit:** `d094932c4dd7e6ecb59d6f155be860f1781489f8`
+- **Change:** Fix (#1108): green: a write's tail-replacement check looks up only its own inserted attributes, and none for a write that is not all inserts
+- **Details:**
+  - The checks collect the inserted attribute ids, stop at the first non-insert, and read the schema once for those; equal bytes in release for both shapes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` — insertedAttributesByID
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 8:09:24 p.m. EDT — `440e32c624bc` test(#1108): red: a write's tail-replacement check allocates the same bytes with 2,283 attributes as with 16
+
+- **Implementation commit:** `440e32c624bc29f5e0212d7a50162e27deb2c446`
+- **Change:** Test (#1108): red: a write's tail-replacement check allocates the same bytes with 2,283 attributes as with 16
+- **Details:**
+  - 1.6 MB allocated per check with 2,283 attributes against 12.5 KB with 16 (debug); the meter's hook can count one thread's allocations.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/OutboxSupersessionSchemaCostTests.swift` — new: the cost test; Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift: one-thread counting
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 7:21:12 p.m. EDT — `f74a67ebbfbe` docs(#1141): the v1.9.37 release document: the transaction-id interner every copy of the store's indexes shares no longer races; carries 1.9.36
 
 - **Implementation commit:** `f74a67ebbfbecf8effe0c6fcbccb07578026c951`

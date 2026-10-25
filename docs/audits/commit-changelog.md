@@ -1,3 +1,33 @@
+## 2026-10-24 20:09:04 EDT — instant-data-swift `ee1578458406a16463706df0557681f050e909c2`
+docs(#1108 #1114 #1103): the v1.9.38 release document: a write's tail check reads only its own attributes, the overlay check and the tail read stop walking the outbox, a refused write's discard removes its row alone; carries 1.9.37
+
+## 2026-10-24 20:00:22 EDT — instant-data-swift `3c9fbe76325346181567672edf2b3734e343f6f2`
+test(#1103): the discard meets its real-size budget: its known issue goes and its ceiling tightens
+
+## 2026-10-24 19:54:19 EDT — instant-data-swift `8b08fa519ca7b01b2c640ab3f7e1dd01ccd7c982`
+fix(#1103): green: a discard of a failed write whose receipt records no materialized effect removes its row alone and keeps the cached store
+
+## 2026-10-24 19:52:32 EDT — instant-data-swift `8956bb6af5a29d5ca6570d5492c58fc490590859`
+test(#1103): red: discarding a refused write that left no effect reads no other outbox row and keeps the cached store
+
+## 2026-10-24 19:42:12 EDT — instant-data-swift `aacf4b3eeed1ebddc690e996d0c6e24f539ac1b7`
+fix(#1108 #1114): green: the delivery's overlay check seeks the overlay flag, and the supersession tail read finds the newest id in an index first
+
+## 2026-10-24 19:39:09 EDT — instant-data-swift `1807ddee1526e6982d9ab16bf969655d3b9a3473`
+test(#1108 #1114): red: the delivery's overlay check and the supersession tail read walk every outbox row
+
+## 2026-10-24 19:35:55 EDT — instant-data-swift `d094932c4dd7e6ecb59d6f155be860f1781489f8`
+fix(#1108): green: a write's tail-replacement check looks up only its own inserted attributes, and none for a write that is not all inserts
+
+## 2026-10-24 19:24:18 EDT — instant-data-swift `440e32c624bc29f5e0212d7a50162e27deb2c446`
+test(#1108): red: a write's tail-replacement check allocates the same bytes with 2,283 attributes as with 16
+
+## 2026-10-24 19:23:35 EDT — scribe `60ef7c29a52c3e7905a85aef95d412834562da3e`
+changelog(#1141): the instant-data-swift 1.9.37 pin a35ad4987 (plan amendment 51f445e25)
+
+## 2026-10-24 19:23:33 EDT — scribe `a35ad4987c6169b9b9fa8f0a51c1bd1d0159ff87`
+Pin instant-data-swift exactly 1.9.37 instead of 1.9.36 in Scribe and Scribe Playback: the transaction-id interner every copy of Instant's indexes shares no longer races (#1141)
+
 ## 2026-10-24 20:03:33 EDT — scribe `d241858fd92bb76c6f3e48842683a6601a8a51ee`
 Merge (#962) for build 130: what Scribe Playback plays shows in the recording as the item's own lines, books included (slices 1-2, ADR 0093); 29 commits, tested on the laptop's heavy.sh and the Mac mini.
 

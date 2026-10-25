@@ -1,3 +1,21 @@
+## 2026-10-24 20:09:50 EDT — #1108, #1114, #1103: v1.9.38, three more outbox costs off the write path; Scribe pinned to 1.9.37
+
+- **Commits (instant-data-swift main):** plan amendments 4-6 `893b57f8`, `74c5842f`, `f3b740d2`; the tail check's
+  attribute map red `440e32c6`, green `d094932c`; the overlay check and tail read red `1807ddee`, green `aacf4b3e`; the
+  discard red `8956bb6a`, green `8b08fa51`; the discard budget `3c9fbe76`; release document `ee157845`; then this ledger
+  commit and the tag v1.9.38. **Scribe main:** the 1.9.37 pin `a35ad4987` (plan amendment `51f445e25`, change log
+  `60ef7c29a`, a Build 130 (next) story).
+- **Measured (fixture version 3, Mac mini, release):** the tail check 1.6 MB -> equal bytes; the overlay check 5,709 ->
+  equal steps beside 400 refused writes; delivery's outbox reads per write 1,866 KB -> under the threshold (#1114's
+  criterion met); a recording's claim gate time 90 ms a minute over minutes 1-10 (267 on 1.9.36, 569 on 1.9.35), the
+  gate's whole hold 306 ms (682, 898); a discard 0.33 ms and 1,641 allocations at both sizes (112 ms, 585,459 before).
+- **Checks:** red and green each; 217 and 95 suite tests; budgets twice (13 known issues); whole bundle 1,457 tests, 2
+  failing, both passing alone (the memory smoke test, on #1075; a live-connection survival test that saw a third
+  connection under load, 5/5 alone).
+- **Open from the lab's order:** #1115 (each write rewrites up to 14 outbox b-trees), #1114's body layout; #1141 is
+  VerificationNeeded. The 21:00 gate-fix and memory-fix agents land through the channel.
+- **Next:** pin Scribe and Playback to 1.9.38; then #1115.
+
 ## 2026-10-24 19:21:12 EDT — #1141: v1.9.37, the shared transaction-id interner no longer races; Scribe pinned to 1.9.36
 
 - **Commits (instant-data-swift main):** plan amendment 3 `019b2f37`; red `c8277988`, green `bb562397`; release
