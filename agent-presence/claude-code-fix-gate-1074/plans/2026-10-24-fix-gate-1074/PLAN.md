@@ -172,3 +172,16 @@ write's own pass and a refusal's pass are unchanged, so an expired claim is stil
 event handler), `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (that read-only wrapper only, in the outbox
 reads: noted for fix-storage-1076 on the channel) and a new `Tests/InstantSwiftDataCoreTests/InstantDeliveryPassTests.swift`.
 Measured by `recording`'s delivery claim and retry-window counts on the Mac mini, before and after.
+
+## Amendment 10 (2026-10-25 06:45 EDT, #1134)
+
+A one-shot read (`queryOnce`, local or through the server) ends in `materializeLocalQueryOnce`, which holds the
+operation gate through the state load, the emission, its hydration and the query-cache write. It now answers as the
+local read does (#1006): a local observation's first answer from the in-memory store, hydrated with the gate-free
+re-check, validated against the store's own attribute index; the cache row is written afterwards, tagged with the
+installed revisions read before the answer, and the save's revision check skips it when a write landed meanwhile (a
+writer saves SQLite before it commits the store, so a row whose revisions still match pairs with its answer). It adopts
+no other connection's writes, as the local read does not; the closed-connection error path keeps its gated read of
+the stored result. Touching `Sources/InstantSwiftDataCore/InstantRuntime.swift` (`materializeLocalQueryOnce`,
+`firstLocalAnswer`) and a new `Tests/InstantSwiftDataCoreTests/InstantOneShotReadGateTests.swift`. Measured by
+`recording`'s `gate.hold holder=materializeLocalQueryOnce(...)` and its reads' latencies on the Mac mini.
