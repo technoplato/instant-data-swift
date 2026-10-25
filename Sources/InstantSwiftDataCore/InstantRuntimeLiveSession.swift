@@ -281,6 +281,9 @@ package actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
     var observerCount: Int
+    /// The socket generation whose add-query the registration still owes: recorded under the runtime's operation gate,
+    /// sent after it (#1131). Cleared by any send of its add-query.
+    var owedAddQueryGeneration: Int?
   }
 
   private struct QueuedBroadcast: Sendable {
@@ -1086,6 +1089,7 @@ package actor InstantRuntimeLiveSession {
       registeredQueries[key] = RegisteredQuery(query: query, observerCount: 1)
     }
     guard session != nil, isOpened else { return nil }
+    registeredQueries[key]?.owedAddQueryGeneration = generation
     return QueryRegistrationSend(key: key, query: query, generation: generation)
   }
 
@@ -1093,7 +1097,9 @@ package actor InstantRuntimeLiveSession {
   /// socket it was recorded on is gone (a new session's init sends every registered query) or the query was
   /// unregistered since.
   func sendQueryRegistration(_ send: QueryRegistrationSend, clientEventID: String) async throws {
-    guard send.generation == generation, registeredQueries[send.key] != nil else { return }
+    // Already sent: by a new session's init, or by an unregistration that went first.
+    guard send.generation == generation, registeredQueries[send.key]?.owedAddQueryGeneration == send.generation
+    else { return }
     try await reconcileQueryMembership(
       key: send.key,
       fallbackQuery: send.query,
@@ -1108,6 +1114,22 @@ package actor InstantRuntimeLiveSession {
       registration.observerCount -= 1
       registeredQueries[key] = registration
       return false
+    }
+    // The last observer leaves before its add-query went out (#1131): it goes out first, so the wire reads add then
+    // remove, as upstream's synchronous `ws.send` at subscription always made it.
+    if registration.owedAddQueryGeneration == generation {
+      try await reconcileQueryMembership(
+        key: key,
+        fallbackQuery: registration.query,
+        initialClientEventID: makeID?() ?? UUID().uuidString.lowercased()
+      )
+      guard let current = registeredQueries[key] else { return false }
+      registration = current
+      if registration.observerCount > 1 {
+        registration.observerCount -= 1
+        registeredQueries[key] = registration
+        return false
+      }
     }
     registeredQueries[key] = nil
     forgetQueryResend(key: key)
@@ -1145,6 +1167,9 @@ package actor InstantRuntimeLiveSession {
         message = .removeQuery(query, clientEventID: clientEventID)
       }
 
+      if shouldBeRegistered {
+        registeredQueries[key]?.owedAddQueryGeneration = nil
+      }
       do {
         try await send(message, through: currentSession)
       } catch is InstantSupersededLiveSessionSend {
