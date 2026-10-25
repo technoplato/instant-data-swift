@@ -11,6 +11,8 @@
 //   between checkpoints, and a power loss can take what the last checkpoint did not sync).
 // - 2026-10-25: whether a file counts is asked at each call from the watched directory, not once at open, so a store
 //   another test left open does not count in a later watch (#1115's per-b-tree test shares the process).
+// - 2026-10-25: temporary files are counted apart: the temporary database, its journal, and a statement's transient
+//   files (#1119).
 
 import Foundation
 import SQLite3
@@ -26,8 +28,13 @@ enum StorageIOFileKind: String, CaseIterable, Comparable, Sendable {
   case journal
   /// A statement journal: a statement inside a transaction that may have to undo its own changes.
   case statementJournal = "stmtjournal"
-  /// Temporary tables and their indexes, and the transient files a sort or `VACUUM` writes.
+  /// The temporary database: `CREATE TEMP TABLE`s and their indexes, such as a server apply's staging tables.
   case temporary = "temp"
+  /// The temporary database's rollback journal.
+  case temporaryJournal = "tempjournal"
+  /// A transient file a single statement writes: a sort, a `DISTINCT` or `IN` b-tree spilled from memory, `VACUUM`'s
+  /// copy (#1119: which of the three a server apply's temp writes are decides its fix).
+  case transient
   case other
 
   init(openFlags: Int32) {
@@ -39,8 +46,12 @@ enum StorageIOFileKind: String, CaseIterable, Comparable, Sendable {
       self = .journal
     } else if openFlags & SQLITE_OPEN_SUBJOURNAL != 0 {
       self = .statementJournal
-    } else if openFlags & (SQLITE_OPEN_TEMP_DB | SQLITE_OPEN_TEMP_JOURNAL | SQLITE_OPEN_TRANSIENT_DB) != 0 {
+    } else if openFlags & SQLITE_OPEN_TEMP_DB != 0 {
       self = .temporary
+    } else if openFlags & SQLITE_OPEN_TEMP_JOURNAL != 0 {
+      self = .temporaryJournal
+    } else if openFlags & SQLITE_OPEN_TRANSIENT_DB != 0 {
+      self = .transient
     } else {
       self = .other
     }

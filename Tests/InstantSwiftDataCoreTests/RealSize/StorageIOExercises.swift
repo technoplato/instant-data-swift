@@ -268,6 +268,7 @@ struct StorageIOExercises {
     end.add("walWrittenMB", Double(total.io[.wal].bytesWritten) / 1_048_576)
     end.add("dbWrittenMB", Double(total.io[.database].bytesWritten) / 1_048_576)
     end.add("tempWrittenMB", Double(total.io[.temporary].bytesWritten) / 1_048_576)
+    end.add("transientWrittenMB", Double(total.io[.transient].bytesWritten) / 1_048_576)
     end.add("processLogicalWriteMB", Double(total.process.logicalWriteBytes) / 1_048_576)
     end.add("processDiskWriteMB", Double(total.process.diskWriteBytes) / 1_048_576)
     end.add("amplification", Double(total.io.bytesWritten) / Double(max(1, ledger.logicalBytes(.save))))
