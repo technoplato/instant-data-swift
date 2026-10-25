@@ -70,3 +70,12 @@ A re-saved entity's facts are updated where their rows are. Claimed now:
   `commitClaimedTerminalFailure`, the closed-result reload, the snapshot diff) are unchanged.
 - New, test-only: `Tests/InstantSwiftDataCoreTests/InstantFactInPlaceUpsertTests.swift` (in the `StorageIOExercises`
   suite: a re-saved entity keeps its rows and its keys, counted by the audit's VFS shim).
+
+## Amendment 2 (2026-10-24 23:06 EDT, #1124)
+
+The live socket counts its frames and bytes by op, each way, and the device log reports them once a minute. Claimed:
+- New: `Sources/InstantSwiftDataCore/InstantWireMeter.swift` (the meter and its snapshot, public like
+  `InstantEnergyMeter`'s so a host's energy ledger can read it).
+- `Sources/InstantSwiftDataCore/InstantLiveTransport.swift`: `InstantURLSessionLiveWebSocket.send` and `receive`
+  (each frame counted where its size is already known) and their codecs `encodedFrame` / `decodedFrame` (unchanged).
+- New, test-only: `Tests/InstantSwiftDataCoreTests/InstantWireMeterTests.swift`.
