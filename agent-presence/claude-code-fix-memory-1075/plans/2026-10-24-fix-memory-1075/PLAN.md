@@ -137,3 +137,11 @@ public `isRecording(_:)` for callers that build metadata ahead; bounding by UTF-
 string per ASCII key. New: `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsCostTests.swift`. Call sites are not
 edited; `recordServerApplyGateTimeline` (fix-gate-1074's) builds its metadata ahead, so `isRecording` is offered to it
 on the channel.
+
+## Amendment 8 (2026-10-25 01:02 EDT, claude-code/fix-memory-1075@ld)
+
+#1148: red `f1bb302e`; the green passes on the Mac mini. Two changes to amendment 7: the green adds no public
+`isRecording(_:)`, because `isEnabled(at:)` (#473) already answers it; and E09's "no sink" pass was never sink-free:
+every session's boot registers `RealSizeApplyLog`, a diagnostics handler, so the pass ran at the `.debug` floor with
+one handler. Claims `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E09 only): the passes stop the
+session's apply log, a pass with no sink checks that none is active, and each pass reports whether one was.
