@@ -441,3 +441,20 @@ Today's baseline (final run unless noted; per logical write unless noted):
 - The phone-shaped exercise with all 48 of the fixture's open queries held open, as Scribe holds its screens' queries
   (the fixture builds those plans inside its generator; exposing them is a request for #1072).
 - The 32-36 MB an hour the process writes beside SQLite.
+
+## Fixes and what they measured (fix-storage-1076)
+
+Each row is measured on the Mac mini (M4, release) with this audit's exercises on the synthetic 7,000-line store,
+before (main) and after (the fix) in the same session; the raw lines are in
+`docs/audits/2026-10-24-storage-io-fixes.txt`. Nothing here is measured on the iPhone.
+
+| Issue | Change | Before | After | Status |
+| --- | --- | --- | --- | --- |
+| #1118 | the writer checkpoints every 4,000 frames (`56538ac5`) | `hour total fullSyncs=1069 checkpoints=356 syncSeconds=1.58 sqliteWrittenMB=1577.3 processDiskWriteMB=1773.8 powerLossReachLines=3` | `fullSyncs=268 checkpoints=89 syncSeconds=0.47 sqliteWrittenMB=1514.3 processDiskWriteMB=1573.6 powerLossReachLines=11` | landed; criterion (under 300, no more bytes) met |
+| #1124 | the live socket counts frames and bytes by op and direction, a minute's summary in the log (`887f3bb2`) | no count | `InstantWireMeterTests` (a loopback WebSocket round trip) | landed |
+| #1120 | a re-saved fact upserted in its row | `steps-btrees save instant_triples 4.16`, key `2.67`; echo `1.76`; `steps all walFrames=64.5` | `4.38`, `2.67`; echo `1.32`; `64.9` | held: the recording's hot rows sat on the table's last page under REPLACE; the criterion moves to #1121's layout |
+
+What the power-loss reach means: `synchronous = NORMAL` syncs the log only at a checkpoint, so a power loss (not an app
+crash) can take the commits since the last one; the store opens consistent either way
+(`StorageIOExercises/aPowerLossWithALongLogKeepsEveryWriteTheLastCheckpointSynced`, power-loss images built from the
+VFS shim's journal of unsynced writes). At the recording's 15 lines a minute that is 44 s of writes instead of 12.

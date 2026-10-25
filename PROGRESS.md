@@ -1,3 +1,34 @@
+## 2026-10-24 23:55:00 EDT — #1118, #1124: the writer checkpoints every 4,000 frames; the live socket counts its bytes (fix-storage-1076)
+
+- **Landed on main:** plan `a12c5cd9`; #1118 red `bedd3104`, green `56538ac5`; #1124 plan `0182e9e1`, red `94b8747b`,
+  green `887f3bb2`; #1120's claim `0ed02bde` (its red and green are held, below). Ready for 1.9.40.
+- **#1118:** `sqlite3_wal_autocheckpoint(4000)` at the writer's open. Measured on the Mac mini (M4, release, the audit's
+  synthetic 7,000-line store, red build before, green after, same session): `theStoreOverASimulatedHour` full fsyncs
+  1,069 -> 268 an hour, checkpoints 356 -> 89, sync time 1.58 -> 0.47 s, log restarts 357 -> 90, checkpoint copies
+  159.8 -> 97.0 MB, SQLite bytes 1,577 -> 1,514 MB, drive bytes 1,774 -> 1,574 MB; frames per write unchanged (64.5).
+  Cost: a power loss can take the writes since the last checkpoint, 11 lines (44 s of recording) instead of 3 (12 s);
+  an app crash loses nothing. Proven by `SQLiteCheckpointCadenceTests` (the store's own writer at open and reopen; the
+  files a dead process leaves with more than 2,000 frames in the log reopen with every write) and
+  `StorageIOExercises/aPowerLossWithALongLogKeepsEveryWriteTheLastCheckpointSynced` (power-loss images from a journal
+  of unsynced writes in the audit's VFS shim: the worst case keeps exactly the writes the last checkpoint synced, torn
+  logs keep a consistent prefix; integrity_check ok each time). Not measured on the iPhone.
+- **#1124:** `InstantWireMeter` counts each frame the URLSession socket sends and receives by op and direction (bytes
+  of text, before permessage-deflate); the socket logs `network.wire-summary` at info once a minute. A loopback
+  WebSocket test checks the counts. Scribe's energy ledger can read `InstantWireMeter.snapshot()` (an app change).
+- **#1120 held:** the in-place upsert keeps a re-saved fact's row (its test passes), but the recording's steady state
+  did not get cheaper (save fact table 4.16 -> 4.38 frames/write, key 2.67 -> 2.67, echo 1.76 -> 1.32; all 64.5 ->
+  64.9): Scribe's hot rows sat on the table's last page under REPLACE. Its criterion moves to #1121's layout; the
+  commits wait on the local branch `wip/fix-storage-1120`.
+- **Checks:** the new tests red then green in release on the mini; `InstantStoreTests`, `InstantBoundedOutboxDeliveryTests`,
+  `InstantLiveTransportTests`, the page-churn, result-write, compact-ownership, local-read, write-meter and cache-cost
+  suites in release: the only failures are the release runner's (the CLI executable not built, 112; `withKnownIssue`
+  not recorded in release, 15). In a release run `expectNoDifference` prints its difference and passes, so the runner
+  counts those lines. Raw lines: `docs/audits/2026-10-24-storage-io-fixes.txt`.
+- **Next:** #1115 (the outbox's b-trees) in slices: write keys and effect entities WITHOUT ROWID, the delivery
+  candidate index folded into the deadline index, then the bodies in their own table; then #1121. Owner
+  fix-storage-1076 (worktree `~/Sync/worktrees/instant-fix-storage-1076`, runner `~/Library/Caches/fix-storage-1076` on
+  the mini, measurement worktree `~/Library/Caches/fix-storage-1076/measure` on the laptop).
+
 ## 2026-10-24 23:35:30 EDT — #1147: a page refresh costs less of the page: three steps on main (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plan amendments `b153f6ce`, `f7ec9183`, `df43f54e`, `13f9535e`; harness and

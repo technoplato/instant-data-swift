@@ -15,6 +15,29 @@ Plan (#1085) amendment A: the recording keeps its round trip by default; the lis
 
 ## 2026-10-24 23:44:17 EDT — scribe `fc748290044a99c6ab9c47b7b9012800e7e29663`
 Plan (#1085): the recording's per-action round trips cost the root no pass of their own (#1085, then #1084, #1086, #1083).
+## 2026-10-24 23:08:04 EDT — instant-data-swift `887f3bb2deab2989f43d8ecd9abaf1d39725c53b`
+Green (#1124): the live socket counts each frame it sends and receives by op and direction, and logs a minute's traffic (`network.wire-summary`), so a phone's bytes per change can be read from its log.
+
+## 2026-10-24 23:08:04 EDT — instant-data-swift `94b8747b4ca789107b4fac20ef361464e31b3789`
+Red (#1124): the URLSession socket counts no frame and no byte (a loopback WebSocket round trip leaves its meter empty).
+
+## 2026-10-24 23:03:45 EDT — instant-data-swift `0182e9e12cf599e8ed64455abb9d816aa0e14d3d`
+plan(#1076 #1124): amendment 2 claims a wire meter, the URLSession socket's send and receive, and its tests.
+
+## 2026-10-24 22:49:27 EDT — instant-data-swift `56538ac57adc609aa2ea94f215b12dabb1cf7f92`
+Green (#1118): the store's writer checkpoints every 4,000 frames instead of Apple's 1,000: a simulated hour of recording asks for 268 full fsyncs instead of 1,069, with 4% fewer bytes written (Mac mini, release, synthetic store); a power loss can reach back 44 s of writes instead of 12.
+
+## 2026-10-24 22:48:53 EDT — instant-data-swift `0ed02bde1b80f587ba72af2df9eddcb06d0339c7`
+plan(#1076 #1120): amendment 1 claims the fact writer's two leaf functions (an in-place upsert) and a test-only suite.
+
+## 2026-10-24 22:42:05 EDT — instant-data-swift `bedd3104dd68711e34d6df6658f3efccd94c41c2`
+Red (#1118): the writer checkpoints at Apple's 1,000 frames, so its log never holds the 2,000 uncheckpointed frames the new crash and power-loss tests open.
+
+## 2026-10-24 22:28:02 EDT — instant-data-swift `f8df9b3cb97645c180e156623e380dfca79c57dc`
+channel(#1076 #1118): fix-storage-1076 starts #1118 and names the later issues' splits.
+
+## 2026-10-24 22:27:51 EDT — instant-data-swift `a12c5cd9a891fe6ae18e3ffb6fcb28dfbb5d2ce8`
+plan(#1076 #1118): fix-storage-1076 claims #1118's checkpoint setting and its tests, then the storage fixes in order.
 
 ## 2026-10-24 23:33:52 EDT — instant-data-swift `3e787d2da21a7dd8fc4d0dec9d805f4606be126b`
 perf(#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy

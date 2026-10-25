@@ -10,6 +10,59 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 11:44:48 p.m. EDT — `887f3bb2deab` perf(#1124): green: the live socket counts each frame it sends and receives by op, and logs a minute's traffic
+
+- **Implementation commit:** `887f3bb2deab2989f43d8ecd9abaf1d39725c53b`
+- **Change:** perf(#1124): green: the live socket counts each frame it sends and receives by op, and logs a minute's traffic
+- **Details:**
+  - Each frame is counted once sent or decoded, under its op and direction, with its text's size (before permessage-deflate): one lock per frame. At most once a minute the socket logs network.wire-summary at info with each direction's frames and bytes and each op's frames/bytes; InstantWireMeter.snapshot() gives a host the same counts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — send and receive count; the minute's summary
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:44:47 p.m. EDT — `94b8747b4ca7` test(#1124): red: the live socket counts no frame and no byte, so a device's log cannot say what a change cost on the wire
+
+- **Implementation commit:** `94b8747b4ca789107b4fac20ef361464e31b3789`
+- **Change:** test(#1124): red: the live socket counts no frame and no byte, so a device's log cannot say what a change cost on the wire
+- **Details:**
+  - One frame sent and one received through the URLSession socket against a WebSocket server on the loopback interface; the socket's meter stays empty (red on the Mac mini). InstantWireMeter (snapshot and storage, public like the energy meter's) is added and the socket takes its meter at init.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWireMeterTests.swift` — the socket's counts, the minute's summary
+  - `Sources/InstantSwiftDataCore/InstantWireMeter.swift` — the meter, its snapshot and storage
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — the socket takes a meter
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:44:47 p.m. EDT — `56538ac57adc` perf(#1118): green: the store's writer checkpoints every 4,000 frames of the log instead of Apple's 1,000
+
+- **Implementation commit:** `56538ac57adc609aa2ea94f215b12dabb1cf7f92`
+- **Change:** perf(#1118): green: the store's writer checkpoints every 4,000 frames of the log instead of Apple's 1,000
+- **Details:**
+  - sqlite3_wal_autocheckpoint(4000) at the writer's open (the read connection never commits). Measured on the Mac mini (release, the synthetic 7,000-line store, same session): theStoreOverASimulatedHour full fsyncs 1,069 -> 268 an hour, checkpoints 356 -> 89, sync time 1.58 -> 0.47 s, log restarts 357 -> 90, checkpoint copies 159.8 -> 97.0 MB, SQLite bytes 1,577 -> 1,514 MB, drive bytes 1,774 -> 1,574 MB; log frames per write unchanged (64.5). The cost: a power loss can take the writes since the last checkpoint, 11 lines (44 s of recording) instead of 3 (12 s); an app crash loses nothing. The crash and power-loss tests pass; the durability log line names checkpoint_fullfsync and journal_size_limit.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the checkpoint cadence at open, the durability line
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 11:44:47 p.m. EDT — `bedd3104dd68` test(#1118): red: the store's writer checkpoints at Apple's 1,000 frames, so its log can never hold the 2,000 uncheckpointed frames a crash or power-loss test needs
+
+- **Implementation commit:** `bedd3104dd68711e34d6df6658f3efccd94c41c2`
+- **Change:** test(#1118): red: the store's writer checkpoints at Apple's 1,000 frames, so its log can never hold the 2,000 uncheckpointed frames a crash or power-loss test needs
+- **Details:**
+  - Red on the Mac mini (release): the writer reports wal_autocheckpoint 1,000 at open and after a reopen; neither crash test can get the log past 171 frames in 600 writes. Seams with no behaviour change: walAutocheckpointForTesting, a task-local VFS name the writer opens through (connectionVFSForTesting). The audit's VFS shim journals each watched file's writes since its last full sync, with the bytes they replaced, to build power-loss images; the hour exercise prints the writer's setting, its checkpoints and the most lines between two of them.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/SQLiteCheckpointCadenceTests.swift` — the setting, an app-crash copy, power-loss images
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOCounters.swift` — the unsynced-writes journal and powerLossImage
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift` — the hour's checkpoint and power-loss reach lines
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the two test seams
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 11:35:08 p.m. EDT — `3e787d2da21a` perf(#1147): a received frame's arrays are sized once, escapes reuse one buffer, and a frame's repeated ids share one copy
 
 - **Implementation commit:** `3e787d2da21a7dd8fc4d0dec9d805f4606be126b`
