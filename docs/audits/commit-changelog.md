@@ -1,3 +1,15 @@
+## 2026-10-25 09:23:45 EDT — scribe `cf7c379e32ff9ac816141dcd5fb7d6d2bccbe231`
+Schema (#1097, ADR 0094): recordings.liveRoomKey, the live recording's room id, set once by a manager and read by managers only; live-room-matrix 17/17 on the throwaway app; pushed to production 09:24:16-09:24:47, drift 0.
+
+## 2026-10-25 09:10:59 EDT — scribe `bfdd10c77e4bb23cc96f95849a6b55628d51cb95`
+Fix (#1097): green: a beat in the live room is liveness evidence when it is longer than the anchor and was published within the 15 s window, counted from when it was published; SharedModelsTests 724 pass.
+
+## 2026-10-25 09:07:09 EDT — scribe `9623308e16381115ea988dc4fef3de62a8c7219c`
+Test (#1097): red: a beat in the live room is liveness evidence under every rule of RecordingLiveness.
+
+## 2026-10-25 08:56:17 EDT — scribe `a91431568202b2636ae5f9a81b5bacc35d56cb0b`
+Docs (#1097): ADR 0094, a live recording's 5 s beat travels as room presence and the row keeps the duration every minute.
+
 ## 2026-10-25 09:15:54 EDT — scribe `679f5d358d38c7fdf0092d6bb7fce5f9cdfffea0`
 Cut build 136: Scribe 0.1 (136) and Scribe Playback 0.1 (136) from main 0313f9e6d, instant-data-swift exactly 1.9.42 (#1174).
 
