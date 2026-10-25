@@ -1,3 +1,9 @@
+## 2026-10-25 06:33:47 EDT — scribe `9fb354b88df23e9550e3a25e84471757edfd998d`
+Cut build 135: Scribe 0.1 (135) and Scribe Playback 0.1 (135) from main f3122ba80, instant-data-swift exactly 1.9.41 (#1169).
+
+## 2026-10-25 06:33:47 EDT — scribe `1c11c397391ffc235853e7f8af8f10fd374944e4`
+changelog(#1169): the CHANGELOG entry for build 135's cut 9fb354b88.
+
 ## 2026-10-25 06:29:21 EDT — scribe `92c74ed085c807454375cfa7256be5187d07f95b`
 Merge (#1083): screen-heat-1083 slice 1 onto main for build 135: a paused recording's system surface holds still; the app root and its reply surface measured.
 
