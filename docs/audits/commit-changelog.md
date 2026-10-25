@@ -1,3 +1,21 @@
+## 2026-10-25 04:40:16 EDT — scribe `8797e6fb19facb47830777134a9e5a934e54e619`
+Merge (#1084): screen-heat-1084 onto main for build 134: the durability lane leaves out its drain step while a save is in flight.
+
+## 2026-10-25 04:40:01 EDT — scribe `f85fa60b759250f9bce18807214064998410057f`
+Changelog (#1084 #1085): the red, the green and the docs below in CHANGELOG.md.
+
+## 2026-10-25 04:40:00 EDT — scribe `a7a80a6572e6ee65fefcae6a7385dd031d04208d`
+Docs (#1084 #1085): the drain-steps audit (a test minute with a save in flight 70 -> 1 drain steps, 450 -> 385 root passes), its index row, the Build 134 (next) story; #1085's audit: the drawing test alone, and build 133.
+
+## 2026-10-25 04:16:06 EDT — scribe `6a1130d9bcb418f2eabe2baf8eeca037efc163f4`
+Perf (#1084): green: the durability lane's admission and its two interim paths add `startDrain` only while no save is in flight (118-164 root passes a minute while recording on the phone, against 16-29 saves).
+
+## 2026-10-25 02:38:58 EDT — scribe `d17fb1baa8c62cceca083ed4135326f0b03817ec`
+Test (#1084): red: a write behind a save in flight sends no drain step, and a recording minute behind one takes a single startDrain root pass.
+
+## 2026-10-25 02:34:48 EDT — scribe `98613c9b9f37b3f8bdadc95f43610ccf3817ab30`
+Plan (#1084): amendment D: no drain step while a save is in flight; claims and a channel note.
+
 ## 2026-10-25 04:27:47 EDT — instant-data-swift `af0f729e5ff301ee2e2c4e881c5056c3c8144ee1`
 Green (#1146 step 1): a sharded set keeps one plain set until it passes 32 elements: E07 retains 733.8 -> 561.3 B a resident fact (39,213 -> 29,993 KB; Mac mini, release).
 
