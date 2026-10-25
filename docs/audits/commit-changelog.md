@@ -1,3 +1,15 @@
+## 2026-10-25 03:56:41 EDT — instant-data-swift `375beb425efad9a32a17f05236496183bd099899`
+Test (#1119): an echo with the next write already saved, and a backlog's first echo, write no temporary file on main (guards). At the audit's baseline the echo's 222 KB of temp writes were all the temporary database's rollback journal; on main no measured case stages or writes one, so the temporary-journal change is not made.
+
+## 2026-10-25 02:30:50 EDT — instant-data-swift `af48d41d88465bfa3af35b4eb5153bfcaa265210`
+Plan (#1076 #1119): amendment 9: a test whose echo rebases a pending write decides #1119.
+
+## 2026-10-25 02:01:09 EDT — instant-data-swift `8fe6b328a750e59647f88182fac6b9509489a438`
+Plan (#1115): fix-storage-1076 claims amendment 8's files.
+
+## 2026-10-25 02:00:29 EDT — instant-data-swift `4637c507170e75f1fa29d6b6a46ff7aa2ce614b6`
+Plan (#1076 #1115): amendment 8 claims the outbox's rare-state indexes as partial indexes and the queries they serve.
+
 ## 2026-10-25 03:46:30 EDT — instant-data-swift `6590a7e42b60fc8c11afa6e0aeda0bbecebb830a`
 Perf (#1129): prune batches of 1,000 facts, not 5,000; holds p50 73.54 -> 14.73 ms, recording acks p99 280.37 -> 126.71 ms (Mac mini, release).
 

@@ -1,3 +1,24 @@
+## 2026-10-25 03:58:42 EDT — #1119 measured to the end: no temporary file on main; #1115 slice 2 testing; #1122 to fix-gate-1074 (fix-storage-1076)
+
+- **Landed on main:** plan amendment 8 `4637c507` and claims `8fe6b328` (#1115 slice 2), amendment 9 `af48d41d`, and
+  #1119's guards `375beb42` (test only; measured as `b60bb3d1`).
+- **#1119:** at the audit's baseline the echo's 222 KB of temp writes were all the temporary database's rollback journal
+  (`tempjournalWriteKB=222.3`, 2.324 truncates per echo; laptop, release, tree `a3889057` = `e06f54bf`'s library with the
+  shim's temp kinds), written as the server-apply plan staged bodies (2.06 stages per echo). On main: none in the
+  phone-shaped echo (p1, mini), none in an echo with the next write saved, none in a backlog's first echo (12 lines, 47
+  of 72 writes waiting): t1119o, Mac mini, release, with 13 server-apply tests passing. The commit that stopped the
+  staging is not identified (the bisect was stopped after its baseline probe). The audit's fix (temp journal or
+  temp_store in memory) has no measured case on main and is not made. Status VerificationNeeded.
+- **#1122:** fix-gate-1074 folds it into #1129's third slice (the in-place unload this task proposed), with p1's
+  baseline: the first prune writes 13,453 frames.
+- **#1115 slice 2 (testing, laptop):** the blocker, effect normalization and delivery metadata indexes become partial on
+  their rare states; red verified (`7bb3b789`: 7 rare-state writes per write, 30.0 outbox frames per write, laptop =
+  mini); green `f772e612` running with the outbox suites, then the exercises and both bundles.
+- **Release risk (channel `e00ce0b4`):** no build older than 1.9.40 can write to a store 1.9.40 opened (#1121's computed
+  `json` column and WITHOUT ROWID facts; #1115's partial indexes); the library has no downgrade guard.
+- **Next:** #1115 slice 2's results and landing; the final cleanup (laptop: worktrees `measure`, `measure2`, `dev1119`,
+  build folders; mini: build folder). Owner fix-storage-1076.
+
 ## 2026-10-25 03:48:39 EDT — #1129's fourth and fifth slices on main: no prune batch inside a frame's apply; 1,000-fact batches (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** red `1d09aac1`, green `9581503d` (a batch holds the server-apply gate too, at

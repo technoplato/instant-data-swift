@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 3:57:34 a.m. EDT — `375beb425efa` test(#1119): an echo with a write pending, and a backlog's first echo, write no temporary file
+
+- **Implementation commit:** `375beb425efad9a32a17f05236496183bd099899`
+- **Change:** test(#1119): an echo with a write pending, and a backlog's first echo, write no temporary file
+- **Details:**
+  - At the audit's baseline the phone-shaped echo's 222 KB of temp writes per echo were all the temporary database's rollback journal (measured with the shim's temp kinds), written as the server-apply plan staged bodies; on main that echo stages nothing and writes no temporary file.
+  - The steps cycle can save each write before the previous one's echo (writeLine(overlapping:)), and a backlog saved offline can be echoed one write in (echoTheFirstOfABacklog); on main (Mac mini, release) neither stages nor writes a temporary file, so the two tests are guards and the temporary-journal change the audit designed is not made.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift` — writeLine(overlapping:) and a save helper
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyTempJournalTests.swift` — the overlap and backlog guards (new)
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 3:48:39 a.m. EDT — `6590a7e42b60` perf(#1129): a prune batch removes or checks 1,000 facts instead of 5,000, so a write or a refresh that arrives during one waits for less
 
 - **Implementation commit:** `6590a7e42b60fc8c11afa6e0aeda0bbecebb830a`
