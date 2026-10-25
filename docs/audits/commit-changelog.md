@@ -1,3 +1,9 @@
+## 2026-10-25 05:55:14 EDT — scribe `7be3b7714f4f69a7ea31339fce9bebff4dca8a06`
+Docs (#1077 #1154): the hot-path audit's section 13: the XCTest host's dlsym on every dependency and @Shared read inflates the exercises' timings (79% of the following list's busy main thread); counts stand.
+
+## 2026-10-25 05:55:14 EDT — scribe `554b6e101a1674fb701ed4c60e5d304e2e8f4d89`
+Test (#1077): the hot-path fixture builds its 300 recordings newest first for every exercise.
+
 ## 2026-10-25 05:48:22 EDT — scribe `a8472246edcbe418bb7610bcae07c7ad9be76746`
 Merge (#1086): screen-heat-1086 onto main for build 135: each screen's frame sample is a line built from its state and written by the sampler, with no store action.
 
@@ -6,6 +12,9 @@ Changelog (#1086 #1084): the red, the green and the docs below in CHANGELOG.md.
 
 ## 2026-10-25 05:47:57 EDT — scribe `cd903dcfa8c903e346f8d665b1e9986988a86bf7`
 Docs (#1086 #1084): the frame-sample audit (a sample 40.1 -> 2.9 M instructions, 21 -> 0 root passes for 20), its index row, the Build 135 (next) story; #1084 in build 134.
+
+## 2026-10-25 05:31:32 EDT — scribe `3d9ac9191b79215bd178aab8b6385027ff30e2b5`
+Test (#1154 #1077): the list and screen exercises deliver their 300 recordings newest first, as the list's query does.
 
 ## 2026-10-25 05:17:29 EDT — scribe `dd69305e8b98a943904a7db8caa7ef5d33a87171`
 Perf (#1086): green: frameSampleLine(_:) on the recording, playback and list states, read with withState and written by ScribeFrameRateSampler; the three uiFramesSampled actions go; 30 s windows behind the screen on iOS; the energy section ends before the line.
