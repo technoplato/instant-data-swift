@@ -7,6 +7,7 @@
 //                    Each write's acknowledgement is timed too: it queues in the frame applier, where no gate sees it.
 // 2026-10-25  #1133  `recording-deferred`: the recording with Scribe's transcript text and words deferred, so the
 //                    hydration's re-check under the gate runs, which no exercise drove before.
+// 2026-10-25  #1136  `compaction-main-hop`: the VACUUM with a hold closure that asks a busy main actor.
 
 import CustomDump
 import Foundation
@@ -17,7 +18,8 @@ import Testing
 /// The concurrency audit's exercises (#1074), on #1072's real-size store: `recording` (Scribe's recording load, with a
 /// prune a quarter of the way in), `recording-deferred` (the same, transcript text and words deferred as Scribe's are),
 /// `prune`, `prune-inline` (the cadence prune inside the frame applier),
-/// `server-apply`, `observers` (registration over a slow socket), `compaction` and `launch`.
+/// `server-apply`, `observers` (registration over a slow socket), `compaction`, `compaction-main-hop` (its hold closure
+/// asks a busy main actor) and `launch`.
 ///
 /// `INSTANT_CONTENTION=1` runs them, one real-size session each (a minute or less once the store is generated; build
 /// in release to measure what a phone runs). `INSTANT_CONTENTION_ONLY=recording,prune` picks some,
@@ -293,7 +295,27 @@ struct ContentionExercises {
   /// the vacuum phase held the gate 7,596 ms.
   @Test func compaction() async throws {
     guard ContentionExercise.wanted("compaction") else { return }
-    let exercise = "compaction"
+    try await Self.compact("compaction", hold: { nil })
+  }
+
+  /// `compaction` with the app's hold closure asking the main actor, as the consuming app's does, while the main actor
+  /// is kept busy in 30 ms slices (a heavy frame): the closure waits for a slice to end (#1136: the gate was held while
+  /// it did, on a phone 7,596 ms in the vacuum phase, build 118).
+  @Test func compactionMainHop() async throws {
+    guard ContentionExercise.wanted("compaction-main-hop") else { return }
+    let busy = ContentionBusyMainActor(slice: .milliseconds(30))
+    busy.start()
+    defer { busy.stop() }
+    try await Self.compact("compaction-main-hop") {
+      await MainActor.run {}
+      return nil
+    }
+  }
+
+  private static func compact(
+    _ exercise: String,
+    hold: @escaping @Sendable () async -> String?
+  ) async throws {
     let harness = try await ContentionHarness.open(exercise)
     let runtime = harness.runtime
     let session = harness.session
@@ -313,7 +335,7 @@ struct ContentionExercises {
         try await Task(priority: .background) {
           try await runtime.compactLocalCache(
             policy: InstantLocalCacheCompactionPolicy(minimumFreeFraction: 0, minimumFreeBytes: 0),
-            holdingWhile: { nil }
+            holdingWhile: hold
           )
         }.value
       }
@@ -1092,5 +1114,32 @@ final class ContentionRecheckCount: @unchecked Sendable {
 
   func increment() {
     lock.withLock { count += 1 }
+  }
+}
+
+/// Keeps the main actor busy in slices of `slice`, one after another, as a heavy frame does, until stopped (#1136).
+final class ContentionBusyMainActor: @unchecked Sendable {
+  // SAFETY: `lock` guards `task`.
+  private let lock = NSLock()
+  private var task: Task<Void, Never>?
+  private let slice: Duration
+
+  init(slice: Duration) { self.slice = slice }
+
+  func start() {
+    let slice = self.slice
+    let task = Task.detached(priority: .userInitiated) {
+      while !Task.isCancelled {
+        await MainActor.run {
+          let end = ContinuousClock.now + slice
+          while ContinuousClock.now < end {}
+        }
+      }
+    }
+    lock.withLock { self.task = task }
+  }
+
+  func stop() {
+    lock.withLock { task }?.cancel()
   }
 }
