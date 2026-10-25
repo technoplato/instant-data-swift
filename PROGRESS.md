@@ -1,3 +1,20 @@
+## 2026-10-25 00:46:04 EDT — #1153 and #1147 step 4 on main: a finished line is prepared once; a refresh's ownership diff costs its change (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plan amendments `5cba47d1` (#1153), `35e87d5d` (#1147 step 4), `e2978ffc`
+  (#1148); #1153 red `6d765ee0`, green `0744cfb1`; #1147 step 4 refactor `79ea7762`, red `164131cd`, green `560540fe`;
+  cost bounds gated to optimized builds `464e385d` (v1.9.39's release doc asked); S14 site exercise `c3add517`; then this
+  ledger commit.
+- **Measured (Mac mini, release, fixture version 3):** #1153: 2 -> 1 prepare per finished line, E04 `op.storePrepare`
+  2.0 -> 1.0 (criterion met). #1147 step 4: the diff of a 64-line page with one line changed 5,137 -> under 300
+  allocations; E03 64-line refresh 16,280 -> 11,160 allocations (12,236 -> 11,411 KB). Since #1147 began: 23,947 ->
+  11,160 allocations and 22,769 -> 11,411 KB at 64 lines; #1147's criterion (under 5,000 and 4 MB) not met yet.
+- **Checks:** whole debug bundle on `be125bae` (the same code before the rebase; Mac mini, fd limit 4,096): 1,482 tests,
+  1 failing (listed); at the ssh default fd limit of 256 the bundle's stores outrun descriptors since #1131 (v1.9.39's
+  doc), not these changes; release runs can't judge `withKnownIssue` or `expectNoDifference` (IssueReporting is
+  DEBUG-only), so equivalence tests use `#expect`.
+- **Next:** #1148 (lazy diagnostics); then #1145 (fix-gate-1074's answer pending), #1150 (S14 sites ready), #1147's
+  remaining steps (the classification's deferred loads via `value_json` in SQL; the emission's re-hydration).
+
 ## 2026-10-25 00:04:53 EDT — 1.9.39: observer registration and the cadence prune leave their holds; a page refresh costs less (release owner fix-gate-1074)
 
 - **Released:** v1.9.39, tagged on this ledger commit, built on main `ba733bd9` (last code commit `3e787d2d`); main has

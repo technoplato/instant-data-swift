@@ -10,6 +10,90 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 12:45:41 a.m. EDT — `c3add5170c07` test(#1150): the allocation sites of a long recording's local history page (S14), beside E03's and E04's
+
+- **Implementation commit:** `c3add5170c07ea37a67a503a4b669e630f8ba520`
+- **Change:** Test (#1150): the allocation sites of a long recording's local history page (S14)
+- **Details:**
+  - A site recording of E14's 256-line local history read, for #1150's attribution.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemorySiteExercises.swift` — S14
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:45:41 a.m. EDT — `464e385dc6db` test(#1147): the refresh's cost bounds hold in optimized builds, where they were measured
+
+- **Implementation commit:** `464e385dc6db49b7a9745d6ab9119e355185cc29`
+- **Change:** Test (#1147): the refresh's cost bounds hold in optimized builds, where they were measured
+- **Details:**
+  - v1.9.39's debug bundle failed two RefreshCostTests bounds; unoptimized builds copy each attribute onto the heap while scanning the schema. Bounds now hold in optimized builds only; functional checks run in both.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RefreshCostTests.swift` — schema-size bounds gated by RealSizeBudget.isOptimized
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:45:41 a.m. EDT — `560540fe34af` perf(#1147): a refreshed page's ownership diff costs the rows that change, not the page
+
+- **Implementation commit:** `560540fe34af05115f8a6f66fad30ad91c93c42a`
+- **Change:** Perf (#1147): a refreshed page's ownership diff costs the rows that change, not the page
+- **Details:**
+  - 128-bit fingerprints of row bytes and value text (InstantStoredJSON.appendStored into one reused buffer); only rows that leave or join become strings. Diff 5,137 -> under 300 allocations; E03 64-line refresh 16,280 -> 11,160 allocations.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` — fingerprint comparison
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:45:40 a.m. EDT — `164131cd2216` test(#1147): red: diffing a 64-line page's ownership with one line changed allocates 80 times a line
+
+- **Implementation commit:** `164131cd22164524f8bd952328ce577ef7583609`
+- **Change:** Test (#1147): red: diffing a 64-line page's ownership with one line changed allocates 80 times a line
+- **Details:**
+  - 5,137 allocations for a 64-line page's diff with one line's text and words changed (release, Mac mini); an equivalence test against set differences.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/LiveQueryOwnershipDiffTests.swift` — new: equivalence and cost
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:45:40 a.m. EDT — `79ea7762be8f` refactor(#1147): a stored result's ownership diff moves into LiveQueryOwnershipDiff, fed the rows SQLite holds
+
+- **Implementation commit:** `79ea7762be8fb52bb64e697f98a2f0b3ab63f40c`
+- **Change:** Refactor (#1147): a stored result's ownership diff moves into LiveQueryOwnershipDiff, fed the rows SQLite holds
+- **Details:**
+  - Same algorithm, now a pure struct fed each row's column bytes so it can be measured on one thread.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` — new: the extracted diff and LiveQueryOwnershipIdentity
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:45:39 a.m. EDT — `0744cfb1fd08` perf(#1153): a finished line is prepared once: its delete of a row that links to nothing needs no preview
+
+- **Implementation commit:** `0744cfb1fd08947c2fdec0caf538d4df638518b7`
+- **Change:** Perf (#1153): a finished line is prepared once: its delete of a row that links to nothing needs no preview
+- **Details:**
+  - deferredValuesForPreparing skips the throwaway preview when every delete is in a namespace whose delete reaches no namespace holding a configured attribute. E04 op.storePrepare 2.0 -> 1.0 (Mac mini, release, fixture v3).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — mayChangeDeferredValuesItDoesNotName and its use in deferredValuesForPreparing
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 12:45:39 a.m. EDT — `6d765ee0e657` test(#1153): red: a finished line is prepared twice, a throwaway preview before the real prepare
+
+- **Implementation commit:** `6d765ee0e65758313121f5afc54501a9e23c47e7`
+- **Change:** Test (#1153): red: a finished line is prepared twice, a throwaway preview before the real prepare
+- **Details:**
+  - A finished line as Scribe's typed API writes it (segment + deleteEntityInNamespace of its liveLines row) was prepared 2 times; also a prepare counter and AttributeStore.deleteCanReach.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/FinalLinePrepareTests.swift` — new: one prepare per finished line, and the delete-reach decisions
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 12:04:33 a.m. EDT — `7da3ad9d81a2` docs(#1131 #1129 #1152 #1147): the v1.9.39 release document: observer registration leaves the operation gate, the cadence prune leaves the frame applier, a page refresh costs less
 
 - **Implementation commit:** `7da3ad9d81a2e80b24bb1811b561b814fd8f47a3`

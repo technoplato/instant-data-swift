@@ -1,3 +1,33 @@
+## 2026-10-25 00:41:14 EDT — instant-data-swift `c3add5170c07ea37a67a503a4b669e630f8ba520`
+test(#1150): the allocation sites of a long recording's local history page (S14), beside E03's and E04's
+
+## 2026-10-25 00:41:14 EDT — instant-data-swift `464e385dc6db49b7a9745d6ab9119e355185cc29`
+test(#1147): the refresh's cost bounds hold in optimized builds, where they were measured
+
+## 2026-10-25 00:41:14 EDT — instant-data-swift `e2978ffcde36b11ec2779e6aedfb204b0ebf93b3`
+plan(#1148): amendment 7 claims InstantDiagnostics' record overloads, isRecording, bounding and redaction
+
+## 2026-10-25 00:41:14 EDT — instant-data-swift `560540fe34af05115f8a6f66fad30ad91c93c42a`
+perf(#1147): a refreshed page's ownership diff costs the rows that change, not the page
+
+## 2026-10-25 00:41:14 EDT — instant-data-swift `164131cd22164524f8bd952328ce577ef7583609`
+test(#1147): red: diffing a 64-line page's ownership with one line changed allocates 80 times a line
+
+## 2026-10-25 00:41:14 EDT — instant-data-swift `79ea7762be8fb52bb64e697f98a2f0b3ab63f40c`
+refactor(#1147): a stored result's ownership diff moves into LiveQueryOwnershipDiff, fed the rows SQLite holds
+
+## 2026-10-25 00:41:14 EDT — instant-data-swift `35e87d5d4554c06c10f0e0604773162085bb0ccb`
+plan(#1147): amendment 6 claims the persisted result's ownership diff (fingerprints, rows stay the truth) as fix-storage-1076 agreed
+
+## 2026-10-25 00:40:40 EDT — instant-data-swift `0744cfb1fd08947c2fdec0caf538d4df638518b7`
+perf(#1153): a finished line is prepared once: its delete of a row that links to nothing needs no preview
+
+## 2026-10-25 00:40:40 EDT — instant-data-swift `6d765ee0e65758313121f5afc54501a9e23c47e7`
+test(#1153): red: a finished line is prepared twice, a throwaway preview before the real prepare
+
+## 2026-10-24 23:40:45 EDT — instant-data-swift `5cba47d1a81a3d2d1b41e43e4c65be365f75b5ce`
+plan(#1153): amendment 5 claims the transact path's preview decision, a delete-reach method on AttributeStore and a prepare counter
+
 ## 2026-10-25 00:36:21 EDT — scribe `45b083370996b47caa5f2d25297e011cc3135595`
 Pin instant-data-swift exactly 1.9.39 (a5c8da29) instead of 1.9.38 in Scribe and Scribe Playback (#1131, #1129, #1152, #1147): an observer's registration holds the operation gate only to record itself, a closed result reloads in bounded holds, the cadence prune leaves the frame applier; both lock files (pin and originHash only), installer 65/65, a Build 133 (next) story (build 132 was cut without it).
 

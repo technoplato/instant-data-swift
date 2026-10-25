@@ -49,7 +49,8 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
 | Issue | Finding | Commits | Exercise | Before | After |
 | --- | --- | --- | --- | --- | --- |
 | #1152 | M13 | red `ccdbc47b`, green `33c5c042` | E04 final line on the 2,318-line recording vs a new recording | 7,255 vs 6,786 KB (+6.9%) | 6,636 vs 6,456 KB (+2.8%) |
-| #1147 (steps 1-3) | M2, M9 | `79707ad5`/`a9751099`, `63b65c80`/`553cb332`, `40280360`/`3e787d2d` | E03 64-line refresh, one line changed | 23,947 allocations, 22,769 KB | 16,280 allocations, 12,236 KB |
+| #1147 (steps 1-4) | M2, M9 | `79707ad5`/`a9751099`, `63b65c80`/`553cb332`, `40280360`/`3e787d2d`, `164131cd`/`560540fe` | E03 64-line refresh, one line changed | 23,947 allocations, 22,769 KB | 11,160 allocations, 11,411 KB |
+| #1153 | M14 | red `6d765ee0`, green `0744cfb1` | E04 final line, store prepares per write | 2.0 | 1.0 |
 
 - **#1152:** a many-cardinality slot keeps its values in a `ShardedDictionary` (one plain dictionary up to 32 entries,
   then 64 shards), so a line linked to a long recording copies one shard of the link set; `insert` writes a derived
@@ -61,6 +62,10 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
   configured attributes (three groupings of the schema per emission); the frame parser sizes arrays once, reuses its
   escape buffer and shares a frame's repeated ids (E01's 64-line frame 7,124 -> 2,339 allocations, the `$files`
   answer 548,414 -> 160,779). An allocation-site recording (`MemorySiteExercises`) attributes what remains.
+- **#1147 step 4:** a refreshed page's ownership diff compares 128-bit fingerprints of the rows' bytes and the values'
+  stored text; only rows that leave or join become strings (a 64-line page's diff 5,137 -> under 300 allocations).
+- **#1153:** a delete in a namespace whose delete reaches no deferred attribute needs no throwaway preview, so a finished
+  line (its delete of a `liveLines` row) is prepared once.
 - **Harness corrections (#1147):** the apply waiter no longer polls inside a counted pass, E04, E05, E09 and E10 build
   each line before their passes, and one-thread cost tests take turns on the counter's tally.
 
