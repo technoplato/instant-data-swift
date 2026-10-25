@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 1:22:32 a.m. EDT — `63920cb03bf4` test(#1148): E09's no-sink pass stops the session's apply log, so it has no sink
+
+- **Implementation commit:** `63920cb03bf4efe2fc51420b4c2f2ed95117e6d8`
+- **Change:** Test (#1148): E09's no-sink pass stops the session's apply log, so it has no sink
+- **Details:**
+  - Every session's boot registers RealSizeApplyLog, a diagnostics handler, so E09's no-sink pass ran at the .debug floor with one handler; the passes now stop it and require no sink before adding their own.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — E09 stops the apply log and checks for stray sinks
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:22:32 a.m. EDT — `97ed60bcf4b3` perf(#1148): green: a diagnostics entry the floor drops builds nothing, and redaction makes no string per key
+
+- **Implementation commit:** `97ed60bcf4b33bb2edab75d01d95c2d5dcb9bd59`
+- **Change:** Perf (#1148): a diagnostics entry the floor drops builds nothing, and redaction makes no string per key
+- **Details:**
+  - record's message and metadata are @autoclosure, built only once isEnabled(at:) keeps the entry, outside the lock; record(error:) checks the floor first; ASCII keys are lowercased in a stack buffer sized to the longest secret name. Dropped entry 18 -> 0 allocations; 21-key redaction 41 -> at most 4. E09 cannot resolve it (about 700 allocations of run-to-run spread); the audit's +2.6 MB per write does not reproduce on main.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — lazy message and metadata, isSensitive, bounded by UTF-8 length first
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:22:31 a.m. EDT — `9d4ca094627f` test(#1148): red: an entry the diagnostics floor drops still builds its message and metadata, and redaction makes strings per key
+
+- **Implementation commit:** `9d4ca094627fe16c80281324d3e397cf5faa605a`
+- **Change:** Test (#1148): red: an entry the diagnostics floor drops still builds its message and metadata, and redaction makes strings per key
+- **Details:**
+  - A debug entry shaped like the server apply's gate record cost its caller 18 allocations under Scribe's .info floor; redacting a kept entry's 21 keys 41 more (Mac mini, release, calling thread). A third test keeps redaction honest for any spelling of a secret's name.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsCostTests.swift` — new: dropped-entry, redaction and secret-spelling tests
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 12:58:54 a.m. EDT — `c9403d9e0a86` perf(#1121 #1120): green: each fact is stored once, keyed by the fact itself, its json computed when read; a re-saved fact is upserted where it is
 
 - **Implementation commit:** `c9403d9e0a8631439e27eb507c9a2df488112d67`

@@ -1,3 +1,15 @@
+## 2026-10-25 01:21:39 EDT — instant-data-swift `63920cb03bf4efe2fc51420b4c2f2ed95117e6d8`
+Test (#1148): E09's no-sink pass stops the session's apply log (every session registers it as a diagnostics handler), so the pass has no sink; E09 still varies by about 700 allocations a write between processes, so InstantDiagnosticsCostTests carry #1148's bound.
+
+## 2026-10-25 01:21:39 EDT — instant-data-swift `97ed60bcf4b33bb2edab75d01d95c2d5dcb9bd59`
+Green (#1148): a diagnostics entry the floor drops builds nothing (@autoclosure message and metadata behind isEnabled(at:)), and redaction makes no string per ASCII key: dropped entry 18 -> 0 allocations, 21-key redaction 41 -> at most 4 (Mac mini, release). The audit's +2.6 MB per write does not reproduce on main; cause not traced.
+
+## 2026-10-25 01:21:39 EDT — instant-data-swift `9d4ca094627fe16c80281324d3e397cf5faa605a`
+Red (#1148): an entry the floor drops still builds its message and metadata (18 allocations), and redacting a kept entry's 21 keys makes 41 strings.
+
+## 2026-10-25 01:02:57 EDT — instant-data-swift `b79ff8483c525e56858059d9dee8c9f2e166bb05`
+Plan (#1148): fix-memory-1075 amendment 8: no isRecording (isEnabled(at:) exists); E09's no-sink pass stops the session's apply log.
+
 ## 2026-10-25 00:12:18 EDT — instant-data-swift `c9403d9e0a8631439e27eb507c9a2df488112d67`
 Green (#1121, #1120): each fact is stored once, keyed by the fact itself (WITHOUT ROWID), its json computed when read; a re-saved fact is upserted in place. On a scratch copy of the phone's store, 174,817 facts 127.1 -> 40.7 MB, every fact identical; the save's fact frames 6.82 -> 2.87 per write (Mac mini, synthetic store).
 

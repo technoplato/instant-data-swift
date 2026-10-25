@@ -1,3 +1,20 @@
+## 2026-10-25 01:23:05 EDT — #1148 on main: a dropped diagnostics entry builds nothing; E09's baseline had a sink (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plan amendment 8 `b79ff848`; red `9d4ca094`, green `97ed60bc`, E09 harness fix
+  `63920cb0`; then this ledger commit.
+- **Measured (Mac mini, release, counted on the calling thread):** a dropped debug entry shaped like the server apply's
+  gate record 18 -> 0 allocations; redacting a kept entry's 21 keys 41 -> at most 4 allocations more than none.
+  InstantDiagnosticsTests 13/13. #1148's criterion (Scribe's setup within 5% of no sink in E09) holds: 24,867 against
+  24,883 allocations a write after the fix, with a sink-free baseline.
+- **Corrections to the audit (measured):** E09's "no sink" pass always had a handler (every session's boot registers
+  `RealSizeApplyLog`); `63920cb0` stops it. E09 cannot resolve diagnostics costs: on one binary its allocations a write
+  vary by up to about 700 between processes. The audit's +2.6 MB a write for Scribe's setup does not reproduce on main
+  in any exercise order tried (E09 alone; after E08; after E06 and E08; after E06 to E08, the audit's order): +4 to +81 KB.
+  What removed it is not traced (inference: a library change since `0593a9ec`; not bisected, because the audit commit's
+  migrations would regenerate the shared fixture on a mini at 20 GB free).
+- **Next:** #1147's remaining steps and #1150, from a fresh S03/S14 breakdown on main with #1121's fact table; #1145
+  after fix-gate-1074's #1129 slice lands (its answer: a separate sweep task, the gate per bounded batch).
+
 ## 2026-10-25 01:05:00 EDT — #1115 slice 1, #1121, #1120: the outbox's key tables and each fact stored once (fix-storage-1076)
 
 - **Landed on main:** plans `c9c40f56`, `9eb6debf`, `f7c27994`; #1115 red `8101f0b9`, green `c343c563`; #1121 and
