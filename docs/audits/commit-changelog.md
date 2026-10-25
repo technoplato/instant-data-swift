@@ -1,3 +1,6 @@
+## 2026-10-25 06:26:17 EDT — realtime-voice `65195f23846189c5716c061a01aa31fd67bdc307`
+Pin instant-data-swift exactly 1.9.41 in Scribe and Scribe Playback (status reads and transcript hydration off the library's housekeeping, bounded prune chunks, a launch that allocates half as much; a store 1.9.41 opened cannot be used by an older build).
+
 ## 2026-10-25 06:21:52 EDT — instant-data-swift `501def54f56213dc844856d674d7e5d243a27e64`
 Docs: the v1.9.41 release document; cut at main ec1257ba (last code commit 99318502); tagged v1.9.41 on its ledger commit.
 
