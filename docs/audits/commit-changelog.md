@@ -1,3 +1,9 @@
+## 2026-10-25 05:02:56 EDT — scribe `230aa58f2`
+Cut Scribe 0.1 (134) and Scribe Playback 0.1 (134) from main 59638fbfa: instant-data-swift exactly 1.9.40, #1078, #1084, #1154 fix 1 (#1167).
+
+## 2026-10-25 05:02:56 EDT — scribe `c6208097d`
+changelog(#1167): build 134 cut 230aa58f2.
+
 ## 2026-10-25 04:57:52 EDT — scribe `59638fbfabaf3e16d11d9b1d0f90b3d227d2b16f`
 Docs (#1154 #1077): the hot-path audit's and PROGRESS's heading times are the commits' own (they were estimates).
 
