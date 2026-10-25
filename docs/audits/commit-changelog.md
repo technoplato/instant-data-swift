@@ -1,3 +1,12 @@
+## 2026-10-25 02:12:16 EDT — scribe `a115cd08c4ae0b23d8b990a9598a7e4e5956a129`
+Test (#1154): one symbol breathing with SwiftUI's own effect, as a floor exercise beside the stamp alone, so the hot-path exercises say what a breath costs iOS's main thread.
+
+## 2026-10-25 02:12:16 EDT — scribe `c45c2bcb358de72ddd4f1ead48ac125beb855800`
+Docs (#1077 #1154): the hot-path audit's section 9, run r4: the list while another device writes costs 28.2% of the main thread on the simulator, the store's sends about 0.8% of a core.
+
+## 2026-10-25 02:12:16 EDT — scribe `24fb723760772683174a4aa6bda44e423b212e82`
+Test (#1154): the list exercise at three rates (following, heartbeats alone, idle) and counted, to split the list's main-thread cost; the playback exercise's stop is quiet so its teardown no longer fails the next exercise.
+
 ## 2026-10-25 02:01:21 EDT — instant-data-swift `795a6dec1b67da83d8ba0ee54ed8bdc40ce6322f`
 Fix (#1129): a prune batch checks at most a batch of a result's released facts, the rest in later batches marked until the last; ownership read once per 500 entities; the results a batch may drop decoded before the gate. Worst prune hold 1,704.63 -> 397.21 ms (Mac mini, release).
 
