@@ -4,9 +4,13 @@
 //                    one before it, and every acknowledgement queued behind waited for maintenance too.
 // 2026-10-25  #1129  A result larger than a batch is released over several batches, marked until the last, and a
 //                    release a crash cuts short is finished when the store opens again.
+// 2026-10-25  #1129  A large closed result's ownership rows stay on its released row until the batches that check
+//                    them delete them: its first batch deleted them all in one cascade (150 ms and a 96 ms commit of the
+//                    `$files` batch's 397 ms).
 
 import CustomDump
 import Foundation
+import SQLite3
 import Testing
 
 @testable import InstantSwiftDataCore
@@ -167,6 +171,55 @@ struct InstantPruneOffTheApplierTests {
     _ = try? await runtime.closeConnection()
   }
 
+  /// A closed result larger than a batch keeps its ownership rows, on a released row out of its key's way, until the
+  /// batches that check its facts delete them (#1129): the batch that unloaded it deleted every row at once by cascade,
+  /// 149.72 ms of the `$files` batch's 397 ms in #1074's `prune` exercise, and a 96.28 ms commit for them.
+  @Test
+  func aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem() async throws {
+    let url = try InstantPruneGateHoldTests.temporaryCacheURL()
+    try await InstantPruneGateHoldTests.seed(at: url)
+    let firstQueryID = try #require(Self.queryID(of: "inactive-result-0", at: url))
+    let firstRows = Self.ownershipRowCount(queryID: firstQueryID, at: url)
+    let pause = InstantPausePoint()
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "prune-released-row",
+      persistenceURL: url,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveQueryResultPruneBatchTripleCount = 100
+    configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in await pause.pauseOnce() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = await runtime.observeQueryLease(TodoExample.query)
+    let now = configuration.now()
+
+    let prune = Task {
+      try await runtime.pruneLiveQueryResults(policy: InstantStoredResultReloadTests.productionPolicy, now: now)
+    }
+    try await pause.waitUntilEntered(within: .seconds(10))
+    let rowsAfterFirstBatch = Self.ownershipRowCount(queryID: firstQueryID, at: url)
+    pause.release()
+    _ = try await prune.value
+    let rowsAfterPrune = Self.ownershipRowCount(queryID: firstQueryID, at: url)
+    let survivors = Set(await runtime.store.snapshot().triples.map(\.entityID))
+
+    #expect(firstRows > 400, "the seed gave the first result \(firstRows) ownership rows")
+    #expect(
+      rowsAfterFirstBatch > 100,
+      "#1129: the batch that unloaded the result deleted its ownership rows at once: \(rowsAfterFirstBatch) left of \(firstRows)"
+    )
+    #expect(rowsAfterPrune == 0, "the prune left \(rowsAfterPrune) ownership rows of the released result")
+    #expect(Self.releasedRowCount(at: url) == 0, "a released row outlived its release")
+    #expect(!survivors.contains("prune-todo-0"))
+    #expect(!survivors.contains("prune-todo-1000000"), "the split entity goes once both its results do")
+    #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
+
+    await observation.cancel()
+    _ = try? await runtime.closeConnection()
+  }
+
   /// A release a crash cut short is finished when the store opens again (#1129): the batch that unloaded a result and
   /// left its facts unchecked marked it, a collector meanwhile keeps the marked result's stored copy, and opening the
   /// store drops the facts no stored result owns, as the batches the crash took would have.
@@ -228,6 +281,32 @@ struct InstantPruneOffTheApplierTests {
     #expect(markedAfterOpen.isEmpty, "#1129: opening the store left the mark: \(markedAfterOpen)")
 
     _ = try? await runtime.closeConnection()
+  }
+
+  /// The `query_id` of the stored result under `key`, read from the store's file.
+  static func queryID(of key: String, at url: URL) -> Int64? {
+    integer("SELECT query_id FROM instant_live_query_results WHERE query_key = '\(key)'", at: url)
+  }
+
+  /// How many ownership rows the stored result `queryID` holds, read from the store's file.
+  static func ownershipRowCount(queryID: Int64, at url: URL) -> Int {
+    Int(integer("SELECT COUNT(*) FROM instant_live_query_triples WHERE query_id = \(queryID)", at: url) ?? -1)
+  }
+
+  /// How many stored results are released rows waiting for their facts' check (#1129).
+  static func releasedRowCount(at url: URL) -> Int {
+    Int(integer("SELECT COUNT(*) FROM instant_live_query_results WHERE query_key LIKE 'released-result:%'", at: url) ?? -1)
+  }
+
+  private static func integer(_ sql: String, at url: URL) -> Int64? {
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+    defer { sqlite3_finalize(statement) }
+    guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+    return sqlite3_column_int64(statement, 0)
   }
 
   static func refresh(query: InstantLiveJSONValue, todo: String, transaction: String) -> InstantLiveRefreshOK {
