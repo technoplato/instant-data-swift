@@ -85,3 +85,17 @@ once per batch, and a result larger than the batch budget is released over sever
 The lab made fix-gate-1074 the library's release owner from 1.9.39 (lib-audit-1072 finished at 20:28): versions, their
 release documents and tags, and the Scribe and Playback pins on Scribe's main (pin files only, then a changelog line).
 Also touching then: `docs/releases/v1.9.39.md` (new) and later versions' documents.
+
+## Amendment 4 (2026-10-25 00:47 EDT, #1129's second slice)
+
+A prune batch checks at most a batch of its released facts (whole entities) and leaves the rest to the next batches;
+ownership is read once per 500 entities; the results a batch may drop are decoded on the read connection first. A
+release spread over batches is crash-safe: only unloaded results are spread, the batch marks them in
+`instant_sync_metadata` with their removal, the batch that checks the last of their facts clears the marks, and
+opening the store finishes a marked release from the results' stored copies. Also touching:
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `bootstrap(queryCachePruningPolicy:now:)` (one call),
+  `collectUnloadedLiveQueryResultsWithoutTransaction` (keeps a marked copy), `releaseLiveQueryResultFactsWithoutTransaction`,
+  `liveQueryOwnershipWithoutTransaction(entityIDs:)`, `applyReleasedLiveQueryResultFacts`,
+  `liveQueryResultPruneCandidates`, `finishInterruptedLiveQueryResultRelease` and the marker helpers (new),
+  `deferredLiveQueryResultJSONMarkerPrefix` (no longer private).
+- `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift`: `storedLiveQueryResults(keys:)` (new).
