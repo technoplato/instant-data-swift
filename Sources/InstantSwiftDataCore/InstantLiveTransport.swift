@@ -1931,6 +1931,8 @@ actor InstantURLSessionLiveWebSocket {
     do {
       let (string, byteCount) = try Self.encodedFrame(message)
       try await task.send(.string(string))
+      // #1124: counted once it is sent, so a device's log says what its changes cost on the wire.
+      Self.logWireSummary(wireMeter.record(.sent, op: message.op, bytes: byteCount))
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",
@@ -1961,6 +1963,7 @@ actor InstantURLSessionLiveWebSocket {
     do {
       let received = try await task.receive()
       let (message, byteCount) = try Self.decodedFrame(received)
+      Self.logWireSummary(wireMeter.record(.received, op: message.op, bytes: byteCount))
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",
@@ -1994,6 +1997,22 @@ actor InstantURLSessionLiveWebSocket {
       }
       throw error
     }
+  }
+
+  /// What the socket's traffic added since the last summary, at info, at most once a minute (#1124). Bytes are the
+  /// frames' text before permessage-deflate, as the trace-level frame events report them.
+  private static func logWireSummary(_ summary: InstantWireSnapshot?) {
+    guard let summary, InstantDiagnostics.shared.isEnabled(at: .info) else { return }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "network",
+      event: "network.wire-summary",
+      message:
+        "The live socket sent \(summary.sentFrames) frames (\(summary.sentBytes / 1_024) KB) and received "
+        + "\(summary.receivedFrames) (\(summary.receivedBytes / 1_024) KB) in the last minute or more.",
+      metadata: summary.logMetadata
+    )
   }
 
   /// Encodes one frame for the wire, a synchronous section the energy meter counts (#669).
