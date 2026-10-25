@@ -1,3 +1,9 @@
+## 2026-10-24 21:00:58 EDT — scribe `7c07dc841633230c0aa3ea281df8fdd0817a3602`
+Build 130 cut (#1159): CURRENT_PROJECT_VERSION 130; #1156 #1089 #962 #1067, instant-data-swift exactly 1.9.38.
+
+## 2026-10-24 21:00:58 EDT — scribe `c740ee5ec91d2e3908ecd1d30e8aaec43aa1e79e`
+changelog(#1159): build 130 cut 7c07dc841.
+
 ## 2026-10-24 20:47:11 EDT — scribe `0ed624cf887dca29854525ae7104fcacc9e82431`
 Merge (#1156): the audit's open items.
 
