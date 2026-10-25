@@ -1,3 +1,21 @@
+## 2026-10-25 05:48:22 EDT — scribe `a8472246edcbe418bb7610bcae07c7ad9be76746`
+Merge (#1086): screen-heat-1086 onto main for build 135: each screen's frame sample is a line built from its state and written by the sampler, with no store action.
+
+## 2026-10-25 05:48:14 EDT — scribe `6455f39a69be2d44b8d0688072cceb600faf2aec`
+Changelog (#1086 #1084): the red, the green and the docs below in CHANGELOG.md.
+
+## 2026-10-25 05:47:57 EDT — scribe `cd903dcfa8c903e346f8d665b1e9986988a86bf7`
+Docs (#1086 #1084): the frame-sample audit (a sample 40.1 -> 2.9 M instructions, 21 -> 0 root passes for 20), its index row, the Build 135 (next) story; #1084 in build 134.
+
+## 2026-10-25 05:17:29 EDT — scribe `dd69305e8b98a943904a7db8caa7ef5d33a87171`
+Perf (#1086): green: frameSampleLine(_:) on the recording, playback and list states, read with withState and written by ScribeFrameRateSampler; the three uiFramesSampled actions go; 30 s windows behind the screen on iOS; the energy section ends before the line.
+
+## 2026-10-25 04:45:27 EDT — scribe `40c3d3e24cbe227697e3a53e152941e0c369aeff`
+Test (#1086): red: no screen's frame sample is a store action (ArchitectureTests), and one of the recording screen's samples takes no root pass.
+
+## 2026-10-25 04:43:33 EDT — scribe `decc64e7b25b407d53ddd1846a34b27ef31e210d`
+Plan (#1086): amendment E: the frame sample logs without a store action; claims and channel notes.
+
 ## 2026-10-25 05:42:16 EDT — instant-data-swift `9931850236bbaa766206eff369201214ed0f833e`
 Fix (#1133): gate holders that write no store facts say so as they take the gate; recording-deferred's 96-102 gated re-checks (p99 up to 93.12 ms behind prune batches) -> none (Mac mini, release).
 
