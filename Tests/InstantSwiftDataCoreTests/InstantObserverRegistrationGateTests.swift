@@ -41,6 +41,17 @@ struct InstantObserverRegistrationGateTests {
     stall.release()
     try await write.work.value
     let lease = await observing.value
+    // The server takes the write, as it would. Unacknowledged, its deadline (6 s) ran out on a slow whole-bundle run
+    // while this test still waited for the observer's answer, and the live session reported the miss as an issue.
+    try await InstantConnectionStateTruthTests.waitUntil("the write to reach the socket") {
+      await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-during-send" }
+    }
+    await session.enqueue(
+      InstantLiveMessage(op: "transact-ok", clientEventID: "tx-during-send", fields: ["tx-id": .string("server-during-send")])
+    )
+    try await InstantConnectionStateTruthTests.waitUntil("the server to accept the write") {
+      await runtime.pendingMutations().isEmpty
+    }
 
     #expect(holder != "observe standard live query", "#1131: the registration held the gate across its send")
     #expect(write.finished, "#1131: a local write waited for an observer's add-query to reach the socket")
