@@ -91,3 +91,12 @@ on a lock. The cost tests of a parallel bundle (`LinkSetWriteCostTests`, `Refres
 `OutboxSupersessionSchemaCostTests`) share the one tally, and a second test's `start` reset the first's counts
 mid-measurement: `RefreshCostTests`' nested-limit test failed on the Mac mini whenever its hydration test measured at
 the same moment, passing alone.
+
+## Amendment 4 (2026-10-24 23:20 EDT, claude-code/fix-memory-1075@ld)
+
+#1147 step 2 landed (red `63b65c80`, green `553cb332`; E03 64-line refresh 22,769 -> 12,671 KB). Step 3 claims
+`Sources/InstantSwiftDataCore/InstantLiveJSONParser.swift` (whole file): a received frame's arrays are sized once from a
+shared element stack instead of growing by doubling, an escaped string reuses one byte buffer, and the short strings a
+frame repeats (entity and attribute ids) share one copy per frame. The frame's parse was about 7,000 of a 64-line
+refresh's 21,000 allocations (E01: 111 a line). fix-gate-1074 agreed `reducedServerApplyOperations`' deferred loads
+are mine (23:02); that step waits for fix-storage-1076's answer on the fact rows #1121 changes.
