@@ -581,6 +581,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// when the attempt holds the operation gate, so a local write started here waits for it.
   var onServerApplySeedLoadedForTesting:
     (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
+  /// Runs after a server-apply attempt works out its restated results' retractions (`"retractions"`) or saves
+  /// (`"saves"`) from the stored results; `operationGateHeld` is true when the attempt holds the operation gate (#1128).
+  var onServerApplyRestatedResultsWorkedOutForTesting:
+    (@Sendable (_ work: String, _ operationGateHeld: Bool) async -> Void)? = nil
   /// Runs after each attempt to record a refused write has loaded its component and before it commits;
   /// `operationGateHeld` is true for the exclusive attempt, so a local write started here would wait for it.
   package var onClaimedTerminalFailureLoadedForTesting:
@@ -2994,6 +2998,10 @@ public final class InstantRuntime: Sendable {
             for: liveQueryResultReplacements,
             expectedQueryResultRevision: compactState.queryResultRevision
           ) else { break planning }
+          await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
+            "retractions",
+            operationGateAlreadyHeld || holdsGateWhilePlanning
+          )
           guard let protectedRetractions = try await persistence.protectingServerRetractions(
             retractions.operations,
             expectedOutboxRevision: compactState.outboxRevision,
@@ -3031,6 +3039,10 @@ public final class InstantRuntime: Sendable {
             persistedLiveQueryResults,
             expectedQueryResultRevision: compactState.queryResultRevision
           ) else { break planning }
+          await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
+            "saves",
+            operationGateAlreadyHeld || holdsGateWhilePlanning
+          )
           preparedQueryResults = prepared
         }
         // Attribute shape changes can alter every optimistic operation on that attribute, even when

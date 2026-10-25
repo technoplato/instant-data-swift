@@ -225,6 +225,59 @@ struct InstantServerApplyGateWorkTests {
       .string("local-19")
     )
   }
+
+  /// A retry plans holding the operation gate (#932), so what it works out again there is work every write waits for:
+  /// its restated results' retractions decode each stored result and their saves encode each fact, which for the
+  /// `$files` list's 75,640 facts held the gate 746 ms in #1074's `server-apply` exercise. A local write moves neither
+  /// the stored results nor their revision, so the first attempt, which plans without the gate, works both out once and
+  /// the retry reuses them (#1128).
+  @Test
+  func aRetryReusesTheRestatedResultsItsFirstAttemptWorkedOut() async throws {
+    let writes = GateWorkWrites()
+    let workedOut = GateWorkRestatedResults()
+    let fixture = try await GateWorkFixture.make(suffix: "retry-reuses", chainLength: 1) { configuration in
+      configuration.onServerApplySeedLoadedForTesting = { operationGateHeld in
+        await writes.writeAfterSeed(operationGateHeld: operationGateHeld)
+      }
+      configuration.onServerApplyRestatedResultsWorkedOutForTesting = { work, operationGateHeld in
+        await workedOut.record(work, operationGateHeld: operationGateHeld)
+      }
+    }
+    let key = #"{"items":{}}"#
+    let listed = (0..<300).map { index in
+      gateWorkTriple(entityID: "listed-\(index)", value: "v\(index)", transactionID: "listed", milliseconds: 50)
+    }
+    func restate(_ triples: [InstantTriple], frame: Int) async throws {
+      _ = try await fixture.runtime.applyServerTransactionMergingAttributesForTesting(
+        InstantStoreTransaction(id: "retried-\(frame)", operations: triples.map(InstantTripleOperation.insert)),
+        attributesToMerge: [],
+        liveQueryResultReplacements: [InstantLiveQueryResultReplacement(key: key, triples: triples, pageInfo: nil)],
+        receivedAt: InstantTimestamp(milliseconds: 1_000 + Int64(frame) * 10_000)
+      )
+    }
+    try await restate(listed, frame: 0)
+    await workedOut.reset()
+
+    // A local write lands after the first attempt's seed, so the apply plans again, holding the gate.
+    await writes.attach(fixture.runtime)
+    var changed = Array(listed.dropLast())
+    changed[0] = gateWorkTriple(entityID: "listed-0", value: "changed", transactionID: "listed", milliseconds: 60)
+    try await restate(changed, frame: 1)
+    await writes.finish()
+
+    let records = await workedOut.records()
+    #expect(
+      !records.contains { $0.operationGateHeld },
+      "#1128: the retry worked its restated results out again holding the operation gate: \(records)"
+    )
+    #expect(records.filter { $0.work == "retractions" }.count == 1, "\(records)")
+    #expect(records.filter { $0.work == "saves" }.count == 1, "\(records)")
+    #expect(!(await writes.writtenIDs()).isEmpty, "a local write landed while the apply planned")
+    let ownership = try await fixture.runtime.persistence.liveQueryOwnershipForTesting(queryKey: key)
+    #expect(ownership.count == 299)
+    #expect(ownership.contains(["listed-0", "items/value", #"{"string":{"_0":"changed"}}"#]))
+    #expect(!ownership.contains { $0.first == "listed-299" })
+  }
 }
 
 /// A local write after each server-apply seed: awaited when the gate is free (the attempt then goes stale), started
@@ -266,6 +319,25 @@ private actor GateWorkWrites {
   }
 
   func writtenIDs() -> [String] { written }
+}
+
+/// What a server apply worked out from its restated results, in order, and whether it held the operation gate then.
+private actor GateWorkRestatedResults {
+  struct Record: Sendable, CustomStringConvertible {
+    var work: String
+    var operationGateHeld: Bool
+    var description: String { "\(work)\(operationGateHeld ? " (gate held)" : "")" }
+  }
+
+  private var stored: [Record] = []
+
+  func record(_ work: String, operationGateHeld: Bool) {
+    stored.append(Record(work: work, operationGateHeld: operationGateHeld))
+  }
+
+  func reset() { stored = [] }
+
+  func records() -> [Record] { stored }
 }
 
 // MARK: - Fixture
