@@ -127,3 +127,13 @@ fix-storage-1076 (channel 23:58: the result build's re-encode and ownership re-r
 - New: `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` (the diff, pure, testable on one thread),
   `Tests/InstantSwiftDataCoreTests/LiveQueryOwnershipDiffTests.swift`.
 Order: an extraction commit that keeps today's algorithm, a red cost test on it, then the fingerprint green.
+
+## Amendment 7 (2026-10-25 00:23 EDT, claude-code/fix-memory-1075@ld)
+
+#1147 step 4 green (refactor `05242f85`, red `5a0ebe9e`, green `865ad0db`; E03 64-line refresh 16,280 -> 11,160
+allocations). #1148 claims `Sources/InstantSwiftDataCore/InstantDiagnostics.swift`: the `record` overloads take
+`message` and `metadata` as `@autoclosure` and build them only once the entry will be recorded (outside the lock); a
+public `isRecording(_:)` for callers that build metadata ahead; bounding by UTF-8 length first; redaction without a
+string per ASCII key. New: `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsCostTests.swift`. Call sites are not
+edited; `recordServerApplyGateTimeline` (fix-gate-1074's) builds its metadata ahead, so `isRecording` is offered to it
+on the channel.
