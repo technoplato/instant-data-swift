@@ -51,3 +51,15 @@ and `SQLitePersistenceStore.swift` and will not edit `TripleIndexes.swift` or `I
 channel. #1152 touches neither of its functions. #1147's refresh path and #1151's reconnect are next to its #1128 and
 #1131 work: each is named on the channel and split by function before either edits. lib-audit-1072 released its holds
 at 20:55 (`TxIDInterner`, the outbox functions, `discardFailedMutation`).
+
+## Amendment 1 (2026-10-24 22:07 EDT, claude-code/fix-memory-1075@ld)
+
+#1152 landed (red `ccdbc47b`, green `33c5c042`, ledger `b2d4c262`). Claimed now:
+- `Tests/InstantSwiftDataCoreTests/RealSize/MemoryLongRunReplay.swift`: `MemoryLongRunReplaySmokeTests` only, which moves
+  into the measurement pass (`.measurement`, #1021): its apply waiter listens on the process-wide diagnostics hub and
+  timed out in whole-bundle runs (lib-audit-1072's report of 22:52 on #1075; again on 2947d348), passing alone.
+- New, test-only: `Tests/InstantSwiftDataCoreTests/RealSize/MemoryAllocationSites.swift` (an allocation-site sampler:
+  libmalloc's logger hook records each allocation's return addresses, named afterwards with `atos`) and
+  `Tests/InstantSwiftDataCoreTests/RealSize/MemorySiteExercises.swift` (E03's refresh and E04's final line, printed
+  by call site, `INSTANT_MEMORY_SITES=1`), so #1147 and the fixes after it start from measured call sites.
+#1147's library functions are named in the next amendment, once the sites are in, before any edit.
