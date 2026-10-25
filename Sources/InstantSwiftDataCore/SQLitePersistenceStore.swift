@@ -13,6 +13,10 @@
 // - 2026-10-25: a prune batch reads the ownership of its released facts once per 500 entities, uses a result decoded
 //   before the operation gate while its row is unchanged, and leaves a result's facts beyond a batch to later batches;
 //   the results whose facts wait are marked with their removal, and opening the store finishes such a release (#1129).
+// - 2026-10-25: a closed result larger than a prune batch keeps its row, re-keyed to released-result:<query_id>, and its
+//   ownership rows, which later batches delete a bounded chunk at a time as they check those facts; its batch deleted
+//   every row by cascade, 150 ms and a 96 ms commit for the $files list's 75,640 facts. A released row is its own record
+//   of a release in progress, so the marker is no longer written; opening the store dismantles one left behind (#1129).
 // - 2026-10-23: an uploaded file's record keeps no copy of its bytes (saveUploadedFileRecord), a record without a copy
 //   is not downloaded to reads and the snapshot, and an evicted copy's record stays (forgetStoredFileCopy) (#959).
 // - 2026-10-23: metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone: both
@@ -354,19 +358,14 @@ struct InstantLiveQueryResultPruneBatch: Sendable {
   fileprivate var remainingRows: [LiveQueryResultStorageRow]
   /// The revisions the batch was chosen at; it applies only at them.
   fileprivate var revisions: LiveQueryResultPruneRevisions
-  /// The removed results whose released facts the batch leaves for later batches to check (#1129). The batch marks
-  /// them with their removal, so a release a crash or a failure cuts short is finished when the store opens again.
-  var pendingReleaseQueryKeys: [String] = []
+  /// Of ``removedQueryKeys``, the unloaded results larger than the batch's budget (#1129): their rows are re-keyed to
+  /// released rows that keep their ownership rows, and later batches check their facts a bounded chunk at a time.
+  /// The batch neither decodes them nor checks their facts.
+  fileprivate var releasingQueryKeys: Set<String> = []
 
-  /// Whether the batch unloads every result it removes, keeping each one's stored copy (#1006): only then can a release
-  /// cut short be finished from those copies, so only then are the batch's released facts spread over batches (#1129).
-  var unloadsEveryRemovedResult: Bool {
-    removedQueryKeys.allSatisfy { unloadingQueryKeys.contains($0) || unreadableQueryKeys.contains($0) }
-  }
-
-  /// The results the batch unloads, in its order.
-  var unloadedQueryKeys: [String] {
-    removedQueryKeys.filter { unloadingQueryKeys.contains($0) && !unreadableQueryKeys.contains($0) }
+  /// The removed results the batch decodes: those it does not release over later batches (#1129).
+  var decodedQueryKeys: [String] {
+    removedQueryKeys.filter { !releasingQueryKeys.contains($0) }
   }
 
   /// The entities whose facts the batch may drop: the only part of the store it reads.
@@ -399,6 +398,15 @@ struct InstantLiveQueryResultPruneBatch: Sendable {
   }
 }
 
+/// The next whole entities of a released result's ownership rows (#1129), which one prune batch checks.
+struct InstantReleasedLiveQueryResultChunk: Sendable {
+  /// The released row's id.
+  var queryID: Int64
+  /// The entities the chunk's rows name; every row of each is in the chunk.
+  var entityIDs: Set<String>
+  fileprivate var ownership: Set<LiveQueryOwnershipIdentity>
+}
+
 /// What a live-query prune batch removed (#654).
 struct InstantLiveQueryResultPruneBatchApplication: Sendable {
   var result: InstantLiveQueryResultPruningResult
@@ -412,12 +420,8 @@ struct InstantLiveQueryResultPruneBatchApplication: Sendable {
   /// Facts a removed row released that the whole-entity rule kept, because their entity still had a fact no removed
   /// row released. A later batch that releases the rest of the entity removes them together.
   var retainedReleasedIdentities: Set<InstantLiveTripleIdentity>
-  /// Facts the batch's removed rows released that it left for the next batches to check, whole entities in entity
-  /// order (#1129): a result larger than a batch releases its facts over several holds of the operation gate.
-  var pendingReleasedIdentities: [InstantLiveTripleIdentity] = []
-  /// The unloaded results ``pendingReleasedIdentities`` came from, marked until the batch that checks the last of them
-  /// clears them (#1129).
-  var pendingReleaseQueryKeys: [String] = []
+  /// Whether the batch left released rows whose facts later batches check (#1129).
+  var leftReleasedRows = false
 
   var removedEntityIDs: Set<String> {
     Set(removedFacts.lazy.map(\.entityID))
@@ -3527,11 +3531,11 @@ public actor SQLitePersistenceStore {
     let bindings: [SQLiteBinding]
     if let queryKey {
       sql =
-        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results WHERE query_key > ? ORDER BY query_key LIMIT 1"
+        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results WHERE query_key > ? AND \(Self.notReleasedLiveQueryResultSQL) ORDER BY query_key LIMIT 1"
       bindings = [.text(queryKey)]
     } else {
       sql =
-        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results ORDER BY query_key LIMIT 1"
+        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results WHERE \(Self.notReleasedLiveQueryResultSQL) ORDER BY query_key LIMIT 1"
       bindings = []
     }
     try prepare(sql, statement: &statement)
@@ -4256,7 +4260,7 @@ public actor SQLitePersistenceStore {
       """
       SELECT result.query_key, length(CAST(result.json AS BLOB))
       FROM instant_live_query_results AS result
-      WHERE EXISTS (
+      WHERE substr(result.query_key, 1, 16) <> 'released-result:' AND EXISTS (
         SELECT 1 FROM instant_live_query_triples AS owned
         WHERE owned.query_id = result.query_id
           AND owned.attribute_id IN (\(placeholders))
@@ -12881,7 +12885,8 @@ public actor SQLitePersistenceStore {
         carriedReleasedIdentities: [],
         revisions: LiveQueryResultPruneRevisions(store: 0, attribute: 0, outbox: 0, queryResult: 0),
         decodesResults: false
-      ).removedQueryKeys
+      )
+      .decodedQueryKeys
     }
   }
 
@@ -13020,7 +13025,15 @@ public actor SQLitePersistenceStore {
 
     var releasedIdentities = carriedReleasedIdentities
     var unreadableQueryKeys: Set<String> = []
-    for row in removedRows where decodesResults {
+    // #1129: an unloaded result larger than the budget is released over later batches, which read its facts from its
+    // ownership rows, so it is not decoded here.
+    var releasingQueryKeys: Set<String> = []
+    if let maximumRemovedTripleCount {
+      for row in removedRows where unloadingKeys.contains(row.queryKey) && row.tripleCount > maximumRemovedTripleCount {
+        releasingQueryKeys.insert(row.queryKey)
+      }
+    }
+    for row in removedRows where decodesResults && !releasingQueryKeys.contains(row.queryKey) {
       // #1129: a result read and decoded on the read connection before the gate is used while its row is the one it
       // read and no newer result waits for its JSON write; the decode held the gate 265 ms for the `$files` list.
       let read = predecoded[row.queryKey].flatMap { read in
@@ -13043,7 +13056,8 @@ public actor SQLitePersistenceStore {
       unloadingQueryKeys: unloadingKeys,
       unreadableQueryKeys: unreadableQueryKeys,
       remainingRows: rows,
-      revisions: revisions
+      revisions: revisions,
+      releasingQueryKeys: releasingQueryKeys
     )
   }
 
@@ -13060,16 +13074,22 @@ public actor SQLitePersistenceStore {
         try unloadLiveQueryResultWithoutTransaction(key: queryKey)
         unloadedKeys.append(queryKey)
       }
-      // Its ownership rows go with it (`ON DELETE CASCADE`), so the checks below see only the results that stay.
-      try execute(
-        "DELETE FROM instant_live_query_results WHERE query_key = ?",
-        [.text(queryKey)]
-      )
+      if batch.releasingQueryKeys.contains(queryKey) {
+        // #1129: out of its key's way, with its ownership rows, which later batches delete as they check its facts;
+        // deleting it took them all in one cascade, 150 ms and a 96 ms commit for the `$files` list's 75,640.
+        try execute(
+          "UPDATE instant_live_query_results SET query_key = ? || query_id, json = '' WHERE query_key = ?",
+          [.text(Self.releasedLiveQueryResultKeyPrefix), .text(queryKey)]
+        )
+      } else {
+        // Its ownership rows go with it (`ON DELETE CASCADE`), so the checks below see only the results that stay.
+        try execute(
+          "DELETE FROM instant_live_query_results WHERE query_key = ?",
+          [.text(queryKey)]
+        )
+      }
       try forgetLiveQueryResultJSONStateWithoutTransaction(queryKey)
     }
-    // #1129: the facts these results released that the batch leaves unchecked are named by their stored copies; marked
-    // in the removal's transaction, before the collector, which keeps a marked copy.
-    try markPendingLiveQueryResultReleaseWithoutTransaction(batch.pendingReleaseQueryKeys, at: now)
     try collectUnloadedLiveQueryResultsWithoutTransaction(
       policy: policy,
       now: now,
@@ -13098,7 +13118,8 @@ public actor SQLitePersistenceStore {
       attributeRevision: batch.revisions.attribute,
       queryResultRevision: queryResultRevision,
       hasMoreToRemove: batch.hasMoreToRemove,
-      retainedReleasedIdentities: retainedReleasedIdentities
+      retainedReleasedIdentities: retainedReleasedIdentities,
+      leftReleasedRows: !batch.releasingQueryKeys.isEmpty
     )
   }
 
@@ -13195,30 +13216,111 @@ public actor SQLitePersistenceStore {
     return owned
   }
 
-  /// Drops, among `releasedIdentities`, facts of results an earlier batch already removed (#1129): a result larger than
-  /// a batch releases its facts over several batches, each holding the operation gate for a bounded part of them.
+  /// The key prefix of a released result's row (#1129): a closed result larger than a prune batch whose ownership rows
+  /// wait for the batches that check its facts. A query key is canonical JSON, so it never starts so.
+  static let releasedLiveQueryResultKeyPrefix = "released-result:"
+
+  /// The SQL condition that leaves released rows out of a read of the stored results (#1129).
+  static let notReleasedLiveQueryResultSQL = "substr(query_key, 1, 16) <> 'released-result:'"
+
+  /// The next whole entities of a released result's ownership rows, about `maximumTripleCount` rows (#1129); nil when no
+  /// result is released. A released row with no ownership rows left comes back with none, for its batch to drop it.
+  func nextReleasedLiveQueryResultChunk(maximumTripleCount: Int) throws -> InstantReleasedLiveQueryResultChunk? {
+    try readTransaction {
+      guard
+        let queryIDText: String = try selectScalar(
+          "SELECT query_id FROM instant_live_query_results WHERE query_key >= ? AND query_key < ? ORDER BY query_id LIMIT 1",
+          [.text(Self.releasedLiveQueryResultKeyPrefix), .text(Self.releasedLiveQueryResultKeyPrefix + "\u{10FFFF}")]
+        ),
+        let queryID = Int64(queryIDText)
+      else { return nil }
+      let limit = Swift.max(1, maximumTripleCount)
+      var rows = try liveQueryOwnershipRowsWithoutTransaction(
+        """
+        SELECT entity_id, attribute_id, value_json FROM instant_live_query_triples
+        WHERE query_id = ? ORDER BY entity_id, attribute_id, value_json LIMIT ?
+        """,
+        [.int(queryID), .int(Int64(limit))]
+      )
+      // Whole entities: the last entity's rows past the limit join the chunk.
+      if rows.count >= limit, let last = rows.last?.entityID {
+        rows.removeAll { $0.entityID == last }
+        rows.append(
+          contentsOf: try liveQueryOwnershipRowsWithoutTransaction(
+            "SELECT entity_id, attribute_id, value_json FROM instant_live_query_triples WHERE query_id = ? AND entity_id = ?",
+            [.int(queryID), .text(last)]
+          )
+        )
+      }
+      return InstantReleasedLiveQueryResultChunk(
+        queryID: queryID,
+        entityIDs: Set(rows.lazy.map(\.entityID)),
+        ownership: Set(rows)
+      )
+    }
+  }
+
+  /// Whether a released result waits for the batches that check its facts (#1129).
+  func hasReleasedLiveQueryResult() throws -> Bool {
+    try readTransaction {
+      try selectScalar(
+        "SELECT 1 FROM instant_live_query_results WHERE query_key >= ? AND query_key < ? LIMIT 1",
+        [.text(Self.releasedLiveQueryResultKeyPrefix), .text(Self.releasedLiveQueryResultKeyPrefix + "\u{10FFFF}")]
+      ) != nil
+    }
+  }
+
+  /// Checks `chunk`'s facts in one transaction (#1129): its ownership rows go, then the facts no stored result owns any
+  /// more, whole entities only, as the batch that removed their result would have dropped them; the released row goes
+  /// with its last rows. `carriedReleasedIdentities` are facts earlier batches released that the whole-entity rule kept.
   ///
-  /// - Parameters:
-  ///   - residentFacts: The hot store's facts of the released identities' entities, all of them.
-  ///   - finishingQueryKeys: The marked results whose last released facts these are: their marks go in this
-  ///     transaction.
-  func applyReleasedLiveQueryResultFacts(
-    _ releasedIdentities: Set<InstantLiveTripleIdentity>,
-    residentFacts: [InstantTriple],
-    finishingQueryKeys: [String] = []
+  /// - Parameter residentFacts: The hot store's facts of the chunk's entities and the carried ones, all of them.
+  func applyReleasedLiveQueryResultChunk(
+    _ chunk: InstantReleasedLiveQueryResultChunk,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
+    residentFacts: [InstantTriple]
   ) throws -> InstantLiveQueryResultPruneBatchApplication {
     let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
     var revisions = LiveQueryResultPruneRevisions(store: 0, attribute: 0, outbox: 0, queryResult: 0)
     let application: InstantLiveQueryResultPruneBatchApplication = try transaction {
       revisions = try liveQueryResultPruneRevisionsWithoutTransaction()
+      let entityIDs = chunk.entityIDs.sorted()
+      for start in stride(from: 0, to: entityIDs.count, by: 500) {
+        let batch = entityIDs[start..<Swift.min(start + 500, entityIDs.count)]
+        try execute(
+          "DELETE FROM instant_live_query_triples WHERE query_id = ? AND entity_id IN ("
+            + Array(repeating: "?", count: batch.count).joined(separator: ", ") + ")",
+          [.int(chunk.queryID)] + batch.map(SQLiteBinding.text)
+        )
+      }
+      var releasedIdentities = carriedReleasedIdentities
+      for fact in residentFacts where chunk.entityIDs.contains(fact.entityID) {
+        let ownership = LiveQueryOwnershipIdentity(
+          entityID: fact.entityID,
+          attributeID: fact.attributeID,
+          valueJSON: try encode(fact.value)
+        )
+        if chunk.ownership.contains(ownership) {
+          releasedIdentities.insert(InstantLiveTripleIdentity(fact))
+        }
+      }
       let (removedFacts, retainedReleasedIdentities) = try releaseLiveQueryResultFactsWithoutTransaction(
         releasedIdentities,
         residentFacts: residentFacts
       )
-      try clearPendingLiveQueryResultReleaseWithoutTransaction(finishingQueryKeys)
+      let rowsLeft = try selectScalar(
+        "SELECT 1 FROM instant_live_query_triples WHERE query_id = ? LIMIT 1",
+        [.int(chunk.queryID)]
+      ) != nil
+      if !rowsLeft {
+        try execute("DELETE FROM instant_live_query_results WHERE query_id = ?", [.int(chunk.queryID)])
+      }
       let storeRevision = removedFacts.isEmpty
         ? revisions.store
         : try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      // Every writer of ownership rows moves the query-result revision, which a server apply's retry checks before it
+      // reuses what its first attempt worked out from them (#1128).
+      let queryResultRevision = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       return InstantLiveQueryResultPruneBatchApplication(
         result: InstantLiveQueryResultPruningResult(
           removedQueryKeys: [],
@@ -13230,25 +13332,49 @@ public actor SQLitePersistenceStore {
         removedFacts: removedFacts,
         storeRevision: storeRevision,
         attributeRevision: revisions.attribute,
-        queryResultRevision: revisions.queryResult,
+        queryResultRevision: queryResultRevision,
         hasMoreToRemove: false,
-        retainedReleasedIdentities: retainedReleasedIdentities
+        retainedReleasedIdentities: retainedReleasedIdentities,
+        leftReleasedRows: rowsLeft
       )
     }
     advanceCachedStateAfterLiveQueryResultPrune(from: revisions, application: application)
     return application
   }
 
-  /// Marks an unloaded result whose released facts a prune has yet to check (#1129), one metadata row each, as the
-  /// deferred JSON writes are marked (#566).
-  static let pendingLiveQueryResultReleaseMarkerPrefix = "live-query-result-release-pending:"
-
-  private func markPendingLiveQueryResultReleaseWithoutTransaction(_ keys: [String], at now: InstantTimestamp) throws {
-    try executeRepeated(
-      Self.upsertMetadataSQL,
-      bindings: keys.map { [.text(Self.pendingLiveQueryResultReleaseMarkerPrefix + $0), .text("1"), .int(now.milliseconds)] }
-    )
+  /// Ownership rows read by `sql`, which selects `entity_id, attribute_id, value_json`.
+  private func liveQueryOwnershipRowsWithoutTransaction(
+    _ sql: String,
+    _ bindings: [SQLiteBinding]
+  ) throws -> [LiveQueryOwnershipIdentity] {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    var rows: [LiveQueryOwnershipIdentity] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return rows }
+      guard code == SQLITE_ROW,
+        let entityID = sqlite3_column_text(statement, 0),
+        let attributeID = sqlite3_column_text(statement, 1),
+        let valueJSON = sqlite3_column_text(statement, 2)
+      else {
+        throw persistenceError(operation: "read live-query ownership", message: lastErrorMessage())
+      }
+      rows.append(
+        LiveQueryOwnershipIdentity(
+          entityID: String(cString: entityID),
+          attributeID: String(cString: attributeID),
+          valueJSON: String(cString: valueJSON)
+        )
+      )
+    }
   }
+
+  /// Marks an unloaded result whose released facts a prune had yet to check, one metadata row each (#1129). Builds from
+  /// 2026-10-25 to the released rows wrote them; opening the store still finishes what one names.
+  static let pendingLiveQueryResultReleaseMarkerPrefix = "live-query-result-release-pending:"
 
   private func clearPendingLiveQueryResultReleaseWithoutTransaction(_ keys: [String]) throws {
     try executeRepeated(
@@ -13275,20 +13401,49 @@ public actor SQLitePersistenceStore {
     return keys
   }
 
-  /// The unloaded results whose released facts a prune has yet to check (#1129).
+  /// The unloaded results a marker names, whose released facts a prune had yet to check (#1129).
   func pendingLiveQueryResultReleaseKeysForTesting() throws -> [String] {
     try readTransaction { try pendingLiveQueryResultReleaseKeysWithoutTransaction() }
   }
 
+  /// The released rows waiting for their facts' check (#1129).
+  func releasedLiveQueryResultCountForTesting() throws -> Int {
+    try readTransaction {
+      Int(
+        try selectInt64(
+          "SELECT COUNT(*) FROM instant_live_query_results WHERE query_key >= '\(Self.releasedLiveQueryResultKeyPrefix)'"
+            + " AND query_key < '\(Self.releasedLiveQueryResultKeyPrefix)\u{10FFFF}'"
+        )
+      )
+    }
+  }
+
   /// Finishes a prune's release of facts that a crash or a failure cut short (#1129), before anything reads the store.
   ///
-  /// A result larger than a prune batch releases its facts over several batches; one left unchecked would stay in the
-  /// store with no result to own it and none to release it. Each marked result was unloaded (#1006), so its stored copy
-  /// still names the facts it released; a result its query loaded back since owns them again, and is left alone. The
-  /// store's own rows of those entities stand in for the hot store's, which is loaded from them next.
+  /// A closed result larger than a prune batch is released over several batches; a fact left unchecked would stay in
+  /// the store with no result to own it and none to release it. A released row still holds the ownership rows of the
+  /// facts no batch checked, and a marker an earlier build wrote names an unloaded result whose stored copy names them;
+  /// a marked result its query loaded back since owns them again, and is left alone. Nothing else runs yet, so this is
+  /// one transaction, and the store's own rows of those entities stand in for the hot store's, loaded from them next.
   private func finishInterruptedLiveQueryResultRelease() throws {
     let keys = try pendingLiveQueryResultReleaseKeysWithoutTransaction()
-    guard !keys.isEmpty else { return }
+    var releasedRowIDs: [Int64] = []
+    do {
+      var statement: OpaquePointer?
+      try prepare(
+        "SELECT query_id FROM instant_live_query_results WHERE query_key >= ? AND query_key < ? ORDER BY query_id",
+        statement: &statement
+      )
+      defer { finishStatement(statement) }
+      try bind(
+        [.text(Self.releasedLiveQueryResultKeyPrefix), .text(Self.releasedLiveQueryResultKeyPrefix + "\u{10FFFF}")],
+        to: statement
+      )
+      while sqlite3_step(statement) == SQLITE_ROW {
+        releasedRowIDs.append(sqlite3_column_int64(statement, 0))
+      }
+    }
+    guard !keys.isEmpty || !releasedRowIDs.isEmpty else { return }
     var removedFactCount = 0
     try transaction {
       var released: Set<InstantLiveTripleIdentity> = []
@@ -13300,17 +13455,42 @@ public actor SQLitePersistenceStore {
           released.insert(InstantLiveTripleIdentity(triple))
         }
       }
+      var releasedOwnership: Set<LiveQueryOwnershipIdentity> = []
+      for queryID in releasedRowIDs {
+        releasedOwnership.formUnion(
+          try liveQueryOwnershipRowsWithoutTransaction(
+            "SELECT entity_id, attribute_id, value_json FROM instant_live_query_triples WHERE query_id = ?",
+            [.int(queryID)]
+          )
+        )
+        // Its ownership rows go with it, so the check below sees only the results that keep these facts.
+        try execute("DELETE FROM instant_live_query_results WHERE query_id = ?", [.int(queryID)])
+      }
+      let entityIDs = Set(released.lazy.map(\.entityID)).union(releasedOwnership.lazy.map(\.entityID))
       var residentFacts: [InstantTriple] = []
-      for entityID in Set(released.lazy.map(\.entityID)).sorted() {
+      for entityID in entityIDs.sorted() {
         let stored: [InstantTriple] = try selectJSON(
           "SELECT json FROM instant_triples WHERE entity_id = ?",
           [.text(entityID)]
         )
         residentFacts.append(contentsOf: stored)
       }
+      for fact in residentFacts where !releasedOwnership.isEmpty {
+        let ownership = LiveQueryOwnershipIdentity(
+          entityID: fact.entityID,
+          attributeID: fact.attributeID,
+          valueJSON: try encode(fact.value)
+        )
+        if releasedOwnership.contains(ownership) {
+          released.insert(InstantLiveTripleIdentity(fact))
+        }
+      }
       let (removedFacts, _) = try releaseLiveQueryResultFactsWithoutTransaction(released, residentFacts: residentFacts)
       if !removedFacts.isEmpty {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      }
+      if !releasedRowIDs.isEmpty {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       }
       try clearPendingLiveQueryResultReleaseWithoutTransaction(keys)
       removedFactCount = removedFacts.count
@@ -13320,8 +13500,12 @@ public actor SQLitePersistenceStore {
       subsystem: "instant-swift-data-core",
       category: "query",
       event: "live-query-results.interrupted-release-finished",
-      message: "Dropped the facts a prune's unloaded results released that it had not checked when it stopped.",
-      metadata: ["queryCount": String(keys.count), "removedFactCount": String(removedFactCount)]
+      message: "Dropped the facts closed results released that no prune batch had checked when the last process ended.",
+      metadata: [
+        "markedQueryCount": String(keys.count),
+        "releasedRowCount": String(releasedRowIDs.count),
+        "removedFactCount": String(removedFactCount),
+      ]
     )
   }
 
@@ -13403,22 +13587,10 @@ public actor SQLitePersistenceStore {
     now: InstantTimestamp,
     loadedRows: [LiveQueryResultStorageRow]
   ) throws {
-    // A copy whose released facts a prune has yet to check names them, so it stays until they are (#1129).
-    let pendingReleaseKeys = Set(try pendingLiveQueryResultReleaseKeysWithoutTransaction())
     if let maxAgeMilliseconds = policy.maxAgeMilliseconds {
-      let prefix = Self.pendingLiveQueryResultReleaseMarkerPrefix
       try execute(
-        """
-        DELETE FROM instant_unloaded_live_query_results
-        WHERE updated_at_ms < ?
-          AND query_key NOT IN (SELECT substr(key, ?) FROM instant_sync_metadata WHERE key >= ? AND key < ?)
-        """,
-        [
-          .int(now.milliseconds - Swift.max(0, maxAgeMilliseconds)),
-          .int(Int64(prefix.utf8.count + 1)),
-          .text(prefix),
-          .text(prefix + "\u{10FFFF}"),
-        ]
+        "DELETE FROM instant_unloaded_live_query_results WHERE updated_at_ms < ?",
+        [.int(now.milliseconds - Swift.max(0, maxAgeMilliseconds))]
       )
     }
     guard policy.maxEntries != nil || policy.maxTripleCount != nil else { return }
@@ -13445,7 +13617,7 @@ public actor SQLitePersistenceStore {
     var entryCount = loadedRows.count + unloaded.count
     var tripleCount = loadedRows.reduce(0) { $0 + $1.tripleCount } + unloaded.reduce(0) { $0 + $1.tripleCount }
     var collected: [String] = []
-    for row in unloaded where !pendingReleaseKeys.contains(row.queryKey) {
+    for row in unloaded {
       let overEntries = policy.maxEntries.map { entryCount > Swift.max(0, $0) } ?? false
       let overTriples = policy.maxTripleCount.map { tripleCount > Swift.max(0, $0) } ?? false
       guard overEntries || overTriples else { break }
@@ -17962,6 +18134,7 @@ public actor SQLitePersistenceStore {
       """
       SELECT query_key, updated_at_ms, triple_count
       FROM instant_live_query_results
+      WHERE \(Self.notReleasedLiveQueryResultSQL)
       ORDER BY updated_at_ms, query_key
       """,
       statement: &statement

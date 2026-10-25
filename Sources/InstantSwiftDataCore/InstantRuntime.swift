@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-25: a closed result larger than a prune batch is released over later batches, each deleting and checking
+//   the next whole entities of its released row's ownership rows; its batch deleted them all by cascade (#1129).
 // - 2026-10-25: a server apply's retry reuses its restated results' retractions and saves from its first attempt while
 //   the query-result and attribute revisions hold, and the first attempt works out the saves before the retractions'
 //   protection, so the retry, which plans holding the operation gate, no longer decodes and encodes them again (#1128).
@@ -7209,40 +7211,33 @@ public final class InstantRuntime: Sendable {
     now: InstantTimestamp
   ) async throws -> InstantLiveQueryResultPruningResult {
     var carried: Set<InstantLiveTripleIdentity> = []
-    // #1129: facts a removed result released that a batch left for the next ones, whole entities in entity order, and
-    // the unloaded results they came from, marked in SQLite until the batch that checks the last of them.
-    var pending: ArraySlice<InstantLiveTripleIdentity> = []
-    var pendingQueryKeys: [String] = []
     var removedQueryKeys: [String] = []
     var unloadedQueryKeys: [String] = []
     var removedOrphanedTripleCount = 0
     var lastRemoval: InstantLiveQueryResultPruneBatchApplication?
+    // #1129: a closed result larger than a batch is released over later batches, each checking the next whole entities
+    // of its released row's ownership rows; a released row is checked before another result is removed.
+    let chunkTripleCount = configuration.liveQueryResultPruneBatchTripleCount ?? Int.max
     while true {
-      let predecoded = pending.isEmpty ? await predecodedPruneResults(policy: policy, now: now) : [:]
+      recordActorHop(.persistence)
+      let releasing = (try? await persistence.hasReleasedLiveQueryResult()) ?? false
+      let predecoded = releasing ? [:] : await predecodedPruneResults(policy: policy, now: now)
       await enterOperationGate(priority: .background)
       let application: InstantLiveQueryResultPruneBatchApplication
+      var checkedReleasedChunk = false
       do {
-        if pending.isEmpty {
+        recordActorHop(.persistence)
+        if let chunk = try await persistence.nextReleasedLiveQueryResultChunk(maximumTripleCount: chunkTripleCount) {
+          application = try await pruneReleasedLiveQueryResultChunk(chunk, carriedReleasedIdentities: carried)
+          checkedReleasedChunk = true
+        } else {
           application = try await performPruneLiveQueryResults(
             policy: policy,
             now: now,
             carriedReleasedIdentities: carried,
             predecoded: predecoded
           )
-          pending = ArraySlice(application.pendingReleasedIdentities)
-          pendingQueryKeys = application.pendingReleaseQueryKeys
           lastRemoval = application
-        } else {
-          let next = Self.releasedChunk(
-            of: pending,
-            maximumTripleCount: configuration.liveQueryResultPruneBatchTripleCount ?? Int.max
-          )
-          pending = next.rest
-          application = try await pruneReleasedLiveQueryResultFacts(
-            next.chunk.union(carried),
-            finishingQueryKeys: pending.isEmpty ? pendingQueryKeys : []
-          )
-          if pending.isEmpty { pendingQueryKeys = [] }
         }
         await leaveOperationGate()
       } catch {
@@ -7256,15 +7251,14 @@ public final class InstantRuntime: Sendable {
       await configuration.onLiveQueryResultPruneBatchFinishedForTesting?(
         application.result.removedQueryKeys.count
       )
-      // A removed result's facts are all checked before the prune stops, a close included: one left unchecked would stay
-      // in the store with no result to own it.
-      if !pending.isEmpty {
+      // A close cancels the cadence prune's task: the batches left wait for the next prune (#1129). A released row is
+      // its own record, so one left here is checked by the next prune, or whole when the store opens again.
+      if Task.isCancelled { break }
+      if checkedReleasedChunk || application.leftReleasedRows {
         await Task.yield()
         continue
       }
       guard let lastRemoval, lastRemoval.hasMoreToRemove, !lastRemoval.result.removedQueryKeys.isEmpty else { break }
-      // A close cancels the cadence prune's task: the batches left wait for the next prune (#1129).
-      if Task.isCancelled { break }
       await Task.yield()
     }
     return InstantLiveQueryResultPruningResult(
@@ -7277,10 +7271,9 @@ public final class InstantRuntime: Sendable {
     )
   }
 
-  /// The stored results the next prune batch will likely remove, read and decoded on the read connection with no gate
-  /// (#1129): the batch chooses again under the gate and uses these while their rows are the ones read, so its hold
-  /// no longer decodes them (265 ms for the closed `$files` list's 75,640 facts on a Mac mini). Empty when anything
-  /// fails: the batch then decodes under the gate, as before.
+  /// The stored results the next prune batch will likely remove and decode, read and decoded on the read connection with
+  /// no gate (#1129): the batch chooses again under the gate and uses these while their rows are the ones read, so its
+  /// hold no longer decodes them. Empty when anything fails: the batch then decodes under the gate, as before.
   private func predecodedPruneResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp
@@ -7301,39 +7294,22 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  /// The first whole entities of `identities` (in entity order) holding about `maximumTripleCount` facts, at least one
-  /// entity, and the rest (#1129).
-  static func releasedChunk(
-    of identities: ArraySlice<InstantLiveTripleIdentity>,
-    maximumTripleCount: Int
-  ) -> (chunk: Set<InstantLiveTripleIdentity>, rest: ArraySlice<InstantLiveTripleIdentity>) {
-    var chunk: Set<InstantLiveTripleIdentity> = []
-    var index = identities.startIndex
-    while index < identities.endIndex {
-      let entityID = identities[index].entityID
-      var end = index
-      while end < identities.endIndex, identities[end].entityID == entityID { end += 1 }
-      if !chunk.isEmpty, chunk.count + (end - index) > maximumTripleCount { break }
-      chunk.formUnion(identities[index..<end])
-      index = end
-    }
-    return (chunk, identities[index...])
-  }
-
-  /// One prune batch that checks facts an earlier batch's removed results released (#1129): it drops the ones no
-  /// stored result owns any more, whole entities only, as the batch that removed their result would have, and clears
-  /// the marks of `finishingQueryKeys`, whose last facts these are. The caller holds the operation gate.
-  private func pruneReleasedLiveQueryResultFacts(
-    _ identities: Set<InstantLiveTripleIdentity>,
-    finishingQueryKeys: [String]
+  /// One prune batch that checks the next whole entities of a released result's ownership rows (#1129): their rows go,
+  /// and the facts no stored result owns any more go too, whole entities only, as the batch that removed their result
+  /// would have dropped them. The caller holds the operation gate.
+  private func pruneReleasedLiveQueryResultChunk(
+    _ chunk: InstantReleasedLiveQueryResultChunk,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
     recordActorHop(.store)
-    let residentFacts = await store.facts(of: Set(identities.lazy.map(\.entityID)))
+    let residentFacts = await store.facts(
+      of: chunk.entityIDs.union(carriedReleasedIdentities.lazy.map(\.entityID))
+    )
     recordActorHop(.persistence)
-    let application = try await persistence.applyReleasedLiveQueryResultFacts(
-      identities,
-      residentFacts: residentFacts,
-      finishingQueryKeys: finishingQueryKeys
+    let application = try await persistence.applyReleasedLiveQueryResultChunk(
+      chunk,
+      carriedReleasedIdentities: carriedReleasedIdentities,
+      residentFacts: residentFacts
     )
     if !application.removedFacts.isEmpty {
       recordActorHop(.store)
@@ -7348,11 +7324,12 @@ public final class InstantRuntime: Sendable {
       subsystem: "instant-swift-data-core",
       category: "query",
       event: "live-query-results.pruned",
-      message: "Dropped the facts an earlier prune batch's results released that no stored result owns.",
+      message: "Checked the facts a released result's next ownership rows held, dropping those no stored result owns.",
       metadata: [
         "removedCount": "0",
-        "checkedFactCount": String(identities.count),
+        "checkedEntityCount": String(chunk.entityIDs.count),
         "removedOrphanedTripleCount": String(application.result.removedOrphanedTripleCount),
+        "releasedRowLeft": String(application.leftReleasedRows),
       ]
     )
     return application
@@ -7438,28 +7415,10 @@ public final class InstantRuntime: Sendable {
         predecoded: predecoded
       )
       guard !batch.removedQueryKeys.isEmpty else { return batch.applicationRemovingNothing }
-      // #1129: a batch takes at least one whole result, so the closed `$files` list's 75,640 facts were one hold of
-      // 1.7 s; past the budget, this batch removes the results and checks the first facts, and the later batches check
-      // the rest, whole entities each. Only unloaded results are spread so: their stored copies name the facts left,
-      // which the batch marks with the removal, so opening the store finishes a release a crash cut short.
-      var pending: ArraySlice<InstantLiveTripleIdentity> = []
-      if let maximumRemovedTripleCount, batch.releasedIdentities.count > maximumRemovedTripleCount,
-        batch.unloadsEveryRemovedResult
-      {
-        let ordered = batch.releasedIdentities.sorted {
-          $0.entityID != $1.entityID ? $0.entityID < $1.entityID : $0.attributeID < $1.attributeID
-        }
-        let first = Self.releasedChunk(of: ordered[...], maximumTripleCount: maximumRemovedTripleCount)
-        batch.releasedIdentities = first.chunk
-        pending = first.rest
-        if !pending.isEmpty {
-          batch.pendingReleaseQueryKeys = batch.unloadedQueryKeys
-        }
-      }
       recordActorHop(.store)
       let residentFacts = await store.facts(of: batch.releasedEntityIDs)
       recordActorHop(.persistence)
-      if var application = try await persistence.applyLiveQueryResultPruneBatch(
+      if let application = try await persistence.applyLiveQueryResultPruneBatch(
         batch,
         policy: policy,
         now: now,
@@ -7473,8 +7432,6 @@ public final class InstantRuntime: Sendable {
             attributeRevision: application.attributeRevision
           )
         }
-        application.pendingReleasedIdentities = Array(pending)
-        application.pendingReleaseQueryKeys = batch.pendingReleaseQueryKeys
         return application
       }
       // Something wrote SQLite between the batch's choice and its application, which the operation gate should rule
