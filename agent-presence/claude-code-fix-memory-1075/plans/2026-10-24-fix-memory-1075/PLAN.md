@@ -63,3 +63,22 @@ at 20:55 (`TxIDInterner`, the outbox functions, `discardFailedMutation`).
   `Tests/InstantSwiftDataCoreTests/RealSize/MemorySiteExercises.swift` (E03's refresh and E04's final line, printed
   by call site, `INSTANT_MEMORY_SITES=1`), so #1147 and the fixes after it start from measured call sites.
 #1147's library functions are named in the next amendment, once the sites are in, before any edit.
+
+## Amendment 2 (2026-10-24 22:37 EDT, claude-code/fix-memory-1075@ld)
+
+The allocation-site recording (`MemorySiteExercises` S03, Mac mini, release, fixture v3) splits one 64-line refresh
+(about 22,400 allocations, 21.7 MB) into: the frame's JSON parse about 7,000 allocations; the nested-limit pass about
+700 allocations but about 6.5 MB, for a plan with no nested include; three schema-wide groupings per hydrated emission
+about 1,670 allocations and 2.2 MB; the persisted result's per-fact value encoding (1,024) and ownership re-read
+(3,072); the classification's deferred-value loads about 3.8 MB. #1147 goes step by step, each red then green:
+1. `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` (whole file): a query with no nested include whose
+   rows fit its limits passes through unchanged, and attributes are looked up only for the triples' own attribute ids.
+2. `Sources/InstantSwiftDataCore/DeferredValueResidency.swift` (`hydrationRequests`, `hydrating`,
+   `requestedAttributes`, and the per-namespace lookups they rebuild) and `InstantRuntime.swift`
+   `hydratingDeferredValues(in:plan:attributes:onFailure:)` only: the schema-wide maps once per attribute revision.
+3. Later amendments: the persisted result's build (`SQLitePersistenceStore.swift`, after agreeing with
+   fix-storage-1076), the classification's deferred loads (after agreeing with fix-gate-1074), the frame parser.
+New: `Tests/InstantSwiftDataCoreTests/RefreshCostTests.swift` (each step's one-thread cost test).
+Test harness (no library change): `MemoryExercises.swift` (E04, E05, E09 and E10 build each line's entity before the
+counted passes; `MemoryExerciseSession.waitUntilAcknowledged` waits on the apply waiter) and `MemoryReplayServer.swift`
+(`MemoryApplyWaiter` parks waits on continuations the runtime's events resume, instead of polling).

@@ -1,1 +1,2 @@
 claude-code/audit-memory-1075@strangelearning 2026-10-24T16:44:44-0400 grower plan=2026-10-24-audit-memory-1075 #1075 (amendment 1: the memory exercises' scripted server, no frame history, text frames through the production decoder; no library source change)
+claude-code/fix-memory-1075@ld 2026-10-24T22:37:54-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 2 (MemoryApplyWaiter: continuations, no polling)
