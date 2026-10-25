@@ -9,6 +9,7 @@
 //   each checkpoint setting, because the store's own connection has no way to set them from a test.
 // - 2026-10-24: the hour prints the store's own checkpoint setting, its checkpoints, and the most lines written between
 //   two of them, which is what a power loss can take (#1118).
+// - 2026-10-25: `STORAGEIO_RESULT_JSON_INTERVAL_MS` sets how often a changing result's JSON is written, for #1123.
 
 import Compression
 import Foundation
@@ -870,6 +871,10 @@ struct StorageIOWriteCycle {
     configuration.liveQueryResultPruningWriteInterval = Int.max
     // A result's JSON waits 30 s of the recording's time, not of the exercise's.
     configuration.liveQueryResultJSONFlushSleep = { milliseconds in try await clock.sleep(milliseconds: milliseconds) }
+    // A what-if for #1123: how often a changing result's whole JSON is written.
+    if let interval = ProcessInfo.processInfo.environment["STORAGEIO_RESULT_JSON_INTERVAL_MS"].flatMap(Int64.init) {
+      configuration.liveQueryResultJSONWriteIntervalMilliseconds = interval
+    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     let seedStarted = ContinuousClock.now
