@@ -1,3 +1,24 @@
+## 2026-10-25 11:52:06 EDT — scribe `3f0a7eecb27fb84b2c04d016bde9ecf1aee29fc5`
+changelog(#1176): entries for score --kept, the line-order fix with recheck, and the named-speaker rule.
+
+## 2026-10-25 11:51:22 EDT — scribe `10c3acdcdaf37dd9c6bbc8925108594bcda97989`
+Green (#1176): his question never takes a line named for someone else (canBeHis): the door refuses Wife's line live and in older folders, live lines carry their speaker's name, the backfill cuts such lines out; answers stay anyone's.
+
+## 2026-10-25 11:51:22 EDT — scribe `ba8e46efe40dc13219f617cc2e5e684f92672488`
+Red (#1176): his question never takes a line named for someone else.
+
+## 2026-10-25 11:51:22 EDT — scribe `92614c767eb1dd04dcfa9ae43cda7f682ed28f94`
+Fix (#1176): the backfill reads each chunk in line order (the mirror appends late-finalized lines at the end of transcript.jsonl in 46 of 129 recordings), and cli.ts recheck re-checks saved replies without a model call.
+
+## 2026-10-25 11:51:22 EDT — scribe `736e0ff9bca1e1a7eb0608bff2adb19cefdec7b1`
+Red (#1176): a chunk whose lines came out of order still holds them all.
+
+## 2026-10-25 11:51:22 EDT — scribe `a420a622520f193b9afca03526b41345c7a12754`
+Green (#1176): the backfill's score --kept measures what Instant kept and how many found questions carry an answer.
+
+## 2026-10-25 11:51:22 EDT — scribe `b57e6b56d2d518f6320a0baaad4a93b236e7e256`
+Red (#1176): the backfill scores what Instant kept, not only its plan.
+
 ## 2026-10-25 11:36:20 EDT — scribe `867311039d4717bc20e3b114418c2a2daacf8420`
 #1156 changelog entry for the commit below.
 
