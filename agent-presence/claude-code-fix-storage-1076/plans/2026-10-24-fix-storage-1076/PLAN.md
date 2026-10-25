@@ -119,3 +119,10 @@ Claimed:
   value's text, since a fact's JSON is computed now), `InstantFactInPlaceUpsertTests.swift` (amendment 1's test, for the
   new layout); new `InstantFactLayoutTests.swift`; new `InstantFactLayoutDeviceStoreTests.swift` (skipped unless
   `INSTANT_1121_STORE` names a scratch copy of a device's store).
+
+## Amendment 5 (2026-10-25 00:50 EDT, #1120)
+
+Claimed: `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift`, the expected counts in
+`transactionsPersistOnlyChangedRows` only: an update of a todo's text now inserts one fact row (the new text), where
+INSERT OR REPLACE inserted two (the re-stamped id fact too); the in-place upsert updates the id fact in its row. Found by
+comparing the release bundle's printed `expectNoDifference` differences before and after #1121.
