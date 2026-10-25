@@ -1,3 +1,5 @@
+## 2026-10-25 02:53:30 EDT — instant-data-swift `222f25bc9d75069c7cbb7cfe351bfbabb12d15fb`
+Docs: the v1.9.40 release document (cut at a50f7a62; a store 1.9.40 opened cannot be written by an older build).
 ## 2026-10-25 02:46:54 EDT — instant-data-swift `e7dacb2dfb44c62365b6a37f765ace4a474ea51d`
 Green (#1150): a fact is read from its columns, not the json the fact table computes for it; a stored value's text is read by a strict inverse of its writer, JSONDecoder for the rest. E14's history page 7,221 -> 2,550 KB (19,548 before step 1): #1150's criterion met (Mac mini, release).
 

@@ -10,6 +10,17 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 2:53:30 a.m. EDT — `222f25bc9d75` docs(#1129 #1128 #1121 #1115 #1118 #1123 #1125 #1124 #1153 #1147 #1148): the v1.9.40 release document: bounded prune batches, a retry that reuses its plan's work, each fact stored once; no going back to an older build
+
+- **Implementation commit:** `222f25bc9d75069c7cbb7cfe351bfbabb12d15fb`
+- **Change:** docs: the v1.9.40 release document (bounded prune batches, a retry that reuses its plan's work, each fact stored once; no going back to an older build)
+- **Details:**
+  - Cut at main a50f7a62 (last code commit 37b02865), carrying 1.9.39; tagged on this release branch's ledger commit. Checks: RealSizeBudgetTests in release on the Mac mini (13 known issues, as 1.9.38/1.9.39); the whole bundle in debug on the laptop (1,504 tests, 5 failing: 3 listed, 2 new and test-side, explained in the document). The document's first section warns that a store 1.9.40 opened cannot be written by an older build.
+- **Files:**
+  - `docs/releases/v1.9.40.md` — the release document
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
 ## October 25th, 2026 at 2:48:12 a.m. EDT — `e7dacb2dfb44` perf(#1150): green: a fact is read from its columns, not from the json the fact table computes for it
 
 - **Implementation commit:** `e7dacb2dfb44c62365b6a37f765ace4a474ea51d`

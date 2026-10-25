@@ -1,3 +1,22 @@
+## 2026-10-25 02:53:30 EDT — 1.9.40: bounded prune batches, a retry that reuses its plan's work, each fact stored once (release owner fix-gate-1074)
+
+- **Released:** v1.9.40, tagged on this ledger commit of branch `release/v1.9.40`, whose tree is main `a50f7a62`'s code
+  plus the release document `222f25bc` and this ledger; main has moved since (fix-memory-1075's #1150, for 1.9.41), so
+  both are cherry-picked onto main. Document: `docs/releases/v1.9.40.md`.
+- **Carries:** #1129's second slice (`8725a7bb`, `795a6dec`), #1128 (`a4e08723`, `37b02865`), #1121/#1120 (`8e237559`,
+  `c9403d9e`; migration 0032), #1115's first slice (`8101f0b9`, `c343c563`; migrations 0030 and 0031), #1118
+  (`bedd3104`, `56538ac5`), #1123 (`78f625f8`, `ea51a8d8`), #1125 (`c88dc3f4`, `76ef174a`), #1124 (`94b8747b`,
+  `887f3bb2`), #1153 (`6d765ee0`, `0744cfb1`), #1147 step 4 (`79ea7762`, `164131cd`, `560540fe`), #1148 (`9d4ca094`,
+  `97ed60bc`), and the test commits `464e385d`, `c3add517`, `acbe277b`, `9a4695e5`, `63920cb0`.
+- **Risk, stated first in the document:** a store 1.9.40 opened cannot be written by an older build (#1121's
+  generated `json` column and the `WITHOUT ROWID` tables); going back needs the app's data deleted.
+- **Checks:** `RealSizeBudgetTests` in release on the cut (Mac mini): 13 known issues, as on 1.9.38 and 1.9.39. The whole
+  bundle in debug on the laptop: 1,504 tests, 5 failing, 3 listed and 2 new, both test-side (a debug allocation count in
+  #1148's cost test, which passes in release; #1131's observer-send test tripping its unacknowledged write's 6 s
+  deadline on a loaded run, fixed next).
+- **Next:** pin Scribe and Playback to 1.9.40 (with the downgrade line in What's New); #1129's third slice (red
+  `a0614266` on `agent/claude/fix-gate-1074`, green passing on the Mac mini) and a fourth (a prune batch under the
+  server-apply gate, so a refresh never retries behind one).
 ## 2026-10-25 02:48:13 EDT — #1150 on main: a history page 19.5 -> 2.5 MB; #1145's sweep approved (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plans `bb94689d`, `242e328f`, `53584f57` (amendments 9-11), `2f142f49`
