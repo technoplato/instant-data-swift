@@ -1,3 +1,13 @@
+## 2026-10-25 07:15:18 EDT — #1134's criterion met: a one-shot read never holds the operation gate (fix-gate-1074)
+
+- **Commits (instant-data-swift main):** red `70257dfe`, green `8aa690b0` (slice 2; slice 1 `24b7177a`/`7e8460c5`).
+- **Measured** (`recording`, Mac mini, release, fixture version 3; two runs): one-shot read holds 60 (before #1134)
+  -> 2-3 (slice 1) -> 0 a minute; the read's latency unchanged (p50 111-112 ms, p99 171-173 ms).
+- **How:** a read that finds SQLite ahead of the store while the gate is held waits for the holder to leave
+  (`AsyncSerialGate.waitForRelease()`, no place in the queue, no hold), then reads the revisions again; only another
+  connection's write still takes the gated read that adopts it.
+- **Next:** #1136 (compaction asks the app's hold under the gate), then #1137-#1140, #1142, #1143 as measured.
+
 ## 2026-10-25 07:00:28 EDT — #1134 on main: a one-shot read leaves the operation gate (fix-gate-1074)
 
 - **Commits (instant-data-swift main):** plan amendment 10 `1362b2b5`; red `24b7177a`, green `7e8460c5`; then this ledger.

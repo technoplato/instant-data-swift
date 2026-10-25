@@ -10,6 +10,32 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 7:15:18 a.m. EDT — `8aa690b00c85` fix(#1134): green: a one-shot read during a write's commit waits for it to leave the gate without taking the gate
+
+- **Implementation commit:** `8aa690b00c85b06c50746c7b87af452a3775c672`
+- **Change:** fix(#1134): green: a one-shot read during a write's commit waits for it to leave the gate without taking the gate
+- **Details:**
+  - recording, Mac mini, release, fixture v3 (slice 1 before; two runs each): one-shot read holds 2-3 -> 0 a minute (60 before #1134), 31-47 -> 0 ms; the read's latency unchanged (p50 111.01-112.40 ms, p99 170.50-173.12 ms). 599 tests in 16 suites pass in release apart from withKnownIssue artifacts and the CLI tests' missing executable. #1134's criterion met.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — waitForRelease()
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the read waits out an in-process holder, then reads the revisions again
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 7:15:17 a.m. EDT — `70257dfe2246` test(#1134): red: a one-shot read during a write's commit takes the operation gate to wait it out
+
+- **Implementation commit:** `70257dfe224696752d3f2901d3cdd9cdd4ea64be`
+- **Change:** test(#1134): red: a one-shot read during a write's commit takes the operation gate to wait it out
+- **Details:**
+  - Release, Mac mini: the read took the gate once after the paused write. Adds onOneShotReadFoundSQLiteAheadForTesting.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOneShotReadGateTests.swift` — the read during a write's commit
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — onOneShotReadFoundSQLiteAheadForTesting
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 7:00:28 a.m. EDT — `7e8460c5c857` fix(#1134): green: a one-shot read answers without the operation gate while the store holds what SQLite does, and writes its cache row after it, revision-checked
 
 - **Implementation commit:** `7e8460c5c857810e36c7b67862bf168be188c5b9`

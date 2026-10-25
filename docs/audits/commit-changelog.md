@@ -1,3 +1,9 @@
+## 2026-10-25 07:02:22 EDT — instant-data-swift `8aa690b00c85b06c50746c7b87af452a3775c672`
+Fix (#1134): a one-shot read during a write's commit waits for it without taking the gate; recording's one-shot holds 2-3 -> 0 a minute (Mac mini, release).
+
+## 2026-10-25 07:01:39 EDT — instant-data-swift `70257dfe224696752d3f2901d3cdd9cdd4ea64be`
+Test (#1134): red: a one-shot read during a write's commit takes the gate to wait it out.
+
 ## 2026-10-25 06:59:54 EDT — instant-data-swift `7e8460c5c857810e36c7b67862bf168be188c5b9`
 Fix (#1134): a one-shot read answers without the operation gate while the store holds what SQLite does; recording's one-shot holds 60 -> 2-3 a minute (Mac mini, release).
 
