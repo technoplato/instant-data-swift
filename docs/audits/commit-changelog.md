@@ -1,3 +1,18 @@
+## 2026-10-25 01:36:19 EDT — instant-data-swift `9a4695e5e588cd97509cb319cd27e6169b14c412`
+Test (#1119): the storage shim counts the temporary database, its journal and a statement's transient files apart, so the phone-shaped exercise can say which kind of temporary file a write spills to.
+
+## 2026-10-25 01:36:19 EDT — instant-data-swift `76ef174ad900e9581acc5c5c89d9a85d3e11d36e`
+Green (#1125): a resumed stream append asks only for the bytes after the seen offset, with Range requests whose Content-Range the transport checks before it skips anything; the test's resume sends 2 bytes instead of 10.
+
+## 2026-10-25 01:36:19 EDT — instant-data-swift `c88dc3f49c1e5e1434742c838bbd577d79ab9bad`
+Red (#1125): a resumed stream append fetches every file from its start and drops the bytes already seen.
+
+## 2026-10-25 01:36:19 EDT — instant-data-swift `ea51a8d852a0513107c1f69fe1605776ecfd283b`
+Green (#1123): a changing query's whole result JSON is written at most every 5 minutes, not 30 s: 3.90 -> 1.00 frames per write on that table, the hour's SQLite bytes 1,269 -> 1,158 MB (Mac mini, release, synthetic store).
+
+## 2026-10-25 01:36:19 EDT — instant-data-swift `78f625f875f3ee17952e1e4c979aa2ae09040bdc`
+Red (#1123): ten minutes of a foreground session's refreshes write a changing result's whole JSON twenty times.
+
 ## 2026-10-25 01:21:39 EDT — instant-data-swift `63920cb03bf4efe2fc51420b4c2f2ed95117e6d8`
 Test (#1148): E09's no-sink pass stops the session's apply log (every session registers it as a diagnostics handler), so the pass has no sink; E09 still varies by about 700 allocations a write between processes, so InstantDiagnosticsCostTests carry #1148's bound.
 
@@ -7,8 +22,17 @@ Green (#1148): a diagnostics entry the floor drops builds nothing (@autoclosure 
 ## 2026-10-25 01:21:39 EDT — instant-data-swift `9d4ca094627fe16c80281324d3e397cf5faa605a`
 Red (#1148): an entry the floor drops still builds its message and metadata (18 allocations), and redacting a kept entry's 21 keys makes 41 strings.
 
+## 2026-10-25 01:09:30 EDT — instant-data-swift `d4bcc80449af34841a8294904fabcbe8e726be12`
+Plan (#1076 #1125): amendment 7 claims the stream file transport for a resume that asks only for the unseen bytes.
+
+## 2026-10-25 01:05:14 EDT — instant-data-swift `2bece3c0f4c043cee2f0595b2a40a029b3098a19`
+Plan (#1076 #1123): amendment 6 claims the result JSON's write interval, its docs and its throttle tests.
+
 ## 2026-10-25 01:02:57 EDT — instant-data-swift `b79ff8483c525e56858059d9dee8c9f2e166bb05`
 Plan (#1148): fix-memory-1075 amendment 8: no isRecording (isEnabled(at:) exists); E09's no-sink pass stops the session's apply log.
+
+## 2026-10-25 00:58:01 EDT — instant-data-swift `acbe277b2d90cab6638eb8545917ce06050b392f`
+Test (#1123): the storage exercises take STORAGEIO_RESULT_JSON_INTERVAL_MS, so a what-if can measure the result JSON's interval before the change.
 
 ## 2026-10-25 00:12:18 EDT — instant-data-swift `c9403d9e0a8631439e27eb507c9a2df488112d67`
 Green (#1121, #1120): each fact is stored once, keyed by the fact itself (WITHOUT ROWID), its json computed when read; a re-saved fact is upserted in place. On a scratch copy of the phone's store, 174,817 facts 127.1 -> 40.7 MB, every fact identical; the save's fact frames 6.82 -> 2.87 per write (Mac mini, synthetic store).

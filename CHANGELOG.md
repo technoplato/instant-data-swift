@@ -10,6 +10,82 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 1:36:55 a.m. EDT — `9a4695e5e588` test(#1119): the shim counts the temporary database, its journal and a statement's transient files apart
+
+- **Implementation commit:** `9a4695e5e588cd97509cb319cd27e6169b14c412`
+- **Change:** test(#1119): the shim counts the temporary database, its journal and a statement's transient files apart
+- **Details:**
+  - The phone-shaped store's 207-224 KB of temp writes per write were one kind; the temporary database (staging tables), its journal and transient sort files are now counted apart, to choose #1119's fix.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOCounters.swift` — three temp kinds
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift` — the hour's transientWrittenMB
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:36:55 a.m. EDT — `76ef174ad900` perf(#1125): green: a resumed stream append asks only for the bytes after the seen offset
+
+- **Implementation commit:** `76ef174ad900e9581acc5c5c89d9a85d3e11d36e`
+- **Change:** perf(#1125): green: a resumed stream append asks only for the bytes after the seen offset
+- **Details:**
+  - Each file the reader has seen whole is asked for past its end and the one its seen offset falls in from that point; bytes are passed over only on a 416 that names the file's size or a 206 that starts where asked; a 200 drops the seen bytes as before. The live transport sends Range: bytes=<offset>- and reads Content-Range. Upstream's Stream.ts fetches every file from its start; the divergence is the radio's cost of a resume. The stream transport and stream parity tests pass (Mac mini, release).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStreamFileTransport.swift` — the ranged resume and the live ranged fetch
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:36:55 a.m. EDT — `c88dc3f49c1e` test(#1125): red: a resumed stream append fetches every file from its start and drops the bytes already seen
+
+- **Implementation commit:** `c88dc3f49c1e5e1434742c838bbd577d79ab9bad`
+- **Change:** test(#1125): red: a resumed stream append fetches every file from its start and drops the bytes already seen
+- **Details:**
+  - A scripted file server answering ranged fetches as S3 does (206 with the tail, 416 past the end, Content-Range); a resume over 'hello '+'WXYZ' having seen 8 bytes must ask 'a from 8', 'b from 2' and send 2 bytes (red on the Mac mini: 'a', 'b', 10 bytes); a server that ignores ranges must still yield only the unseen bytes. The transport gains its seam: fetchFrom and the response's contentRange.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStreamFileTransportTests.swift` — the resume cases and the ranged file server
+  - `Sources/InstantSwiftDataCore/InstantStreamFileTransport.swift` — the ranged-fetch seam
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:36:54 a.m. EDT — `ea51a8d852a0` perf(#1123): green: a changing query's whole result JSON is written at most every 5 minutes, not every 30 s
+
+- **Implementation commit:** `ea51a8d852a0513107c1f69fe1605776ecfd283b`
+- **Change:** perf(#1123): green: a changing query's whole result JSON is written at most every 5 minutes, not every 30 s
+- **Details:**
+  - The default interval (InstantRuntimeConfiguration and the store) is 5 minutes; the app's flush on background and termination, an unsubscribe and the close still write what waited, and a kill is repaired from ownership rows (#566). Measured (Mac mini, release, synthetic store): instant_live_query_results 3.90 -> 1.00 frames per write, all frames 54.9 -> 51.9; the hour's SQLite bytes 1,269 -> 1,158 MB, checkpoint copies 82.8 -> 40.2 MB, full fsyncs 226 -> 211. The remaining 1.00 frame is each refresh's update of the row's count and time, which the crash repair and #1131's reload check read.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the interval's default and its doc
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the store's default
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — the throttle test steps past the interval
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:36:54 a.m. EDT — `78f625f875f3` test(#1123): red: ten minutes of a foreground session's refreshes write a changing result's whole JSON twenty times
+
+- **Implementation commit:** `78f625f875f3ee17952e1e4c979aa2ae09040bdc`
+- **Change:** test(#1123): red: ten minutes of a foreground session's refreshes write a changing result's whole JSON twenty times
+- **Details:**
+  - Sixty changed refreshes of a 20-row result, ten seconds apart, may write the result JSON at most twice; red on the Mac mini with 20 writes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — tenMinutesOfRefreshesWriteTheResultJSONAtMostTwice
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 1:36:54 a.m. EDT — `acbe277b2d90` test(#1123): the exercises take STORAGEIO_RESULT_JSON_INTERVAL_MS, how often a changing result's JSON is written
+
+- **Implementation commit:** `acbe277b2d90cab6638eb8545917ce06050b392f`
+- **Change:** test(#1123): the exercises take STORAGEIO_RESULT_JSON_INTERVAL_MS, how often a changing result's JSON is written
+- **Details:**
+  - A what-if knob for the storage exercises. Measured with it on the Mac mini (release, synthetic store): instant_live_query_results 3.90 frames per write at 30 s, 1.00 at 5 minutes and at never.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift` — the interval knob
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-storage-1076, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 1:22:32 a.m. EDT — `63920cb03bf4` test(#1148): E09's no-sink pass stops the session's apply log, so it has no sink
 
 - **Implementation commit:** `63920cb03bf4efe2fc51420b4c2f2ed95117e6d8`

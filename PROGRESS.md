@@ -1,3 +1,25 @@
+## 2026-10-25 01:45:00 EDT — #1123, #1125: the result JSON every 5 minutes; a stream resume asks only for what it has not seen (fix-storage-1076)
+
+- **Landed on main:** plans `2bece3c0`, `d4bcc804`; the exercises' knob `acbe277b`; #1123 red `78f625f8`, green
+  `ea51a8d8`; #1125 red `c88dc3f4`, green `76ef174a`; the shim's temp kinds `9a4695e5` (#1119's measurement). Ready for
+  1.9.40.
+- **#1123:** a changing result's whole JSON is written at most every 5 minutes instead of 30 s (the app's flush on
+  background and termination, an unsubscribe and the close still write what waited; a kill is repaired from ownership
+  rows, #566). Mac mini, release, synthetic store: `instant_live_query_results` 3.90 -> 1.00 frames per write, all
+  frames 54.9 -> 51.9; the hour's SQLite bytes 1,269 -> 1,158 MB, checkpoint copies 82.8 -> 40.2 MB, full fsyncs 226 ->
+  211. Criterion (under 1 frame) not met: the 1.00 left is each refresh's update of the row's count and time, read by
+  the crash repair and #1131's reload check; never writing the JSON measures the same.
+- **#1125:** a resumed stream append asks each file it has seen whole past its end and the one its seen offset falls
+  in from there (`Range: bytes=<offset>-`), passing bytes over only on the server's `Content-Range` (a 416 naming the
+  file's size, a 206 starting where asked); a 200 drops the seen bytes as before. In the test's resume 2 bytes are sent
+  instead of 10. Upstream's `Stream.ts` fetches every file from its start; the divergence is a resume's radio cost
+  (Scribe reads shared recordings' media from streams). Not measured on a real server.
+- **All fixes so far, the hour against main before them** (mini, synthetic store): SQLite bytes 1,577 -> 1,158 MB (-27%),
+  drive bytes 1,774 -> 1,170 MB (-34%), full fsyncs 1,069 -> 211 (-80%), checkpoint copies 159.8 -> 40.2 MB, log frames
+  per write 64.5 -> 51.9 (-20%), the store's growth 12.0 -> 3.2 MB an hour.
+- **Next:** the phone-shaped exercise (running on the mini) for #1119's temp writes by kind and #1122's unload
+  baseline; #1115's next slices. Owner fix-storage-1076.
+
 ## 2026-10-25 01:23:05 EDT — #1148 on main: a dropped diagnostics entry builds nothing; E09's baseline had a sink (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plan amendment 8 `b79ff848`; red `9d4ca094`, green `97ed60bc`, E09 harness fix
