@@ -56,3 +56,4 @@ claude-code/prune-654@strangelearning 2026-10-23T21:59:38-0400 mower plan=2026-1
 claude-code/lib-audit-1072@halfjew22 2026-10-24T18:29:45-0400 mower plan=2026-10-24-lib-audit-1072 #1072 #1108 #1114 amendment 2 (the automatic delivery candidate read and continuation check: split the OR, one index migration, a test hook of a read's SQLite steps)
 claude-code/lib-audit-1072@halfjew22 2026-10-24T19:37:02-0400 mower plan=2026-10-24-lib-audit-1072 #1108 #1114 amendment 5 (hasUnknownActiveOverlayAfterWithoutTransaction and readImmediateSupersessionTail: index-served plans)
 claude-code/lib-audit-1072@halfjew22 2026-10-24T19:44:21-0400 mower plan=2026-10-24-lib-audit-1072 #1103 amendment 6 (one row-addressed removal of a failed mutation with no materialized effect)
+claude-code/fix-gate-1074@ld 2026-10-24T21:11:36-0400 mower plan=2026-10-24-fix-gate-1074 #1131 (unloadedLiveQueryResult, reloadUnloadedLiveQueryResult; amended per issue)
