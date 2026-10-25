@@ -99,3 +99,14 @@ opening the store finishes a marked release from the results' stored copies. Als
   `liveQueryResultPruneCandidates`, `finishInterruptedLiveQueryResultRelease` and the marker helpers (new),
   `deferredLiveQueryResultJSONMarkerPrefix` (no longer private).
 - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift`: `storedLiveQueryResults(keys:)` (new).
+
+## Amendment 5 (2026-10-25 01:16 EDT, #1128's first slice)
+
+A server apply's retry plans holding the operation gate (#932); it decoded each restated result's stored copy for its
+retractions and encoded each fact for its save again there (746 ms for the `$files` list's first answer). The first
+attempt now works out the saves before the retractions' protection (which a local write's outbox revision makes
+stale), and a retry at the same query-result and attribute revisions reuses both. Touching
+`Sources/InstantSwiftDataCore/InstantRuntime.swift`: `performApplyServerTransaction` (its attempt loop's planning),
+a new `InstantServerApplyRestatedRevisions`, and a testing hook in `InstantRuntimeConfiguration`
+(`onServerApplyRestatedResultsWorkedOutForTesting`); `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift`
+(one test and a helper actor). Branch `agent/claude/fix-gate-1128`; red `8bb9785d` (local).
