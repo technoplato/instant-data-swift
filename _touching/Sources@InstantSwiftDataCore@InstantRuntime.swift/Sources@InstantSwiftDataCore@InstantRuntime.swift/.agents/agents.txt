@@ -84,3 +84,4 @@ claude-code/fix-memory-1075@ld 2026-10-24T23:40:43-0400 mower plan=2026-10-24-fi
 claude-code/fix-storage-1076@ld 2026-10-25T01:05:14-0400 mower plan=2026-10-24-fix-storage-1076 #1123 amendment 6 (the result-JSON interval's default, flushPendingLiveQueryResults' doc)
 claude-code/fix-memory-1075@ld 2026-10-25T01:33:15-0400 mower plan=2026-10-24-fix-memory-1075 #1150 amendment 9 (queryLocally and mergingEntitiesOnDisk only)
 claude-code/fix-memory-1075@ld 2026-10-25T01:44:12-0400 mower plan=2026-10-24-fix-memory-1075 #1150 amendment 10 (prepareObservation's schema snapshot, validation and hydration attributes only; not the live registration)
+claude-code/fix-memory-1075@ld 2026-10-25T02:52:55-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (performTransact's commit, new sweep functions and owner, closeConnection's sweep stop/resume beside the prune's, InstantRuntimeConfiguration.residencySweepWriteInterval)

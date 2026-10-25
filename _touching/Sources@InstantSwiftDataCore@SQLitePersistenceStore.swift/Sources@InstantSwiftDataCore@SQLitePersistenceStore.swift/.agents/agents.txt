@@ -66,3 +66,4 @@ claude-code/fix-memory-1075@ld 2026-10-25T00:02:18-0400 mower plan=2026-10-24-fi
 claude-code/fix-storage-1076@ld 2026-10-25T01:05:14-0400 mower plan=2026-10-24-fix-storage-1076 #1123 amendment 6 (the store's default interval and its doc)
 claude-code/fix-storage-1076@ld 2026-10-25T02:01:09-0400 mower plan=2026-10-24-fix-storage-1076 #1115 amendment 8 (functions named there)
 claude-code/fix-storage-1076@ld 2026-10-25T02:30:50-0400 mower plan=2026-10-24-fix-storage-1076 #1119 amendment 9 (openRawConnection, recordDurabilitySettings)
+claude-code/fix-memory-1075@ld 2026-10-25T02:52:55-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (preparedLiveQueryResultSaveWithoutTransaction's removed-ownership record; new takeOwnershipReleasedEntityIDs(), residencySweepDecision(for:))

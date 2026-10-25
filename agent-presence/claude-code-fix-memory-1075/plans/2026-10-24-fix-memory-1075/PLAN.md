@@ -211,3 +211,23 @@ which deletes a released entity's rows.
   Then MemoryLongRunReplay's criterion: heap growth under 3 MB an hour, resident facts within 2,000 of minute 5.
 
 No edit until fix-gate-1074 answers on the channel; the files and functions get their claims then.
+
+## Amendment 13 (2026-10-25 02:52 EDT, claude-code/fix-memory-1075@ld)
+
+#1150 landed (`1256f9e0` .. `e7dacb2d`, ledger `46d9a7b0`). #1145's sweep, as fix-gate-1074 approved it at 02:23 with
+my 02:48 addition. Candidates: the entities each committed local write changed, and the entities whose ownership rows a
+result's save removed; a sweep runs after every `residencySweepWriteInterval` (64) local writes, never on a timer. Each
+batch, one hold of the operation gate at background priority, at most 500 entities: none while the cadence prune runs or
+a `live-query-result-release-pending:` row exists; an entity a stored result owns leaves the candidates; one an outbox
+row touches, or an open observer's last answer shows, stays a candidate; the rest lose their facts from memory only.
+Claims: new `Sources/InstantSwiftDataCore/InstantResidencySweep.swift` (the candidates and the cadence);
+`Sources/InstantSwiftDataCore/InstantRuntime.swift` (`performTransact`'s commit records its changed entities and
+requests a sweep when due; new `requestResidencySweep()`, `sweepResidentEntities()`,
+`residencySweepSettledForTesting()` and the `residencySweepOwner` property; `closeConnection` stops and resumes it beside
+the cadence prune's task; `InstantRuntimeConfiguration.residencySweepWriteInterval`);
+`Sources/InstantSwiftDataCore/InstantStore.swift` (new `releaseUnobservedEntities(_:)` only);
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (`preparedLiveQueryResultSaveWithoutTransaction` records
+the entities whose ownership rows the save removes; new `takeOwnershipReleasedEntityIDs()` and
+`residencySweepDecision(for:)`, which reads entity-level ownership with one `SELECT DISTINCT entity_id` per 500 and
+the outbox's two key tables); new `Tests/InstantSwiftDataCoreTests/InstantResidencySweepTests.swift`. The red is the
+running-session shape of `aRelaunchedStoreReadsTheLinesItKeepsOnDisk`, then MemoryLongRunReplay before and after.
