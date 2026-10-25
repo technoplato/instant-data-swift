@@ -98,3 +98,24 @@ as its primary key's index), and the delivery candidate partial index folds into
 - New, test-only: `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` (in the `StorageIOExercises`
   suite: one write's save, claim, acknowledgement and echo, frames per outbox b-tree, through the audit's VFS shim).
 Next slices, each amended here first: the bodies in their own table, then partial indexes on what that makes cheap.
+
+## Amendment 4 (2026-10-25 00:15 EDT, #1121 with #1120)
+
+Each fact is stored once. Migration 0032 rebuilds `instant_triples` WITHOUT ROWID on its natural key (entity_id,
+attribute_id, value_json) with `json` a VIRTUAL generated column (the same text the store wrote, computed when read,
+no storage), so every reader of `json` stays as it is; inside its transaction the new table is checked against the old
+(row count and per-column checksums) before the old one is dropped, else the migration throws and the store keeps its
+old layout. #1120's in-place upsert rides along (held since amendment 1: on the rowid table it measured neutral, on a
+WITHOUT ROWID table an entity's facts share their own leaf and no separate key index exists). Proven first on a scratch
+copy of the phone's store on the laptop (never in a repository, deleted after), with the library's own bootstrap.
+Claimed:
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `bootstrap`'s migration list (one new migration),
+  `insertTripleWithoutTransaction` and `saveTripleDiffWithoutTransaction` (amendment 1),
+  `upsertCanonicalRelationTripleWithoutTransaction` (no stored `json`), `reconcileDeclaredRelationStorageIfNeeded`'s
+  removal by rowid and `nextApplicationMigrationTripleRowWithoutTransaction` (a key cursor),
+  `applyLocalPersistenceMigration`'s fact update (by key), `InstantApplicationMigrationTripleRow`.
+- `Sources/InstantSwiftDataCore/InstantStoredJSON.swift`: a value-only text for writes.
+- Tests: `DeferredValueResidencyTests.swift` and `InstantStartupTraceTests.swift` (their corruption helpers write the
+  value's text, since a fact's JSON is computed now), `InstantFactInPlaceUpsertTests.swift` (amendment 1's test, for the
+  new layout); new `InstantFactLayoutTests.swift`; new `InstantFactLayoutDeviceStoreTests.swift` (skipped unless
+  `INSTANT_1121_STORE` names a scratch copy of a device's store).
