@@ -1,1 +1,2 @@
 claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 grower plan=2026-10-24-lib-audit-1072 #1072 (new: the shared real-size fixture, a generated store shaped like the phone's, for #1072 and the sibling audits #1074-#1077)
+claude-code/fix-memory-1075@ld 2026-10-25T03:13:34-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (boot turns the residency sweep off, beside the cadence prune)
