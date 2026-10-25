@@ -13,7 +13,7 @@ import Testing
 // records nothing outside debug builds.
 //
 // History:
-// - 2026-10-25: #1147: the diff's equivalence and cost.
+// - 2026-10-25: #1147: the diff's equivalence and cost; the rows an earlier save left, as its facts.
 
 @Suite
 struct LiveQueryOwnershipDiffTests {
@@ -55,16 +55,19 @@ struct LiveQueryOwnershipDiffTests {
       // The rows from SQLite's bytes, and the rows a save earlier in the frame left.
       var fromBytes = try LiveQueryOwnershipDiff(next: nextFacts, encoder: encoder)
       for row in previousRows { Self.feed(row, to: &fromBytes) }
-      fromBytes.finish()
+      try fromBytes.finish()
       var fromSet = try LiveQueryOwnershipDiff(next: nextFacts, encoder: encoder)
       fromSet.previousRows(previousRows)
-      fromSet.finish()
+      try fromSet.finish()
+      var fromFacts = try LiveQueryOwnershipDiff(next: nextFacts, encoder: encoder)
+      try fromFacts.previousFacts(previousFacts)
+      try fromFacts.finish()
 
-      for diff in [fromBytes, fromSet] {
+      for diff in [fromBytes, fromSet, fromFacts] {
         #expect(diff.removed == expectedRemoved, "round \(round) removed: \(String(describing: CustomDump.diff(diff.removed, expectedRemoved)))")
         #expect(diff.inserted == expectedInserted, "round \(round) inserted: \(String(describing: CustomDump.diff(diff.inserted, expectedInserted)))")
         #expect(diff.isUnchanged == (expectedRemoved.isEmpty && expectedInserted.isEmpty), "round \(round)")
-        #expect(diff.nextRows == nextRows, "round \(round) next rows")
+        #expect(try diff.nextRows() == nextRows, "round \(round) next rows")
       }
     }
   }
@@ -92,7 +95,7 @@ struct LiveQueryOwnershipDiffTests {
           }
         }
       }
-      diff.finish()
+      try diff.finish()
       return diff
     }
     let result = try diff()

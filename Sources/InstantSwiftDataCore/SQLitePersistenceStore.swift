@@ -18420,7 +18420,7 @@ public actor SQLitePersistenceStore {
   ) throws {
     let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
       result,
-      previousOwnership: nil,
+      previousFacts: nil,
       encodingJSONIfWritten: nil
     )
     try applyLiveQueryResultSaveWithoutTransaction(prepared.save, deferringJSON: deferringJSON)
@@ -18440,28 +18440,29 @@ public actor SQLitePersistenceStore {
       guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
       else { return nil }
       // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
-      var ownershipByKey: [String: Set<LiveQueryOwnershipIdentity>] = [:]
+      var storedFactsByKey: [String: [InstantTriple]] = [:]
       var saves: [InstantPreparedLiveQueryResultSave] = []
       for result in results {
         let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
           result,
-          previousOwnership: ownershipByKey[result.key],
-          encodingJSONIfWritten: ownershipByKey[result.key] == nil ? true : nil
+          previousFacts: storedFactsByKey[result.key],
+          encodingJSONIfWritten: storedFactsByKey[result.key] == nil ? true : nil
         )
-        ownershipByKey[result.key] = prepared.nextOwnership
+        storedFactsByKey[result.key] = prepared.storedFacts
         saves.append(prepared.save)
       }
       return saves
     }
   }
 
-  /// One result's save against `previousOwnership`, or the stored rows when nil. With `encodingJSONIfWritten`, the
-  /// JSON too when a deferring save would write it now.
+  /// One result's save against the rows `previousFacts` own (an earlier save of the same key in this frame), or the
+  /// stored rows when nil, and the facts it stores. With `encodingJSONIfWritten`, the JSON too when a deferring save
+  /// would write it now.
   private func preparedLiveQueryResultSaveWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult,
-    previousOwnership knownPreviousOwnership: Set<LiveQueryOwnershipIdentity>?,
+    previousFacts knownPreviousFacts: [InstantTriple]?,
     encodingJSONIfWritten: Bool?
-  ) throws -> (save: InstantPreparedLiveQueryResultSave, nextOwnership: Set<LiveQueryOwnershipIdentity>) {
+  ) throws -> (save: InstantPreparedLiveQueryResultSave, storedFacts: [InstantTriple]) {
     let attributeIDs = Set(result.triples.map(\.attributeID))
     let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
@@ -18472,12 +18473,12 @@ public actor SQLitePersistenceStore {
     )
     liveQueryResultValueEncodeCount += result.triples.count
     var ownership = try LiveQueryOwnershipDiff(next: Array(result.triples), encoder: encoder)
-    if let knownPreviousOwnership {
-      ownership.previousRows(knownPreviousOwnership)
+    if let knownPreviousFacts {
+      try ownership.previousFacts(knownPreviousFacts)
     } else {
       try liveQueryOwnershipRowsWithoutTransaction(queryKey: result.key, into: &ownership)
     }
-    ownership.finish()
+    try ownership.finish()
     var json: String?
     if encodingJSONIfWritten == true,
       try liveQueryResultJSONWriteWithoutTransaction(
@@ -18496,7 +18497,7 @@ public actor SQLitePersistenceStore {
         insertedOwnership: ownership.inserted,
         json: json
       ),
-      ownership.nextRows
+      Array(result.triples)
     )
   }
 

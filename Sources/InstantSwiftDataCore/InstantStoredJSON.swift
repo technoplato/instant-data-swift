@@ -5,6 +5,7 @@ import Foundation
 //   without `JSONEncoder` and checked against it (#1007).
 // - 2026-10-23: the seam writes the text of null, string, number, boolean, ref and date values and of a fact itself,
 //   byte for byte as `JSONEncoder` writes it, and asks `JSONEncoder` for the rest (#1007).
+// - 2026-10-25: a value's text can be appended to a caller's buffer, for the ownership diff's fingerprints (#1147).
 
 /// The JSON text the local store keeps for a value and for a fact (#1007).
 ///
@@ -22,6 +23,13 @@ enum InstantStoredJSON {
       return String(decoding: bytes, as: UTF8.self)
     }
     return String(decoding: try encoder.encode(value), as: UTF8.self)
+  }
+
+  /// Appends the text the store keeps for `value` to `bytes`: `stored(_:using:)` without making a string, for a caller
+  /// that only hashes or compares the text (#1147). Throws what `JSONEncoder` throws for it.
+  static func appendStored(_ value: InstantValue, to bytes: inout [UInt8], using encoder: JSONEncoder) throws {
+    if append(value, to: &bytes) { return }
+    bytes.append(contentsOf: try encoder.encode(value))
   }
 
   /// The text the store keeps for `triple`. Throws what `JSONEncoder` throws for it.
