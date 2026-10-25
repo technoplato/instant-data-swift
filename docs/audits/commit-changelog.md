@@ -1,3 +1,6 @@
+## 2026-10-24 22:44:11 EDT — scribe `c2bc2e93b7021bac1def983b74f73e41365c5bb9`
+docs(#962): the audit's first device measurement: build 130 on the iPad, 4 played lines at 0.2-12.3 s, the first line's 12.3 s taken apart (Playback's 3 s start row, 1.5 s App Group, two reads of 4 s and 3 s)
+
 ## 2026-10-24 22:42:13 EDT — scribe `00ae2f133c5cdd00de851d4b1cb053cbd63a5a54`
 Merge (#962) for build 131: the played item's own audio in the recording's playback, in step with its lines, where the recording did not hear it (slice 3, ADR 0093 decision 9); 12 commits, tested on the laptop's heavy.sh (ps962-queue3, ps962-queue4) and the Mac mini.
 
