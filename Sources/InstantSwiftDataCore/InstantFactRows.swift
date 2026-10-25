@@ -6,6 +6,7 @@ import SQLite3
 //   (#1150).
 // - 2026-10-25: a fact is read from its columns instead of the `json` the table computes for it (#1150): a history page's
 //   512 deferred values went from 23 allocations a fact to 2.
+// - 2026-10-25: the store's deferred loads read through it too (#1147); a failure is the caller's to report.
 
 /// Reads facts from the fact table's rows (#1150).
 ///
@@ -20,8 +21,13 @@ struct InstantFactRowReader {
   /// What a statement selects for the reader, in order.
   static let columns = "entity_id, attribute_id, value_json, tx_id, tx_time_ms"
 
+  /// A row the reader could not step to or decode, for its caller to report as its own failure.
+  struct ReadFailure: Error {
+    var operation: String
+    var message: String
+  }
+
   private let decoder: JSONDecoder
-  private let path: String?
   private var entityID = ""
   private var txID = ""
   private var attributeIDs: [String] = []
@@ -30,10 +36,8 @@ struct InstantFactRowReader {
   /// Attribute ids kept for reuse; a read with more makes the rest anew.
   private static let maximumAttributeIDs = 64
 
-  /// - Parameter path: The store's file, which a failure to decode names.
-  init(decoder: JSONDecoder, path: String?) {
+  init(decoder: JSONDecoder) {
     self.decoder = decoder
-    self.path = path
   }
 
   /// Steps `statement` to its end, appends each row's fact to `triples`, and hands each fact with the byte count of
@@ -47,10 +51,9 @@ struct InstantFactRowReader {
       let result = sqlite3_step(statement)
       if result == SQLITE_DONE { return }
       guard result == SQLITE_ROW else {
-        throw SQLiteReadConnection.failure(
-          operation: "step a local read",
-          message: SQLiteReadConnection.errorMessage(sqlite3_db_handle(statement)),
-          path: nil
+        throw ReadFailure(
+          operation: "step a fact read",
+          message: SQLiteReadConnection.errorMessage(sqlite3_db_handle(statement))
         )
       }
       let valueText = Self.text(of: statement, column: 2)
@@ -99,11 +102,7 @@ struct InstantFactRowReader {
     do {
       return try decoder.decode(InstantValue.self, from: Data(text))
     } catch {
-      throw SQLiteReadConnection.failure(
-        operation: "decode rows on the local read connection",
-        message: "A stored value could not be decoded: \(error)",
-        path: path
-      )
+      throw ReadFailure(operation: "decode a stored value", message: "A stored value could not be decoded: \(error)")
     }
   }
 

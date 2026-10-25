@@ -176,7 +176,7 @@ struct InstantFactRowsTests {
     }
 
     func read() throws -> [InstantTriple] {
-      var reader = InstantFactRowReader(decoder: JSONDecoder(), path: nil)
+      var reader = InstantFactRowReader(decoder: JSONDecoder())
       return try withStatement { statement in
         var triples: [InstantTriple] = []
         try reader.read(statement, into: &triples)
@@ -186,7 +186,7 @@ struct InstantFactRowsTests {
 
     /// The allocations of the second of two reads, on this thread.
     func allocationsOfOneRead() throws -> Int {
-      var reader = InstantFactRowReader(decoder: JSONDecoder(), path: nil)
+      var reader = InstantFactRowReader(decoder: JSONDecoder())
       var triples: [InstantTriple] = []
       triples.reserveCapacity(1_024)
       try withStatement { try reader.read($0, into: &triples) }

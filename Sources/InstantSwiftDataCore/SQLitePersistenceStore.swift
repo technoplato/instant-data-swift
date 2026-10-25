@@ -11195,20 +11195,35 @@ public actor SQLitePersistenceStore {
     ).joined(separator: ", ")
     let bindings = attributeIDs.sorted().map(SQLiteBinding.text)
       + entityIDs.sorted().map(SQLiteBinding.text)
-    let selection: (values: [InstantTriple], batchCount: Int, encodedByteCount: Int) =
-      try selectBatchedJSON(
-        """
-        SELECT json
-        FROM instant_triples
-        WHERE attribute_id IN (\(attributePlaceholders))
-          AND entity_id IN (\(entityPlaceholders))
-        ORDER BY entity_id, attribute_id, value_json
-        """,
-        bindings
-      )
-    deferredValueDecodeMetrics.valueCount += selection.values.count
-    deferredValueDecodeMetrics.encodedByteCount += selection.encodedByteCount
-    return selection.values
+    // #1147: the facts' columns through the column reader (#1150), not the json the fact table computes for each row
+    // and `JSONDecoder`: about 3,000 of a 64-line refresh's allocations and 4.3 MB went to these loads (S03).
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT \(InstantFactRowReader.columns)
+      FROM instant_triples
+      WHERE attribute_id IN (\(attributePlaceholders))
+        AND entity_id IN (\(entityPlaceholders))
+      ORDER BY entity_id, attribute_id, value_json
+      """,
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    guard let statement else {
+      throw persistenceError(operation: "load deferred values", message: "SQLite prepared no statement.")
+    }
+    var values: [InstantTriple] = []
+    var encodedByteCount = 0
+    var reader = InstantFactRowReader(decoder: decoder)
+    do {
+      try reader.read(statement, into: &values) { _, byteCount in encodedByteCount += byteCount }
+    } catch let failure as InstantFactRowReader.ReadFailure {
+      throw persistenceError(operation: failure.operation, message: failure.message)
+    }
+    deferredValueDecodeMetrics.valueCount += values.count
+    deferredValueDecodeMetrics.encodedByteCount += encodedByteCount
+    return values
   }
 
   private func loadOutboxWithoutTransaction(

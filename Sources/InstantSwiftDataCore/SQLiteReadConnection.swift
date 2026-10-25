@@ -57,7 +57,7 @@ actor SQLiteReadConnection {
     let attributePlaceholders = Array(repeating: "?", count: attributeList.count).joined(separator: ", ")
     var triples: [InstantTriple] = []
     var encodedByteCount = 0
-    var reader = InstantFactRowReader(decoder: decoder, path: fileURL.path)
+    var reader = InstantFactRowReader(decoder: decoder)
     try readTransaction { connection in
       for batch in Self.batches(of: entityIDs) {
         let entityPlaceholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
@@ -70,7 +70,7 @@ actor SQLiteReadConnection {
           bindings: attributeList + batch,
           on: connection
         ) { statement in
-          try reader.read(statement, into: &triples) { _, byteCount in encodedByteCount += byteCount }
+          try readFacts(statement, with: &reader, into: &triples) { _, byteCount in encodedByteCount += byteCount }
         }
       }
     }
@@ -115,7 +115,7 @@ actor SQLiteReadConnection {
     var triples: [InstantTriple] = []
     var deferredCount = 0
     var deferredByteCount = 0
-    var reader = InstantFactRowReader(decoder: decoder, path: fileURL.path)
+    var reader = InstantFactRowReader(decoder: decoder)
     try readTransaction { connection in
       for batch in Self.batches(of: entityIDs) {
         let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
@@ -127,7 +127,7 @@ actor SQLiteReadConnection {
           bindings: batch + attributeList,
           on: connection
         ) { statement in
-          try reader.read(statement, into: &triples) { triple, byteCount in
+          try readFacts(statement, with: &reader, into: &triples) { triple, byteCount in
             guard deferredAttributeIDs.contains(triple.attributeID) else { return }
             deferredCount += 1
             deferredByteCount += byteCount
@@ -299,6 +299,20 @@ actor SQLiteReadConnection {
   private static func execute(_ sql: String, on connection: OpaquePointer) throws {
     guard sqlite3_exec(connection, sql, nil, nil, nil) == SQLITE_OK else {
       throw failure(operation: "run '\(sql)' on the local read connection", message: errorMessage(connection), path: nil)
+    }
+  }
+
+  /// `statement`'s facts through `reader`, a failure reported as this connection's.
+  private func readFacts(
+    _ statement: OpaquePointer,
+    with reader: inout InstantFactRowReader,
+    into triples: inout [InstantTriple],
+    counting: (InstantTriple, Int) -> Void
+  ) throws {
+    do {
+      try reader.read(statement, into: &triples, counting: counting)
+    } catch let failure as InstantFactRowReader.ReadFailure {
+      throw Self.failure(operation: failure.operation, message: failure.message, path: fileURL.path)
     }
   }
 
