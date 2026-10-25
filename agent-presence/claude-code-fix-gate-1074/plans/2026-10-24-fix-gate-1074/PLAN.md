@@ -185,3 +185,14 @@ no other connection's writes, as the local read does not; the closed-connection 
 the stored result. Touching `Sources/InstantSwiftDataCore/InstantRuntime.swift` (`materializeLocalQueryOnce`,
 `firstLocalAnswer`) and a new `Tests/InstantSwiftDataCoreTests/InstantOneShotReadGateTests.swift`. Measured by
 `recording`'s `gate.hold holder=materializeLocalQueryOnce(...)` and its reads' latencies on the Mac mini.
+
+## Amendment 11 (2026-10-25 07:30 EDT, #1136)
+
+Compaction asks the app's hold closure twice, the second time under the operation gate, so the gate is held while the
+closure runs (the consuming app's hops to the main actor) as well as during the VACUUM. It now asks the app once,
+before the gate; under the gate it re-checks only what it can read at once: cancellation, the device's heat and power,
+and the volume's room. Touching `Sources/InstantSwiftDataCore/InstantRuntime.swift` (`compactLocalCache(policy:holdingWhile:)`
+and `localCacheCompactionHold`), a new `Tests/InstantSwiftDataCoreTests/InstantCompactionHoldTests.swift`, and
+`Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` (a `compaction-main-hop` exercise: the same
+VACUUM with a hold closure that hops to a main actor kept busy in 30 ms slices). Measured by its
+`gate.hold holder=compactLocalCache(policy:holdingWhile:)` against `vacuum_ms` on the Mac mini, before and after.
