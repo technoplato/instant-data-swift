@@ -1,3 +1,90 @@
+## 2026-10-25 14:29:36 EDT — scribe `8fc12c5489a35ee2347caf685127b866a466e9b9`
+merge(#951): one speaker identity store lands on main for build 140: S1 (a restarted voice takes its recording number back), S3 (the mirror names lines through the identity rows; its doors refuse another app's sound by source), S4a (both sign-ins), S2b's lane-tagged summaries.
+
+## 2026-10-25 14:29:14 EDT — scribe `2da7254f0dc9c0b007a4a19bbfb4069abd2ef4ab`
+changelog(#951): the CHANGELOG entry for Scribe Playback keeping row owners.
+
+## 2026-10-25 13:57:02 EDT — scribe `8b86391ed042ede33f8b3dd382a4f5e53fdd97bf`
+changelog(#951): the CHANGELOG entry for the lane-tagged voice summaries.
+
+## 2026-10-25 13:56:48 EDT — scribe `a963fac293e470fea34abd4af8d2ef44d5b764fa`
+Green (#951, S2b engine): a voice summary part names the lane that heard it; a restarted stream takes back only its own lane's numbers.
+
+## 2026-10-25 13:56:48 EDT — scribe `cecb254d51cc3100aaa6400c817cb5280fe3b1bb`
+Red (#951, S2b engine): lane-tagged summaries and adoption within a lane (synthetic voices).
+
+## 2026-10-25 13:50:13 EDT — scribe `18f4124c462e32d847266f8e848eda6d59835797`
+changelog(#951): CHANGELOG entries for the learner's two sign-ins and the docs.
+
+## 2026-10-25 13:49:32 EDT — scribe `e0d63049d457a1582c9a8a6d6ea8a6afb067a626`
+Green (#951, S4a): Scribe Playback keeps a row's owner when it renames a person or reassigns an episode's speaker (the rules refuse a changed owner).
+
+## 2026-10-25 13:49:32 EDT — scribe `464fffc232ad5a4135b9b1b772e3d92156101383`
+Red (#951, S4a): a rename and a reassignment keep the row's owner; a new row is the signed-in user's.
+
+## 2026-10-25 13:49:32 EDT — scribe `3908eb44b1556202cbbc38c5875923e7f29abc01`
+Docs (#951): What's New Build 140 (next) story for the learner's two sign-ins; PROGRESS entry for S3 safety and S4a.
+
+## 2026-10-25 13:47:09 EDT — scribe `80bc202e46de2cf5f49e4294bf7a041b866a811b`
+Green (#951, S4a): the Mac's voice learner reads both of his sign-ins' rows through the account link (`ownerUserID $in` his identities), not the env's one sign-in.
+
+## 2026-10-25 13:47:09 EDT — scribe `855b4f389d4894a57219e4de66c7d6bf2d3db23b`
+Red (#951, S4a): the learner asks the account link for his identities and reads them all.
+
+## 2026-10-25 13:38:59 EDT — scribe `d52e2befb13e7cdac20941f5f901a91763fb44cf`
+changelog(#951): the CHANGELOG entry for the mirror's source-based system-audio doors.
+
+## 2026-10-25 13:38:40 EDT — scribe `d988936b8372bf4fb0773182379695ec550d1750`
+Green (#951, S3 safety): every mirror door (listener start, settings, link, routing, the sweep) refuses another app's sound by the speaker's source or a system-audio id, never by its label; a named broadcast voice is still system audio.
+
+## 2026-10-25 13:36:25 EDT — scribe `0887e7e880f01ae46ace39dd3ca4870becb74cc3`
+Red (#951): the day's read and the sweep keep a named broadcast voice's line marked as another app's sound.
+
+## 2026-10-25 13:34:35 EDT — scribe `bfa63ecabeaf234e3bdfb374750984061be6b141`
+Red (#951): a broadcast voice someone named is still system audio at every mirror door.
+
+## 2026-10-25 13:19:36 EDT — scribe `a798031bc0602f03f9aa797cea0001498fa1af3e`
+changelog(#951): the CHANGELOG entry for c5bd500c8.
+
+## 2026-10-25 13:19:27 EDT — scribe `c5bd500c8315dc66037f9a2ce7f409fd26c5155a`
+Docs (#951): ADR 0096 and FEATURES item 14 name build 140 for S1 (builds 138 and 139 were cut while it was verified).
+
+## 2026-10-25 13:16:28 EDT — scribe `2ea062b3bbad200b81d6c3e2ed20bb9d4a5065b9`
+merge(#951): main into the branch before landing; the speakers story moves to What's New Build 140 (next); PROGRESS, CHANGELOG and the audits index keep every entry.
+
+## 2026-10-25 13:09:24 EDT — scribe `af6af5f4c22b40e428864f4b5001c225a078900c`
+changelog(#951): CHANGELOG entries for S1 (engine, split voices, app) and S3 (the mirror) and their docs.
+
+## 2026-10-25 12:44:24 EDT — scribe `d7e5bbc2638a5951e58baac025997ac2f2f3c373`
+Green (#951, S3): the mirror names each line through the identity rows (recordingSpeakers, lineSpeakers, speakers), not the recording's copy of a name; the day's read too.
+
+## 2026-10-25 12:41:05 EDT — scribe `3dc0fea4fa05520a989488d91983e3286699af36`
+Red (#951, S3): the mirror names a line through the identity rows.
+
+## 2026-10-25 12:41:05 EDT — scribe `1f4bef2a05a6680db5c88ab3171935202404c4eb`
+Docs (#951): What's New story (one voice keeps one speaker through restarts), the audits index row, PROGRESS.
+
+## 2026-10-25 12:36:00 EDT — scribe `632685609e5c37d542a89e48d237b6aeb43caa07`
+Docs (#951): ADR 0096 with his earlier words; the speakers audit (Recording 297 traced, the within-recording calibration, the replay before and after); FEATURES item 14.
+
+## 2026-10-25 12:36:00 EDT — scribe `7fcb1c3331a0e02b696ea92537c5c74b979380c3`
+Green (#951, S1): the app moves a restarted voice's first lines to the number it took back (automatic lineSpeakers rows, one write); the device's learner derives no prints before the people arrive.
+
+## 2026-10-25 12:22:27 EDT — scribe `d509c468a2ab711c82e0b8da8bff124ca891b31a`
+Green (#951, S1): a voice the diarizer split shares the number its other half took back; a number mixing two voices takes none.
+
+## 2026-10-25 12:19:27 EDT — scribe `4955b512288b353a0669f6497b6a7835f5a7c828`
+Red (#951, S1): split and mixed voices after a restart.
+
+## 2026-10-25 11:43:29 EDT — scribe `0f8990f14065a01700c3940621df05e7b9f5ee1c`
+Green (#951, S1): in the shared transcription engine a restarted stream's voice takes its recording number back (8 s heard, 0.55 with a 0.05 lead on its newest and whole voice), against the newest voice prints; finals carry speaker_adopted.
+
+## 2026-10-25 11:25:05 EDT — scribe `744baf7dceab0bd15b7173423c22126085860f39`
+Red (#951, S1): a restarted voice takes its recording number back (synthetic voices only).
+
+## 2026-10-25 11:08:49 EDT — scribe `3379a87395aeb69e4a6632152d664ad93a3b4713`
+plan(#951): one speaker identity store (ADR 0096), plan 2026-10-25-speakers-951, claims and channel note.
+
 ## 2026-10-25 14:08:08 EDT — scribe `93dd93db12839e4019279564a3b6caad56da8253`
 Fix (#1100): a continued take's images answer is silent and empty in tests; #1100's green had made 30 RecordingListFeatureTests tests record an unimplemented RecordingImageDownloadClient.images (found by #1097's whole-bundle run).
 
