@@ -15,3 +15,4 @@ claude-opus-5.5-library-79 2026-10-04T14:56:44-04:00 mower plan=2026-10-02-libra
 claude-opus-5.5-library-79 2026-10-04T15:03:32-04:00 mower plan=2026-10-02-library-79-hops #461
 claude-code/server-apply-932@halfjew22 2026-10-23T14:52:59-0400 grower plan=2026-10-23-server-apply-932 #932 #998 #590
 claude-code/fix-gate-1074@ld 2026-10-24T21:11:36-0400 mower plan=2026-10-24-fix-gate-1074 #1131 (registerQuery and a send-after-record entry beside it; amended per issue)
+claude-code/fix-gate-1074@ld 2026-10-24T23:01:44-0400 mower plan=2026-10-24-fix-gate-1074 #1131 amendment 2 (unregisterQuery, reconcileQueryMembership, RegisteredQuery)

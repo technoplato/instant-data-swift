@@ -58,3 +58,4 @@ claude-code/lib-audit-1072@halfjew22 2026-10-24T19:37:02-0400 mower plan=2026-10
 claude-code/lib-audit-1072@halfjew22 2026-10-24T19:44:21-0400 mower plan=2026-10-24-lib-audit-1072 #1103 amendment 6 (one row-addressed removal of a failed mutation with no materialized effect)
 claude-code/fix-gate-1074@ld 2026-10-24T21:11:36-0400 mower plan=2026-10-24-fix-gate-1074 #1131 (unloadedLiveQueryResult, reloadUnloadedLiveQueryResult; amended per issue)
 claude-code/fix-storage-1076@ld 2026-10-24T22:27:43-0400 mower plan=2026-10-24-fix-storage-1076 #1118 (openRawConnection, recordDurabilitySettings, a testing accessor, the checkpoint constant; amended per issue)
+claude-code/fix-gate-1074@ld 2026-10-24T23:01:44-0400 mower plan=2026-10-24-fix-gate-1074 #1129 amendment 2 (liveQueryResultPruneBatch, applyLiveQueryResultPruneBatch and their WithoutTransaction bodies, the ownership check, the prune batch types)

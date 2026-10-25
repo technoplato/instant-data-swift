@@ -61,3 +61,27 @@ commits in bounded chunks, each its own hold, under a per-key registration lease
   `performPruneLiveQueryResults`, `readUnloadedLiveQueryResult`, `reloadChunks`.
 - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `beginUnloadedLiveQueryResultReload`,
   `reloadUnloadedLiveQueryResultChunk` and their result types, replacing `reloadUnloadedLiveQueryResult`.
+
+## Amendment 2 (2026-10-24 23:00 EDT, #1131 then #1129)
+
+#1131: the deferred add-query let an observation that ended first put remove-query alone on the wire; the live session
+records the generation whose add-query a registration owes, and `unregisterQuery` sends it first. Also touching, in
+`InstantRuntimeLiveSession.swift`: `unregisterQuery`, `reconcileQueryMembership` (clears the owed generation),
+`RegisteredQuery`.
+
+#1129 (next): the cadence prune leaves the frame applier for a coalesced task of its own; a prune batch checks ownership
+once per batch, and a result larger than the batch budget is released over several batches. Touching:
+- `Sources/InstantSwiftDataCore/InstantRuntime.swift`: `applyLiveRefresh`'s cadence call, a new task owner for the
+  cadence prune and its close latch (`closeConnection`, `exactCloseBackgroundTaskIdleState`), `pruneLiveQueryResults`,
+  `performPruneLiveQueryResults`, `pruneLiveQueryResultsBatch`.
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `liveQueryResultPruneBatch`,
+  `applyLiveQueryResultPruneBatch` and their `WithoutTransaction` bodies, `liveQueryTripleHasOwnerWithoutTransaction`
+  or a set-based check beside it, `InstantLiveQueryResultPruneBatch` and its application type.
+- `Sources/InstantSwiftDataCore/InstantRuntimeExactTaskOwner.swift`: `InstantRuntimeExactCloseIdleState` (one owner).
+- New: `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift`.
+
+## Amendment 3 (2026-10-24 23:00 EDT): release ownership
+
+The lab made fix-gate-1074 the library's release owner from 1.9.39 (lib-audit-1072 finished at 20:28): versions, their
+release documents and tags, and the Scribe and Playback pins on Scribe's main (pin files only, then a changelog line).
+Also touching then: `docs/releases/v1.9.39.md` (new) and later versions' documents.
