@@ -110,3 +110,21 @@ stale), and a retry at the same query-result and attribute revisions reuses both
 a new `InstantServerApplyRestatedRevisions`, and a testing hook in `InstantRuntimeConfiguration`
 (`onServerApplyRestatedResultsWorkedOutForTesting`); `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift`
 (one test and a helper actor). Branch `agent/claude/fix-gate-1128`; red `8bb9785d` (local).
+
+## Amendment 6 (2026-10-25 02:27 EDT, #1129's third slice)
+
+What is left of the `$files` batch's 397 ms is the cascade delete of its 75,640 ownership rows (149.72 ms) and its
+commit (96.28 ms). A closed result larger than a batch is no longer deleted from `instant_live_query_results`: after
+its copy goes to `instant_unloaded_live_query_results` (7 ms, as today), its row is re-keyed out of its query key's way
+(`released-result:<query_id>`, its JSON emptied) and keeps its ownership rows. Each later batch deletes the next whole
+entities of that row's ownership rows (up to the budget), checks those facts in the same transaction, and drops the
+row once none are left. The released row is its own durable record, so a crash leaves it for the next prune (the
+bootstrap prune dismantles it whole); a save, a reload or the collector of the same key works as today, against a key
+the released row no longer holds; and every ownership check counts the released row's rows until they are checked.
+The release marker of amendment 4 is no longer written; opening the store still finishes one an earlier build left.
+No schema change. Touching `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `applyLiveQueryResultPruneBatchWithoutTransaction`,
+`liveQueryResultPruneBatchWithoutTransaction` and `loadLiveQueryResultRowsWithoutTransaction` (released rows apart),
+the readers that list every stored result (the JSON size listing, the result counts), new released-row helpers, and the
+bootstrap step; `Sources/InstantSwiftDataCore/InstantRuntime.swift`: `pruneLiveQueryResults`,
+`pruneLiveQueryResultsBatch`, `pruneReleasedLiveQueryResultFacts`, the bootstrap prune's call; tests in
+`InstantPruneOffTheApplierTests.swift`. #1122 (the copy's own log frames) goes back to fix-storage-1076.
