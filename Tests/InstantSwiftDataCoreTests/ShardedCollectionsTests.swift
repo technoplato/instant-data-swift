@@ -10,8 +10,51 @@ import Testing
 ///
 /// #1152: a sharded dictionary keeps one plain dictionary until it holds more than 32 entries, so a many-cardinality
 /// slot can use one. Whichever form it holds, it answers, compares, hashes and codes as the plain dictionary does.
+///
+/// #1146: a sharded set does the same: every distinct value of an indexed attribute, each entity's id among them, holds
+/// one, and a set of one allocated a 64-slot array besides its set (about 640 B where a plain set is about 96 B). Equality
+/// and hashing are checked with `#expect`, which a release build judges.
 @Suite
 struct ShardedCollectionsTests {
+  /// A set of one costs one plain set: one allocation, not a 64-slot array besides.
+  @Test("A sharded set of one is one allocation")
+  func aShardedSetOfOneIsOneAllocation() {
+    let ids = (0..<64).map { "3f2a\(String(format: "%04d", $0))-7c1e-4b8a-9d21-5e6f7a8b9c0d" }
+    var sets: [ShardedSet<String>] = []
+    sets.reserveCapacity(64)
+    // The first set made in a process also builds its type's runtime metadata.
+    var warmUp = ShardedSet<String>()
+    warmUp.insert("warm-up")
+    RealSizeAllocations.start(onCurrentThreadOnly: true)
+    for id in ids {
+      var set = ShardedSet<String>()
+      set.insert(id)
+      sets.append(set)
+    }
+    let counts = RealSizeAllocations.stop()
+    #expect(counts.allocations <= 64, "64 sets of one allocated \(counts.allocations) times.")
+    #expect(counts.allocatedBytes < 64 * 256, "64 sets of one allocated \(counts.allocatedBytes) bytes.")
+    #expect(sets.allSatisfy { $0.count == 1 })
+  }
+
+  /// Equal sets compare, hash and intersect alike whether they hold a plain set or shards.
+  @Test func equalSetsAgreeInEitherForm() {
+    let ids = (0..<40).map { "id-\($0)" }
+    var shardedThenShrunk = ShardedSet<String>()
+    for id in ids { shardedThenShrunk.insert(id) }
+    for id in ids.dropFirst(10) { shardedThenShrunk.remove(id) }
+    let plainForm = ShardedSet(ids.prefix(10))
+    #expect(shardedThenShrunk == plainForm)
+    #expect(shardedThenShrunk.hashValue == plainForm.hashValue)
+    #expect(Set(shardedThenShrunk) == Set(ids.prefix(10)))
+    let others = ShardedSet(ids[5..<35])
+    #expect(Set(shardedThenShrunk.intersection(others)) == Set(ids[5..<10]))
+    #expect(Set(plainForm.intersection(others)) == Set(ids[5..<10]))
+    #expect(Set(others.intersection(plainForm)) == Set(ids[5..<10]))
+    #expect(shardedThenShrunk != ShardedSet(ids.prefix(9)))
+    #expect(ShardedSet<String>() == ShardedSet(ids.prefix(0)))
+  }
+
   @Test(arguments: [UInt64(71_007), 71_008, 71_009])
   func aShardedSetAnswersAsASet(seed: UInt64) {
     var random = InfiniteWindowRandom(seed: seed)
@@ -24,30 +67,32 @@ struct ShardedCollectionsTests {
         "K", "\u{212A}"][random.int(0...4)]
       switch random.int(0...9) {
       case 0...5:
-        expectNoDifference(sharded.insert(element), plain.insert(element).inserted, "step \(step)")
+        let inserted = (sharded.insert(element), plain.insert(element).inserted)
+        #expect(inserted.0 == inserted.1, "step \(step)")
       case 6...8:
-        expectNoDifference(sharded.remove(element), plain.remove(element), "step \(step)")
+        let removed = (sharded.remove(element), plain.remove(element))
+        #expect(removed.0 == removed.1, "step \(step)")
       default:
         copies.append((sharded, plain))
       }
       #expect(sharded.contains(element) == plain.contains(element))
     }
-    expectNoDifference(sharded.count, plain.count)
-    expectNoDifference(sharded.isEmpty, plain.isEmpty)
-    expectNoDifference(Set(sharded), plain)
-    expectNoDifference(sharded.sorted(), plain.sorted())
+    #expect(sharded.count == plain.count)
+    #expect(sharded.isEmpty == plain.isEmpty)
+    #expect(Set(sharded) == plain)
+    #expect(sharded.sorted() == plain.sorted())
     // Every copy kept what it held when it was taken.
     for (shardedCopy, plainCopy) in copies {
-      expectNoDifference(Set(shardedCopy), plainCopy)
-      expectNoDifference(shardedCopy == ShardedSet(plainCopy), true)
-      expectNoDifference(shardedCopy.hashValue == ShardedSet(plainCopy).hashValue, true)
+      #expect(Set(shardedCopy) == plainCopy)
+      #expect(shardedCopy == ShardedSet(plainCopy))
+      #expect(shardedCopy.hashValue == ShardedSet(plainCopy).hashValue)
     }
     if let (first, firstPlain) = copies.first, let (last, lastPlain) = copies.last {
-      expectNoDifference(Set(first.intersection(last)), firstPlain.intersection(lastPlain))
-      expectNoDifference(first == last, firstPlain == lastPlain)
+      #expect(Set(first.intersection(last)) == firstPlain.intersection(lastPlain))
+      #expect((first == last) == (firstPlain == lastPlain))
     }
-    expectNoDifference(ShardedSet<String>() == [], true)
-    expectNoDifference(ShardedSet<String>().hashValue == ShardedSet<String>(["x"]).intersection([]).hashValue, true)
+    #expect(ShardedSet<String>() == [])
+    #expect(ShardedSet<String>().hashValue == ShardedSet<String>(["x"]).intersection([]).hashValue)
   }
 
   @Test(arguments: [UInt64(72_007), 72_008, 72_009])
