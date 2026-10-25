@@ -1,3 +1,18 @@
+## 2026-10-25 12:32:03 EDT — scribe `08db89f6342536222c9b2239a12d10f428955224`
+changelog(#1175): CHANGELOG entries for 13a4cb74c, 01f6c8ff2, fa57937d7; PROGRESS entry
+
+## 2026-10-25 12:31:26 EDT — scribe `fa57937d73aac8a1a9ec7ede63a5302b68beedd5`
+docs(#1175): the builds skill says every install tells him first and how a release agent sees it work
+
+## 2026-10-25 12:29:05 EDT — scribe `01f6c8ff2cbef1510afdd219e0682eb20115361b`
+feat(#1175): green: every install tells Michael first; the installer sends one notice right before production Scribe goes on his iPhone and one after with What's New
+
+## 2026-10-25 12:26:48 EDT — scribe `13a4cb74ce202aff670087c61a971b6882c22713`
+test(#1175): red: the install heads-up, one notice right before production Scribe goes on his iPhone and one after with What's New
+
+## 2026-10-25 12:24:57 EDT — scribe `eba6099bd241366feb4c62f1813c016ca7a38249`
+plan(#1175): 2026-10-25-heads-up-1175, every install tells Michael first, built into the installer; claims
+
 ## 2026-10-25 11:52:06 EDT — scribe `3f0a7eecb27fb84b2c04d016bde9ecf1aee29fc5`
 changelog(#1176): entries for score --kept, the line-order fix with recheck, and the named-speaker rule.
 
