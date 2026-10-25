@@ -244,3 +244,15 @@ only): the store's deferred loads read through `InstantFactRowReader` (#1150's c
 `selectBatchedJSON` and `JSONDecoder`; `Sources/InstantSwiftDataCore/InstantFactRows.swift` (its failure messages name a
 fact read, not only the local read); `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` (E03's 64-line
 budget). S03 put about 3,000 allocations and 4.3 MB of a 64-line refresh in those loads.
+
+## Amendment 15 (2026-10-25 04:07 EDT, claude-code/fix-memory-1075@ld)
+
+#1147 step 5 landed (`9a6929a4`, `ffbd3e87`; ledger `e3e6e112`): E03's 64-line refresh 6,171 allocations / 6,605 KB.
+What is left of #1147 is spread across about 530 sites (the largest 0.37 MB), so its next steps wait while #1146 goes.
+
+#1146 step 1 claims `Sources/InstantSwiftDataCore/ShardedCollections.swift` (`ShardedSet` only): a set keeps one plain
+`Set` until it holds more than 32 elements, then 64 shards for good, as #1152's `ShardedDictionary` does, in an enum of
+the two forms, so a set of one is one allocation (about 96 B) instead of a 64-slot array and a set (about 640 B); equality
+and hashing compare elements whatever the form. `Tests/InstantSwiftDataCoreTests/ShardedCollectionsTests.swift` (a
+set of one's cost; equality and hashing across the two forms). E07's retained bytes per resident fact are the before
+and after (737 B in the audit; #1146's criterion under 400 B).
