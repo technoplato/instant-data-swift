@@ -254,6 +254,28 @@ struct InstantLiveQueryResultWriteTests {
     _ = try await fixture.runtime.closeConnection()
   }
 
+  /// Ten minutes of a foreground session's refreshes, ten seconds apart, each changing the result: its whole JSON is
+  /// written at most once per five minutes (#1123). Every 30 s it was twenty whole-result writes in ten minutes, and on
+  /// #1076's exercise 3.90 of a live write's 54.9 log frames. The app's flush on background, an unsubscribe and the
+  /// close still write what waited, and a kill is repaired from the ownership rows at the next launch (#566).
+  @Test
+  func tenMinutesOfRefreshesWriteTheResultJSONAtMostTwice() async throws {
+    var texts = (0..<20).map { Self.longText($0, revision: 0) }
+    let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-ten-minutes")
+    let afterAnswer = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+
+    for revision in 1...60 {
+      fixture.clock.advance(by: 10_000)
+      texts[revision % texts.count] = Self.longText(revision % texts.count, revision: revision)
+      try await Self.refresh(texts, in: fixture)
+    }
+
+    let writes = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting().writes - afterAnswer.writes
+    #expect(writes <= 2, "sixty changed refreshes over ten minutes wrote the result JSON \(writes) times")
+    await fixture.observation.cancel()
+    _ = try await fixture.runtime.closeConnection()
+  }
+
   // MARK: - Writing what waited
 
   /// The app's flush on background or terminate writes every result whose write waited, and a new process opens the
