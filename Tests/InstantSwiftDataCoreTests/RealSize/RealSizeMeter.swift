@@ -24,6 +24,9 @@ import Foundation
 //   hold: the outbox claim after each write held it 39 ms at most at the phone's size, and only a total says how often.
 // - 2026-10-24: #1108: the allocation hook can count one thread's allocations only, for synchronous work measured beside
 //   a parallel bundle.
+// - 2026-10-24: #1147: one-thread counts take turns: the suites a parallel bundle runs at once share one tally, so a
+//   second cost test's `start` reset the first's counts mid-measurement (a cost test failed whenever another measured
+//   at the same moment).
 
 /// A counter another audit plugs into the meter, such as a SQLite VFS that counts the bytes each file kind wrote.
 ///
@@ -425,11 +428,13 @@ enum RealSizeAllocations {
   /// Installs the hook with fresh counts. Not reentrant: one counted pass at a time.
   ///
   /// `onCurrentThreadOnly` counts only the calling thread's allocations: synchronous work measured that way is immune
-  /// to the other tests a parallel bundle runs beside it.
+  /// to the other tests a parallel bundle runs beside it. Such a count waits for any other one-thread count to `stop`
+  /// first, since both use this one tally; start and stop it on the same thread, with no `await` between.
   static func start(onCurrentThreadOnly: Bool = false) {
     guard let slot = loggerSlot else {
       preconditionFailure("libmalloc's malloc_logger is missing: allocations cannot be counted on this system.")
     }
+    if onCurrentThreadOnly { oneThreadTurn.lock() }
     os_unfair_lock_lock(&tally.pointee.lock)
     tally.pointee.counts = Counts()
     tally.pointee.thread = onCurrentThreadOnly ? UInt(bitPattern: pthread_self()) : 0
@@ -452,9 +457,15 @@ enum RealSizeAllocations {
     loggerSlot?.pointee = nil
     os_unfair_lock_lock(&tally.pointee.lock)
     let counts = tally.pointee.counts
+    let wasOneThread = tally.pointee.thread != 0
+    tally.pointee.thread = 0
     os_unfair_lock_unlock(&tally.pointee.lock)
+    if wasOneThread { oneThreadTurn.unlock() }
     return counts
   }
+
+  /// Held from a one-thread `start` to its `stop`, so concurrent cost tests take turns on the one tally.
+  private static let oneThreadTurn = NSLock()
 
   private typealias Logger = @convention(c) (UInt32, UInt, UInt, UInt, UInt, UInt32) -> Void
 
@@ -478,8 +489,9 @@ enum RealSizeAllocations {
   }()
 
   nonisolated(unsafe) private static let loggerSlot: UnsafeMutablePointer<Logger?>? = {
-    // Touch the tally first: a lazy global initialized from inside the hook would allocate there.
+    // Touch the tally and the turn lock first: a lazy global initialized from inside the hook would allocate there.
     _ = tally
+    _ = oneThreadTurn
     return dlsym(UnsafeMutableRawPointer(bitPattern: -2), "malloc_logger")?.assumingMemoryBound(to: Logger?.self)
   }()
 
