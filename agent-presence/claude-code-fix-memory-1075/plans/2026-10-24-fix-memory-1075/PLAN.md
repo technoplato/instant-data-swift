@@ -112,3 +112,18 @@ are mine (23:02); that step waits for fix-storage-1076's answer on the fact rows
 - `Sources/InstantSwiftDataCore/InstantStore.swift`: a testing counter of prepares in `prepareMutating` only.
 New: `Tests/InstantSwiftDataCoreTests/FinalLinePrepareTests.swift`.
 #1145 waits: its eviction reads result ownership beside the prune fix-gate-1074 is changing (#1129); proposed on the channel.
+
+## Amendment 6 (2026-10-25 00:02 EDT, claude-code/fix-memory-1075@ld)
+
+#1153 green (red `d85ab9f4`, green `7cabeabf`), pushed after its debug bundle passes. #1147 step 4, agreed with
+fix-storage-1076 (channel 23:58: the result build's re-encode and ownership re-read are mine; it keeps #1123):
+- `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`: `preparedLiveQueryResultSaveWithoutTransaction`,
+  `liveQueryOwnershipWithoutTransaction`, `prepareLiveQueryResultSaves`' previous-ownership bookkeeping, and
+  `LiveQueryOwnershipIdentity` (private -> internal) only. A refresh's ownership diff compares 128-bit fingerprints
+  hashed from the rows' column bytes and from each value's stored text written into one reused buffer; only rows that
+  leave or join are made into strings. SQLite's rows stay the truth; no cache.
+- `Sources/InstantSwiftDataCore/InstantStoredJSON.swift`: one internal entry that appends a value's stored text to a
+  caller's buffer.
+- New: `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` (the diff, pure, testable on one thread),
+  `Tests/InstantSwiftDataCoreTests/LiveQueryOwnershipDiffTests.swift`.
+Order: an extraction commit that keeps today's algorithm, a red cost test on it, then the fingerprint green.
