@@ -1,3 +1,15 @@
+## 2026-10-25 10:43:54 EDT — scribe `efb09352f886d18c67f9de822329729a9d58a948`
+#1179 red: a bare installer run builds the production app; the Dev app needs --dev.
+
+## 2026-10-25 10:43:54 EDT — scribe `7eb44dbb64c259781c3db599823faf33505da09d`
+#1179 green: the installer defaults to the Release configuration; --dev selects Debug.
+
+## 2026-10-25 10:43:54 EDT — scribe `543d2fcef997b2f80b89e47e2346e3ffd1bfb33e`
+#1179 the agents guide says production apps only, for now; Dev behind one switch.
+
+## 2026-10-25 10:43:54 EDT — scribe `e9f7da12dfc00708f45a85189b7f14204ef7507b`
+#1179 CHANGELOG entries for the three commits above.
+
 ## 2026-10-25 10:31:32 EDT — scribe `2278950022d8c93c73c0500948bc5c347a8bb7dc`
 changelog(#1176): the CHANGELOG entries for the questions schema 479d63245, the planner 6f91fa867, and scribe qa 0a3b426eb.
 
