@@ -52,6 +52,48 @@ struct InstantPruneOffTheApplierTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// A result larger than a prune batch is released over several batches (#1129), each holding the operation gate for
+  /// about a batch of facts, and the end state is one prune's: every result goes, an entity split across two results
+  /// goes once both do, and an entity with local data stays. A batch took at least one whole result, so the closed
+  /// `$files` list's 75,640 facts were one 1.7 s hold in #1074's `prune` exercise.
+  @Test
+  func aResultLargerThanABatchIsReleasedOverSeveralBatches() async throws {
+    let url = try InstantPruneGateHoldTests.temporaryCacheURL()
+    try await InstantPruneGateHoldTests.seed(at: url)
+    let batches = InstantPruneBatchCounter()
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "prune-large-result",
+      persistenceURL: url,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    // Each seeded result holds about 450 facts.
+    configuration.liveQueryResultPruneBatchTripleCount = 100
+    configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in batches.record() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = await runtime.observeQueryLease(TodoExample.query)
+
+    let pruned = try await runtime.pruneLiveQueryResults(
+      policy: InstantStoredResultReloadTests.productionPolicy,
+      now: configuration.now()
+    )
+    let survivors = Set(await runtime.store.snapshot().triples.map(\.entityID))
+
+    #expect(
+      batches.count >= InstantPruneGateHoldTests.resultCount * 4,
+      "#1129: \(batches.count) batches for \(InstantPruneGateHoldTests.resultCount) results of about 450 facts each"
+    )
+    expectNoDifference(pruned.removedQueryKeys.count, InstantPruneGateHoldTests.resultCount)
+    #expect(!survivors.contains("prune-todo-0"))
+    #expect(!survivors.contains("prune-todo-1000000"), "the split entity goes once both its results do")
+    #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
+
+    await observation.cancel()
+    _ = try? await runtime.closeConnection()
+  }
+
   static func refresh(query: InstantLiveJSONValue, todo: String, transaction: String) -> InstantLiveRefreshOK {
     InstantLiveRefreshOK(
       clientEventID: "event-\(transaction)",
@@ -68,4 +110,13 @@ struct InstantPruneOffTheApplierTests {
       ]
     )
   }
+}
+
+/// How many prune batches finished.
+final class InstantPruneBatchCounter: @unchecked Sendable {
+  // SAFETY: `lock` guards `batches`.
+  private let lock = NSLock()
+  private var batches = 0
+  func record() { lock.withLock { batches += 1 } }
+  var count: Int { lock.withLock { batches } }
 }
