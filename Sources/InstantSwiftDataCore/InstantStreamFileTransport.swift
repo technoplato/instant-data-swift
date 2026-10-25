@@ -1,18 +1,26 @@
 import Foundation
 
+// History:
+// - 2026-10-25: a file can be fetched from a byte offset (an HTTP Range request), and a response carries its
+//   Content-Range, so a stream reader's resume can ask only for the bytes it has not seen (#1125).
+
 public struct InstantStreamFileFetchResponse: Sendable {
   public var statusCode: Int
   public var body: AsyncThrowingStream<Data, Error>
+  /// The response's `Content-Range` header, for a ranged fetch: `bytes 5-9/10` for a 206, `bytes */10` for a 416.
+  public var contentRange: String?
 
   public init(
     statusCode: Int,
-    body: AsyncThrowingStream<Data, Error>
+    body: AsyncThrowingStream<Data, Error>,
+    contentRange: String? = nil
   ) {
     self.statusCode = statusCode
     self.body = body
+    self.contentRange = contentRange
   }
 
-  public init(statusCode: Int, data: Data) {
+  public init(statusCode: Int, data: Data, contentRange: String? = nil) {
     self.init(
       statusCode: statusCode,
       body: AsyncThrowingStream { continuation in
@@ -20,18 +28,33 @@ public struct InstantStreamFileFetchResponse: Sendable {
           continuation.yield(data)
         }
         continuation.finish()
-      }
+      },
+      contentRange: contentRange
     )
   }
 }
 
 public final class InstantStreamFileTransportClient: Sendable {
+  /// Fetches a file whole.
   public let fetch: @Sendable (URL) async throws -> InstantStreamFileFetchResponse
+  /// Fetches a file from a byte offset, with an HTTP `Range: bytes=<offset>-` request (#1125), or `nil` for a transport
+  /// that cannot; a reader then fetches whole and drops what it has seen. A server that ignores the range answers 200
+  /// with the whole file.
+  public let fetchFrom: (@Sendable (_ url: URL, _ offset: Int64) async throws -> InstantStreamFileFetchResponse)?
 
   public init(
     fetch: @escaping @Sendable (URL) async throws -> InstantStreamFileFetchResponse
   ) {
     self.fetch = fetch
+    self.fetchFrom = nil
+  }
+
+  public init(
+    fetch: @escaping @Sendable (URL) async throws -> InstantStreamFileFetchResponse,
+    fetchFrom: @escaping @Sendable (_ url: URL, _ offset: Int64) async throws -> InstantStreamFileFetchResponse
+  ) {
+    self.fetch = fetch
+    self.fetchFrom = fetchFrom
   }
 }
 

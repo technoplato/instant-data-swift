@@ -136,6 +136,67 @@ struct InstantStreamFileTransportTests {
     }
   }
 
+  /// #1125: a reader that reconnects has seen part of the stream; it asks for the rest with Range requests, a file it
+  /// has seen whole past its end (the server's 416 names the file's size) and the one its seen offset falls in from
+  /// that point (a 206 starting there), so the bytes it already has are not sent again. Upstream's `Stream.ts` fetches
+  /// every file from its start and drops them.
+  @Test("A resumed append asks only for the bytes after the seen offset")
+  func aResumeFetchesOnlyTheUnseenBytes() async throws {
+    // The stream so far: "hello " in one file and "WXYZ" in the next; the reader has seen "hello WX".
+    let server = RangedStreamFileServer(
+      files: ["https://files.test/a": Data("hello ".utf8), "https://files.test/b": Data("WXYZ".utf8)],
+      honorsRanges: true
+    )
+    let append = InstantLiveStreamAppend(
+      clientEventID: "subscription-1",
+      streamID: "stream-1",
+      files: [.init(url: "https://files.test/a", size: 6), .init(url: "https://files.test/b", size: 4)],
+      offset: 0,
+      content: "!"
+    )
+
+    let result = try await InstantStreamFileAppendMaterializer.materialize(
+      append,
+      seenOffset: 8,
+      transport: server.client
+    )
+
+    let requests = await server.requests()
+    let bytesSent = await server.bytesSent()
+    expectNoDifference(String(data: result.data, encoding: .utf8), "YZ!")
+    expectNoDifference(result.nextSeenOffset, 11)
+    expectNoDifference(requests, ["a from 8", "b from 2"])
+    expectNoDifference(bytesSent, 2)
+  }
+
+  /// A server that ignores the range answers 200 with the whole file: the reader drops the bytes it has seen, as it
+  /// always did, and fetches the rest whole.
+  @Test("A server that ignores the range still yields only the unseen bytes")
+  func aServerThatIgnoresRangesStillYieldsTheUnseenBytes() async throws {
+    let server = RangedStreamFileServer(
+      files: ["https://files.test/a": Data("hello ".utf8), "https://files.test/b": Data("WXYZ".utf8)],
+      honorsRanges: false
+    )
+    let append = InstantLiveStreamAppend(
+      clientEventID: "subscription-1",
+      streamID: "stream-1",
+      files: [.init(url: "https://files.test/a", size: 6), .init(url: "https://files.test/b", size: 4)],
+      offset: 0,
+      content: "!"
+    )
+
+    let result = try await InstantStreamFileAppendMaterializer.materialize(
+      append,
+      seenOffset: 8,
+      transport: server.client
+    )
+
+    let requests = await server.requests()
+    expectNoDifference(String(data: result.data, encoding: .utf8), "YZ!")
+    expectNoDifference(result.nextSeenOffset, 11)
+    expectNoDifference(requests, ["a from 8", "b"])
+  }
+
   @Test("Cancelling materialization terminates the active response body")
   func cancellationTerminatesActiveResponseBody() async throws {
     let recorder = CancellableStreamFileRecorder()
@@ -283,4 +344,50 @@ private actor CancellableStreamFileRecorder {
     terminationWaiters.removeAll()
     waiters.forEach { $0.resume() }
   }
+}
+
+/// A file server that answers whole fetches, and ranged ones as S3 does when `honorsRanges`: 206 with the tail from
+/// the offset, or 416 past the end, each with its `Content-Range`; otherwise 200 with the whole file.
+private actor RangedStreamFileServer {
+  private let files: [String: Data]
+  private let honorsRanges: Bool
+  private var log: [String] = []
+  private var sent = 0
+
+  init(files: [String: Data], honorsRanges: Bool) {
+    self.files = files
+    self.honorsRanges = honorsRanges
+  }
+
+  nonisolated var client: InstantStreamFileTransportClient {
+    InstantStreamFileTransportClient(
+      fetch: { url in try await self.answer(url, from: nil) },
+      fetchFrom: { url, offset in try await self.answer(url, from: offset) }
+    )
+  }
+
+  func answer(_ url: URL, from offset: Int64?) throws -> InstantStreamFileFetchResponse {
+    let name = url.lastPathComponent
+    log.append(offset.map { "\(name) from \($0)" } ?? name)
+    guard let data = files[url.absoluteString] else {
+      return InstantStreamFileFetchResponse(statusCode: 404, data: Data())
+    }
+    guard let offset, honorsRanges else {
+      sent += data.count
+      return InstantStreamFileFetchResponse(statusCode: 200, data: data)
+    }
+    guard offset < Int64(data.count) else {
+      return InstantStreamFileFetchResponse(statusCode: 416, data: Data(), contentRange: "bytes */\(data.count)")
+    }
+    let tail = data.suffix(from: data.startIndex + Int(offset))
+    sent += tail.count
+    return InstantStreamFileFetchResponse(
+      statusCode: 206,
+      data: Data(tail),
+      contentRange: "bytes \(offset)-\(data.count - 1)/\(data.count)"
+    )
+  }
+
+  func requests() -> [String] { log }
+  func bytesSent() -> Int { sent }
 }
