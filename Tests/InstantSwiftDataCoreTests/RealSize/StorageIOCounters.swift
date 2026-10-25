@@ -9,6 +9,8 @@
 // - 2026-10-24: a journal of each watched file's writes since its last full sync, with the bytes each replaced, so a
 //   test can open the files as a power loss would leave them (#1118: the store's log now holds up to 4,000 frames
 //   between checkpoints, and a power loss can take what the last checkpoint did not sync).
+// - 2026-10-25: whether a file counts is asked at each call from the watched directory, not once at open, so a store
+//   another test left open does not count in a later watch (#1115's per-b-tree test shares the process).
 
 import Foundation
 import SQLite3
@@ -305,6 +307,25 @@ struct StorageIOLine {
 private struct StorageIOShimState: Sendable {
   var snapshot = StorageIOSnapshot()
   var pathPrefix: String?
+  /// Every path a file was opened at, so each call can ask whether its file is under the watched directory now.
+  var paths: [String] = []
+  var pathSlots: [String: Int] = [:]
+
+  mutating func slot(for path: String?) -> Int {
+    guard let path else { return -1 }
+    if let slot = pathSlots[path] { return slot }
+    paths.append(path)
+    pathSlots[path] = paths.count - 1
+    return paths.count - 1
+  }
+
+  /// Whether a file's calls count now: a file with no name (a temporary one) always does, a named one when nothing is
+  /// watched or it is under the watched directory. Asked at each call, not once at open (#1115): a store another test
+  /// opened before a watch began must not count in it.
+  func counts(_ slot: Int) -> Bool {
+    guard let pathPrefix, slot >= 0 else { return true }
+    return paths[slot].hasPrefix(pathPrefix)
+  }
 }
 
 private let storageIOShimState = OSAllocatedUnfairLock(initialState: StorageIOShimState())
@@ -315,7 +336,8 @@ private struct StorageIOShimFile {
   var base: sqlite3_file
   var real: UnsafeMutablePointer<sqlite3_file>
   var kind: StorageIOFileKind
-  var counted: Bool
+  /// The file's path in ``StorageIOShimState/paths``, or -1 for a file with no name.
+  var pathSlot: Int
   /// The file's journal (``StorageIOJournal``), or -1 when it is not journaled.
   var journal: Int
 }
@@ -546,9 +568,11 @@ private enum StorageIOShim {
 
   static func count(_ file: UnsafeMutablePointer<sqlite3_file>?, _ update: (inout StorageIOCounts) -> Void) {
     let header = shim(file).pointee
-    guard header.counted else { return }
+    // A journaled file belongs to a power-loss test, not to a measurement.
+    guard header.journal < 0 else { return }
     let kind = header.kind
     storageIOShimState.withLockUnchecked { state in
+      guard state.counts(header.pathSlot) else { return }
       var counts = state.snapshot.files[kind] ?? StorageIOCounts()
       update(&counts)
       state.snapshot.files[kind] = counts
@@ -572,11 +596,12 @@ private enum StorageIOShim {
     _ offset: sqlite3_int64
   ) {
     let header = shim(file).pointee
-    guard header.counted else { return }
+    guard header.journal < 0 else { return }
     let kind = header.kind
     let bytes = buffer?.assumingMemoryBound(to: UInt8.self)
     let length = Int64(amount)
     storageIOShimState.withLockUnchecked { state in
+      guard state.counts(header.pathSlot) else { return }
       var counts = state.snapshot.files[kind] ?? StorageIOCounts()
       counts.writes += 1
       counts.bytesWritten += Int(amount)
@@ -614,9 +639,10 @@ private enum StorageIOShim {
   /// Counts one read, and for the database file the page a whole-page read fetched.
   static func countRead(_ file: UnsafeMutablePointer<sqlite3_file>?, _ amount: Int32, _ offset: sqlite3_int64) {
     let header = shim(file).pointee
-    guard header.counted else { return }
+    guard header.journal < 0 else { return }
     let kind = header.kind
     storageIOShimState.withLockUnchecked { state in
+      guard state.counts(header.pathSlot) else { return }
       var counts = state.snapshot.files[kind] ?? StorageIOCounts()
       counts.reads += 1
       counts.bytesRead += Int(amount)
@@ -640,21 +666,16 @@ private enum StorageIOShim {
       let realFile = (raw + StorageIOShim.realFileOffset).bindMemory(to: sqlite3_file.self, capacity: 1)
       memset(realFile, 0, Int(real.pointee.szOsFile))
       let path = name.map { String(cString: $0) }
-      let counted = storageIOShimState.withLock { state in
-        guard let prefix = state.pathPrefix, let path else { return true }
-        return path.hasPrefix(prefix)
-      }
+      let pathSlot = storageIOShimState.withLock { $0.slot(for: path) }
       let kind = StorageIOFileKind(openFlags: flags)
-      // A journaled file belongs to a power-loss test, not to a measurement: its writes are not counted.
-      let journal = StorageIOJournal.shared.journal(path: path, kind: kind)
       let header = raw.bindMemory(to: StorageIOShimFile.self, capacity: 1)
       header.initialize(
         to: StorageIOShimFile(
           base: sqlite3_file(pMethods: nil),
           real: realFile,
           kind: kind,
-          counted: counted && journal < 0,
-          journal: journal
+          pathSlot: pathSlot,
+          journal: StorageIOJournal.shared.journal(path: path, kind: kind)
         )
       )
       let result = real.pointee.xOpen(real, name, realFile, flags, outFlags)
