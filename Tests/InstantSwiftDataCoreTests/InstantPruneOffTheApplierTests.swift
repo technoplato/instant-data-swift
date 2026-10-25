@@ -7,6 +7,8 @@
 // 2026-10-25  #1129  A large closed result's ownership rows stay on its released row until the batches that check
 //                    them delete them: its first batch deleted them all in one cascade (150 ms and a 96 ms commit of the
 //                    `$files` batch's 397 ms).
+// 2026-10-25  #1129  A prune batch waits for a server apply in progress: one that committed between the apply's seed
+//                    and its plan made the refresh behind the cadence prune plan again, behind the next batch.
 
 import CustomDump
 import Foundation
@@ -178,6 +180,67 @@ struct InstantPruneOffTheApplierTests {
     #expect(!survivors.contains("prune-todo-0"))
     #expect(!survivors.contains("prune-todo-1000000"), "the split entity goes once both its results do")
     #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
+
+    await observation.cancel()
+    _ = try? await runtime.closeConnection()
+  }
+
+  /// A prune batch never commits inside a server apply (#1129): one that did, between the apply's seed and its plan,
+  /// made the apply plan again, behind the next batch. In #1074's `prune-inline` exercise the refresh queued behind the
+  /// cadence prune waited for one batch at its snapshot and another at its retry: 217.81 ms against 44.22 ms for the
+  /// refresh before it.
+  @Test
+  func aPruneBatchWaitsForAServerApplyInProgress() async throws {
+    let url = try InstantPruneGateHoldTests.temporaryCacheURL()
+    try await InstantPruneGateHoldTests.seed(at: url)
+    let pause = InstantPausePoint()
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "prune-inside-server-apply",
+      persistenceURL: url,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    // Each attempt of the apply takes a seed; one made stale by a prune batch takes another.
+    let seeds = InstantPruneBatchCounter()
+    configuration.onServerApplySeedLoadedForTesting = { _ in
+      seeds.record()
+      await pause.pauseOnce()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = await runtime.observeQueryLease(TodoExample.query)
+    let now = configuration.now()
+
+    // A server apply between its seed and its plan, as a frame is while it plans outside the operation gate.
+    let applying = Task {
+      try await runtime.applyServerTransaction(
+        InstantStoreTransaction(
+          id: "tx-server-during-prune",
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: "server-todo",
+                attributeID: "todos/text",
+                value: .string("from the server"),
+                txID: "tx-server-during-prune",
+                txTime: InstantTimestamp(milliseconds: 1_700_000_303_500)
+              )
+            )
+          ]
+        )
+      )
+    }
+    try await pause.waitUntilEntered(within: .seconds(10))
+    let pruned = await InstantObserverRegistrationGateTests.finishes(within: .seconds(4)) {
+      _ = try await runtime.pruneLiveQueryResults(policy: InstantStoredResultReloadTests.productionPolicy, now: now)
+    }
+    pause.release()
+    _ = try await applying.value
+    try await pruned.work.value
+
+    #expect(!pruned.finished, "#1129: the prune ran its batches while a server apply was between its seed and its plan")
+    #expect(seeds.count == 1, "#1129: a prune batch inside the server apply made it take \(seeds.count) seeds")
 
     await observation.cancel()
     _ = try? await runtime.closeConnection()
