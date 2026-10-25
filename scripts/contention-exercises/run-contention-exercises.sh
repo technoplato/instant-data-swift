@@ -6,7 +6,7 @@
 # and comparing the same lines (docs/audits/2026-10-24-concurrency-baseline.txt holds the first run's).
 #
 # usage: run-contention-exercises.sh [--scale 1] [--seconds 60]
-#        [--only recording,prune,prune-inline,server-apply,observers,compaction,launch]
+#        [--only recording,recording-deferred,prune,prune-inline,server-apply,observers,compaction,launch]
 #        [--out contention.txt] [--scratch .build/contention-release] [--jobs 4]
 # On a shared Mac, run it through the machine's heavy-job queue; it builds, then runs one test process alone.
 #

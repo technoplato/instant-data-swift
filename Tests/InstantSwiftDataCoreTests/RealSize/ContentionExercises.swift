@@ -5,6 +5,8 @@
 //                    long holder alone, on #1072's real-size store, and print every caller's wait and every holder's
 //                    hold, so each fix the concurrency audit names is measured against the same run before and after.
 //                    Each write's acknowledgement is timed too: it queues in the frame applier, where no gate sees it.
+// 2026-10-25  #1133  `recording-deferred`: the recording with Scribe's transcript text and words deferred, so the
+//                    hydration's re-check under the gate runs, which no exercise drove before.
 
 import CustomDump
 import Foundation
@@ -13,7 +15,8 @@ import Testing
 @testable import InstantSwiftDataCore
 
 /// The concurrency audit's exercises (#1074), on #1072's real-size store: `recording` (Scribe's recording load, with a
-/// prune a quarter of the way in), `prune`, `prune-inline` (the cadence prune inside the frame applier),
+/// prune a quarter of the way in), `recording-deferred` (the same, transcript text and words deferred as Scribe's are),
+/// `prune`, `prune-inline` (the cadence prune inside the frame applier),
 /// `server-apply`, `observers` (registration over a slow socket), `compaction` and `launch`.
 ///
 /// `INSTANT_CONTENTION=1` runs them, one real-size session each (a minute or less once the store is generated; build
@@ -95,10 +98,34 @@ struct ContentionExercises {
   /// where a 6 s prune made every transact wait 5.0 s.
   @Test func recording() async throws {
     guard ContentionExercise.wanted("recording") else { return }
-    let exercise = "recording"
+    try await Self.record("recording")
+  }
+
+  /// `recording` with the library configured as Scribe configures it (`MemoryExerciseSession.configureAsScribe`):
+  /// transcript text and words stay on disk until a page hydrates them, so every emission of the open transcript page
+  /// reads them without the gate and then re-checks it (#1133: on build 118 that re-check waited 5,282 ms).
+  @Test func recordingDeferred() async throws {
+    guard ContentionExercise.wanted("recording-deferred") else { return }
+    let rechecks = ContentionRecheckCount()
+    try await Self.record(
+      "recording-deferred",
+      configure: { configuration in
+        MemoryExerciseSession.configureAsScribe(&configuration)
+        // Every re-check, whether or not it then takes the gate: the gate's lines count only those that do.
+        configuration.onDeferredValuesReadWithoutOperationGateForTesting = { _ in rechecks.increment() }
+      },
+      fields: { [("rechecks", String(rechecks.value))] }
+    )
+  }
+
+  private static func record(
+    _ exercise: String,
+    configure: (inout InstantRuntimeConfiguration) -> Void = { _ in },
+    fields: () -> [(String, String)] = { [] }
+  ) async throws {
     let workload = ContentionWorkload.recording
     let seconds = ContentionExercise.recordingSeconds
-    let harness = try await ContentionHarness.open(exercise)
+    let harness = try await ContentionHarness.open(exercise, configure: configure)
     let runtime = harness.runtime
     let session = harness.session
 
@@ -136,6 +163,8 @@ struct ContentionExercises {
       ("removed_results", String(pruned.removedQueryKeys.count)),
       ("removed_orphaned_facts", String(pruned.removedOrphanedTripleCount)),
     ])
+    let extraFields = fields()
+    if !extraFields.isEmpty { harness.printFields(exercise, "hydration", extraFields) }
     harness.report("\(exercise).steady", window: start...pruneStart)
     harness.report("\(exercise).prune", window: pruneStart...pruneEnd)
     harness.report("\(exercise).after", window: pruneEnd...end)
@@ -1050,5 +1079,18 @@ struct ContentionInstrumentsTests {
       ContentionStats(count: 100, median: 50, p99: 99, worst: 100, total: 5_050)
     )
     expectNoDifference(ContentionStats([]), ContentionStats(count: 0, median: 0, p99: 0, worst: 0, total: 0))
+  }
+}
+
+/// How many hydrations re-checked their emission after reading deferred values without the gate (#1133).
+final class ContentionRecheckCount: @unchecked Sendable {
+  // SAFETY: `lock` guards `count`.
+  private let lock = NSLock()
+  private var count = 0
+
+  var value: Int { lock.withLock { count } }
+
+  func increment() {
+    lock.withLock { count += 1 }
   }
 }

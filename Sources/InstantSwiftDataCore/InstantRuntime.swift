@@ -478,6 +478,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   }
   /// Runs after each prune batch, with the number of results it removed.
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
+  /// Runs as each prune batch starts, holding the operation gate.
+  var onLiveQueryResultPruneBatchHoldsOperationGateForTesting: (@Sendable () async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
@@ -7267,6 +7269,7 @@ public final class InstantRuntime: Sendable {
       let application: InstantLiveQueryResultPruneBatchApplication
       var checkedReleasedChunk = false
       do {
+        await configuration.onLiveQueryResultPruneBatchHoldsOperationGateForTesting?()
         recordActorHop(.persistence)
         if let chunk = try await persistence.nextReleasedLiveQueryResultChunk(maximumTripleCount: chunkTripleCount) {
           application = try await pruneReleasedLiveQueryResultChunk(chunk, carriedReleasedIdentities: carried)
