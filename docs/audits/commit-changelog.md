@@ -1,3 +1,27 @@
+## 2026-10-25 10:31:32 EDT — scribe `2278950022d8c93c73c0500948bc5c347a8bb7dc`
+changelog(#1176): the CHANGELOG entries for the questions schema 479d63245, the planner 6f91fa867, and scribe qa 0a3b426eb.
+
+## 2026-10-25 10:29:40 EDT — scribe `0a3b426ebe11c2daa88e1945406f90826f6f13d3`
+Green (#1176): scribe qa keeps his questions with their answers through the mirror's door (lines from the followed recording or an older one's transcript.jsonl, a thread's agent answer word for word, the ideas op); questions-matrix 61/61 on the throwaway app; mirror tests 679/679.
+
+## 2026-10-25 10:29:40 EDT — scribe `c992009eb0f63756e8e6a38efbb7a8489b872a98`
+Red (#1176): scribe qa's door and command tests: stretches here and in older recordings, the thread's answer, refusals, reads.
+
+## 2026-10-25 10:29:40 EDT — scribe `6f91fa867934193c26793d3afa9e4011effe6ce4`
+Green (#1176): scribe qa's planner: --segment stretches (disjoint ones apart, one moment each), a question's and an answer's rows, moments and links, nothing new on a second run.
+
+## 2026-10-25 10:29:40 EDT — scribe `0a0e8e5a0f04185ad382fa4e29f66d2126804a62`
+Red (#1176): scribe qa's planner tests.
+
+## 2026-10-25 10:29:40 EDT — scribe `479d63245647f7addeeaefd849d7b8e7fe7eed40`
+Schema (#1176, ADR 0095): questions and questionAnswers, owner-only; sourceMoments' subjects question and questionAnswer and role answered; pushed to production 10:30:09-10:30:33 with the standing approval (81 additive steps), drift 0.
+
+## 2026-10-25 10:29:39 EDT — scribe `d5a5d147a0ba79b318697100170e6947250de354`
+Red (#1176): the questions schema's tests and sourceMoments' widened lists.
+
+## 2026-10-25 09:54:23 EDT — scribe `538f2d04c61ea9a912384a91fbd5e534f2e2388b`
+Plan (#1176): ADR 0095 and plan 2026-10-25-qa-1176: every question he asks kept with its answers, linked to its lines (disjoint, across recordings), to learn from; claims.
+
 ## 2026-10-25 10:02:39 EDT — scribe `ff51af26cfebbb0c891ef4c440d08786ad331323`
 Docs (#1173): the audit of the live words missed after a silence (Recording 297 against a Parakeet reference, the engine's replay, the lead-in sweep, five recordings and 4.9 h of music), ADR 0074 amendment D, and scripts/process-eval/missed_words.py.
 
