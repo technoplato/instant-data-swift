@@ -3359,13 +3359,15 @@ struct InstantStoreTests {
       createdAt: updatedAt
     )
 
+    // The old text's row goes and the new text's row comes; the id fact the update re-stamps is updated in its row
+    // (#1120), where INSERT OR REPLACE inserted it again.
     expectNoDifference(
       try persistenceAuditCounts(at: cacheURL),
       PersistenceAuditCounts(
         attributeDeletes: 0,
         attributeInserts: 0,
         tripleDeletes: 1,
-        tripleInserts: 2,
+        tripleInserts: 1,
         outboxDeletes: 0,
         outboxInserts: 1
       )

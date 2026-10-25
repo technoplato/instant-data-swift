@@ -6,12 +6,14 @@ import Foundation
 // - 2026-10-23: the seam writes the text of null, string, number, boolean, ref and date values and of a fact itself,
 //   byte for byte as `JSONEncoder` writes it, and asks `JSONEncoder` for the rest (#1007).
 // - 2026-10-25: a value's text can be appended to a caller's buffer, for the ownership diff's fingerprints (#1147).
+// - 2026-10-25: the store writes only a value's text; a fact's JSON is computed by the fact table when read (#1121).
 
 /// The JSON text the local store keeps for a value and for a fact (#1007).
 ///
-/// A stored fact keeps its value's text in `value_json`, part of the facts' key and of the lookups that find them, and
-/// its own text in `json`. Both are `JSONEncoder`'s text with `.sortedKeys`, and both must stay exactly that: a lookup
-/// compares the text byte for byte with the text an earlier version stored. Encoding them with `JSONEncoder` cost two
+/// A stored fact keeps its value's text in `value_json`, part of the facts' key and of the lookups that find them. It is
+/// `JSONEncoder`'s text with `.sortedKeys`, and must stay exactly that: a lookup compares the text byte for byte with
+/// the text an earlier version stored. A fact's own text (`stored(_:using:)` for a triple) is no longer stored: the fact
+/// table computes its `json` from the row when it is read (#1121). Encoding them with `JSONEncoder` cost two
 /// encoder runs per stored fact, 5% of a write replay's CPU, so the values a write stores are written here, as
 /// `JSONEncoder` writes them, and every other value (a JSON value, a lookup ref) is still `JSONEncoder`'s to write.
 enum InstantStoredJSON {

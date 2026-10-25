@@ -1423,6 +1423,8 @@ private let deferredValueSQLiteTransient = unsafeBitCast(
   to: sqlite3_destructor_type.self
 )
 
+/// Makes the fact's stored value unreadable. A fact's `json` is computed from its columns since #1121, so the value's
+/// own text is what can be corrupted.
 private func corruptDeferredValueJSON(
   at cacheURL: URL,
   entityID: String,
@@ -1450,7 +1452,7 @@ private func corruptDeferredValueJSON(
       database,
       """
       UPDATE instant_triples
-      SET json = '{malformed-json'
+      SET value_json = '{malformed-json'
       WHERE entity_id = ? AND attribute_id = ?
       """,
       -1,

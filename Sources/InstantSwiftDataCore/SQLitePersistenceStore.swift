@@ -55,6 +55,9 @@
 //   checkpoint, one every 16 writes, made 1,039 full syncs an hour of recording (#1118).
 // - 2026-10-25: a write's key rows and effect entities live in WITHOUT ROWID tables, and one delivery index replaces
 //   the deadline and candidate indexes: two b-trees fewer on every save and echo, one fewer on every claim (#1115).
+// - 2026-10-25: each fact is stored once: the fact table is keyed by the fact itself (WITHOUT ROWID) and its json is
+//   computed when read (127.1 -> 40.7 MB on a copy of a phone's store); a re-saved fact is upserted where it is, and
+//   the migration passes over facts walk a snapshot of their keys (#1121, #1120).
 
 import Foundation
 import IssueReporting
@@ -196,7 +199,13 @@ private struct InstantApplicationMigrationOutboxRow {
 }
 
 private struct InstantApplicationMigrationTripleRow {
+  /// The row's place in the pass's snapshot of keys (#1121): the fact table is keyed by the fact itself, so a pass
+  /// walks a snapshot taken before it changes anything, and a fact whose value it rewrites is not met again.
   var rowID: Int64
+  /// The fact's key as stored: the row a pass updates or removes.
+  var entityID: String
+  var attributeID: String
+  var valueJSON: String
   var triple: InstantTriple
 }
 
@@ -2906,6 +2915,9 @@ public actor SQLitePersistenceStore {
       }
     }
     try withSQLiteBusyRetry {
+      try migrateFactsToOneCopyIfNeeded()
+    }
+    try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
     // A restore that rebuilt `instant_outbox` after 0031 ran keeps the claim off a scan too (#1108, #1115).
@@ -2937,6 +2949,75 @@ public actor SQLitePersistenceStore {
       message: "Instant SQLite schema is ready.",
       metadata: ["path": fileURL.path]
     )
+  }
+
+  /// The fact table: each fact once, keyed by the fact itself (#1121). `json`, the text every reader decodes, is a virtual
+  /// generated column: SQLite computes it from the row when it is read and stores nothing. Its keys come in the order
+  /// `InstantStoredJSON` wrote them; a string's `/` is not escaped as `JSONEncoder` escapes it, which no decoder minds.
+  /// `value_json` keeps the value's text exactly as before: it is part of the key and of every lookup by value.
+  static func factTableSQL(named name: String) -> String {
+    """
+    CREATE TABLE \(name) (
+      entity_id TEXT NOT NULL,
+      attribute_id TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      tx_id TEXT NOT NULL,
+      tx_time_ms INTEGER NOT NULL,
+      json TEXT GENERATED ALWAYS AS (
+        '{"attributeID":' || json_quote(attribute_id) || ',"entityID":' || json_quote(entity_id)
+          || ',"txID":' || json_quote(tx_id) || ',"txTime":{"milliseconds":' || tx_time_ms
+          || '},"value":' || value_json || '}'
+      ) VIRTUAL,
+      PRIMARY KEY (entity_id, attribute_id, value_json)
+    ) WITHOUT ROWID
+    """
+  }
+
+  /// Rebuilds the fact table with each fact stored once (#1121), the first time a store opens in the old layout.
+  ///
+  /// The old table kept a fact's five columns, a `json` column repeating the whole row, and, as a rowid table with a
+  /// text key, the key again in its own index: on a copy of one phone's store 174,817 facts took 127.1 MB (87.0 of
+  /// table, 40.1 of key index), and the same facts in this layout 40.7 MB, rebuilt in 0.9 s with 8.9 MB of memory on a
+  /// laptop. The rebuild is one transaction: the new table is filled in key order, checked against the old one (the
+  /// row count and every column's total size) and only then put in its place, so a store that fails the check keeps
+  /// its old table whole. Dirty pages spill to the log past 256, as in `vacuum()`, so the rebuild's memory stays small
+  /// (Apple's SQLite holds 20,000 dirty pages otherwise). The lookup index goes with the old table and is made again
+  /// on the new one at the end of `bootstrap`. The old table's pages become free pages, given back by
+  /// `compactLocalCache`'s `VACUUM` (#1015).
+  private func migrateFactsToOneCopyIfNeeded() throws {
+    let cacheSpill = try selectInt64("PRAGMA cache_spill")
+    try execute("PRAGMA cache_spill = 256")
+    defer { _ = try? execute("PRAGMA cache_spill = \(cacheSpill)") }
+    try migrate(name: "0032_instant_triples_stored_once") {
+      let columns = "entity_id, attribute_id, value_json, tx_id, tx_time_ms"
+      try execute("DROP TABLE IF EXISTS instant_triples_0032")
+      try execute(Self.factTableSQL(named: "instant_triples_0032"))
+      try execute(
+        """
+        INSERT INTO instant_triples_0032 (\(columns))
+        SELECT \(columns) FROM instant_triples ORDER BY entity_id, attribute_id, value_json
+        """
+      )
+      func census(_ table: String) throws -> String? {
+        try selectScalar(
+          """
+          SELECT count(*) || ':' || coalesce(sum(length(entity_id) + length(attribute_id) + length(value_json)
+            + length(tx_id)), 0) || ':' || coalesce(sum(tx_time_ms), 0)
+          FROM \(table)
+          """
+        )
+      }
+      let before = try census("instant_triples")
+      let after = try census("instant_triples_0032")
+      guard before == after else {
+        throw persistenceError(
+          operation: "store each fact once",
+          message: "The rebuilt fact table does not match the old one (\(after ?? "none") against \(before ?? "none"))."
+        )
+      }
+      try execute("DROP TABLE instant_triples")
+      try execute("ALTER TABLE instant_triples_0032 RENAME TO instant_triples")
+    }
   }
 
   /// The partial index local reads look entities up by (#1006). One index for every lookup attribute, so building it
@@ -3232,10 +3313,8 @@ public actor SQLitePersistenceStore {
       let obsoleteAttributeIDs = reconciliation.obsoleteAttributeIDs
       var triplesChanged = false
       var tripleRowID: Int64 = 0
-      while let row = try nextApplicationMigrationTripleRowWithoutTransaction(
-        after: tripleRowID,
-        affectedAttributeIDs: obsoleteAttributeIDs
-      ) {
+      try snapshotApplicationMigrationTripleKeysWithoutTransaction(affectedAttributeIDs: obsoleteAttributeIDs)
+      while let row = try nextApplicationMigrationTripleRowWithoutTransaction(after: tripleRowID) {
         tripleRowID = row.rowID
         let canonical = reconciliation.canonicalized(row.triple)
         guard !obsoleteAttributeIDs.contains(canonical.attributeID) else {
@@ -3246,7 +3325,10 @@ public actor SQLitePersistenceStore {
           )
         }
         try upsertCanonicalRelationTripleWithoutTransaction(canonical)
-        try execute("DELETE FROM instant_triples WHERE rowid = ?", [.int(row.rowID)])
+        try execute(
+          "DELETE FROM instant_triples WHERE entity_id = ? AND attribute_id = ? AND value_json = ?",
+          [.text(row.entityID), .text(row.attributeID), .text(row.valueJSON)]
+        )
         guard sqlite3_changes(connection.raw) == 1 else {
           throw persistenceError(
             operation: "reconcile declared relation storage",
@@ -3474,13 +3556,11 @@ public actor SQLitePersistenceStore {
   ) throws {
     try execute(
       """
-      INSERT INTO instant_triples
-        (entity_id, attribute_id, value_json, tx_id, tx_time_ms, json)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO instant_triples (entity_id, attribute_id, value_json, tx_id, tx_time_ms)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(entity_id, attribute_id, value_json) DO UPDATE SET
         tx_id = excluded.tx_id,
-        tx_time_ms = excluded.tx_time_ms,
-        json = excluded.json
+        tx_time_ms = excluded.tx_time_ms
       WHERE excluded.tx_time_ms > instant_triples.tx_time_ms
          OR (
            excluded.tx_time_ms = instant_triples.tx_time_ms
@@ -3493,7 +3573,6 @@ public actor SQLitePersistenceStore {
         .text(try encode(triple.value)),
         .text(triple.txID),
         .int(triple.txTime.milliseconds),
-        .text(try encode(triple)),
       ]
     )
   }
@@ -3750,10 +3829,8 @@ public actor SQLitePersistenceStore {
 
       var triplesChanged = false
       var tripleRowID: Int64 = 0
-      while let row = try nextApplicationMigrationTripleRowWithoutTransaction(
-        after: tripleRowID,
-        affectedAttributeIDs: migration.affectedAttributeIDs
-      ) {
+      try snapshotApplicationMigrationTripleKeysWithoutTransaction(affectedAttributeIDs: migration.affectedAttributeIDs)
+      while let row = try nextApplicationMigrationTripleRowWithoutTransaction(after: tripleRowID) {
         tripleRowID = row.rowID
         let migrated = try migration.transformTriple(row.triple)
         guard migrated.entityID == row.triple.entityID,
@@ -3782,15 +3859,16 @@ public actor SQLitePersistenceStore {
         try execute(
           """
           UPDATE instant_triples
-          SET value_json = ?, tx_id = ?, tx_time_ms = ?, json = ?
-          WHERE rowid = ?
+          SET value_json = ?, tx_id = ?, tx_time_ms = ?
+          WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
           """,
           [
             .text(try encode(migrated.value)),
             .text(migrated.txID),
             .int(migrated.txTime.milliseconds),
-            .text(encodedMigratedTriple),
-            .int(row.rowID),
+            .text(row.entityID),
+            .text(row.attributeID),
+            .text(row.valueJSON),
           ]
         )
         guard sqlite3_changes(connection.raw) == 1 else {
@@ -4050,28 +4128,50 @@ public actor SQLitePersistenceStore {
     return attributes.first
   }
 
+  /// The keys of the facts of `affectedAttributeIDs`, in key order, taken before a pass changes any of them (#1121): the
+  /// fact table is keyed by the fact itself, so a pass that rewrote a fact's value would meet it again under its new
+  /// key if it walked the table. The pass walks this snapshot instead, as it walked the rowids before.
+  private func snapshotApplicationMigrationTripleKeysWithoutTransaction(affectedAttributeIDs: Set<String>) throws {
+    let sortedAttributeIDs = affectedAttributeIDs.sorted()
+    let placeholders = Array(repeating: "?", count: sortedAttributeIDs.count).joined(separator: ", ")
+    try execute("DROP TABLE IF EXISTS temp.instant_migration_triple_keys")
+    try execute(
+      """
+      CREATE TEMP TABLE instant_migration_triple_keys AS
+      SELECT entity_id, attribute_id, value_json FROM instant_triples
+      WHERE attribute_id IN (\(placeholders))
+      ORDER BY entity_id, attribute_id, value_json
+      """,
+      sortedAttributeIDs.map(SQLiteBinding.text)
+    )
+  }
+
+  /// The next fact of the pass's snapshot after `rowID` that is still stored, decoded.
   private func nextApplicationMigrationTripleRowWithoutTransaction(
-    after rowID: Int64,
-    affectedAttributeIDs: Set<String>
+    after rowID: Int64
   ) throws -> InstantApplicationMigrationTripleRow? {
     var statement: OpaquePointer?
-    let sortedAttributeIDs = affectedAttributeIDs.sorted()
-    let placeholders = Array(repeating: "?", count: sortedAttributeIDs.count).joined(
-      separator: ", "
-    )
     try prepare(
       """
-      SELECT rowid, length(CAST(json AS BLOB)) FROM instant_triples
-      WHERE rowid > ? AND attribute_id IN (\(placeholders))
-      ORDER BY rowid
+      SELECT keys.rowid, keys.entity_id, keys.attribute_id, keys.value_json, length(CAST(triples.json AS BLOB))
+      FROM temp.instant_migration_triple_keys AS keys
+      JOIN instant_triples AS triples
+        ON triples.entity_id = keys.entity_id
+        AND triples.attribute_id = keys.attribute_id
+        AND triples.value_json = keys.value_json
+      WHERE keys.rowid > ?
+      ORDER BY keys.rowid
       LIMIT 1
       """,
       statement: &statement
     )
     defer { finishStatement(statement) }
-    try bind([.int(rowID)] + sortedAttributeIDs.map(SQLiteBinding.text), to: statement)
+    try bind([.int(rowID)], to: statement)
     let code = sqlite3_step(statement)
-    if code == SQLITE_DONE { return nil }
+    if code == SQLITE_DONE {
+      try execute("DROP TABLE IF EXISTS temp.instant_migration_triple_keys")
+      return nil
+    }
     guard code == SQLITE_ROW else {
       throw persistenceError(
         operation: "read local persistence migration triple",
@@ -4079,7 +4179,10 @@ public actor SQLitePersistenceStore {
       )
     }
     let matchingRowID = sqlite3_column_int64(statement, 0)
-    let bodyByteCount = sqlite3_column_int64(statement, 1)
+    let entityID = String(cString: sqlite3_column_text(statement, 1))
+    let attributeID = String(cString: sqlite3_column_text(statement, 2))
+    let valueJSON = String(cString: sqlite3_column_text(statement, 3))
+    let bodyByteCount = sqlite3_column_int64(statement, 4)
     guard bodyByteCount >= 0,
       bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
     else {
@@ -4090,8 +4193,8 @@ public actor SQLitePersistenceStore {
       )
     }
     guard let json: String = try selectScalar(
-      "SELECT json FROM instant_triples WHERE rowid = ? LIMIT 1",
-      [.int(matchingRowID)]
+      "SELECT json FROM instant_triples WHERE entity_id = ? AND attribute_id = ? AND value_json = ? LIMIT 1",
+      [.text(entityID), .text(attributeID), .text(valueJSON)]
     ),
       let data = json.data(using: .utf8)
     else {
@@ -4102,6 +4205,9 @@ public actor SQLitePersistenceStore {
     }
     return InstantApplicationMigrationTripleRow(
       rowID: matchingRowID,
+      entityID: entityID,
+      attributeID: attributeID,
+      valueJSON: valueJSON,
       triple: try decoder.decode(InstantTriple.self, from: data)
     )
   }
@@ -17729,27 +17835,36 @@ public actor SQLitePersistenceStore {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       forAttributeIDs: [triple.attributeID]
     )
+    // The value's text, written once (#1007); the fact's own JSON is computed when it is read (#1121).
+    let value = try InstantStoredJSON.stored(triple.value, using: encoder)
     if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
+      // A deferred value is not in memory, so the diff cannot name the value this one replaces: every other value of
+      // the slot goes. The same value stays in its row (#1120).
       try execute(
-        "DELETE FROM instant_triples WHERE entity_id = ? AND attribute_id = ?",
-        [.text(triple.entityID), .text(triple.attributeID)]
+        "DELETE FROM instant_triples WHERE entity_id = ? AND attribute_id = ? AND value_json != ?",
+        [.text(triple.entityID), .text(triple.attributeID), .text(value)]
       )
     }
-    // The value's text and the fact's, the value written once (#1007).
-    let texts = try InstantStoredJSON.storedTexts(triple, using: encoder)
+    // #1120: the fact is updated where it is. INSERT OR REPLACE deleted the row and inserted it again, which on the old
+    // rowid table moved it to the table's end and its key's index entry with it: one re-saved transcript line (16
+    // facts, each re-stamped by its new write) dirtied 9-15 pages on a copy of the phone's store, in place 3. Keyed by
+    // the fact since #1121, an entity's facts share their leaf. The key is the only unique constraint, so this conflicts
+    // where REPLACE did, and a local or server write overwrites the stamp as before (the canonical relation upsert
+    // keeps the newer stamp instead).
     try execute(
       """
-      INSERT OR REPLACE INTO instant_triples
-        (entity_id, attribute_id, value_json, tx_id, tx_time_ms, json)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO instant_triples (entity_id, attribute_id, value_json, tx_id, tx_time_ms)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(entity_id, attribute_id, value_json) DO UPDATE SET
+        tx_id = excluded.tx_id,
+        tx_time_ms = excluded.tx_time_ms
       """,
       [
         .text(triple.entityID),
         .text(triple.attributeID),
-        .text(texts.value),
+        .text(value),
         .text(triple.txID),
         .int(triple.txTime.milliseconds),
-        .text(texts.triple),
       ]
     )
   }

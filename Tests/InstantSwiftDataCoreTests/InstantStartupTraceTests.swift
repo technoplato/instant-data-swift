@@ -282,6 +282,8 @@ private func largeStoreOutbox(count: Int) -> [PendingMutation] {
   }
 }
 
+/// Makes one fact unreadable. A fact's `json` is computed from its columns since #1121, so its value's text is what
+/// can be corrupted.
 private func corruptSecondLargeStoreTripleJSON(at url: URL) throws {
   var connection: OpaquePointer?
   guard
@@ -311,7 +313,7 @@ private func corruptSecondLargeStoreTripleJSON(at url: URL) throws {
       connection,
       """
       UPDATE instant_triples
-      SET json = 'not-json'
+      SET value_json = 'not-json'
       WHERE entity_id = 'entity-00000001'
       """,
       nil,
