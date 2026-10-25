@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 5:10:49 a.m. EDT — `340319efb9a1` test(#1132): the auth observation's first value is the session as it is; the relaunch pays the status and session seed
+
+- **Implementation commit:** `340319efb9a1b9e34cd56ce39388ed00d507ca92`
+- **Change:** test(#1132): the auth observation's first value is the session as it is; the relaunch pays the status and session seed
+- **Details:**
+  - Three tests #1132 left stale, hidden in release by IssueReporting and failing in debug, found by the post-push check of de2388ec (Mac mini, release, 27 suites). An observation during an in-flight sign-in now sees the session as it is, then the sign-in (upstream subscribeAuth), and fails within 5 s instead of hanging should it wait for the gate again. Relaunch hop pins 11 -> 14 (gate 4 -> 6, persistence 5 -> 6), measured. Release check of the fix: InstantStoreTests, InstantCrossSDKRuntimeBenchmarkTests and DeferredValueResidencyTests, 398 tests: the three pass; the rest is the release build's known-issue artifacts and the CLI tests' missing executable.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — the auth observation test's new contract
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — the relaunch hop pins
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — the relaunch hop pins
+  - `docs/adr/0018-one-actor-turn-per-step.md` — the relaunch's 14 calls
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-gate-1074, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 5:07:42 a.m. EDT — `12f487e137c0` perf(#1115): green: the outbox's rare-state indexes are partial on the states they find, so a live write writes none of them
 
 - **Implementation commit:** `12f487e137c0918c4c75a402da4636a13c586600`

@@ -1,3 +1,6 @@
+## 2026-10-25 05:10:26 EDT — instant-data-swift `340319efb9a1b9e34cd56ce39388ed00d507ca92`
+Test (#1132): the three tests #1132 left stale (the auth observation during a sign-in, the relaunch hop pins 11 -> 14) follow its contract; ADR 0018 records the relaunch's calls.
+
 ## 2026-10-25 05:07:22 EDT — instant-data-swift `12f487e137c0918c4c75a402da4636a13c586600`
 Green (#1115 slice 2): the outbox's synchronization blocker, effect normalization and delivery metadata indexes are partial on the rare states they find, so a live write writes none of them: outbox frames per write 30.00 -> 23.00 (criterion at most 24), all log frames 51.9 -> 44.9, the simulated hour's SQLite writes 1,157.8 -> 1,006.5 MB and full fsyncs 211 -> 184 (laptop, release).
 
