@@ -1,3 +1,12 @@
+## 2026-10-25 04:27:47 EDT — instant-data-swift `af0f729e5ff301ee2e2c4e881c5056c3c8144ee1`
+Green (#1146 step 1): a sharded set keeps one plain set until it passes 32 elements: E07 retains 733.8 -> 561.3 B a resident fact (39,213 -> 29,993 KB; Mac mini, release).
+
+## 2026-10-25 04:27:47 EDT — instant-data-swift `9e300d59f10686f86ff75667ca687178455dd44d`
+Red (#1146): 64 sharded sets of one allocate 128 times and 40,960 bytes.
+
+## 2026-10-25 04:07:11 EDT — instant-data-swift `ad12b921fb07d0e83e76e5385d4d35c53284d5aa`
+Plan (#1146): amendment 15: a sharded set of one is one plain set.
+
 ## 2026-10-25 04:04:31 EDT — instant-data-swift `ffbd3e874091d33a2f322173cb80374b552205d5`
 Green (#1147 step 5): the store's deferred loads read facts from their columns through the column reader: E03's 64-line refresh 8,915 -> 6,171 allocations and 10,699 -> 6,605 KB (23,947 / 22,769 KB before #1147; Mac mini, release).
 

@@ -10,6 +10,30 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 25th, 2026 at 4:28:23 a.m. EDT — `af0f729e5ff3` perf(#1146): green: a sharded set keeps one plain set until it holds more than 32 elements
+
+- **Implementation commit:** `af0f729e5ff301ee2e2c4e881c5056c3c8144ee1`
+- **Change:** Perf (#1146): a sharded set keeps one plain set until it holds more than 32 elements
+- **Details:**
+  - ShardedSet holds an enum of one Set or 64 shards. E07 retained 733.8 -> 561.3 B a resident fact (39,213 -> 29,993 KB), live peak 53.8 -> 44.7 MB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ShardedCollections.swift` — ShardedSet small form
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
+## October 25th, 2026 at 4:28:22 a.m. EDT — `9e300d59f106` test(#1146): red: a sharded set of one allocates a 64-slot array besides its set, 640 bytes for one id
+
+- **Implementation commit:** `9e300d59f10686f86ff75667ca687178455dd44d`
+- **Change:** Test (#1146): red: a sharded set of one allocates a 64-slot array besides its set
+- **Details:**
+  - 64 sets of one id: 128 allocations and 40,960 bytes (Mac mini, release); equality across forms; the set property test judged with #expect.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/ShardedCollectionsTests.swift` — set-of-one cost, cross-form equality, #expect
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run fix-memory-1075, claude/ld); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 4:05:30 a.m. EDT — `ffbd3e874091` perf(#1147): green: the store's deferred loads read facts from their columns, not the json the fact table computes
 
 - **Implementation commit:** `ffbd3e874091d33a2f322173cb80374b552205d5`

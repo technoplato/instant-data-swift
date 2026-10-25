@@ -53,6 +53,7 @@ fixture version 3 (phone shape), the before on main as it stood when the fix sta
 | #1153 | M14 | red `6d765ee0`, green `0744cfb1` | E04 final line, store prepares per write | 2.0 | 1.0 |
 | #1148 | M4 | red `9d4ca094`, green `97ed60bc`, E09 fix `63920cb0` | a dropped debug entry, allocations (calling thread) | 18 | 0 |
 | #1150 | M11 | red `1256f9e0`, `a641f2ea`, `6fdf9ff2`, red `713a5f9d`, green `e7dacb2d` | E14 256-line history page | 23,979 allocations, 19,548 KB | 3,296 allocations, 2,550 KB |
+| #1146 (step 1) | M6 | red `9e300d59`, green `af0f729e` | E07 launch, retained bytes per resident fact | 733.8 B | 561.3 B |
 
 - **#1152:** a many-cardinality slot keeps its values in a `ShardedDictionary` (one plain dictionary up to 32 entries,
   then 64 shards), so a line linked to a long recording copies one shard of the link set; `insert` writes a derived

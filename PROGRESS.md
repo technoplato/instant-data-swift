@@ -1,3 +1,14 @@
+## 2026-10-25 04:28:23 EDT — #1146 step 1 on main: a resident fact 733.8 -> 561.3 B (fix-memory-1075)
+
+- **Commits (instant-data-swift main):** plan amendment 15 `ad12b921`; red `9e300d59`, green `af0f729e`; then this ledger
+  commit.
+- **Measured (Mac mini, release, fixture v3):** 64 sharded sets of one id 128 -> 64 allocations or fewer and 40,960 bytes
+  -> under 16 KB; E07's launch retains 39,213 -> 29,993 KB for 54,720 resident facts, 733.8 -> 561.3 B a fact, its live
+  peak 53.8 -> 44.7 MB. #1146's criterion (under 400 B) is not met yet: next, one copy of each entity id across the
+  indexes (the audit counted about 29). E03 and E14 unchanged.
+- **Checks:** ShardedCollectionsTests (7, the set's property test now judged with `#expect`); 8 suites that build and
+  query the store (452 tests): no new failure in the release run.
+
 ## 2026-10-25 04:05:30 EDT — #1147 step 5 on main (a refresh 6,171 allocations); #1145 parked on #1165 (fix-memory-1075)
 
 - **Commits (instant-data-swift main):** plans `18416b6d`, `96fb7199`, `0dd37d07` (#1145, inactive), `28225018`
