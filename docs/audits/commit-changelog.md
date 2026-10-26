@@ -1,3 +1,24 @@
+## 2026-10-26 18:29:39 EDT — scribe `30ca71a93dc1c4958dad016cb4c6de267d32ebc4`
+merge(#1214, #1215): b301-disk lands the ledger's disk writers, the played-lines read loop fix and the restored claim
+
+## 2026-10-26 18:29:28 EDT — scribe `af50818726456398ac335a5bea50fde6e632f10f`
+changelog(#1214, #1215): the ledger's disk writers (cad199e76) and the played-lines read loop fix (184472527)
+
+## 2026-10-26 18:28:59 EDT — scribe `377da591ef9045bc87732d31519b18a33bf46507`
+plan(#1214): restore b301-network's claim on InstantDBLogWebSocketWriterNetworkTests.swift, which b301-disk's amendment push undid; channel note
+
+## 2026-10-26 18:28:59 EDT — scribe `184472527ef2684cb72fda1c12c486288f388658`
+fix(#1215): green: what was read counts unbroken from the player's place, so a playing book is read every ninety seconds, not five times a second
+
+## 2026-10-26 18:28:59 EDT — scribe `5ab1471a659f8d63eb95c6aeba8abbf1bba7e23a`
+test(#1215): red: a read ahead of the player counts as read, so a playing book is not read again every fifth of a second
+
+## 2026-10-26 18:28:58 EDT — scribe `cad199e76ffc18c6a7f4c2765c2c7f4185c94b4f`
+feat(#1214): green: each energy-ledger minute names its disk writers and the logical bytes none of them names
+
+## 2026-10-26 18:28:58 EDT — scribe `6d6035f7514de4a743a75e930a8cee42deb925a9`
+test(#1214): red: each minute names its disk writers and the logical bytes none of them names
+
 ## 2026-10-25 22:47:16 EDT — scribe `cd5d3947122985a1aebe8d17c1d69a2eb65e0e54`
 merge(#1194): jump-back-1194: on every other screen the bar says "Jump back into recording" with his live words and opens the recording where he left it; for build 142
 
