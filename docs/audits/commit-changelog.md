@@ -1,3 +1,24 @@
+## 2026-10-26 18:58:37 EDT — scribe `731b2078f0fed76da167103aa98075345bf6c42e`
+merge(#1227, #1214): b301-disk pins instant-data-swift 1.9.43 (upload copies found after a container move) with What's New stories
+
+## 2026-10-26 18:58:30 EDT — scribe `d041b72a3b8f05a1da8748191c4ad587b47c3a53`
+changelog(#1227): the 1.9.43 pin (e42b189e4)
+
+## 2026-10-26 18:58:30 EDT — scribe `e42b189e4a550060ea17988644b02feff6fcf2af`
+Pin instant-data-swift exactly 1.9.43 instead of 1.9.42 in Scribe and Scribe Playback: a stored file's copy is found in the store's own files folder after an update moves the app's container (#1227)
+
+## 2026-10-26 18:40:35 EDT — scribe `321b44760aea12c6014ce23f110033aae82d5b8a`
+merge(#1214): b301-disk: the launch sort spill measured; PROGRESS time
+
+## 2026-10-26 18:40:14 EDT — scribe `1dbde4bf151a77e94223c5fe5204cd5034abbc92`
+docs(#1214): the launch sort spill measured (14.0 MB a launch, none as one list), Core ML and the WAL ruled out as the launch writer; PROGRESS's time read from the clock
+
+## 2026-10-26 18:35:28 EDT — scribe `1a778824ed04636497d13073a0d3bbb1f6648674`
+merge(#1214): b301-disk's R301 disk-writes audit, its index row and PROGRESS
+
+## 2026-10-26 18:35:23 EDT — scribe `8c9406686f4c23ed43d05aa2ff9e3eef16495700`
+docs(#1214): the R301 disk-writes audit (who wrote 21.67 GB on 10-26, the storm, the launches, 25.44 GB of dead upload copies, the energy bound), its index row, PROGRESS
+
 ## 2026-10-26 18:48:31 EDT — instant-data-swift `0785901af532b6d8932341fcefdaeaf5e91354b5`
 docs(#1227): the v1.9.43 release document: a stored file's copy is found in the store's own files folder after the folder moves
 
