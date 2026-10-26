@@ -1,3 +1,18 @@
+## 2026-10-26 19:42:21 EDT — scribe `d2f15a96d64f8fb22d03cadb47dc00a67d0c348a`
+changelog(#1214): b301-network: the report's network summary (red 8fb566c63, green 2676fc86b) and the audit's section 12
+
+## 2026-10-26 19:42:20 EDT — scribe `f6db3849bf5d2979cc456a534ca25c6904008769`
+docs(#1214): the network audit's section 12: the energy ledger report reads the network section
+
+## 2026-10-26 19:42:07 EDT — scribe `2676fc86bd36b67d83a9cc691ae144a1d83eee93`
+feat(#1214): green: the energy ledger report sums the network section over its window
+
+## 2026-10-26 19:41:33 EDT — scribe `8fb566c6308328df7e5b061bf20e1e7c2cb228a9`
+test(#1214): red: the energy ledger report sums the network section over its window
+
+## 2026-10-26 19:40:43 EDT — scribe `86ac67a774fc5b34660b843c1721036866b142b3`
+plan(#1214): b301-network amendment C: the ledger report's network summary; claims
+
 ## 2026-10-26 19:39:25 EDT — scribe `4c58fcebcbd1c75619b1d5734238fdc2d3e1dfd4`
 merge(#1214): b301-network: the energy ledger's network section, Recording 301's network audit, #1231-#1234
 
