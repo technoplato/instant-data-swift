@@ -1,3 +1,30 @@
+## 2026-10-25 22:39:59 EDT — scribe `1bc25b087dc8aaaa47306cf6199c45ec5b525c2a`
+Plan (#1190): drained-1190's plan landed (461f0c14f); nothing in progress; channel note.
+
+## 2026-10-25 22:39:43 EDT — scribe `461f0c14fe8713430261ddeece5a6349d334076b`
+Merge (#1190): drained-1190 onto main for build 142: a live recording's drain is read in its save's own pass, not sent through the root (a replayed talking minute 640 -> 520 root passes; the simulator's store alone 431.9 -> 347.9 actions a minute).
+
+## 2026-10-25 22:39:28 EDT — scribe `4591500d1f6c07017e9c72bcf819575265ed5cff`
+Changelog (#1190): the red, the green and the docs below in CHANGELOG.md.
+
+## 2026-10-25 22:38:47 EDT — scribe `42dfdc21cd90b40a9790f0d739ae955d1a5be5e9`
+Docs (#1190): the drain-steps audit's section 8 (the nine states the list acts on when a recording drains; the measurements before and after on one base), its index row, the Build 142 (next) story, PROGRESS.
+
+## 2026-10-25 21:17:32 EDT — scribe `e1ab4d8f6b6e04ef8c480e07e798140bccb13d36`
+Perf (#1190): green: an open recording's drain waits in RecordingDurabilityFeature.State.openDrains and RecordingList.core runs the drain handler in the save's own pass; a stop's or a delete's drain stays the delegate; amendment A's seven non-strict end-of-test skips.
+
+## 2026-10-25 21:10:28 EDT — scribe `69ba8a38cfe5c9a26940c6903c24f57a66b6a661`
+Merge (#1190): main's plan amendment A into agent/claude/drained-1190.
+
+## 2026-10-25 21:10:08 EDT — scribe `79d73787f730a0de39a13aa581e2517ffb7cef98`
+Plan (#1190): amendment A: seven lane tests ended with a strict skip that only the drain delegate fed; the claim lines.
+
+## 2026-10-25 20:59:14 EDT — scribe `0fa2da79a248de2b49ac701ad9762f1ff2ec3fda`
+Test (#1190): red: a live recording's drain reaches no root pass, and the states the list waits on still act in the save's pass; 21 waits on a live drain move to receiveDrain(of:).
+
+## 2026-10-25 20:44:17 EDT — scribe `f05b7d615a1c72876533327680d092604b24958c`
+Plan (#1190): 2026-10-25-drained-1190, a live recording's drain is read in its save's own pass; claims, channel note.
+
 ## 2026-10-25 19:34:02 EDT — scribe `d4b2fc9030bf68f272eb8db6614e0e2b311ff313`
 Cut Scribe 0.1 (141) (#1191): #951 S2c/#961, #1183 Only Me and Play Sealed Voice, #1097 landing B, #1084, #1185, #936; instant-data-swift 1.9.42 unchanged; Scribe Playback stays 140.
 
