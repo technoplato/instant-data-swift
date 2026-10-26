@@ -1,3 +1,18 @@
+## 2026-10-25 22:47:16 EDT — scribe `cd5d3947122985a1aebe8d17c1d69a2eb65e0e54`
+merge(#1194): jump-back-1194: on every other screen the bar says "Jump back into recording" with his live words and opens the recording where he left it; for build 142
+
+## 2026-10-25 22:47:16 EDT — scribe `7d0b1c287492639d6fc65fa67a6e49ce8037af47`
+changelog(#1194): feat f4856d79b, test a1d18450c, docs 94fcd2c5f
+
+## 2026-10-25 22:47:16 EDT — scribe `94fcd2c5f11679c332f72548787e0b3320059f24`
+docs(#1194): the Build 142 (next) story and PROGRESS
+
+## 2026-10-25 22:47:16 EDT — scribe `a1d18450c67a69a5d96beecc5d1c59def458f051`
+test(#1194): the bubble's two modes in the layout harness, light and dark, default and AX5; the home screen references gain Jump back
+
+## 2026-10-25 22:47:16 EDT — scribe `f4856d79bdc58e424df3f21aed1d994041310438`
+feat(#1194): on every other screen the bar says "Jump back into recording" with his live words, and opens the recording where he left it
+
 ## 2026-10-25 22:39:59 EDT — scribe `1bc25b087dc8aaaa47306cf6199c45ec5b525c2a`
 Plan (#1190): drained-1190's plan landed (461f0c14f); nothing in progress; channel note.
 
