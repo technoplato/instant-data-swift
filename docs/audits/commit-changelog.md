@@ -1,3 +1,30 @@
+## 2026-10-26 19:39:25 EDT — scribe `4c58fcebcbd1c75619b1d5734238fdc2d3e1dfd4`
+merge(#1214): b301-network: the energy ledger's network section, Recording 301's network audit, #1231-#1234
+
+## 2026-10-26 19:36:13 EDT — scribe `7f1857baaed68d56fc4b58f6a1e55cc05080f3fe`
+changelog(#1214): b301-network: the network section's red 9d6077e06 and green 3a9f23e4d, the audit f450a0c28
+
+## 2026-10-26 19:35:47 EDT — scribe `14f20d01afcf8a98e8f08af42c016927e5f3f160`
+plan(#1214): channel note: b301-network's network section lands; for b301-audio, what WAV on cellular costs (#1232) and #1231's upload half in its lines
+
+## 2026-10-26 19:25:33 EDT — scribe `f450a0c282aea65c43fe5b3385c0898e45e8edb5`
+docs(#1214): Recording 301's network audit (b301-network): every byte that left the phone and what it cost; index row; PROGRESS
+
+## 2026-10-26 19:25:04 EDT — scribe `3a9f23e4da48796616b8bbe0b4c52c7308f3a041`
+feat(#1214): green: each energy-ledger minute says what the network carried, by sender, interface and Instant socket op
+
+## 2026-10-26 19:25:03 EDT — scribe `9d6077e0606bbd455194feeff4caace27f38888c`
+test(#1214): red: each energy-ledger minute says what the network carried, by sender, interface and Instant socket op
+
+## 2026-10-26 18:03:02 EDT — scribe `91fd44732365d132acc436d215f4454f5d8d49e2`
+plan(#1214): b301-network amendment B: count the collector's frames in its transport, and the live transcription socket; claims
+
+## 2026-10-26 17:45:57 EDT — scribe `9d271ce2ea35a719806c4b9179db6ad0570b9646`
+plan(#1214): b301-network amendment: claim a new test file for the collector writer's batch bytes
+
+## 2026-10-26 17:31:05 EDT — scribe `243c516f74eba05296f8e5367d6e4bc5d3659340`
+plan(#1214): b301-network's plan: a network section in each energy-ledger minute (path, bytes by interface, the Instant socket, Scribe's senders); claims; a note on b301-disk's channel
+
 ## 2026-10-26 19:20:28 EDT — scribe `64ae27ce398d0bfee3a443bd03ed384156acc62c`
 merge(#1214, #1230): b301-display: the screen, Picture in Picture's window, the Live Activity's reasons and the widgets in the energy ledger; the R301 display audit
 
