@@ -1,3 +1,27 @@
+## 2026-10-26 19:20:28 EDT — scribe `64ae27ce398d0bfee3a443bd03ed384156acc62c`
+merge(#1214, #1230): b301-display: the screen, Picture in Picture's window, the Live Activity's reasons and the widgets in the energy ledger; the R301 display audit
+
+## 2026-10-26 19:20:13 EDT — scribe `53405e205bbeb40dc9543150e0b5608b77fb2390`
+docs(#1214): change log: the display audit's verification section
+
+## 2026-10-26 19:20:13 EDT — scribe `8e331bb1893d684064195bf4082247bb5719c27d`
+docs(#1214): the display audit: verified on the rebased tree (macOS and iOS builds), and what each Live Activity update renders
+
+## 2026-10-26 19:00:33 EDT — scribe `2c3856697763d707344843701b65df234489ce79`
+plan(#1214): channel note: b301-display's ordinals 37-43 and its ledger fields, for b301-network
+
+## 2026-10-26 18:58:52 EDT — scribe `3fbeea1108544dcf3b945355cf62dc57f9090315`
+docs(#1214): change log: b301-display's red, green and audit commits
+
+## 2026-10-26 18:58:24 EDT — scribe `77dc67a2bf4cedeefa19b9fac74349205567d218`
+docs(#1214): audit 2026-10-26-r301-display: Recording 301's screen, Picture in Picture, Live Activity and widgets; index row; PROGRESS
+
+## 2026-10-26 18:56:31 EDT — scribe `e774691d87209b0b88336bab33560a04b16c5858`
+feat(#1214): green: the screen, Picture in Picture's window (#1230), the Live Activity's reasons and the widgets in the energy ledger
+
+## 2026-10-26 18:56:31 EDT — scribe `dee6cb205a6527fbc68bb1ab7bec264eda48b93e`
+test(#1214): red: the screen, Picture in Picture's window, the Live Activity's reasons and the widgets in the energy ledger
+
 ## 2026-10-26 18:58:37 EDT — scribe `731b2078f0fed76da167103aa98075345bf6c42e`
 merge(#1227, #1214): b301-disk pins instant-data-swift 1.9.43 (upload copies found after a container move) with What's New stories
 
