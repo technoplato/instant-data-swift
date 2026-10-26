@@ -1,3 +1,15 @@
+## 2026-10-26 18:48:31 EDT — instant-data-swift `0785901af532b6d8932341fcefdaeaf5e91354b5`
+docs(#1227): the v1.9.43 release document: a stored file's copy is found in the store's own files folder after the folder moves
+
+## 2026-10-26 18:36:15 EDT — instant-data-swift `13dbc935fce255b0c57c0f513e880e0e32204a28`
+fix(#1227): green: a stored file's copy is found in the store's own files folder, wherever the folder moved
+
+## 2026-10-26 18:36:15 EDT — instant-data-swift `c34bb499951eade79c4b84673245710d150a41b4`
+test(#1227): red: a moved store's copies are listed, read and deleted where they now are
+
+## 2026-10-26 18:36:00 EDT — instant-data-swift `e3393cc444048d03b3f738ecd963a9bafd8d1fd4`
+plan(#1227): 2026-10-26-b301-disk-1227, a stored file's copy is found in the store's own files folder after the folder moves; claims, channel
+
 ## 2026-10-26 18:39:42 EDT — scribe `775b9d2eecdbe6a279625505e18f8f7fe57d9b45`
 changelog(#1214): b301-sensors-cpu: plan amendment fa264cf45, red 06460c0bd, green 462e7b795, docs ac2c43d8c
 

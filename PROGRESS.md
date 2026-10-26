@@ -1,3 +1,15 @@
+## 2026-10-26 18:49:02 EDT — v1.9.43 released (b301-disk, #1227): a stored file's copy is found in the store's own files folder
+
+- **Release:** `docs/releases/v1.9.43.md` (`0785901a`), cut at main `13dbc935` (red `c34bb499`, green `13dbc935`;
+  plan `e3393cc4`), carrying 1.9.42. No migration, no stored format change, no public API change.
+- **Why:** on one device 3,844 records of copies (25.44 GB) named 14 earlier app containers, so eviction, reads and deletes
+  missed every copy; the consuming app's cleanup (#959) removed nothing and logged each copy at every launch (#1095).
+- **Checks (Mac mini):** red and green in release; RealSizeBudgetTests in release (12 known issues, as on 1.9.42); the
+  whole InstantSwiftDataCoreTests bundle in debug against Tests/known-failing.txt (1,532 tests; the 7 not on the list pass
+  alone at the open-file limit 4,096); InstantSwiftDataTests in debug (#304 as before; four parallel-run failures pass
+  alone 3 of 3).
+- **Next:** the consuming app pins 1.9.43; its first cool, online launch should log about 3,844 copies removed.
+
 ## 2026-10-25 08:04:00 EDT — fix-gate-1074 hands off: what is done, what is left, how to continue
 
 - **Released by this session (release owner since 1.9.39):** v1.9.39, v1.9.40, v1.9.41 (tag on `e90f69e5`), v1.9.42

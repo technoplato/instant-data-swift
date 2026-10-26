@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 26th, 2026 at 6:48:48 p.m. EDT — `0785901af532` docs(#1227): the v1.9.43 release document: a stored file's copy is found in the store's own files folder after the folder moves
+
+- **Implementation commit:** `0785901af532b6d8932341fcefdaeaf5e91354b5`
+- **Change:** docs(#1227): the v1.9.43 release document
+- **Details:**
+  - Cut at main 13dbc935 (its only code commit since 1.9.42). Checks: red and green in release; RealSizeBudgetTests in release (12 known issues, as on 1.9.42); the whole InstantSwiftDataCoreTests bundle in debug against the list (7 not on it pass alone at the open-file limit 4,096); InstantSwiftDataTests in debug (#304 as before; four parallel-run failures pass alone 3 of 3).
+- **Files:**
+  - `docs/releases/v1.9.43.md` — the release document
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-26 17:00 EDT: "figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run b301-disk, claude/strangelearning); no SpecStory capture for headless runs.
+
+## October 26th, 2026 at 6:48:48 p.m. EDT — `13dbc935fce2` fix(#1227): green: a stored file's copy is found in the store's own files folder, wherever the folder moved
+
+- **Implementation commit:** `13dbc935fce255b0c57c0f513e880e0e32204a28`
+- **Change:** fix(#1227): green: a stored file's copy is found in the store's own files folder, wherever the folder moved
+- **Details:**
+  - loadStoredFiles and loadStoredFile place a held copy outside the store's files folder by its path's last three components; on one device 3,844 records (25.44 GB of copies) named 14 earlier containers. Mac mini release: the moved-store test passes; 408 storage and store tests fail only as a release build does.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — loadStoredFiles, loadStoredFile and the new locatedInFilesFolder
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-26 17:00 EDT: "figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run b301-disk, claude/strangelearning); no SpecStory capture for headless runs.
+
+## October 26th, 2026 at 6:48:48 p.m. EDT — `c34bb499951e` test(#1227): red: a moved store's copies are listed, read and deleted where they now are
+
+- **Implementation commit:** `c34bb499951eade79c4b84673245710d150a41b4`
+- **Change:** test(#1227): red: a moved store's copies are listed, read and deleted where they now are
+- **Details:**
+  - Mac mini, release, 1.9.42 source: the records name the old folder after the move and the read throws Could not read stored file.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileMovedStoreTests.swift` — two copies and a record without one, the store's folder moved, then list, read and delete
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-26 17:00 EDT: "figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run b301-disk, claude/strangelearning); no SpecStory capture for headless runs.
+
 ## October 25th, 2026 at 7:59:54 a.m. EDT — `e19b30a8c900` docs(#1130 #1134 #1136): the v1.9.42 release document: one delivery claim per write, one-shot reads and compaction off the operation gate
 
 - **Implementation commit:** `e19b30a8c90023f51323cb05804563782b6555d0`
