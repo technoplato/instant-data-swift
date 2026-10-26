@@ -1,3 +1,39 @@
+## 2026-10-26 19:46:21 EDT — scribe `73c8ea8ed9bcc8c5761887c9815e3d5b2b00cb20`
+merge(#651, #1214): b301-audio: Stop sends no whole WAV when the live chunks hold the audio; the Mac attaches the joined file; every travelling format measured
+
+## 2026-10-26 19:46:02 EDT — scribe `6702f0b83c43e3249ea80d3efbce074076a23609`
+changelog(#651, #1214): b301-audio: schema ff6f0ed1a, red c8432ebff, green 66b353bbb, the Mac's attach 517d65d7c, the audit 0938af2ca
+
+## 2026-10-26 19:44:45 EDT — scribe `0938af2cab6a4ea9e74bd8a7a175143ce8ed7a32`
+docs(#651, #1214): audit 2026-10-26-r301-audio: why the audio is a WAV, what R301 sent (706.0 MB per recording hour), every travelling format measured; ADR 0091 amendment A; the live-audio plan's phase 2 as built; index row; channel
+
+## 2026-10-26 19:42:29 EDT — scribe `c3f53395054a591cf41a043bb51048828117b4f6`
+plan(#651): b301-audio amendment 4: the storage cleanup's chunk copies once the chunks are the audio; claims
+
+## 2026-10-26 19:42:28 EDT — scribe `66b353bbb4bbb3f80357c2fad232b50cab0eec2c`
+fix(#651): green: Stop sends no whole WAV when the live chunks hold the audio; the chunks are the upload, at once on any network, in the background session
+
+## 2026-10-26 19:41:37 EDT — scribe `517d65d7c042916ca9cfce49282868fcb7092438`
+feat(#651): the Mac attaches the joined audio: a row the phone sent as its live chunks gets live.wav as its file, once
+
+## 2026-10-26 19:25:55 EDT — scribe `ff6f0ed1a8c68ad4d5bdde40a1831d54fb223134`
+feat(#651): schema: recordingAttachments.uploadedAs, the phone sent the audio as its live chunks and the Mac joins them into the row's file
+
+## 2026-10-26 19:24:10 EDT — scribe `c8432ebffe88497ca9cc54d3486fdbf6c61cf1da`
+test(#651): red: no whole-WAV PUT at Stop when the live chunks hold the audio; a stopped generation's chunks go at once on any network, in the background session; a tail is cut, not sent whole
+
+## 2026-10-26 19:24:10 EDT — scribe `1e0489d84d6764c7f44b4a1bbe022165e6484b92`
+plan(#651): b301-audio amendment 3: the sync status test, the schema module's test, sealed-words' test by name; claims
+
+## 2026-10-26 19:10:08 EDT — scribe `379e0eb6911614fca91a65a94e204dbb686077f7`
+plan(#651): b301-audio amendment 2: RecordingAudioStream's one exhaustive switch line, the uploadedAs rules matrix, the mirror's attach flag and LaunchAgent; claims
+
+## 2026-10-26 18:41:45 EDT — scribe `748c85b2cb75d1ddded1650eb603e4227b18a718`
+plan(#651): b301-audio amendment 1: claim ScribeBackgroundMediaUploadsTests.swift for the media scan's stop-audio tests
+
+## 2026-10-26 18:33:56 EDT — scribe `63c7f9e7187f2be863caa5524ccafee3b29c58e8`
+plan(#651, #1214): b301-audio: no whole-WAV PUT at Stop when the live chunks cover the audio, the Mac attaches the joined file, codec quality measured; claims, channel
+
 ## 2026-10-26 19:42:21 EDT — scribe `d2f15a96d64f8fb22d03cadb47dc00a67d0c348a`
 changelog(#1214): b301-network: the report's network summary (red 8fb566c63, green 2676fc86b) and the audit's section 12
 
