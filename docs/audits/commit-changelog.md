@@ -1,3 +1,18 @@
+## 2026-10-26 18:39:42 EDT — scribe `775b9d2eecdbe6a279625505e18f8f7fe57d9b45`
+changelog(#1214): b301-sensors-cpu: plan amendment fa264cf45, red 06460c0bd, green 462e7b795, docs ac2c43d8c
+
+## 2026-10-26 18:39:26 EDT — scribe `ac2c43d8c740b715b844f3e491b17b3958aa3d8d`
+docs(#1214): Recording 301's sensors, audio pipeline and CPU audit (b301-sensors-cpu), its index row and PROGRESS
+
+## 2026-10-26 18:38:59 EDT — scribe `462e7b79535cc28693f86c8c257d5c70055daa0a`
+feat(#1214): green: the sensors' running time and samples in each ledger minute, On This iPhone's engine on a metered executor, the voiceprint's draw metered, and #1091's shared region walk
+
+## 2026-10-26 18:38:59 EDT — scribe `06460c0bdc25c562d2ab5a481a7d3cc50b9425c0`
+test(#1214): red: the sensors' running time and samples, On This iPhone's engine on a metered executor, and #1091's shared region walk
+
+## 2026-10-26 18:38:59 EDT — scribe `fa264cf45354c3c86836b044a35e354ac21817e8`
+plan(#1214): b301-sensors-cpu amendment A: claim the two test files the green needs (a ledger minute carries the sensors; the engine's work is metered); channel note on the audio daemon split and the location rows' clock offset
+
 ## 2026-10-26 18:37:39 EDT — scribe `e2657039a8e2822462a5b49e48a916953dd878e4`
 changelog(#1214): the decoder's commits in CHANGELOG.md
 
