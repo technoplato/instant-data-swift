@@ -12103,7 +12103,7 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadStoredFiles(appID: String) throws -> [InstantStoredFile] {
-    try selectJSON(
+    let files: [InstantStoredFile] = try selectJSON(
       """
       SELECT json FROM instant_files
       WHERE app_id = ?
@@ -12111,6 +12111,7 @@ public actor SQLitePersistenceStore {
       """,
       [.text(appID)]
     )
+    return locatedInFilesFolder(files)
   }
 
   public func storageSnapshot(appID: String) throws -> InstantStorageSnapshot {
@@ -12184,7 +12185,28 @@ public actor SQLitePersistenceStore {
       """,
       [.text(appID), .text(fileID)]
     )
-    return rows.first
+    return locatedInFilesFolder(rows).first
+  }
+
+  /// Each record's copy where it is now: in this store's files folder (#1227).
+  ///
+  /// A record keeps the absolute path its copy had when it was made, and iOS moves an app's data container, with this
+  /// store's folder, when it installs an update. On one device every copy sat at the same place in the new container
+  /// while its record named an earlier one, so eviction found no copy, a read failed, and a delete removed the record and
+  /// left the copy on disk. Every copy is `<files folder>/<app>/<file>/<name>` (``saveStoredFile(_:contentsOf:)``,
+  /// ``saveDownloadedFile(_:data:)``), so its path's last three components place it in this folder. A path already in
+  /// it costs a prefix check.
+  private func locatedInFilesFolder(_ files: [InstantStoredFile]) -> [InstantStoredFile] {
+    let folder = localFilesRootURL
+    let folderPrefix = folder.path + "/"
+    return files.map { file in
+      guard file.isDownloaded, !file.localPath.hasPrefix(folderPrefix) else { return file }
+      let components = URL(fileURLWithPath: file.localPath).pathComponents
+      guard components.count >= 4, components[components.count - 4] == folder.lastPathComponent else { return file }
+      var located = file
+      located.localPath = components.suffix(3).reduce(folder) { $0.appendingPathComponent($1) }.path
+      return located
+    }
   }
 
   public func readStoredFileContents(
