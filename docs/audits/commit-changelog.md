@@ -1,3 +1,48 @@
+## 2026-10-26 18:37:39 EDT — scribe `e2657039a8e2822462a5b49e48a916953dd878e4`
+changelog(#1214): the decoder's commits in CHANGELOG.md
+
+## 2026-10-26 18:35:35 EDT — scribe `4a82e62938a2a6f87d37ef678c2658e783cb5131`
+feat(#1214): green: the daily power log's unplugged hours, animation glitches and whole background energy
+
+## 2026-10-26 18:35:35 EDT — scribe `f4039f5db424c63579300f2bcbe85786df2234d6`
+test(#1214): red: unplugged hours, animation glitches and background energy are kept and printed
+
+## 2026-10-26 18:32:32 EDT — scribe `071b2f502f2d015e4409d5dc2cf49ff7c42d69be`
+fix(#1214): green: power-session.py runs devicectl with the beta Xcode's environment (the other one waits on an installer's password prompt)
+
+## 2026-10-26 18:32:32 EDT — scribe `1302944ded4f87f53cfd9ba39b13e40045230c0e`
+test(#1214): red: devicectl runs from the beta Xcode unless DEVELOPER_DIR is set
+
+## 2026-10-26 18:29:14 EDT — scribe `f200abd622656351fdd97f0f62d720a950555322`
+docs(#1214): the unattended power recipe is one command, power-session.py sysdiagnose
+
+## 2026-10-26 18:28:41 EDT — scribe `3346d675d7eca76e4cd0cd4e41fbc414ba3104c1`
+feat(#1214): green: power-session.py sysdiagnose requests, waits for, pulls and reports a sysdiagnose unattended
+
+## 2026-10-26 18:27:26 EDT — scribe `c80c1af03d32891f4019acd59b296cf024f8c64f`
+test(#1214): red: power-session.py sysdiagnose, with faked devicectl and pymobiledevice3
+
+## 2026-10-26 18:19:11 EDT — scribe `bc25811a974e8872530d6771ac314b4a5c6b087a`
+docs(#1214): the attribution audit's process-level section: daemons and energy billed outside the app
+
+## 2026-10-26 18:15:34 EDT — scribe `f244779a1ccc78bb3165f8cea97d8112d2cc3f09`
+feat(#1214): green: plsql reads iOS's coalition counters, bytes per process, Live Activity updates and location beside the energy
+
+## 2026-10-26 18:11:43 EDT — scribe `5f27107c24416eb872e83dabc3e748b62dba2910`
+test(#1214): red: plsql reads iOS's per-process tables
+
+## 2026-10-26 18:03:46 EDT — scribe `02d451d5c8effa89ec64822a90b141c9a7bb7b38`
+docs(#1214): a recording's drain as iOS accounted it per subsystem, and the unattended measurement recipe
+
+## 2026-10-26 17:51:55 EDT — scribe `d1a1342be34e40e3a20a37786b9be743961bd8f2`
+fix(#1214): power-session.py: a daily power log holds the local day before it was written, and it is the powerlog's own accounting
+
+## 2026-10-26 17:49:22 EDT — scribe `dad4a6cb51df67614b0e4cbaec5d6444424c397b`
+feat(#1214): green: power-session.py, iOS's own energy accounting per subsystem from the daily power log and the powerlog
+
+## 2026-10-26 17:49:22 EDT — scribe `9e8d63bd5963cf8e73e81958157825fe7e433b23`
+test(#1214): red: power-session.py reads iOS's daily power log and the powerlog per subsystem
+
 ## 2026-10-26 18:29:39 EDT — scribe `30ca71a93dc1c4958dad016cb4c6de267d32ebc4`
 merge(#1214, #1215): b301-disk lands the ledger's disk writers, the played-lines read loop fix and the restored claim
 
