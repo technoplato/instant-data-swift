@@ -1,3 +1,9 @@
+## 2026-10-26 20:19:50 EDT — scribe `ee71e695c2b2c337ad9e0d0636579d90fe478100`
+release(#1238): cut Scribe 0.1 (142) and Scribe Playback 142 from main ffce8c28b, pinning instant-data-swift 1.9.43
+
+## 2026-10-26 20:19:50 EDT — scribe `e441c9d606571f85a7c6b8c281d51cf5a1ff0662`
+changelog(#1238): the build 142 cut's CHANGELOG entry
+
 ## 2026-10-26 20:10:22 EDT — scribe `ffce8c28bd3306cbd872a326314b6438f5b4c632`
 merge(#651): b301-audio: the storage cleanup clears a linked chunk's store copy once its recording stopped; the Sync view names uploadedAs; audit landing note, PROGRESS
 
