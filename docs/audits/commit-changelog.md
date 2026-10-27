@@ -1,3 +1,12 @@
+## 2026-10-27 12:51:01 EDT — instant-data-swift `2ed460171e8f9cffc790e5c0e953161666fedf73`
+docs(#1245): the v1.9.46 release document and the write-strategy audit: SQLite's own counters per store call and per kind of file
+
+## 2026-10-27 12:51:01 EDT — instant-data-swift `b4ee694b0a220af22343639575c0369ac1692b43`
+feat(#1245): green: SQLite's own counters per store call, and what SQLite writes to each kind of file
+
+## 2026-10-27 12:51:01 EDT — instant-data-swift `3332dc8a33e855337ff873e42f748e23bf060935`
+test(#1245): red: SQLite's own counters per store call and per kind of file (7 of 8 fail on the seams)
+
 ## 2026-10-27 12:41:23 EDT — scribe `3aad3f6fa989e19ffef37e2f73369251bc92e110`
 Merge (#1246): the energy model lands on main: each energy-ledger row estimates every subsystem's energy.
 

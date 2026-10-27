@@ -1,3 +1,17 @@
+## 2026-10-27 12:51:01 EDT — v1.9.46 (sqlite-1245, #1245): SQLite's own counters per store call, and what SQLite writes to each kind of file
+
+- **Release:** `docs/releases/v1.9.46.md` (`2ed46017`), cut at main `b4ee694b` (red `3332dc8a`, green `b4ee694b`;
+  plan `6d903e63`), carrying 1.9.45. No migration, no stored format change; additive API (`InstantSQLiteFileMeter`,
+  `InstantSQLiteFileSnapshot`, `InstantSQLiteCounters`, `InstantStorageWriteSnapshot.Measure.sqlite`).
+- **Why:** on one device a recording hour wrote 3.31 GB and 0.80 GB of it no meter named; the device's write-ahead log,
+  read frame by frame, put 69% of the frames in the outbox row's life and 8% in the facts
+  (`docs/audits/2026-10-27-sqlite-write-strategy.md`).
+- **Checks (laptop, debug):** red 7 of 8 new tests fail, green 32 tests in 6 suites; the whole InstantSwiftDataCoreTests
+  bundle against Tests/known-failing.txt (1,567 tests, 6 failing: 2 listed, 4 new that pass alone 4 of 4, load 125-329);
+  InstantSwiftData builds.
+- **Next:** the consuming app pins 1.9.46 and its ledger names sqlite.checkpoint, sqlite.temp and sqlite.wal-other; the
+  write fixes are #1115's next slice, #1253, #1254, #1255 and #1123.
+
 ## 2026-10-27 12:20:00 EDT — toolbox-1244 (#1244): docs/FOOTGUNS.md, 58 traps with their cost, rule and guard; two new guards
 
 - **Commits:** guards `8487391c`, the page `d27d3e74` (plan `486accdd`); change log beside them.
