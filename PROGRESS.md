@@ -1,3 +1,15 @@
+## 2026-10-26 23:37:47 EDT — v1.9.45 (live-tail-1117, #1117): the wire meter says which query each answer's bytes carried
+
+- **Release:** `docs/releases/v1.9.45.md` (`a4de2555`), cut at main `9936ffe4` (red `14aee4fb`, green `f52532b2`,
+  reverted `4fcf70e1` to keep 1.9.44 to its scope, landed again on it), carrying 1.9.44. No migration, no stored format
+  change; additive API (`InstantWireSnapshot.receivedByQuery`, `InstantWireMeter.queryShape(of:)`).
+- **Why:** on one device a recording received about 1.15 MB of refresh-ok text per final line, and only two copies of
+  its store said which live queries carried it (the consuming app's #1117 and #1239).
+- **Checks (laptop, debug):** red 5 of 7 wire-meter tests fail, green 14 of 14 in 3 suites (decode 0.299 of
+  JSONDecoder's CPU, bar 0.33); the whole InstantSwiftDataCoreTests bundle on the release tree against
+  Tests/known-failing.txt (1,558 tests, 4 failing: 2 listed, 2 new that pass alone 2 of 2); InstantSwiftData builds.
+- **Next:** the consuming app pins 1.9.45 and its energy ledger writes `net.instant.queries` each minute.
+
 ## 2026-10-26 23:18:46 EDT — v1.9.44 (cellular-1231, #1237, #1231): the live socket and storage requests stay off cellular while Wi-Fi works
 
 - **Release:** `docs/releases/v1.9.44.md` (`266e1bfc`), cut at main after green `48e3b294` (red `92d33847`; plan

@@ -1,3 +1,9 @@
+## 2026-10-26 23:37:32 EDT — instant-data-swift `a4de2555233d0e4cd3791ef11f6e35e033a415bb`
+docs(#1117): the v1.9.45 release document: the wire meter says which query each answer's bytes carried
+
+## 2026-10-26 23:19:56 EDT — instant-data-swift `9936ffe4c6e572ec6ca85c70acf362d88b8ea43d`
+feat(#1117): the per-query wire meter lands again on 1.9.44 (reverts 4fcf70e1)
+
 ## 2026-10-26 23:18:46 EDT — instant-data-swift `266e1bfc8c2074981013564e03a8b511202908d1`
 docs(#1237, #1231): the v1.9.44 release document: the live socket and storage requests stay off cellular while Wi-Fi works
 
