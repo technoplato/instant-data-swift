@@ -4,6 +4,8 @@ import os
 // History:
 // - 2026-10-23: the pages SQLite writes, counted for each store call (#1007). A device's recording wrote tens of
 //   megabytes a minute to its local store and no meter said which store call wrote them.
+// - 2026-10-27: SQLite's own counters for each store call (#1245): its statements' steps, full scans, sorts and
+//   automatic indexes, its page cache's hits, misses and spills, so a call that writes many pages says how.
 
 /// The pages SQLite writes for each of the store's write transactions, by the store call that ran it (#1007).
 ///
@@ -17,11 +19,12 @@ public enum InstantStorageWriteMeter {
     storage.withLock { InstantStorageWriteSnapshot(operations: $0.operations) }
   }
 
-  /// Adds one transaction of `operation` that wrote `pages`, and returns the summary that is due, if one is: at most
-  /// one every 30 s, of what was counted since the last.
+  /// Adds one transaction of `operation` that wrote `pages` with SQLite's `sqlite` counters, and returns the summary
+  /// that is due, if one is: at most one every 30 s, of what was counted since the last.
   static func record(
     operation: StaticString,
     pages: Int,
+    sqlite: InstantSQLiteCounters = InstantSQLiteCounters(),
     now: UInt64 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
   ) -> InstantStorageWriteSnapshot? {
     storage.withLock { state in
@@ -29,6 +32,7 @@ public enum InstantStorageWriteMeter {
       var measure = state.operations[name] ?? InstantStorageWriteSnapshot.Measure()
       measure.transactions += 1
       measure.pagesWritten += max(0, pages)
+      measure.sqlite = measure.sqlite.adding(sqlite)
       state.operations[name] = measure
       guard now &- state.lastSummaryAt >= summaryIntervalNanoseconds else { return nil }
       let summary = InstantStorageWriteSnapshot(operations: state.operations)
@@ -84,7 +88,8 @@ public struct InstantStorageWriteSnapshot: Sendable, Equatable {
       let before = earlier.operations[name] ?? Measure()
       let delta = Measure(
         transactions: max(0, measure.transactions - before.transactions),
-        pagesWritten: max(0, measure.pagesWritten - before.pagesWritten)
+        pagesWritten: max(0, measure.pagesWritten - before.pagesWritten),
+        sqlite: measure.sqlite.subtracting(before.sqlite)
       )
       if delta.transactions > 0 || delta.pagesWritten > 0 { operations[name] = delta }
     }
@@ -133,6 +138,34 @@ public struct InstantSQLiteCounters: Sendable, Equatable {
     self.cacheHits = cacheHits
     self.cacheMisses = cacheMisses
     self.cacheSpills = cacheSpills
+  }
+
+  /// Both counts summed.
+  public func adding(_ other: Self) -> Self {
+    Self(
+      virtualMachineSteps: virtualMachineSteps + other.virtualMachineSteps,
+      fullScanSteps: fullScanSteps + other.fullScanSteps,
+      sorts: sorts + other.sorts,
+      automaticIndexRows: automaticIndexRows + other.automaticIndexRows,
+      reprepares: reprepares + other.reprepares,
+      cacheHits: cacheHits + other.cacheHits,
+      cacheMisses: cacheMisses + other.cacheMisses,
+      cacheSpills: cacheSpills + other.cacheSpills
+    )
+  }
+
+  /// What was counted after `earlier`; a count that went down (SQLite's 32-bit counters wrap) is zero.
+  public func subtracting(_ earlier: Self) -> Self {
+    Self(
+      virtualMachineSteps: max(0, virtualMachineSteps - earlier.virtualMachineSteps),
+      fullScanSteps: max(0, fullScanSteps - earlier.fullScanSteps),
+      sorts: max(0, sorts - earlier.sorts),
+      automaticIndexRows: max(0, automaticIndexRows - earlier.automaticIndexRows),
+      reprepares: max(0, reprepares - earlier.reprepares),
+      cacheHits: max(0, cacheHits - earlier.cacheHits),
+      cacheMisses: max(0, cacheMisses - earlier.cacheMisses),
+      cacheSpills: max(0, cacheSpills - earlier.cacheSpills)
+    )
   }
 }
 

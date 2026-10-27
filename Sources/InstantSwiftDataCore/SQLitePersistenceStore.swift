@@ -1935,7 +1935,8 @@ public actor SQLitePersistenceStore {
     self.deferredValueResidency = deferredValueResidency
     self.localLookup = localLookup
     self.declaredAttributes = declaredAttributes
-    let connectionVFS = Self.connectionVFSForTesting
+    // #1245: the writer opens through the file meter's VFS, so a checkpoint's copies and the temporary files count.
+    let connectionVFS = Self.connectionVFSForTesting ?? InstantSQLiteFileMeter.registeredVFSName()
     self.connectionVFS = connectionVFS
     self.readConnection = SQLiteReadConnection(
       fileURL: fileURL,
@@ -1996,8 +1997,8 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  /// The VFS a store made in this task opens its writer through; `nil`, the system's default. A test sets it to watch
-  /// what SQLite asks the file system to do: #1118's power-loss images journal every write since the last sync.
+  /// The VFS a store made in this task opens its writer through; `nil`, the file meter's (#1245). A test sets it to
+  /// watch what SQLite asks the file system to do: #1118's power-loss images journal every write since the last sync.
   @TaskLocal package static var connectionVFSForTesting: String?
 
   private static func openRawConnection(fileURL: URL, vfs: String?) throws -> OpaquePointer? {
@@ -15503,8 +15504,15 @@ public actor SQLitePersistenceStore {
       activeOutboxQuarantineIssueBatch == nil,
       "SQLite persistence transactions must not be nested."
     )
-    let pagesBefore = cacheWritePages()
-    defer { recordStorageWrites(operation: operation, pages: cacheWritePages() - pagesBefore) }
+    let countersBefore = sqliteCounters()
+    defer {
+      let counters = sqliteCounters()
+      recordStorageWrites(
+        operation: operation,
+        pages: counters.pagesWritten - countersBefore.pagesWritten,
+        sqlite: counters.sqlite.subtracting(countersBefore.sqlite)
+      )
+    }
     try execute("BEGIN IMMEDIATE TRANSACTION")
     activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
     let liveQueryResultJSONBeforeTransaction = liveQueryResultJSON
@@ -15529,17 +15537,26 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  /// The pages this connection has written to the write-ahead log and the temporary file since it opened (#1007).
-  private func cacheWritePages() -> Int {
-    var current: Int32 = 0
-    var highwater: Int32 = 0
-    sqlite3_db_status(connection.raw, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 0)
-    return Int(current)
+  /// This connection's counters since it opened: the pages it has written to the write-ahead log and the temporary
+  /// file (#1007), its page cache's hits, misses and spills, and what its statements did (#1245).
+  private func sqliteCounters() -> (pagesWritten: Int, sqlite: InstantSQLiteCounters) {
+    func status(_ operation: Int32) -> Int {
+      var current: Int32 = 0
+      var highwater: Int32 = 0
+      sqlite3_db_status(connection.raw, operation, &current, &highwater, 0)
+      return Int(current)
+    }
+    var sqlite = connection.statements.statementCounters
+    sqlite.cacheHits = status(SQLITE_DBSTATUS_CACHE_HIT)
+    sqlite.cacheMisses = status(SQLITE_DBSTATUS_CACHE_MISS)
+    sqlite.cacheSpills = status(SQLITE_DBSTATUS_CACHE_SPILL)
+    return (status(SQLITE_DBSTATUS_CACHE_WRITE), sqlite)
   }
 
-  /// Counts one write transaction's pages under its store call, and reports the last 30 s at info when that is due.
-  private func recordStorageWrites(operation: StaticString, pages: Int) {
-    guard let summary = InstantStorageWriteMeter.record(operation: operation, pages: pages),
+  /// Counts one write transaction's pages and SQLite counters under its store call, and reports the last 30 s at info
+  /// when that is due.
+  private func recordStorageWrites(operation: StaticString, pages: Int, sqlite: InstantSQLiteCounters) {
+    guard let summary = InstantStorageWriteMeter.record(operation: operation, pages: pages, sqlite: sqlite),
       InstantDiagnostics.shared.isEnabled(at: .info)
     else { return }
     let ranked = summary.operations.sorted { $0.value.pagesWritten > $1.value.pagesWritten }
@@ -20317,6 +20334,8 @@ struct SQLiteStatementCache {
   /// use's statement that comes back while the first one is already idle again is finalized.
   mutating func checkIn(_ statement: OpaquePointer?) {
     guard let statement else { return }
+    // #1245: what this use did, read and reset, so the statement's next use counts from zero.
+    statementCounters.addStatementStatus(of: statement)
     guard let use = checkedOut.removeValue(forKey: statement),
       let entry = use.entry,
       entry.isKept,
@@ -20404,5 +20423,16 @@ private final class SQLiteMemoryPressureMonitor: @unchecked Sendable {
 
   deinit {
     source.cancel()
+  }
+}
+
+extension InstantSQLiteCounters {
+  /// Adds what `statement` did since its counters were last reset, and resets them (#1245).
+  mutating func addStatementStatus(of statement: OpaquePointer) {
+    virtualMachineSteps += Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 1))
+    fullScanSteps += Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_FULLSCAN_STEP, 1))
+    sorts += Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_SORT, 1))
+    automaticIndexRows += Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_AUTOINDEX, 1))
+    reprepares += Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_REPREPARE, 1))
   }
 }

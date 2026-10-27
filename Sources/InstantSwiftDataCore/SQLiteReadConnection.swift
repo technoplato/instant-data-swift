@@ -277,7 +277,10 @@ actor SQLiteReadConnection {
     if let raw = handle.raw { return raw }
     var opened: OpaquePointer?
     let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
-    guard sqlite3_open_v2(fileURL.path, &opened, flags, nil) == SQLITE_OK, let opened else {
+    // #1245: through the file meter's VFS, so a read's sort spilled to a transient file counts.
+    guard sqlite3_open_v2(fileURL.path, &opened, flags, InstantSQLiteFileMeter.registeredVFSName()) == SQLITE_OK,
+      let opened
+    else {
       let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) } ?? "SQLite could not open it."
       sqlite3_close_v2(opened)
       throw Self.failure(operation: "open the local read connection", message: message, path: fileURL.path)
