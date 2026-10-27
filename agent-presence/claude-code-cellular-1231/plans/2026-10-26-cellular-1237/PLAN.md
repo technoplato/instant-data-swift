@@ -75,3 +75,16 @@ PROGRESS.md, docs/audits/commit-changelog.md.
 The last claims on these files (energy-98, hotpath-1007, fix-storage-1076, fix-memory-1075, server-apply-932) are
 released in 1.9.42 or earlier; main has no source commit since 1.9.43 (13dbc935). Channel
 agent-presence/_channels/2026-10-26-cellular-1237.md.
+
+## Amendment A (2026-10-26 22:45): Wi-Fi Assist, not a path change
+
+The device's unified log (sysdiagnose 17:31, `log show`) shows the path never changed: configd and symptomsd kept en0
+primary all hour, and wifid shows the same access point with no drop or roam until 15:59:28. The Wi-Fi's internet link
+failed about 15:03:40-15:04:24; Wi-Fi Assist (symptomsd "rnf", fallback "preferred" from 15:03:58) opened the socket's
+reconnect over pdp_ip0 after its en0 SYNs went unanswered, and the storage connection (QUIC/HTTP3) migrated to pdp_ip0
+"because PTO count is > 3" and marked en0 unreachable for good; 618 later tasks reused it. "Better alternate path
+available" reached the socket at 15:03:50 with no handler. So a path-change trigger alone would never have fired: the
+socket's attempts ask for a route that is not expensive whenever the path has one (falling back once), and a socket on
+any network moves on a path change, on a storage request's recovery after a refusal, or on a probe after the backoff.
+Storage requests fall back on a timeout only for small uploads, so a storage stall (#1233) never sends a large body
+twice. The watcher is its own value type and never holds the runtime while it waits.
