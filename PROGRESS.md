@@ -1,3 +1,16 @@
+## 2026-10-26 23:18:46 EDT — v1.9.44 (cellular-1231, #1237, #1231): the live socket and storage requests stay off cellular while Wi-Fi works
+
+- **Release:** `docs/releases/v1.9.44.md` (`266e1bfc`), cut at main after green `48e3b294` (red `92d33847`; plan
+  `b56fd256`, amendment A `3e92620e`), carrying 1.9.43. No migration, no stored format change; additive API
+  (`InstantLiveSessionRequest.allowsExpensiveNetworkAccess`, `InstantStorageHTTPResponse.route`,
+  `InstantStorageHTTPFileResponse.route`, `InstantNetworkRoute`, `InstantNetworkRouteMeter`).
+- **Why:** on one device Wi-Fi Assist put the live socket's reconnect and the storage connection (QUIC/HTTP3, migrated
+  "because PTO count is > 3") on cellular for 57 minutes while Wi-Fi stayed the path (unified log): 368 MB up, 341 mWh.
+- **Checks (laptop, debug):** red 17 of 21 new tests fail, green 21 of 21; 209 tests in 12 neighbouring suites; the whole
+  InstantSwiftDataCoreTests bundle against Tests/known-failing.txt (1,553 tests, 3 failing: 1 listed, 2 new that pass
+  alone 3 of 3); InstantSwiftData builds.
+- **Next:** the consuming app pins 1.9.44 (its build 144); live-tail-1117 re-lands its per-query meter as 1.9.45.
+
 ## 2026-10-26 18:49:02 EDT — v1.9.43 released (b301-disk, #1227): a stored file's copy is found in the store's own files folder
 
 - **Release:** `docs/releases/v1.9.43.md` (`0785901a`), cut at main `13dbc935` (red `c34bb499`, green `13dbc935`;

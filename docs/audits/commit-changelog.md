@@ -1,3 +1,18 @@
+## 2026-10-26 23:18:46 EDT — instant-data-swift `266e1bfc8c2074981013564e03a8b511202908d1`
+docs(#1237, #1231): the v1.9.44 release document: the live socket and storage requests stay off cellular while Wi-Fi works
+
+## 2026-10-26 23:18:46 EDT — instant-data-swift `e0b8364a5c5075c1c893f19ed16ba23a97a5d51f`
+ledger(#1237, #1231): CHANGELOG for red 92d33847 and green 48e3b294
+
+## 2026-10-26 23:18:46 EDT — instant-data-swift `3e92620e3ce5182a25ead7e735e856f880ee190e`
+plan(#1237): amendment A: Wi-Fi Assist, not a path change (the unified log); the move's three triggers
+
+## 2026-10-26 23:18:46 EDT — instant-data-swift `48e3b2942a8b32e51009e6178e76dd789cd98ced`
+fix(#1237, #1231): green: the live socket and storage requests ask for a route that is not expensive while the path has one, and a socket on any network moves back
+
+## 2026-10-26 23:18:46 EDT — instant-data-swift `92d33847a6859ee1ec4098624e1cdbbaf8a3c152`
+test(#1237, #1231): red: the live socket and storage requests ask for a route that is not expensive, and a socket on any network moves back
+
 ## 2026-10-26 22:53:39 EDT — scribe `8bd31846d2ee433f3b4f39f485bbaa895f9a2e4e`
 release(#1240): cut Scribe 0.1 (143) from main a5c9c6708: #1239 and #1117 (live-tail-1117) so the next recording measures the Instant socket's drop; instant-data-swift 1.9.43 unchanged; Scribe Playback stays 142.
 

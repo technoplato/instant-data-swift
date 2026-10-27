@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 26th, 2026 at 11:18:46 p.m. EDT — `266e1bfc8c20` docs(#1237, #1231): the v1.9.44 release document: the live socket and storage requests stay off cellular while Wi-Fi works
+
+- **Implementation commit:** `266e1bfc8c2074981013564e03a8b511202908d1`
+- **Change:** docs(#1237, #1231): the v1.9.44 release document
+- **Details:**
+  - Cut at main after green 48e3b294 (red 92d33847); carries 1.9.43. Checks: red 17 of 21 new tests fail, green 21 of 21; 209 tests in 12 neighbouring suites pass; the whole InstantSwiftDataCoreTests bundle against Tests/known-failing.txt (1,553 tests, 3 failing: 1 listed, 2 new that pass alone 3 of 3); InstantSwiftData builds.
+- **Files:**
+  - `docs/releases/v1.9.44.md` — the release document
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-26 17:00 EDT: "figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run cellular-1231, claude/strangelearning); no SpecStory capture for headless runs.
+
 ## October 26th, 2026 at 10:41:40 p.m. EDT — `48e3b2942a8b` fix(#1237, #1231): green: the live socket and storage requests ask for a route that is not expensive while the path has one, and a socket on any network moves back
 
 - **Implementation commit:** `48e3b2942a8b32e51009e6178e76dd789cd98ced`
