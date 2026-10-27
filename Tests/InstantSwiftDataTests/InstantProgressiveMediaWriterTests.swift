@@ -325,10 +325,7 @@ struct InstantProgressiveMediaWriterTests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
       try await db.transact([InstantProgressiveMediaRow.stream(created).mutation], id: "tx-stream-created")
-      let pagesBefore = InstantStorageWriteMeter.snapshot()
       try await db.transact([InstantProgressiveMediaRow.streamProgress(progressed).mutation], id: "tx-stream-progress")
-      let save = InstantStorageWriteMeter.snapshot().subtracting(pagesBefore).operations
-        .first { $0.key.hasPrefix("saveLocalMutation") }?.value
 
       let pending = await db.pendingMutations()
       let creation = try #require(pending.first { $0.id == "tx-stream-created" })
@@ -342,7 +339,53 @@ struct InstantProgressiveMediaWriterTests {
       )
       let stored = try await db.query(InstantProgressiveMediaStreamRow.query)
       expectNoDifference(stored, [progressed])
-      print("PROGRESSIVE-MEDIA #1253 progress write: saveLocalMutation pages=\(save?.pagesWritten ?? -1)")
+    }
+  }
+
+  /// #1253, measured: on the same store, a progress write's outbox body is smaller than the whole row restated, each
+  /// written after another row so neither replaces the stream's unsent write. The pages each save wrote are printed,
+  /// not asserted: the write meter counts the whole process, and other tests save in parallel.
+  @Test func aProgressWriteSavesFewerPagesThanTheWholeRowRestated() async throws {
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "progressive-media-pages-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: InstantProgressiveMediaStreamRow.instantAttributes
+          + InstantProgressiveMediaSegmentRow.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      func pages(_ row: InstantProgressiveMediaRow, segment: Int, id: String) async throws -> Int {
+        try await db.transact(
+          [InstantProgressiveMediaRow.segment(segmentRow(segment, startSeconds: 0, durationSeconds: 6, byteCount: 100)).mutation],
+          id: "\(id)-segment"
+        )
+        let before = InstantStorageWriteMeter.snapshot()
+        try await db.transact([row.mutation], id: id)
+        return InstantStorageWriteMeter.snapshot().subtracting(before).operations
+          .filter { $0.key.hasPrefix("saveLocalMutation") }.values.reduce(0) { $0 + $1.pagesWritten }
+      }
+      try await db.transact(
+        [InstantProgressiveMediaRow.stream(streamRow(.recording, segmentCount: 0, durationSeconds: 0)).mutation],
+        id: "tx-created"
+      )
+      let restated = try await pages(
+        .stream(streamRow(.recording, segmentCount: 1, durationSeconds: 6)), segment: 0, id: "tx-restated"
+      )
+      let progressed = try await pages(
+        .streamProgress(streamRow(.recording, segmentCount: 2, durationSeconds: 12)), segment: 1, id: "tx-progressed"
+      )
+      let pending = await db.pendingMutations()
+      let bodyBytes = { (id: String) in
+        try JSONEncoder().encode(#require(pending.first { $0.id == id })).count
+      }
+      let restatedBody = try bodyBytes("tx-restated")
+      let progressedBody = try bodyBytes("tx-progressed")
+      print(
+        "PROGRESSIVE-MEDIA #1253 saveLocalMutation pages restated=\(restated) progressed=\(progressed);"
+          + " outbox body bytes restated=\(restatedBody) progressed=\(progressedBody)"
+      )
+      #expect(progressedBody * 2 < restatedBody)
     }
   }
 

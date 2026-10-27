@@ -9,6 +9,7 @@
 //   refuse such an update, and with it the segment row in the same transaction.
 // - 2026-10-23: a row write that fails is tried again after the backoff, like an upload (#1012): a store that does not
 //   know the namespaces until its first `init-ok` refused the rows, and delivery ended there for good.
+// - 2026-10-27: after the stream's first write, its row's writes carry only what changes (`.streamProgress`, #1253).
 
 import Dependencies
 import Foundation
@@ -254,7 +255,7 @@ public actor InstantProgressiveMediaWriter {
         // Read after the upload: appends and `finish()` may have happened while it ran.
         let isLast = self.record?.finished == true && segment.index == (self.record?.nextIndex ?? 0) - 1
         try await write([
-          .stream(
+          .streamProgress(
             streamRow(
               isLast ? .finished : .recording,
               segmentCount: segment.index + 1,
@@ -273,7 +274,7 @@ public actor InstantProgressiveMediaWriter {
       }
       if record.finished {
         try await write([
-          .stream(
+          .streamProgress(
             streamRow(
               .finished,
               segmentCount: record.nextIndex,

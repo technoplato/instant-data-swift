@@ -4,6 +4,9 @@
 // History:
 // - 2026-10-23: first version (#1012). A stream's files are `$files` objects named by path, and its rows are written
 //   only after their bytes are stored, so a row on the server means its file is there.
+// - 2026-10-27: a stream's writes after its first carry only its state, segment count, duration and update time
+//   (#1253): restating the other eight fields every segment was 59% of the fact records one device's store wrote in a
+//   quiet minute of recording.
 
 import Foundation
 
@@ -297,7 +300,8 @@ extension InstantProgressiveMediaStreamRow: InstantEntityModel {
     updatedAtMs = try snapshot.progressiveMediaValue("updatedAtMs")
   }
 
-  /// The whole row: the first write creates it and every later one restates it, so a replayed write is harmless.
+  /// The whole row: the stream's first write creates it. A replayed write sets the same values, so it is harmless.
+  /// Later writes carry ``progressMutation``.
   public var upsertMutation: InstantMutation {
     Self.update(
       id: id,
@@ -313,6 +317,22 @@ extension InstantProgressiveMediaStreamRow: InstantEntityModel {
         Self.segmentCountAttribute.set(segmentCount),
         Self.durationSecondsAttribute.set(durationSeconds),
         Self.createdAtMsAttribute.set(createdAtMs),
+        Self.updatedAtMsAttribute.set(updatedAtMs),
+      ]
+    )
+  }
+
+  /// What changes after the stream's first write: its state, segment count, duration and update time (#1253). The other
+  /// fields never change after ``upsertMutation`` created the row, and a stream has one writer, so restating them each
+  /// segment only rewrote them: in the outbox (a retract and an insert each), in the write keys and in the echo. A
+  /// replayed write sets the same values again, so it stays harmless.
+  public var progressMutation: InstantMutation {
+    Self.update(
+      id: id,
+      [
+        Self.stateAttribute.set(state.rawValue),
+        Self.segmentCountAttribute.set(segmentCount),
+        Self.durationSecondsAttribute.set(durationSeconds),
         Self.updatedAtMsAttribute.set(updatedAtMs),
       ]
     )
@@ -402,7 +422,7 @@ extension InstantProgressiveMediaRow {
   public var mutation: InstantMutation {
     switch self {
     case let .stream(row): row.upsertMutation
-    case let .streamProgress(row): row.upsertMutation
+    case let .streamProgress(row): row.progressMutation
     case let .segment(row): row.upsertMutation
     }
   }
