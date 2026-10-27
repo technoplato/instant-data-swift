@@ -10,6 +10,35 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 27th, 2026 at 12:51:41 p.m. EDT — `b4ee694b0a22` feat(#1245): green: SQLite's own counters per store call, and what SQLite writes to each kind of file
+
+- **Implementation commit:** `b4ee694b0a220af22343639575c0369ac1692b43`
+- **Change:** #1245: green: SQLite's own counters per store call, and what SQLite writes to each kind of file
+- **Details:**
+  - A pass-through VFS for the writer and readers counts bytes, calls, syncs and truncates per kind of file; each store call carries VM steps, full scans, sorts, automatic-index rows, re-prepares and cache hits, misses and spills; released as 1.9.46
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — the pass-through VFS and its counts
+  - `Sources/InstantSwiftDataCore/InstantStorageWriteMeter.swift` — InstantSQLiteCounters per store call
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the writer opens through the meter; counters per transaction; per-use statement counters at check-in
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — readers open through the meter
+- **User context (verbatim):**
+  > Oh, let's do SQ Lite's own tools as well and figure out how to optimize our writing strategies.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sqlite-1245); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 12:51:41 p.m. EDT — `3332dc8a33e8` test(#1245): red: SQLite's own counters per store call and per kind of file (7 of 8 fail on the seams)
+
+- **Implementation commit:** `3332dc8a33e855337ff873e42f748e23bf060935`
+- **Change:** #1245: red: SQLite's own counters per store call and per kind of file (7 of 8 fail on the seams)
+- **Details:**
+  - Seams only: InstantSQLiteFileMeter and its snapshot, InstantSQLiteCounters on each store call's measure, the statement cache's counters, the writer's VFS name for tests
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — the meter's types (seam)
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteFileMeterTests.swift` — file kinds through a raw connection and the store
+  - `Tests/InstantSwiftDataCoreTests/InstantStorageWriteMeterTests.swift` — per-call and per-use statement counters
+- **User context (verbatim):**
+  > Oh, let's do SQ Lite's own tools as well and figure out how to optimize our writing strategies.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sqlite-1245); no SpecStory capture exists for headless runs.
+
 ## October 27th, 2026 at 12:20:56 p.m. EDT — `11e7679526a8` docs(#1244, #1245): FOOTGUNS.md: six traps found with SQLite's own counters (F59-F64)
 
 - **Implementation commit:** `11e7679526a8cf2d9a1b48f759149615b3519512`
