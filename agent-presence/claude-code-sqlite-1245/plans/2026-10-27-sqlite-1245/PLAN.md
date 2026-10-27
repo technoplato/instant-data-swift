@@ -52,3 +52,12 @@ indexes), 8% are the facts themselves. The consuming app's ledger over a 58-minu
 
 SQLitePersistenceStore.swift: the last claims are landed slices (fix-storage-1076, fix-memory-1075, b301-disk). toolbox-1244
 claims docs/FOOTGUNS.md and FootgunGuardTests.swift: I do not edit them; footguns go to them through #1214's log.
+
+## Amendment 1 (2026-10-27): #1253, a progressive media stream's later writes carry only what changes
+
+The device's log: a stream's row restates its 13 fields every segment where state, segmentCount, durationSeconds and
+updatedAtMs change (59% of the fact records the log held in a quiet 72 s). Functions: InstantProgressiveMediaRows.swift
+(InstantProgressiveMediaRow gains `.streamProgress`, whose mutation writes those four fields; the stream row's
+`progressMutation`), InstantProgressiveMediaWriter.swift (the delivery loop's writes after the stream's first),
+InstantProgressiveMediaWriterTests.swift (the rows written; the stored transaction's operations; the save's pages).
+Red then green; released after a whole-bundle run.
