@@ -3,6 +3,7 @@
 // - 2026-10-24: a reopened query reads its closed stored result here, before it takes the operation gate (#1131).
 // - 2026-10-24: the prune reads and decodes its next batch's stored results here, before it takes the gate (#1129).
 // - 2026-10-25: fact rows are read by `InstantFactRowReader` (#1150).
+// - 2026-10-27: the lookup's statement is `entityIDsSQL(lookupAttributeIDs:)`, which a guard plans (#1244).
 
 import Foundation
 import SQLite3
@@ -88,19 +89,25 @@ actor SQLiteReadConnection {
     let valueJSON = try String(decoding: encoder.encode(value), as: UTF8.self)
     var ids: Set<String> = []
     try readTransaction { connection in
-      // The index's own condition comes first, word for word, so SQLite can prove the partial index applies; INDEXED BY
-      // makes a missing index an error instead of a scan of the whole table.
       let rows = try Self.selectTexts(
-        """
-        SELECT entity_id FROM instant_triples INDEXED BY \(SQLitePersistenceStore.lookupIndexName)
-        WHERE \(SQLitePersistenceStore.lookupIndexCondition(lookupAttributeIDs)) AND attribute_id = ? AND value_json = ?
-        """,
+        Self.entityIDsSQL(lookupAttributeIDs: lookupAttributeIDs),
         bindings: [attributeID, valueJSON],
         on: connection
       )
       ids = Set(rows)
     }
     return ids
+  }
+
+  /// The statement ``entityIDs(attributeID:value:)`` prepares. The index's own condition comes first, word for word, so
+  /// SQLite can prove the partial index applies; INDEXED BY makes a missing index an error instead of a scan of the
+  /// whole table. A lookup written any other way reads every fact (#1244: 402,191 rows, about 50 ms on a Mac, on one
+  /// device's store); `FootgunGuardTests` plans this text.
+  static func entityIDsSQL(lookupAttributeIDs: Set<String>) -> String {
+    """
+    SELECT entity_id FROM instant_triples INDEXED BY \(SQLitePersistenceStore.lookupIndexName)
+    WHERE \(SQLitePersistenceStore.lookupIndexCondition(lookupAttributeIDs)) AND attribute_id = ? AND value_json = ?
+    """
   }
 
   /// The facts of `entityIDs`, deferred values included, from one committed state: every fact, or only those of
