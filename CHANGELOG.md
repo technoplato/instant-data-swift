@@ -10,6 +10,40 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 26th, 2026 at 10:41:40 p.m. EDT — `48e3b2942a8b` fix(#1237, #1231): green: the live socket and storage requests ask for a route that is not expensive while the path has one, and a socket on any network moves back
+
+- **Implementation commit:** `48e3b2942a8b32e51009e6178e76dd789cd98ced`
+- **Change:** fix(#1237, #1231): green: the live socket and storage requests ask for a route that is not expensive while the path has one, and a socket on any network moves back
+- **Details:**
+  - On one device Wi-Fi Assist put the live socket's reconnect and the storage connection (QUIC/HTTP3, migrated because PTO count is > 3) on cellular for 57 minutes while Wi-Fi stayed the path: 368 MB up, 341 mWh. Attempts now ask for a route that is not expensive whenever the path has one, back off 1 minute doubling to 32 after one fails, and fall back to any network at once; a socket on any network moves on a path change, a storage recovery or a probe answer, at most once a minute (network.path-reconnect). Storage requests fall back on a timeout only for small uploads. Upstream Reactor.js _startSocket parity.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantNetworkPath.swift` — the preference's answers and backoff
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — the access reaches the socket's URLRequest
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the watcher starts
+  - `Sources/InstantSwiftDataCore/InstantStorageTransport.swift` — the first attempt and the route
+  - `Sources/InstantSwiftDataCore/InstantNetworkRouteMeter.swift` — counts
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-26 17:00 EDT: "figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run cellular-1231, claude/strangelearning); no SpecStory capture for headless runs.
+
+## October 26th, 2026 at 10:41:40 p.m. EDT — `92d33847a685` test(#1237, #1231): red: the live socket and storage requests ask for a route that is not expensive, and a socket on any network moves back
+
+- **Implementation commit:** `92d33847a6859ee1ec4098624e1cdbbaf8a3c152`
+- **Change:** test(#1237, #1231): red: the live socket and storage requests ask for a route that is not expensive, and a socket on any network moves back
+- **Details:**
+  - The seam without behavior: path cost and generation, the route preference (asks nothing), the session request's allowsExpensiveNetworkAccess (not passed on), the route watcher (never started), the storage client's first attempt (never made) and route (never recorded), the route meter (counts nothing). InstantNetworkRouteTests and InstantStorageRouteTests fail; the reconnect, transport, wire-meter, connection-state and survival suites pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantNetworkPath.swift` — the path's cost, generation, route preference, probe
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — InstantLiveSessionRequest.allowsExpensiveNetworkAccess, the live socket's URLRequest
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — each attempt's access, the route watcher, the move
+  - `Sources/InstantSwiftDataCore/InstantStorageTransport.swift` — the live HTTP client's preference, fallback and route
+  - `Sources/InstantSwiftDataCore/InstantNetworkRouteMeter.swift` — new: the socket's access, moves, refusals
+  - `Tests/InstantSwiftDataCoreTests/InstantNetworkRouteTests.swift` — new
+  - `Tests/InstantSwiftDataCoreTests/InstantStorageRouteTests.swift` — new
+- **User context (verbatim):**
+  > Maintainer, Claude chat 2026-10-26 17:00 EDT: "figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run cellular-1231, claude/strangelearning); no SpecStory capture for headless runs.
+
 ## October 26th, 2026 at 6:48:48 p.m. EDT — `0785901af532` docs(#1227): the v1.9.43 release document: a stored file's copy is found in the store's own files folder after the folder moves
 
 - **Implementation commit:** `0785901af532b6d8932341fcefdaeaf5e91354b5`
