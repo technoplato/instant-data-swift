@@ -141,6 +141,8 @@ public struct InstantProgressiveMediaSegment: Codable, Hashable, Sendable {
 /// A row the writer stores: the stream's own row, or one segment's.
 public enum InstantProgressiveMediaRow: Hashable, Sendable {
   case stream(InstantProgressiveMediaStreamRow)
+  /// The stream's row after its first write: its write carries only what changes (#1253).
+  case streamProgress(InstantProgressiveMediaStreamRow)
   case segment(InstantProgressiveMediaSegmentRow)
 }
 
@@ -400,6 +402,7 @@ extension InstantProgressiveMediaRow {
   public var mutation: InstantMutation {
     switch self {
     case let .stream(row): row.upsertMutation
+    case let .streamProgress(row): row.upsertMutation
     case let .segment(row): row.upsertMutation
     }
   }

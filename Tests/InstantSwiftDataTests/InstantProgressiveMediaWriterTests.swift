@@ -5,6 +5,7 @@ import Dependencies
 import DependenciesTestSupport
 import Foundation
 import InstantSwiftData
+import InstantSwiftDataCore
 import Testing
 
 @Suite(
@@ -73,17 +74,17 @@ struct InstantProgressiveMediaWriterTests {
         .write([.stream(streamRow(.recording, segmentCount: 0, durationSeconds: 0))]),
         .upload(path: "media/recording-1/audio/000000.m4s", byteCount: 25_700, contentType: "audio/mp4"),
         .write([
-          .stream(streamRow(.recording, segmentCount: 1, durationSeconds: 6)),
+          .streamProgress(streamRow(.recording, segmentCount: 1, durationSeconds: 6)),
           .segment(segmentRow(0, startSeconds: 0, durationSeconds: 6, byteCount: 25_700)),
         ]),
         .upload(path: "media/recording-1/audio/000001.m4s", byteCount: 25_600, contentType: "audio/mp4"),
         .write([
-          .stream(streamRow(.recording, segmentCount: 2, durationSeconds: 12)),
+          .streamProgress(streamRow(.recording, segmentCount: 2, durationSeconds: 12)),
           .segment(segmentRow(1, startSeconds: 6, durationSeconds: 6, byteCount: 25_600)),
         ]),
         .upload(path: "media/recording-1/audio/000002.m4s", byteCount: 19_000, contentType: "audio/mp4"),
         .write([
-          .stream(streamRow(.finished, segmentCount: 3, durationSeconds: 16.5)),
+          .streamProgress(streamRow(.finished, segmentCount: 3, durationSeconds: 16.5)),
           .segment(segmentRow(2, startSeconds: 12, durationSeconds: 4.5, byteCount: 19_000)),
         ]),
       ]
@@ -106,7 +107,7 @@ struct InstantProgressiveMediaWriterTests {
 
     expectNoDifference(
       storage.events.last,
-      .write([.stream(streamRow(.finished, segmentCount: 1, durationSeconds: 6))])
+      .write([.streamProgress(streamRow(.finished, segmentCount: 1, durationSeconds: 6))])
     )
     expectNoDifference(storage.events.count, 5)
   }
@@ -301,11 +302,48 @@ struct InstantProgressiveMediaWriterTests {
 
     let rows = storage.events.flatMap { event -> [InstantProgressiveMediaStreamRow] in
       guard case let .write(rows) = event else { return [] }
-      return rows.compactMap { if case let .stream(row) = $0 { row } else { nil } }
+      return rows.compactMap(\.writtenStreamRow)
     }
     expectNoDifference(rows.count, 4)
     expectNoDifference(rows.map(\.updatedAtMs), rows.map(\.updatedAtMs).sorted())
     #expect(rows.allSatisfy { $0.updatedAtMs >= $0.createdAtMs })
+  }
+
+  /// #1253: a stream's row restated its 13 fields every segment where four change; on one device that was 59% of the
+  /// fact records its store's log held while it recorded. The stream's first write creates the whole row; each later
+  /// one carries its state, segment count, duration and update time, and the stored row is the same.
+  @Test func aStreamsLaterWriteCarriesOnlyWhatChanges() async throws {
+    let created = streamRow(.recording, segmentCount: 0, durationSeconds: 0)
+    var progressed = streamRow(.recording, segmentCount: 7, durationSeconds: 42)
+    progressed.updatedAtMs = 1_042_000
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "progressive-media-progress-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: InstantProgressiveMediaStreamRow.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      try await db.transact([InstantProgressiveMediaRow.stream(created).mutation], id: "tx-stream-created")
+      let pagesBefore = InstantStorageWriteMeter.snapshot()
+      try await db.transact([InstantProgressiveMediaRow.streamProgress(progressed).mutation], id: "tx-stream-progress")
+      let save = InstantStorageWriteMeter.snapshot().subtracting(pagesBefore).operations
+        .first { $0.key.hasPrefix("saveLocalMutation") }?.value
+
+      let pending = await db.pendingMutations()
+      let creation = try #require(pending.first { $0.id == "tx-stream-created" })
+      let progress = try #require(pending.first { $0.id == "tx-stream-progress" })
+      // The entity's identity and its 12 fields, then the identity and the four that change.
+      expectNoDifference(creation.transaction.operations.count, 13)
+      expectNoDifference(progress.transaction.operations.count, 5)
+      expectNoDifference(
+        Set(progress.transaction.operations.compactMap(\.insertedAttributeName)),
+        ["id", "state", "segmentCount", "durationSeconds", "updatedAtMs"]
+      )
+      let stored = try await db.query(InstantProgressiveMediaStreamRow.query)
+      expectNoDifference(stored, [progressed])
+      print("PROGRESSIVE-MEDIA #1253 progress write: saveLocalMutation pages=\(save?.pagesWritten ?? -1)")
+    }
   }
 
   func streamRow(
@@ -376,7 +414,7 @@ private final class StorageDouble: Sendable {
     static func names(_ rows: [InstantProgressiveMediaRow]) -> String {
       rows.map {
         switch $0 {
-        case .stream: "stream"
+        case .stream, .streamProgress: "stream"
         case let .segment(row): "+\(row.index)"
         }
       }.joined()
@@ -404,7 +442,7 @@ private final class StorageDouble: Sendable {
   var writtenStreamStates: [InstantProgressiveMediaState] {
     events.flatMap { event -> [InstantProgressiveMediaState] in
       guard case let .write(rows) = event else { return [] }
-      return rows.compactMap { if case let .stream(row) = $0 { row.state } else { nil } }
+      return rows.compactMap { $0.writtenStreamRow?.state }
     }
   }
   var uploadedByteCounts: [String: Int] { state.value.uploaded }
@@ -469,5 +507,23 @@ private final class StorageDouble: Sendable {
         }
       }
     )
+  }
+}
+
+extension InstantProgressiveMediaRow {
+  /// The stream row a write carries, whole or as its progress.
+  fileprivate var writtenStreamRow: InstantProgressiveMediaStreamRow? {
+    switch self {
+    case let .stream(row), let .streamProgress(row): row
+    case .segment: nil
+    }
+  }
+}
+
+extension InstantTripleOperation {
+  /// The name of the attribute an insert sets (`state` for `progressiveMediaStreams/state`), else nil.
+  fileprivate var insertedAttributeName: String? {
+    guard case let .insert(triple) = self else { return nil }
+    return triple.attributeID.split(separator: "/").last.map(String.init)
   }
 }
