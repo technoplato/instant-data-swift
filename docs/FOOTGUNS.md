@@ -95,6 +95,12 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F56](#f56) | Do not change the library worktree while an edit-mode app build reads it | #1006 | process |
 | [F57](#f57) | Land ledger commits on the library's origin with plumbing, not in the shared checkout | #951, #1170 | process |
 | [F58](#f58) | Read the Swift Testing summary line, not `swift test`'s exit code | #733, #734, #767 | process |
+| [F59](#f59) | Keep small mutable columns out of a row that holds a large blob | #1115, #1123, #1245 | none yet |
+| [F60](#f60) | Read a cached statement's counters with reset | #1245 | see #1245 |
+| [F61](#f61) | Give every foreign key's child column an index | #1245 | none yet |
+| [F62](#f62) | Keep per-write counters out of a shared key-value page | #1245, #1254 | none yet |
+| [F63](#f63) | Write only the fields that changed, and keep partial writes collapsible | #1245, #1253, #1255 | none yet |
+| [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
 
 ## Read path
 
@@ -1068,6 +1074,81 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 - Rule: judge a run by its "Test run with N tests ... passed/failed" line; run XCTest suites another way.
 - Issues: #733, #734, #767 (consuming-app logs).
 - Guard: NONE (toolchain).
+- Upstream: -
+
+### Found with SQLite's own counters (#1245)
+
+<a id="f59"></a>
+#### F59. Keep small mutable columns out of a row that holds a large blob
+
+- Symptom: a claim or an acceptance that changes a delivery column's size rewrites the row's whole overflow chain:
+  SQLite overwrites a record in place only when its payload size is unchanged. `instant_outbox` stores its delivery
+  columns after `json`; `instant_live_query_results` keeps its count and time beside the result JSON.
+- Measured cost: 55% of the claim and acceptance frames in a device store copy's write-ahead log (#1245).
+- Rule: keep columns that change on every step in a narrow row of their own, or in fixed-size encodings before the
+  blob, so a step rewrites one leaf page and never the overflow chain.
+- Issues: #1245, #1115, #1123.
+- Guard: none yet. Proposed (always): on `StorageIOWriteCycle`, a claim and an acceptance write no overflow page
+  (`StorageIOPageMap` frames by b-tree and page kind).
+- Upstream: -
+
+<a id="f60"></a>
+#### F60. Read a cached statement's counters with reset
+
+- Symptom: `sqlite3_stmt_status` on a cached prepared statement, read without reset, returns the counts since the
+  statement was prepared, so a sum over its uses counts each step many times.
+- Measured cost: inflated `failedMutationRetryMetrics` and `terminalFailureMetadataMetrics` (#1245).
+- Rule: read `sqlite3_stmt_status` with its reset flag set at the statement cache's check-in, so each use reports its
+  own counts.
+- Issues: #1245 (fixed in its green).
+- Guard: #1245's counter tests.
+- Upstream: -
+
+<a id="f61"></a>
+#### F61. Give every foreign key's child column an index
+
+- Symptom: deleting a parent row scans the child table when no index leads with the child column.
+- Measured cost: `instant_outbox_lifecycle_aliases.lifecycle_id` (1,439 rows on a device store),
+  `instant_stream_content_chunks.stream_id` and `instant_stream_writers.stream_id` have none (#1245).
+- Rule: every foreign key's child column leads an index.
+- Issues: #1245.
+- Guard: none yet. Proposed (always): for every table of a bootstrapped store, each `PRAGMA foreign_key_list` child
+  column is the first column of an index (`PRAGMA index_list` and `index_info`).
+- Upstream: -
+
+<a id="f62"></a>
+#### F62. Keep per-write counters out of a shared key-value page
+
+- Symptom: a revision counter bumped in `instant_sync_metadata` rewrites that table's 4 KB page in nearly every write
+  transaction.
+- Measured cost: 5.5% of a device store copy's write-ahead log (#1254).
+- Rule: keep per-write counters in memory and persist them at flush points, or in a row and page of their own.
+- Issues: #1254, #1245.
+- Guard: none yet (#1254).
+- Upstream: -
+
+<a id="f63"></a>
+#### F63. Write only the fields that changed, and keep partial writes collapsible
+
+- Symptom: a full-row write of a mostly static entity multiplies the outbox body (a retract and an insert per field),
+  the write keys (one row per field, in two b-trees) and the echo. A partial write is never eligible for the
+  immediate-tail supersession (`OutboxSameEntitySupersession`), so offline it keeps one row per write.
+- Measured cost: #1253 (13 fields written, 3 change), #1255 (17 written, about 7 change) (#1245).
+- Rule: write the fields that change, and make partial writes eligible for tail supersession so an offline backlog
+  still collapses to one row.
+- Issues: #1253, #1255, #1245.
+- Guard: none yet.
+- Upstream: -
+
+<a id="f64"></a>
+#### F64. Keep SQLite's busy timeout at five seconds
+
+- Symptom: the writer's `sqlite3_busy_timeout` is 10 s (`openRawConnection`) with no reason recorded beside it; the
+  read connection uses 5 s.
+- Measured cost: not measured. A 10 s busy wait hides a stall for twice the bound every other wait in the library uses.
+- Rule: 5 s, or a written reason beside the number.
+- Issues: #1245.
+- Guard: none yet. Proposed (always): the writer's configured busy timeout is 5,000 ms.
 - Upstream: -
 
 ## Guards to add first
