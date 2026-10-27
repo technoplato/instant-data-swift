@@ -1,3 +1,15 @@
+## 2026-10-27 12:22:10 EDT — scribe `c5a0032529ef6e13a7262f7fa3e569934825e80b`
+docs(#1244): PROGRESS and the audit's section 6 carry the times they were written (typed times were wrong)
+
+## 2026-10-27 12:21:53 EDT — scribe `f18f76e345aa6a13ea902bc0a384a98c63803c1e`
+changelog(#1244): the toolbox, what we do not measure (and its correction), PROGRESS
+
+## 2026-10-27 12:21:51 EDT — scribe `a1e112f6f4aec7356110e8021722d0a49e9a808b`
+docs(#1244): PROGRESS: toolbox-1244's toolbox, query audit, what we do not measure, and the library's FOOTGUNS.md
+
+## 2026-10-27 12:21:18 EDT — scribe `6d80ac3e949275facd325f308b3be61f8ec9e11b`
+docs(#1244): what we do not measure: build 144's "regression" was workload (heat-1243); Instant's whole CPU in R306 (skill-1247)
+
 ## 2026-10-27 12:20:55 EDT — instant-data-swift `11e7679526a8cf2d9a1b48f759149615b3519512`
 docs(#1244, #1245): FOOTGUNS.md: six traps found with SQLite's own counters (F59-F64)
 
