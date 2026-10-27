@@ -1,3 +1,21 @@
+## 2026-10-26 20:10:22 EDT — scribe `ffce8c28bd3306cbd872a326314b6438f5b4c632`
+merge(#651): b301-audio: the storage cleanup clears a linked chunk's store copy once its recording stopped; the Sync view names uploadedAs; audit landing note, PROGRESS
+
+## 2026-10-26 20:10:11 EDT — scribe `5b74e78a799b5a91da5f66ef723e07bdaa0d6389`
+docs(#651): the audit's landing note (the cleanup's chunk copies, the checks run) and PROGRESS
+
+## 2026-10-26 20:09:50 EDT — scribe `0bd8f3aa64383fc75195323a3b3b068f416d29fd`
+changelog(#651): b301-audio: the cleanup's red and green, the Sync view's words
+
+## 2026-10-26 20:09:48 EDT — scribe `1d357f18415e1be0f33fb34835778ff2d8c4963f`
+fix(#651): the Sync view names recordingAttachments.uploadedAs ("Sent as")
+
+## 2026-10-26 19:56:02 EDT — scribe `cec5a6cf97ebe99c9e81e770fc5d7abf582bc013`
+fix(#651): green: a linked chunk's store copy goes once its recording stopped after it, so no whole audio is needed to clean it
+
+## 2026-10-26 19:48:50 EDT — scribe `7cb16c2bdb90b764897fa4ae11a9c0e57437a72e`
+test(#651): red: a linked chunk's store copy goes once its recording stopped, though no whole audio is on the server
+
 ## 2026-10-26 19:46:21 EDT — scribe `73c8ea8ed9bcc8c5761887c9815e3d5b2b00cb20`
 merge(#651, #1214): b301-audio: Stop sends no whole WAV when the live chunks hold the audio; the Mac attaches the joined file; every travelling format measured
 
