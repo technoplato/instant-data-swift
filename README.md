@@ -507,6 +507,7 @@ Detailed architecture docs and design targets are located in `docs/`:
 
 * **[Application & Sync Boundary ADR](docs/adr/0001-application-sync-boundary.md)**: Defines canonical boundary responsibilities between application code and the Instant Swift Data library.
 * **[Runtime Diagnostics](docs/diagnostics.md)**: Structured logging details and diagnostic paths.
+* **[Footguns](docs/FOOTGUNS.md)**: Every trap found while building a long-running consuming app on this library, each with its measured cost, the rule that avoids it, its issues and the test that keeps it from coming back. Read it before adding a live query, a write path, an index, a wait or a file transfer.
 * **[Reminders Live Parity Audit](docs/reminders-v3-live-parity-audit.md)**: Parity evaluation across macOS, iOS Simulator, tvOS Simulator, and watchOS Simulator clients.
 
 ---
