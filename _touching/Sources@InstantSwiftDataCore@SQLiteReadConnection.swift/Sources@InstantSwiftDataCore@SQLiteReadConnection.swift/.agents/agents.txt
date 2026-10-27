@@ -1,3 +1,4 @@
 claude-code/transcript-open-1006@halfjew22 2026-10-23T14:44:24-0400 grower plan=2026-10-23-local-reads-1006 #1006
 claude-code/fix-gate-1074@ld 2026-10-24T21:53:34-0400 mower plan=2026-10-24-fix-gate-1074 #1131 amendment 1 (unloadedLiveQueryResult(key:), new)
 claude-code/fix-memory-1075@ld 2026-10-25T01:48:20-0400 mower plan=2026-10-24-fix-memory-1075 #1150 amendment 11 (facts(of:attributeIDs:), loadDeferredValues, selectTexts, decodeTriples only)
+claude-code/sqlite-1245@halfjew22 2026-10-27T11:38:08-0400 grower plan=2026-10-27-sqlite-1245 #1245
