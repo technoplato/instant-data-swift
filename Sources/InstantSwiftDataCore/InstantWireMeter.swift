@@ -5,6 +5,8 @@ import os
 // - 2026-10-24: added (#1124): the live socket's frames and bytes, by op and direction. A device's log said nothing about
 //   what a change cost the radio: #1076's exercise measured 126 KB received per transcript write (a whole 256-line
 //   page restated by every refresh-ok), and no phone could be checked against it.
+// - 2026-10-26 (#1117): also by the query each answer carried, under its shape. On one device a recording received
+//   about 1.15 MB per final line in refresh-ok frames, and only two copies of its store said which queries carried it.
 
 /// The live socket's traffic: frames and bytes by op, each way, counted where each frame is sent or received (#1124).
 ///
@@ -21,6 +23,48 @@ public enum InstantWireMeter {
   /// Everything counted since launch.
   public static func snapshot() -> InstantWireSnapshot {
     shared.snapshot()
+  }
+
+  /// A query's shape, the key ``InstantWireSnapshot/receivedByQuery`` counts it under (#1117): its namespaces, each
+  /// with its page size and the attributes its `where` tests, never a value it compares, so no id leaves the device in
+  /// a log. A recording screen's live lines read `transcriptionSegments/64[recordingID]`.
+  public static func queryShape(of query: InstantLiveJSONValue) -> String {
+    guard case .object(let namespaces) = query, !namespaces.isEmpty else { return "unknown" }
+    return namespaces.keys.sorted().map { namespace in
+      guard case .object(let clauses)? = namespaces[namespace], case .object(let options)? = clauses["$"] else {
+        return namespace
+      }
+      var shape = namespace
+      for key in ["limit", "first", "last"] {
+        if case .number(let size)? = options[key], size.isFinite {
+          shape += "/\(Int(size))"
+          break
+        }
+      }
+      var attributes = Set<String>()
+      if let condition = options["where"] { collectAttributes(condition, into: &attributes) }
+      if !attributes.isEmpty { shape += "[" + attributes.sorted().joined(separator: ",") + "]" }
+      return shape
+    }
+    .joined(separator: "+")
+  }
+
+  /// The attribute names a `where` tests: its keys, and theirs inside `and` and `or`.
+  private static func collectAttributes(_ condition: InstantLiveJSONValue, into attributes: inout Set<String>) {
+    switch condition {
+    case .object(let fields):
+      for (key, value) in fields {
+        if key == "and" || key == "or" {
+          collectAttributes(value, into: &attributes)
+        } else {
+          attributes.insert(key)
+        }
+      }
+    case .array(let clauses):
+      for clause in clauses { collectAttributes(clause, into: &attributes) }
+    default:
+      break
+    }
   }
 
   package static let shared = InstantWireMeterStorage()
@@ -50,10 +94,17 @@ public struct InstantWireSnapshot: Sendable, Equatable {
   public var sent: [String: Measure]
   /// By op (`transact-ok`, `refresh-ok`, `add-query-ok`, ...).
   public var received: [String: Measure]
+  /// What each query's answers carried (#1117), by its shape (``InstantWireMeter/queryShape(of:)``).
+  public var receivedByQuery: [String: Measure]
 
-  public init(sent: [String: Measure] = [:], received: [String: Measure] = [:]) {
+  public init(
+    sent: [String: Measure] = [:],
+    received: [String: Measure] = [:],
+    receivedByQuery: [String: Measure] = [:]
+  ) {
     self.sent = sent
     self.received = received
+    self.receivedByQuery = receivedByQuery
   }
 
   public var sentFrames: Int { sent.values.reduce(0) { $0 + $1.frames } }
@@ -73,8 +124,15 @@ public struct InstantWireSnapshot: Sendable, Equatable {
         if measure.frames > 0 || measure.bytes > 0 { result[entry.key] = measure }
       }
     }
-    return Self(sent: delta(sent, earlier.sent), received: delta(received, earlier.received))
+    return Self(
+      sent: delta(sent, earlier.sent),
+      received: delta(received, earlier.received),
+      receivedByQuery: delta(receivedByQuery, earlier.receivedByQuery)
+    )
   }
+
+  /// How many query shapes the summary line names, the most bytes first.
+  static let summaryQueryCount = 3
 
   /// The log line's fields: each direction's totals, and each op's `frames/bytes`.
   var logMetadata: [String: String] {
@@ -86,6 +144,12 @@ public struct InstantWireSnapshot: Sendable, Equatable {
     ]
     for (op, measure) in sent { metadata["sent.\(op)"] = "\(measure.frames)/\(measure.bytes)" }
     for (op, measure) in received { metadata["received.\(op)"] = "\(measure.frames)/\(measure.bytes)" }
+    // #1117: the heaviest queries, `shape=frames/bytes`, the most bytes first.
+    let heaviest = receivedByQuery.sorted { ($0.value.bytes, $1.key) > ($1.value.bytes, $0.key) }
+      .prefix(Self.summaryQueryCount)
+    for (rank, entry) in heaviest.enumerated() {
+      metadata["query.\(rank + 1)"] = "\(entry.key)=\(entry.value.frames)/\(entry.value.bytes)"
+    }
     return metadata
   }
 }
@@ -136,5 +200,24 @@ package final class InstantWireMeterStorage: Sendable {
 
   package func snapshot() -> InstantWireSnapshot {
     state.withLock { $0.counts }
+  }
+
+  /// The most query shapes the meter keeps apart (#1117); a later one counts as `other`. An app's queries are fixed
+  /// shapes, so this bounds only a shape built from data.
+  package static let maximumQueryShapes = 48
+
+  /// Counts one answer for each shape, under one lock for the whole frame (#1117).
+  package func recordQueries(_ answers: [(shape: String, bytes: Int)]) {
+    guard !answers.isEmpty else { return }
+    state.withLock { state in
+      for answer in answers {
+        let shape =
+          state.counts.receivedByQuery[answer.shape] != nil
+            || state.counts.receivedByQuery.count < Self.maximumQueryShapes
+          ? answer.shape : "other"
+        state.counts.receivedByQuery[shape, default: InstantWireSnapshot.Measure()].frames += 1
+        state.counts.receivedByQuery[shape, default: InstantWireSnapshot.Measure()].bytes += max(0, answer.bytes)
+      }
+    }
   }
 }
