@@ -1,3 +1,18 @@
+## 2026-10-27 12:27:52 EDT — scribe `f50973e13267ffb68b4f504ea57c4ad817100f3f`
+changelog(#1243, #1242): heat-1243: the cellular fix (red and green) and the heat audit
+
+## 2026-10-27 12:27:52 EDT — scribe `d2e52722c38b82e94297f85163e5d3df404de663`
+docs(#1243, #1242): the heat audit (R306 against R301's first hour), its index row, and PROGRESS
+
+## 2026-10-27 12:27:52 EDT — scribe `36af971073e327a3110e0ac5a18fdf377f6f30c5`
+fix(#1243, #1242): green: a held live chunk's request refuses the cellular interface itself, so QUIC migration cannot take it to 5G
+
+## 2026-10-27 12:27:52 EDT — scribe `3569c2159f8933f96e7def2a9b76a13b3c6c8413`
+test(#1243, #1242): red: a held live chunk's request refuses the cellular interface itself, and a refusal for cellular is the rule's wait
+
+## 2026-10-27 12:27:52 EDT — scribe `480e27428458085650b3b9ddd50a4fac816ad007`
+plan(#1243, #1242): heat-1243 amendment 1: a held live chunk refuses cellular itself (QUIC migration took R306's chunks to 5G); channel reply to ledger-1246
+
 ## 2026-10-27 12:22:10 EDT — scribe `c5a0032529ef6e13a7262f7fa3e569934825e80b`
 docs(#1244): PROGRESS and the audit's section 6 carry the times they were written (typed times were wrong)
 
