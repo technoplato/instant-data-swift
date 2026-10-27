@@ -1,3 +1,18 @@
+## 2026-10-27 00:00:45 EDT — scribe `0224f08e8366a41123225a6d67db2c86562a7777`
+changelog(#1231, #1237): cellular-1231: the 1.9.44 pin, red and green
+
+## 2026-10-27 00:00:45 EDT — scribe `0bdbb8820933901184f9629fcc1ebbb84b15a1ca`
+docs(#1231, #1237): the audit's section 13 (Wi-Fi Assist, not a path change; the fix in two layers; what it would have saved), its index row, the build 144 story, PROGRESS
+
+## 2026-10-27 00:00:45 EDT — scribe `a59fb9fa5a94cc7d7cf45405cc162109cf873193`
+fix(#1231): green: a held live chunk asks the system to keep it off cellular, a refusal is the rule's wait, and the ledger names sends on cellular under a Wi-Fi path
+
+## 2026-10-27 00:00:45 EDT — scribe `a63a94e11280675aab4644527e1261269d503500`
+test(#1231): red: a held live chunk asks the system to keep it off cellular, a refusal is the rule's wait, and the ledger names sends on cellular under a Wi-Fi path
+
+## 2026-10-27 00:00:45 EDT — scribe `de6b9d8f28b3d58d7257f74c11df5c0990fc668a`
+Pin instant-data-swift exactly 1.9.44 instead of 1.9.43 in Scribe and Scribe Playback: the live socket and storage requests stay off cellular while Wi-Fi works (#1237, #1231)
+
 ## 2026-10-26 23:41:43 EDT — scribe `6756d87d9fd0848232486b35e7147fc5ffdfc011`
 changelog(#1214): the attribution tool's later commits in CHANGELOG.md
 
