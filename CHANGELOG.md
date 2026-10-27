@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 26th, 2026 at 11:38:03 p.m. EDT — `9936ffe4c6e5` feat(#1117): the per-query wire meter lands again on 1.9.44 (reverts 4fcf70e1)
+
+- **Implementation commit:** `9936ffe4c6e572ec6ca85c70acf362d88b8ea43d`
+- **Change:** #1117: the wire meter counts each refresh computation and each query's first answer under its query's shape (1.9.45)
+- **Details:**
+  - The parser keeps each top-level computation's byte length as it passes it; shapes name namespaces, page size and the attributes a where tests, never a value; at most 48, then other; receivedByQuery subtracts like the ops; the minute's summary names the three heaviest. Red 14aee4fb, green f52532b2, reverted 4fcf70e1 for 1.9.44's scope, landed again here.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantWireMeter.swift` — shapes, per-query counts, summary
+  - `Sources/InstantSwiftDataCore/InstantLiveJSONParser.swift` — each computation's byte length
+  - `Sources/InstantSwiftDataCore/InstantLiveFrameDecoding.swift` — decoding counts each answer
+- **User context (verbatim):**
+  > figure out every nook and cranny where battery usage can be draining. add diagnostics wherever you need, pull whatever you need. no limits.
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (session 2cec8985); no SpecStory capture exists for headless runs.
+
 ## October 26th, 2026 at 11:18:46 p.m. EDT — `266e1bfc8c20` docs(#1237, #1231): the v1.9.44 release document: the live socket and storage requests stay off cellular while Wi-Fi works
 
 - **Implementation commit:** `266e1bfc8c2074981013564e03a8b511202908d1`
