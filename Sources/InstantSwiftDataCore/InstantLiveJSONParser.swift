@@ -9,8 +9,6 @@ import Foundation
 //   buffer, and the short strings a frame repeats share one copy: a refresh's join rows are arrays of four-element
 //   arrays that grew by doubling, and every row restates its entity id and every attribute id, so a 64-line page's
 //   frame made about 111 allocations a line (#1147).
-// - 2026-10-26: a refresh's computations each keep their byte length, taken as the parser passes them, so the wire meter
-//   counts each query's share of a frame without a second pass (#1117).
 
 /// Parses one received frame's JSON into ``InstantLiveJSONValue`` directly from its UTF-8 bytes (#1007).
 ///
@@ -32,8 +30,6 @@ struct InstantLiveJSONParser {
   /// The strings of 16 to 64 bytes this frame has made, by a hash of their bytes: a refresh restates each row's entity
   /// id with every fact and each attribute id in every row. Shorter strings are stored inline and cost nothing.
   private var sharedStrings: [Int: String] = [:]
-  /// The byte length of each element of the top-level `computations` array, when the frame has one (#1117).
-  private var computationByteCounts: [Int] = []
 
   private init(_ bytes: UnsafeBufferPointer<UInt8>) {
     self.bytes = bytes
@@ -52,19 +48,7 @@ struct InstantLiveJSONParser {
   /// or the message is not one that decoder takes (no string `op`, a `client-event-id` that is neither a string nor
   /// null).
   static func message(_ bytes: UnsafeBufferPointer<UInt8>) -> InstantLiveMessage? {
-    messageAndComputationSizes(bytes)?.message
-  }
-
-  /// ``message(_:)``, with the byte length of each of its top-level `computations` (a refresh's), in order (#1117).
-  static func messageAndComputationSizes(
-    _ bytes: UnsafeBufferPointer<UInt8>
-  ) -> (message: InstantLiveMessage, computationByteCounts: [Int])? {
-    var parser = InstantLiveJSONParser(bytes)
-    parser.skipWhitespace()
-    guard let value = parser.parseValue(depth: 0) else { return nil }
-    parser.skipWhitespace()
-    guard parser.index == bytes.count,
-      case var .object(fields) = value,
+    guard case var .object(fields)? = value(bytes),
       case let .string(op)? = fields.removeValue(forKey: "op")
     else { return nil }
     let clientEventID: String?
@@ -76,7 +60,7 @@ struct InstantLiveJSONParser {
     default:
       return nil
     }
-    return (InstantLiveMessage(op: op, clientEventID: clientEventID, fields: fields), parser.computationByteCounts)
+    return InstantLiveMessage(op: op, clientEventID: clientEventID, fields: fields)
   }
 
   // MARK: - Values
@@ -119,15 +103,7 @@ struct InstantLiveJSONParser {
       guard index < bytes.count, bytes[index] == UInt8(ascii: ":") else { return nil }
       index += 1
       skipWhitespace()
-      let value: InstantLiveJSONValue?
-      if depth == 1, key == "computations", index < bytes.count, bytes[index] == UInt8(ascii: "[") {
-        var sizes: [Int]? = []
-        value = parseArray(depth: depth + 1, elementByteCounts: &sizes)
-        computationByteCounts = sizes ?? []
-      } else {
-        value = parseValue(depth: depth)
-      }
-      guard let value else { return nil }
+      guard let value = parseValue(depth: depth) else { return nil }
       // A repeated key is declined: `JSONDecoder` decides which occurrence counts.
       guard object.updateValue(value, forKey: key) == nil else { return nil }
       skipWhitespace()
@@ -145,12 +121,6 @@ struct InstantLiveJSONParser {
   }
 
   private mutating func parseArray(depth: Int) -> InstantLiveJSONValue? {
-    var unmeasured: [Int]?
-    return parseArray(depth: depth, elementByteCounts: &unmeasured)
-  }
-
-  /// An array, with each element's byte length appended to `elementByteCounts` when it is not nil.
-  private mutating func parseArray(depth: Int, elementByteCounts: inout [Int]?) -> InstantLiveJSONValue? {
     guard depth <= Self.maximumDepth else { return nil }
     index += 1
     skipWhitespace()
@@ -163,9 +133,7 @@ struct InstantLiveJSONParser {
     defer { elements.removeSubrange(base...) }
     while true {
       skipWhitespace()
-      let start = index
       guard let value = parseValue(depth: depth) else { return nil }
-      elementByteCounts?.append(index - start)
       elements.append(value)
       skipWhitespace()
       guard index < bytes.count else { return nil }

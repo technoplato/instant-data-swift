@@ -1,8 +1,6 @@
 // History:
 // - 2026-10-24: added (#1124): the live socket counts its frames and bytes by op, each way, and the device log reports
 //   them once a minute, so a phone's bytes per change can be measured.
-// - 2026-10-26 (#1117): a refresh's bytes are counted by the query each computation answers. On one device a recording
-//   received about 1.15 MB per final line, and only two copies of its store said which live queries carried it.
 
 import CustomDump
 import Foundation
@@ -73,96 +71,6 @@ struct InstantWireMeterTests {
       ]
     )
     expectNoDifference(meter.snapshot().receivedBytes, 210 + 129_100 + 128_000)
-  }
-}
-
-extension InstantWireMeterTests {
-  /// A refresh's computations are counted apart, each with its own text's bytes, under its query's shape.
-  @Test
-  func aRefreshCountsEachComputationUnderItsQueryShape() throws {
-    let window = #"{"instaql-query":{"lines":{"$":{"limit":16,"order":{"updatedAtMs":"desc"},"where":{"recordingID":"r-1"}}}},"instaql-result":[{"data":{"datalog-result":{"join-rows":[[["e-1","a-1","one line",7]]]}}}]}"#
-    let list = #"{"instaql-query":{"recordings":{"$":{"where":{"and":[{"id":{"$in":["r-1","r-2"]}},{"deletedAtMs":{"$isNull":true}}]}},"previewSegmentA":{}}},"instaql-result":[]}"#
-    let frame = #"{"op":"refresh-ok","processed-tx-id":7,"computations":["# + window + "," + list + #"]}"#
-    let meter = InstantWireMeterStorage()
-
-    let message = try InstantLiveMessage.decoded(fromFrame: Data(frame.utf8), meter: meter)
-
-    expectNoDifference(message.op, "refresh-ok")
-    expectNoDifference(
-      meter.snapshot().receivedByQuery,
-      [
-        "lines/16[recordingID]": InstantWireSnapshot.Measure(frames: 1, bytes: window.utf8.count),
-        "recordings[deletedAtMs,id]": InstantWireSnapshot.Measure(frames: 1, bytes: list.utf8.count),
-      ]
-    )
-  }
-
-  /// A query's first answer counts its whole frame under its shape.
-  @Test
-  func aQuerysFirstAnswerCountsItsFrameUnderItsShape() throws {
-    let frame = #"{"op":"add-query-ok","q":{"liveLines":{"$":{"limit":8,"where":{"recordingID":"r-1"}}}},"result":[]}"#
-    let meter = InstantWireMeterStorage()
-
-    _ = try InstantLiveMessage.decoded(fromFrame: frame, meter: meter)
-
-    expectNoDifference(
-      meter.snapshot().receivedByQuery,
-      ["liveLines/8[recordingID]": InstantWireSnapshot.Measure(frames: 1, bytes: frame.utf8.count)]
-    )
-  }
-
-  /// A shape names a query's namespaces, its page size and the attributes its where tests, never a value it compares.
-  @Test
-  func aQueryShapeNamesItsPageAndAttributesButNoValues() {
-    func shape(_ json: String) -> String {
-      InstantWireMeter.queryShape(of: try! JSONDecoder().decode(InstantLiveJSONValue.self, from: Data(json.utf8)))
-    }
-    expectNoDifference(
-      shape(#"{"transcriptionSegments":{"$":{"limit":64,"order":{"segmentIndex":"desc"},"where":{"recordingID":"e0f8636a"}}}}"#),
-      "transcriptionSegments/64[recordingID]"
-    )
-    expectNoDifference(
-      shape(#"{"recordings":{"$":{"first":12,"where":{"or":[{"ownerUserID":"u-1"},{"title":{"$ilike":"%x%"}}]}}}}"#),
-      "recordings/12[ownerUserID,title]"
-    )
-    expectNoDifference(shape(#"{"b":{},"a":{"$":{"last":3}}}"#), "a/3+b")
-    expectNoDifference(shape(#"[1]"#), "unknown")
-  }
-
-  /// The meter keeps a bounded number of shapes: past the limit, more count as `other`.
-  @Test
-  func theMeterKeepsABoundedNumberOfShapes() {
-    let meter = InstantWireMeterStorage()
-    for index in 0..<(InstantWireMeterStorage.maximumQueryShapes + 2) {
-      meter.recordQueries([(shape: "q\(index)", bytes: 10)])
-    }
-
-    let byQuery = meter.snapshot().receivedByQuery
-    expectNoDifference(byQuery.count, InstantWireMeterStorage.maximumQueryShapes + 1)
-    expectNoDifference(byQuery["other"], InstantWireSnapshot.Measure(frames: 2, bytes: 20))
-  }
-
-  /// The minute's summary names its three heaviest query shapes, and what a minute added subtracts like the ops.
-  @Test
-  func aSummaryNamesTheHeaviestQueries() {
-    let earlier = InstantWireSnapshot(receivedByQuery: ["a": .init(frames: 1, bytes: 100)])
-    let later = InstantWireSnapshot(
-      received: ["refresh-ok": .init(frames: 4, bytes: 1_600)],
-      receivedByQuery: [
-        "a": .init(frames: 2, bytes: 300),
-        "b": .init(frames: 1, bytes: 900),
-        "c": .init(frames: 1, bytes: 50),
-        "d": .init(frames: 1, bytes: 400),
-      ]
-    )
-
-    let minute = later.subtracting(earlier)
-
-    expectNoDifference(minute.receivedByQuery["a"], .init(frames: 1, bytes: 200))
-    expectNoDifference(
-      minute.logMetadata.filter { $0.key.hasPrefix("query.") },
-      ["query.1": "b=1/900", "query.2": "d=1/400", "query.3": "a=1/200"]
-    )
   }
 }
 
