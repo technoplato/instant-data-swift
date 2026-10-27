@@ -20090,6 +20090,11 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// The VFS the store's writer opened its file through (#1245).
+  package func connectionVFSNameForTesting() -> String? {
+    connectionVFS
+  }
+
   /// `PRAGMA synchronous` on this connection: 0 off, 1 normal, 2 full, 3 extra.
   package func synchronousSettingForTesting() throws -> String? {
     try selectScalar("PRAGMA synchronous")
@@ -20251,6 +20256,8 @@ struct SQLiteStatementCache {
   }
 
   let capacity: Int
+  /// What the statements did, summed over every use this cache took back (#1245).
+  private(set) var statementCounters = InstantSQLiteCounters()
   /// How many statements this cache has prepared.
   private(set) var preparedCount = 0
   /// How many statements wait for reuse.

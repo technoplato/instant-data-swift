@@ -57,10 +57,13 @@ public struct InstantStorageWriteSnapshot: Sendable, Equatable {
     public var transactions: Int
     /// Pages SQLite wrote for them: to the write-ahead log, and to the temporary file for temporary tables.
     public var pagesWritten: Int
+    /// SQLite's own counters for the call's statements and its page cache (#1245).
+    public var sqlite: InstantSQLiteCounters
 
-    public init(transactions: Int = 0, pagesWritten: Int = 0) {
+    public init(transactions: Int = 0, pagesWritten: Int = 0, sqlite: InstantSQLiteCounters = InstantSQLiteCounters()) {
       self.transactions = transactions
       self.pagesWritten = pagesWritten
+      self.sqlite = sqlite
     }
   }
 
@@ -88,3 +91,48 @@ public struct InstantStorageWriteSnapshot: Sendable, Equatable {
     return Self(operations: operations)
   }
 }
+
+/// SQLite's own counters for some statements and a page cache (#1245): `sqlite3_stmt_status` for what the statements
+/// did, `sqlite3_db_status` for what the connection's page cache did meanwhile.
+public struct InstantSQLiteCounters: Sendable, Equatable {
+  /// Steps of SQLite's virtual machine (`SQLITE_STMTSTATUS_VM_STEP`): the statements' work, roughly one per row visited
+  /// and per value moved.
+  public var virtualMachineSteps: Int
+  /// Steps forward in a table or an index as part of a full scan (`SQLITE_STMTSTATUS_FULLSCAN_STEP`): a statement that
+  /// visits every row where an index would find a few.
+  public var fullScanSteps: Int
+  /// Sorts (`SQLITE_STMTSTATUS_SORT`): an `ORDER BY` or `GROUP BY` no index serves.
+  public var sorts: Int
+  /// Rows put into automatic indexes (`SQLITE_STMTSTATUS_AUTOINDEX`): an index SQLite builds for one statement, and
+  /// drops after it, because no stored index serves a join or a lookup.
+  public var automaticIndexRows: Int
+  /// Times a statement was prepared again because the schema changed under it (`SQLITE_STMTSTATUS_REPREPARE`).
+  public var reprepares: Int
+  /// Pages found in the page cache (`SQLITE_DBSTATUS_CACHE_HIT`).
+  public var cacheHits: Int
+  /// Pages read from the file because the cache did not hold them (`SQLITE_DBSTATUS_CACHE_MISS`).
+  public var cacheMisses: Int
+  /// Dirty pages written out in the middle of a transaction because the cache was full (`SQLITE_DBSTATUS_CACHE_SPILL`).
+  public var cacheSpills: Int
+
+  public init(
+    virtualMachineSteps: Int = 0,
+    fullScanSteps: Int = 0,
+    sorts: Int = 0,
+    automaticIndexRows: Int = 0,
+    reprepares: Int = 0,
+    cacheHits: Int = 0,
+    cacheMisses: Int = 0,
+    cacheSpills: Int = 0
+  ) {
+    self.virtualMachineSteps = virtualMachineSteps
+    self.fullScanSteps = fullScanSteps
+    self.sorts = sorts
+    self.automaticIndexRows = automaticIndexRows
+    self.reprepares = reprepares
+    self.cacheHits = cacheHits
+    self.cacheMisses = cacheMisses
+    self.cacheSpills = cacheSpills
+  }
+}
+
