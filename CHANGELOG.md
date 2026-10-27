@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 27th, 2026 at 1:40:27 p.m. EDT — `6fb8b6541ffa` feat(#1253): green: a progressive media stream's later writes carry only its state, segment count, duration and update time
+
+- **Implementation commit:** `6fb8b6541ffaf5f9be47835f083ea71d43a21cde`
+- **Change:** #1253: green: a progressive media stream's later writes carry only its state, segment count, duration and update time
+- **Details:**
+  - progressMutation; the writer's later writes are .streamProgress; a stream write's save 29 -> 17 pages, body 8,627 -> 3,515 bytes; released as 1.9.47
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaRows.swift` — progressMutation
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — later writes are progress
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — the measurement
+- **User context (verbatim):**
+  > Oh, let's do SQ Lite's own tools as well and figure out how to optimize our writing strategies.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sqlite-1245); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 1:40:26 p.m. EDT — `464d057f5465` test(#1253): red: a progressive media stream's later writes carry only what changes (3 of 12 fail on the seam)
+
+- **Implementation commit:** `464d057f5465963cde5e0182bd3db51dd3f94c5f`
+- **Change:** #1253: red: a progressive media stream's later writes carry only what changes (3 of 12 fail on the seam)
+- **Details:**
+  - Seam: InstantProgressiveMediaRow.streamProgress, still the whole row
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaRows.swift` — the seam
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — rows written after the first, the stored transaction's operations
+- **User context (verbatim):**
+  > Oh, let's do SQ Lite's own tools as well and figure out how to optimize our writing strategies.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sqlite-1245); no SpecStory capture exists for headless runs.
+
 ## October 27th, 2026 at 12:51:41 p.m. EDT — `b4ee694b0a22` feat(#1245): green: SQLite's own counters per store call, and what SQLite writes to each kind of file
 
 - **Implementation commit:** `b4ee694b0a220af22343639575c0369ac1692b43`
