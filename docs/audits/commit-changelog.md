@@ -1,3 +1,45 @@
+## 2026-10-26 22:36:50 EDT — scribe `719f9dc28474c5f42e8867fa2e98dcd365f9fdba`
+changelog(#1117, #1239): live-tail-1117: the Without Audio follow's groups, the 16-line window and its tail, the timeline tests' waits
+
+## 2026-10-26 22:36:09 EDT — scribe `07bdba1f75e2ab1057f9394e53b6caca4184cd73`
+docs(#1117, #1239): the audit of what the Instant socket re-sends while a recording runs, its index row, PROGRESS
+
+## 2026-10-26 22:36:09 EDT — scribe `7a4a725cb8a4ee8400d9158fd10457e435dcb11e`
+test(#1117): two timeline tests stop depending on seeing every state under load
+
+## 2026-10-26 22:25:06 EDT — instant-data-swift `850c944afa5561866a0065ca3ed5984e7134c64a`
+plan(#1117): channel: live-tail-1117's early push reverted; 1.9.44 stays #1237/#1231 only
+
+## 2026-10-26 22:24:01 EDT — scribe `db8373098e4f36ba85aaf8a5cac026b5800b2680`
+perf(#1239): the Without Audio follow decodes each group's rows when that group answers
+
+## 2026-10-26 22:21:45 EDT — scribe `564fd1ddcb221448a749fbca7a5d5c8589343fc6`
+perf(#1117): green: the recording screen's window holds the newest 16 lines, and a tail of the 4 lines written last brings what lands below it
+
+## 2026-10-26 22:06:05 EDT — scribe `6425bd472b43dcf01e8c5359a5fd89c30243299f`
+test(#1117): red: the window holds the newest 16 lines and a tail of the 4 lines written last reaches what lands below it
+
+## 2026-10-26 21:57:32 EDT — instant-data-swift `f52532b25be6cc573ec763564fba8064310e5ac7`
+feat(#1117): green: the wire meter counts each refresh computation's bytes under its query's shape
+
+## 2026-10-26 21:55:38 EDT — scribe `9286432e4714f3baa3099ff0451252ad6fe0e346`
+fix(#1239): green: the Without Audio follow keeps the recordings written in the last 5 minutes in a query of their own
+
+## 2026-10-26 21:53:32 EDT — instant-data-swift `4bbc28ddef8413e177e416aad474486f94aceafe`
+plan(#1237): channel: 1.9.44 is #1237/#1231 only; live-tail-1117 takes 1.9.45
+
+## 2026-10-26 21:48:42 EDT — instant-data-swift `14aee4fb17fa9479cb021bff2249da6b690f4fbc`
+test(#1117): red: the wire meter counts each refresh computation's bytes under its query's shape
+
+## 2026-10-26 21:47:13 EDT — scribe `d7bbc210f5ce29d25f93c218f4c5de66b21e6fce`
+test(#1239): red: the Without Audio follow keeps a recording written in the last minutes in a query of its own
+
+## 2026-10-26 21:43:14 EDT — instant-data-swift `338a28a91fd253e43f8a3059c64a06a7feab5ef3`
+plan(#1117): 2026-10-26-live-tail-1117-instant: the wire meter says which query each refresh-ok's bytes answered; claims, channel
+
+## 2026-10-26 21:42:51 EDT — scribe `bbb73e1de323d55736df7fff55553a1d4f9b5bef`
+plan(#1117, #1239): 2026-10-26-live-tail-1117: the live socket stops re-sending what the phone holds while a recording runs (Without Audio follow skips recordings in progress; the window is the 16 most recently written lines; per-query refresh bytes in the ledger); claims, channel
+
 ## 2026-10-26 20:19:50 EDT — scribe `ee71e695c2b2c337ad9e0d0636579d90fe478100`
 release(#1238): cut Scribe 0.1 (142) and Scribe Playback 142 from main ffce8c28b, pinning instant-data-swift 1.9.43
 
