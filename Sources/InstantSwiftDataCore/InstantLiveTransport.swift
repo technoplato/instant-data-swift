@@ -800,7 +800,9 @@ public struct InstantLiveSessionRequest: Hashable, Sendable {
 
   /// The socket's opening request: ``sessionURL()``, with this attempt's network access (#1237).
   func urlRequest() throws -> URLRequest {
-    URLRequest(url: try sessionURL())
+    var request = URLRequest(url: try sessionURL())
+    request.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
+    return request
   }
 
   public func initMessage(clientEventID: String) -> InstantLiveMessage {

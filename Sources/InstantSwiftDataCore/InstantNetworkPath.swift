@@ -161,16 +161,23 @@ struct InstantRoutePreference: Equatable, Sendable {
     generation: UInt64,
     now: ContinuousClock.Instant
   ) -> Bool {
-    false
+    guard path.hasNonexpensiveRoute else { return false }
+    guard let refusal, refusal.generation == generation else { return true }
+    return now >= refusal.endsAt
   }
 
   mutating func refused(generation: UInt64, now: ContinuousClock.Instant) {
-
+    refusal = Refusal(generation: generation, endsAt: now + backoff)
+    backoff = min(backoff * 2, Self.longestBackoff)
   }
 
   /// Returns whether the success ended a refusal: a route that is not expensive works again.
   mutating func succeeded() -> Bool {
-    false
+    defer {
+      refusal = nil
+      backoff = Self.firstBackoff
+    }
+    return refusal != nil
   }
 }
 

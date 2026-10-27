@@ -661,7 +661,6 @@ func instantStorageNonexpensiveAttempt(
   isSmallUpload: Bool,
   monitor: InstantNetworkPathMonitor?
 ) -> URLRequest? {
-  return nil
   guard request.allowsExpensiveNetworkAccess, let monitor, monitor.asksForNonexpensiveRoute() else { return nil }
   var attempt = request
   attempt.allowsExpensiveNetworkAccess = false
@@ -828,7 +827,7 @@ final class InstantTransferRouteRecorder: NSObject, URLSessionTaskDelegate, @unc
         isExpensive: transaction.isExpensive,
         isConstrained: transaction.isConstrained
       )
-      _ = route
+      lock.withLock { measured = route }
     #endif
   }
 }

@@ -9336,7 +9336,9 @@ public final class InstantRuntime: Sendable {
   /// The watcher holds the live session, the clock and the sleep, not the runtime: it may wait for hours, and the move
   /// it schedules reaches the runtime weakly.
   private func watchLiveRouteIfNeeded(_ route: InstantLiveRouteOpening) async {
-    return
+    _ = liveRouteWatcherOwner.requestStop()
+    liveRouteWatcherOwner.resume()
+    guard !route.asksForNonexpensiveRoute else { return }
     let sessionID = await liveSession.currentSessionID
     let watch = InstantLiveRouteWatch(
       route: route,

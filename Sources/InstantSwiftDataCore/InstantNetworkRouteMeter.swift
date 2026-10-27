@@ -52,7 +52,7 @@ package final class InstantNetworkRouteMeterStorage: Sendable {
   package init() {}
 
   func socketOpened(_ access: InstantNetworkRouteSnapshot.SocketAccess) {
-    _ = access
+    state.withLock { $0.socket = access }
   }
 
   func socketClosed() {
@@ -60,11 +60,11 @@ package final class InstantNetworkRouteMeterStorage: Sendable {
   }
 
   func recordMove() {
-
+    state.withLock { $0.moves += 1 }
   }
 
   func recordRefusal() {
-
+    state.withLock { $0.refusals += 1 }
   }
 
   func snapshot() -> InstantNetworkRouteSnapshot {
