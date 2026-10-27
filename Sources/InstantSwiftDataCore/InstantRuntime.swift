@@ -493,6 +493,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   var onLiveQueryResultPruneBatchHoldsOperationGateForTesting: (@Sendable () async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
+  /// How the live socket's route watcher waits out a backoff or the minute between two moves (#1237).
+  var liveRouteSleep: @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  /// The clock the live socket's route preference and moves read (#1237); tests move it with their sleep.
+  var liveRouteNow: @Sendable () -> ContinuousClock.Instant = { .now }
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   /// The process this runtime's delivery claims belong to, and how it tells that another claimant's process has ended
@@ -1671,6 +1675,10 @@ public final class InstantRuntime: Sendable {
   /// The cadence prune's task, off the frame applier (#1129).
   private let cadencePruneOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
+  /// Watches an open socket that may be on an expensive network for a route that is not expensive (#1237).
+  private let liveRouteWatcherOwner = InstantRuntimeExactTaskOwner()
+  /// When the live socket last moved to a route that is not expensive (#1237): at most one move a minute.
+  private let lastLiveRouteMove = OSAllocatedUnfairLock<ContinuousClock.Instant?>(initialState: nil)
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
   /// Brings the server's copy of each stream this device writes up to date after a connection opens (#329).
   private let streamWriterCatchUpOwner = InstantRuntimeExactTaskOwner()
@@ -8130,6 +8138,8 @@ public final class InstantRuntime: Sendable {
       // One attempt to open a session, from here to the end of this block (#669).
       let connectAttempt = InstantEnergyMeter.beginSpan(.connectAttempt)
       defer { connectAttempt.end() }
+      /// How this attempt's socket was asked to reach the network, for its route watcher (#1237).
+      var liveRoute: InstantLiveRouteOpening?
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
         if let blocker = try await persistence.synchronizationBlocker() {
@@ -8148,17 +8158,40 @@ public final class InstantRuntime: Sendable {
         recordActorHop(.operationGate)
         await operationGate.leave()
         enteredOperationGate = false
+        // #1237: the attempt asks the system for a route that is not expensive whenever the path has one, so Wi-Fi
+        // Assist cannot open it over cellular while Wi-Fi is the path; one that fails is followed by one on any network.
+        let routeMonitor = liveTransport.networkPath.monitor
+        let routeAtOpen = routeMonitor?.routeMark
+        let asksForNonexpensiveRoute = routeMonitor?.asksForNonexpensiveRoute(now: configuration.liveRouteNow()) ?? false
         do {
           recordActorHop(.liveSession)
-          try await liveSession.open(
-            request: InstantLiveSessionRequest(
-              appID: configuration.appID,
-              websocketURI: configuration.websocketURI,
-              refreshToken: session?.refreshToken
-            ),
-            transport: liveTransport,
-            makeID: configuration.makeID
-          )
+          do {
+            try await liveSession.open(
+              request: InstantLiveSessionRequest(
+                appID: configuration.appID,
+                websocketURI: configuration.websocketURI,
+                refreshToken: session?.refreshToken,
+                allowsExpensiveNetworkAccess: !asksForNonexpensiveRoute
+              ),
+              transport: liveTransport,
+              makeID: configuration.makeID
+            )
+          } catch {
+            if asksForNonexpensiveRoute, !(error is CancellationError), let routeMonitor {
+              recordNonexpensiveSocketRouteFailed(error, monitor: routeMonitor)
+            }
+            throw error
+          }
+          if let routeMonitor, let routeAtOpen {
+            if asksForNonexpensiveRoute { routeMonitor.recordNonexpensiveRouteSucceeded() }
+            liveRoute = InstantLiveRouteOpening(
+              asksForNonexpensiveRoute: asksForNonexpensiveRoute,
+              mark: routeAtOpen,
+              monitor: routeMonitor,
+              networkPath: liveTransport.networkPath,
+              websocketURI: configuration.websocketURI
+            )
+          }
           // The server answered `init-ok`, where upstream resets `_reconnectTimeoutMs` (#669).
           recordActorHop(.reconnectController)
           await reconnectController.recordSessionOpened()
@@ -8280,8 +8313,18 @@ public final class InstantRuntime: Sendable {
           "durationMilliseconds": String(
             Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
           ),
+          "route": liveRoute.map { $0.asksForNonexpensiveRoute ? "not-expensive" : "any-network" } ?? "unwatched",
+          "path": liveRoute?.mark.path.logDescription ?? "",
         ]
       )
+      if configuration.liveTransport != nil {
+        InstantNetworkRouteMeter.shared.socketOpened(
+          liveRoute?.asksForNonexpensiveRoute == true ? .nonexpensiveRoute : .anyNetwork
+        )
+      }
+      if let liveRoute {
+        await watchLiveRouteIfNeeded(liveRoute)
+      }
       return status
     } catch is CancellationError {
       if enteredOperationGate {
@@ -8328,6 +8371,7 @@ public final class InstantRuntime: Sendable {
     let startupCookieSyncTask = startupCookieSyncTaskOwner.requestStop()
     let cadencePruneTask = cadencePruneOwner.requestStop()
     let reconnectTask = await reconnectController.requestStop()
+    let liveRouteWatcherTask = liveRouteWatcherOwner.requestStop()
     await mutationDeliveryPump.suspend()
     let explicitMutationFlushTask = explicitMutationFlushOwner.requestStop()
     let streamWriterCatchUpTask = streamWriterCatchUpOwner.requestStop()
@@ -8371,6 +8415,10 @@ public final class InstantRuntime: Sendable {
       // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
       await cadencePruneTask.wait()
       cadencePruneOwner.resume()
+      // The route watcher only waits for the path; a later open starts another (#1237).
+      await liveRouteWatcherTask.wait()
+      liveRouteWatcherOwner.resume()
+      InstantNetworkRouteMeter.shared.socketClosed()
       explicitMutationFlushOwner.resume()
       streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
@@ -8393,6 +8441,8 @@ public final class InstantRuntime: Sendable {
       // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
       await cadencePruneTask.wait()
       cadencePruneOwner.resume()
+      await liveRouteWatcherTask.wait()
+      liveRouteWatcherOwner.resume()
       explicitMutationFlushOwner.resume()
       streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
@@ -8798,6 +8848,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func handleLiveSessionFailure(_ error: Error) async {
+    InstantNetworkRouteMeter.shared.socketClosed()
     do {
       _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
     } catch is CancellationError {
@@ -9255,6 +9306,119 @@ public final class InstantRuntime: Sendable {
       retry.delayMilliseconds
     )
     await scheduleLiveMutationDeadlineWake(at: retry.resumesAtMilliseconds)
+  }
+
+  // MARK: - The live socket's route (#1237)
+
+  /// An attempt that asked for a route that is not expensive failed to open: the next one may use any network on this
+  /// path until the preference's backoff ends, so a device whose only working route is cellular still connects.
+  private func recordNonexpensiveSocketRouteFailed(_ error: Error, monitor: InstantNetworkPathMonitor) {
+    monitor.recordNonexpensiveRouteRefused(now: configuration.liveRouteNow())
+    InstantNetworkRouteMeter.shared.recordRefusal()
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "connection",
+      event: "connection.nonexpensive-route-failed",
+      message:
+        "The live socket could not open on a route that is not expensive; the next attempt may use any network.",
+      metadata: [
+        "appID": configuration.appID,
+        "path": monitor.routeMark.path.logDescription,
+        "errorDescription": (error as? InstantError)?.userFacingSummary ?? String(describing: error),
+      ]
+    )
+  }
+
+  /// Starts the route watcher for a socket that opened allowing expensive networks, and stops the one an earlier socket
+  /// left; a socket that opened on a route that is not expensive needs none: the system keeps it off cellular.
+  ///
+  /// The watcher holds the live session, the clock and the sleep, not the runtime: it may wait for hours, and the move
+  /// it schedules reaches the runtime weakly.
+  private func watchLiveRouteIfNeeded(_ route: InstantLiveRouteOpening) async {
+    return
+    let sessionID = await liveSession.currentSessionID
+    let watch = InstantLiveRouteWatch(
+      route: route,
+      sessionID: sessionID,
+      liveSession: liveSession,
+      lastMove: lastLiveRouteMove,
+      now: configuration.liveRouteNow,
+      sleep: configuration.liveRouteSleep,
+      move: { [weak self] reason, opened, now in
+        await self?.scheduleLiveSessionMove(reason: reason, opened: opened, now: now)
+      }
+    )
+    liveRouteWatcherOwner.start(priority: configuration.liveSyncTaskPriority, restartIfRunning: true) {
+      await watch.run()
+    }
+  }
+
+  /// Whether a route watcher waits for a route that is not expensive (#1237).
+  func liveRouteWatcherIsRunningForTesting() -> Bool {
+    !liveRouteWatcherOwner.isIdle
+  }
+
+  /// The open live session's server id, or nil while none is open (#1237).
+  func liveSessionIDForTesting() async -> String? {
+    await liveSession.currentSessionID
+  }
+
+  /// Replaces the open socket through the reconnect controller, as a failure would, but records no error: the outbox,
+  /// queries, rooms and streams resume as on any reconnect, and the new attempt asks for a route that is not expensive.
+  /// Ordered against explicit close by the connection gate, as ``scheduleReconnect(after:event:message:replacesOpenSession:)``.
+  private func scheduleLiveSessionMove(
+    reason: InstantLiveRouteMoveReason,
+    opened: InstantNetworkRouteMark,
+    now: InstantNetworkRouteMark
+  ) async {
+    do {
+      try await connectionGate.enterUnlessCancelled(operation: "move the live socket to a route that is not expensive")
+    } catch {
+      return
+    }
+    let isClosed: Bool
+    do {
+      try await enterOperationGateUnlessCancelled(operation: "move the live socket to a route that is not expensive")
+      isClosed = (try? await persistedConnectionState()) == .closed
+      await leaveOperationGate()
+    } catch {
+      await connectionGate.leave()
+      return
+    }
+    guard !isClosed else {
+      await connectionGate.leave()
+      return
+    }
+    let movedAt = configuration.liveRouteNow()
+    lastLiveRouteMove.withLock { $0 = movedAt }
+    InstantNetworkRouteMeter.shared.recordMove()
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "network",
+      event: "network.path-reconnect",
+      message:
+        "The live socket opened allowing an expensive network (path then: \(opened.path.logDescription)); "
+        + "it reconnects on a route that is not expensive (path now: \(now.path.logDescription)), because \(reason.logDescription).",
+      metadata: [
+        "appID": configuration.appID,
+        "reason": reason.rawValue,
+        "pathAtOpen": opened.path.logDescription,
+        "path": now.path.logDescription,
+      ]
+    )
+    await reconnectController.start(
+      appID: configuration.appID,
+      priority: configuration.liveSyncTaskPriority,
+      sleep: configuration.liveReconnectSleep,
+      networkPath: configuration.liveTransport?.networkPath ?? .alwaysSatisfied,
+      reconnect: { [weak self] in
+        guard let self else { throw CancellationError() }
+        _ = try await self.connectLiveSession(reportsFailure: false, onlyIfNeeded: false)
+      }
+    )
+    await connectionGate.leave()
   }
 
   /// Schedules one reconnect after `error`, with the controller's backoff.
@@ -17657,5 +17821,141 @@ actor InstantEndedOneShotQueries {
 
   func contains(_ key: String) -> Bool {
     keys.contains(key)
+  }
+}
+
+/// How a live session's socket was asked to reach the network, for its route watcher (#1237).
+struct InstantLiveRouteOpening: Sendable {
+  var asksForNonexpensiveRoute: Bool
+  var mark: InstantNetworkRouteMark
+  var monitor: InstantNetworkPathMonitor
+  var networkPath: InstantNetworkPath
+  var websocketURI: URL
+
+  /// The port a probe of the socket's host connects to: the URI's, or the scheme's default.
+  var probePort: Int {
+    websocketURI.port ?? (["ws", "http"].contains(websocketURI.scheme?.lowercased() ?? "") ? 80 : 443)
+  }
+}
+
+/// Why the live socket moves to a route that is not expensive (#1237).
+enum InstantLiveRouteMoveReason: String, Sendable {
+  /// The path changed to one with a route that is not expensive after the socket opened.
+  case pathChanged = "path-changed"
+  /// A request that asked for a route that is not expensive went through after one had failed.
+  case routeRecovered = "route-recovered"
+  /// A probe of the socket's host on a route that is not expensive answered after the backoff.
+  case probeAnswered = "probe-answered"
+
+  var logDescription: String {
+    switch self {
+    case .pathChanged: "the path changed to one that is not expensive"
+    case .routeRecovered: "a request on a route that is not expensive went through again"
+    case .probeAnswered: "a probe on a route that is not expensive answered"
+    }
+  }
+}
+
+/// One socket's route watcher (#1237): moves a socket that may be on an expensive network to a route that is not
+/// expensive, once there is evidence one works: the path became one (a path change), a request that asked for one went
+/// through after a failure (a recovery), or a probe answered after the backoff. Upstream `Reactor.js` starts a new
+/// socket on every change to online, and `_startSocket` closes an open previous transport. On one device Wi-Fi Assist
+/// put the socket on cellular while Wi-Fi stayed the path, and the system's "Better alternate path available" reached no
+/// handler; the socket stayed on cellular for 57 minutes. Never more than one move a minute.
+struct InstantLiveRouteWatch: Sendable {
+  /// The shortest time between two moves of the live socket.
+  static let moveInterval: Duration = .seconds(60)
+
+  let route: InstantLiveRouteOpening
+  let sessionID: String?
+  let liveSession: InstantRuntimeLiveSession
+  let lastMove: OSAllocatedUnfairLock<ContinuousClock.Instant?>
+  let now: @Sendable () -> ContinuousClock.Instant
+  let sleep: @Sendable (UInt64) async throws -> Void
+  let move: @Sendable (InstantLiveRouteMoveReason, InstantNetworkRouteMark, InstantNetworkRouteMark) async -> Void
+
+  func run() async {
+    let monitor = route.monitor
+    while !Task.isCancelled {
+      guard let sessionID, await liveSession.currentSessionID == sessionID else { return }
+      let changes = monitor.routeChangeCount
+      let mark = monitor.routeMark
+      var reason: InstantLiveRouteMoveReason?
+      if mark.path.hasNonexpensiveRoute {
+        if mark.generation != route.mark.generation {
+          reason = .pathChanged
+        } else if mark.recoveries != route.mark.recoveries {
+          reason = .routeRecovered
+        }
+      }
+      if reason == nil, mark.path.hasNonexpensiveRoute, let probe = route.networkPath.probe {
+        // Nothing has shown that a route that is not expensive works: check one when the backoff ends.
+        let wait = monitor.refusalEndsAt.map { now().duration(to: $0) } ?? .zero
+        if wait > .zero {
+          do {
+            try await sleepOrRouteChange(wait, after: changes, monitor: monitor)
+          } catch {
+            return
+          }
+          continue
+        }
+        guard let host = route.websocketURI.host else { return }
+        if await probe(host, route.probePort) {
+          monitor.recordNonexpensiveRouteSucceeded()
+          reason = .probeAnswered
+        } else {
+          monitor.recordNonexpensiveRouteRefused(now: now())
+          InstantNetworkRouteMeter.shared.recordRefusal()
+          continue
+        }
+      }
+      guard let reason else {
+        do {
+          try await monitor.waitForRouteChange(after: changes)
+        } catch {
+          return
+        }
+        continue
+      }
+      // At most one move a minute.
+      if let last = lastMove.withLock({ $0 }) {
+        let wait = Self.moveInterval - last.duration(to: now())
+        if wait > .zero {
+          do {
+            try await sleep(Self.milliseconds(wait))
+          } catch {
+            return
+          }
+          continue
+        }
+      }
+      guard await liveSession.currentSessionID == sessionID else { return }
+      await move(reason, route.mark, monitor.routeMark)
+      return
+    }
+  }
+
+  /// Waits out `duration` with the route sleep, or until the path's route changes, whichever comes first.
+  private func sleepOrRouteChange(
+    _ duration: Duration,
+    after changes: UInt64,
+    monitor: InstantNetworkPathMonitor
+  ) async throws {
+    let milliseconds = Self.milliseconds(duration)
+    let sleep = sleep
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      group.addTask { try await sleep(milliseconds) }
+      group.addTask { try await monitor.waitForRouteChange(after: changes) }
+      defer { group.cancelAll() }
+      _ = try await group.next()
+    }
+  }
+
+  /// A positive duration in whole milliseconds, rounded up, for the injectable sleeps.
+  static func milliseconds(_ duration: Duration) -> UInt64 {
+    let (seconds, attoseconds) = duration.components
+    guard seconds > 0 || attoseconds > 0 else { return 0 }
+    let milliseconds = Double(seconds) * 1_000 + Double(attoseconds) / 1e15
+    return UInt64(milliseconds.rounded(.up))
   }
 }

@@ -1,4 +1,15 @@
 import Foundation
+import os
+
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
+// History:
+// - 2026-10-26: #1231, #1237: the live HTTP client asks for a route that is not expensive while the path has one, sends
+//   the caller's own request at once when that fails, and says which route each transfer used. On one device Wi-Fi
+//   Assist moved the storage connection to cellular (an HTTP/3 connection migrated "because PTO count is > 3") and 618
+//   later uploads, about 341 MB, reused it for 57 minutes while Wi-Fi was the path again.
 
 /// A file-backed storage upload request.
 ///
@@ -314,13 +325,35 @@ public final class InstantStorageTransportClient: Sendable {
   }
 }
 
+/// The network a storage transfer went over, as the system measured it (`URLSessionTaskMetrics`, #1231).
+///
+/// Wi-Fi and a wired link both read as neither cellular nor expensive; the path tells them apart.
+public struct InstantNetworkRoute: Hashable, Codable, Sendable {
+  /// Over a cellular interface.
+  public var isCellular: Bool
+  /// Over an interface the system considers expensive: cellular or a personal hotspot.
+  public var isExpensive: Bool
+  /// Over an interface in Low Data Mode.
+  public var isConstrained: Bool
+
+  public init(isCellular: Bool, isExpensive: Bool, isConstrained: Bool) {
+    self.isCellular = isCellular
+    self.isExpensive = isExpensive
+    self.isConstrained = isConstrained
+  }
+}
+
 public struct InstantStorageHTTPResponse: Hashable, Codable, Sendable {
   public var statusCode: Int
   public var data: Data
+  /// The network the transfer went over, when the system measured it (#1231). The live client sets it; a custom
+  /// client may leave it nil.
+  public var route: InstantNetworkRoute?
 
-  public init(statusCode: Int, data: Data) {
+  public init(statusCode: Int, data: Data, route: InstantNetworkRoute? = nil) {
     self.statusCode = statusCode
     self.data = data
+    self.route = route
   }
 }
 
@@ -330,10 +363,13 @@ public struct InstantStorageHTTPResponse: Hashable, Codable, Sendable {
 public struct InstantStorageHTTPFileResponse: Hashable, Sendable {
   public var statusCode: Int
   public var fileURL: URL
+  /// The network the transfer went over, when the system measured it (#1231).
+  public var route: InstantNetworkRoute?
 
-  public init(statusCode: Int, fileURL: URL) {
+  public init(statusCode: Int, fileURL: URL, route: InstantNetworkRoute? = nil) {
     self.statusCode = statusCode
     self.fileURL = fileURL
+    self.route = route
   }
 }
 
@@ -483,6 +519,7 @@ private func liveStorageUploadOperation(
   sourceURL: URL
 ) -> InstantStorageTransportOperation<InstantStorageHTTPResponse> {
   let completion = InstantStorageHTTPCompletion()
+  let route = InstantTransferRouteRecorder()
   let task = URLSession.shared.uploadTask(
     with: request,
     fromFile: sourceURL
@@ -500,13 +537,15 @@ private func liveStorageUploadOperation(
           recovery: "Check the configured Instant API endpoint and network connection."
         )
       }
-      completion.complete(
-        .success(try httpResponse(data: data ?? Data(), response: response))
-      )
+      var answer = try httpResponse(data: data ?? Data(), response: response)
+      answer.route = route.route
+      completion.complete(.success(answer))
     } catch {
       completion.complete(.failure(error))
     }
   }
+  // #1231: the task's own delegate hears its metrics, which arrive before its completion handler runs.
+  route.install(on: task)
   return InstantStorageTransportOperation(
     run: {
       task.resume()
@@ -518,16 +557,25 @@ private func liveStorageUploadOperation(
   )
 }
 
-extension InstantStorageHTTPClient {
-  public static let live = Self(
+/// How the live client moves bytes (#1231): `URLSession` in an app, a script in a test.
+struct InstantStorageHTTPTransfers: Sendable {
+  var send: @Sendable (URLRequest) async throws -> InstantStorageHTTPResponse
+  var downloadToFile: @Sendable (URLRequest) async throws -> InstantStorageHTTPFileResponse
+  var upload: @Sendable (URLRequest, URL) -> InstantStorageTransportOperation<InstantStorageHTTPResponse>
+
+  static let urlSession = Self(
     send: { request in
-      let (data, response) = try await URLSession.shared.data(for: request)
-      return try httpResponse(data: data, response: response)
+      let route = InstantTransferRouteRecorder()
+      let (data, response) = try await URLSession.shared.data(for: request, delegate: route)
+      var answer = try httpResponse(data: data, response: response)
+      answer.route = route.route
+      return answer
     },
     downloadToFile: { request in
       // A download task writes the body to disk as it arrives: a recording's 2 GB audio never sits in memory
       // (Scribe #454). The system's file is moved at once, before the next suspension point.
-      let (location, response) = try await URLSession.shared.download(for: request)
+      let route = InstantTransferRouteRecorder()
+      let (location, response) = try await URLSession.shared.download(for: request, delegate: route)
       let fileURL = instantStorageTemporaryDownloadURL()
       do {
         try FileManager.default.moveItem(at: location, to: fileURL)
@@ -549,15 +597,240 @@ extension InstantStorageHTTPClient {
           recovery: "Check the configured Instant API endpoint and network connection."
         )
       }
-      return InstantStorageHTTPFileResponse(statusCode: response.statusCode, fileURL: fileURL)
+      return InstantStorageHTTPFileResponse(statusCode: response.statusCode, fileURL: fileURL, route: route.route)
     },
-    prepareUploadFileOperation: { request, sourceURL in
+    upload: { request, sourceURL in
       // Upstream StorageAPI uploads a File/Blob directly. A suspended
       // URLSession upload task is the Swift file-backed equivalent and gives
       // cancellation a synchronous task-level abort before asynchronous work.
       liveStorageUploadOperation(request: request, sourceURL: sourceURL)
     }
   )
+}
+
+extension InstantStorageHTTPClient {
+  /// The live client: `URLSession.shared`, asking for a route that is not expensive whenever the system path has one
+  /// (#1231).
+  public static let live = Self.live(networkPath: .system)
+
+  /// The live client over `networkPath` (#1231).
+  ///
+  /// While the path has a route that is not expensive (Wi-Fi or wired) and the caller's request allows expensive
+  /// networks, a request first asks the system for a route that is not expensive. URLSession keeps the connections of
+  /// such requests apart from those of requests that allow expensive networks, so it never rides a connection Wi-Fi
+  /// Assist moved to cellular. When that attempt cannot reach the server (the system finds no such route, or the
+  /// connection never opens; for a small upload, also a timeout or a dropped connection), the caller's own request
+  /// goes at once, and requests stop asking until the route preference's backoff ends; a caller's refusal of expensive
+  /// networks is never widened. Each response says which route its transfer used.
+  static func live(
+    networkPath: InstantNetworkPath,
+    transfers: InstantStorageHTTPTransfers = .urlSession
+  ) -> Self {
+    Self(
+      send: { request in
+        try await instantStoragePreferringNonexpensiveRoute(request, networkPath: networkPath) {
+          try await transfers.send($0)
+        }
+      },
+      downloadToFile: { request in
+        try await instantStoragePreferringNonexpensiveRoute(request, networkPath: networkPath) {
+          try await transfers.downloadToFile($0)
+        }
+      },
+      prepareUploadFileOperation: { request, sourceURL in
+        instantStorageUploadPreferringNonexpensiveRoute(
+          request,
+          sourceURL: sourceURL,
+          networkPath: networkPath,
+          prepare: { transfers.upload($0, sourceURL) }
+        )
+      }
+    )
+  }
+}
+
+/// The request a first attempt on a route that is not expensive sends, or nil when the caller's request goes as it is:
+/// the path has no such route, the preference is in its backoff, or the caller already refused expensive networks.
+///
+/// A small upload's first attempt waits at most five seconds for data: on a Wi-Fi without a working internet link it
+/// would otherwise stall its whole timeout before the caller's request may use another network (#1231), and sending its
+/// body again costs little. Every other request keeps its caller's timeout: a large body or download is never sent or
+/// read twice for a slow answer, such as a storage stall (#1233).
+func instantStorageNonexpensiveAttempt(
+  _ request: URLRequest,
+  isSmallUpload: Bool,
+  monitor: InstantNetworkPathMonitor?
+) -> URLRequest? {
+  return nil
+  guard request.allowsExpensiveNetworkAccess, let monitor, monitor.asksForNonexpensiveRoute() else { return nil }
+  var attempt = request
+  attempt.allowsExpensiveNetworkAccess = false
+  if isSmallUpload {
+    attempt.timeoutInterval = min(request.timeoutInterval, instantStorageNonexpensiveAttemptTimeout)
+  }
+  return attempt
+}
+
+/// An upload this small is a small upload; see ``instantStorageNonexpensiveAttempt(_:isSmallUpload:monitor:)``.
+let instantStorageSmallUploadByteCount: Int64 = 1_024 * 1_024
+/// The codebase's five seconds, for a small upload's first attempt on a route that is not expensive (#1231).
+let instantStorageNonexpensiveAttemptTimeout: TimeInterval = 5
+
+/// Whether a failed first attempt on a route that is not expensive could not reach the server over it, so the caller's
+/// own request may try another route: the system found no such route, or the connection never opened. A small
+/// upload's timeout or dropped connection counts too; another request's could be a slow server, which another route
+/// would not help.
+func instantStorageNonexpensiveRouteFailed(_ error: any Error, isSmallUpload: Bool) -> Bool {
+  guard let error = error as? URLError else { return false }
+  switch error.code {
+  case .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .secureConnectionFailed:
+    return true
+  case .timedOut, .networkConnectionLost:
+    return isSmallUpload
+  default:
+    return false
+  }
+}
+
+private func recordStorageNonexpensiveRouteFailed(
+  _ error: any Error,
+  monitor: InstantNetworkPathMonitor,
+  request: URLRequest
+) {
+  monitor.recordNonexpensiveRouteRefused()
+  InstantNetworkRouteMeter.shared.recordRefusal()
+  InstantDiagnostics.shared.record(
+    .notice,
+    subsystem: "instant-swift-data-core",
+    category: "network",
+    event: "storage.nonexpensive-route-failed",
+    message:
+      "A storage request on a route that is not expensive failed on the network; it goes again as its caller asked, "
+      + "and requests stop asking for such a route until the backoff ends.",
+    metadata: [
+      "path": monitor.routeMark.path.logDescription,
+      "method": request.httpMethod ?? "GET",
+      "errorCode": String((error as? URLError)?.code.rawValue ?? 0),
+    ]
+  )
+}
+
+private func instantStoragePreferringNonexpensiveRoute<Value: Sendable>(
+  _ request: URLRequest,
+  networkPath: InstantNetworkPath,
+  _ perform: @Sendable (URLRequest) async throws -> Value
+) async throws -> Value {
+  guard let monitor = networkPath.monitor,
+    let attempt = instantStorageNonexpensiveAttempt(request, isSmallUpload: false, monitor: monitor)
+  else {
+    return try await perform(request)
+  }
+  do {
+    let value = try await perform(attempt)
+    monitor.recordNonexpensiveRouteSucceeded()
+    return value
+  } catch where instantStorageNonexpensiveRouteFailed(error, isSmallUpload: false) {
+    recordStorageNonexpensiveRouteFailed(error, monitor: monitor, request: request)
+    return try await perform(request)
+  }
+}
+
+private func instantStorageUploadPreferringNonexpensiveRoute(
+  _ request: URLRequest,
+  sourceURL: URL,
+  networkPath: InstantNetworkPath,
+  prepare: @escaping @Sendable (URLRequest) -> InstantStorageTransportOperation<InstantStorageHTTPResponse>
+) -> InstantStorageTransportOperation<InstantStorageHTTPResponse> {
+  let bodyByteCount =
+    ((try? FileManager.default.attributesOfItem(atPath: sourceURL.path))?[.size] as? NSNumber)?.int64Value
+    ?? Int64.max
+  let isSmallUpload = bodyByteCount <= instantStorageSmallUploadByteCount
+  guard let monitor = networkPath.monitor,
+    let attempt = instantStorageNonexpensiveAttempt(request, isSmallUpload: isSmallUpload, monitor: monitor)
+  else {
+    return prepare(request)
+  }
+  let stages = InstantStorageUploadStages(first: prepare(attempt))
+  return InstantStorageTransportOperation(
+    run: {
+      do {
+        let response = try await stages.first.run()
+        monitor.recordNonexpensiveRouteSucceeded()
+        return response
+      } catch where instantStorageNonexpensiveRouteFailed(error, isSmallUpload: isSmallUpload) {
+        recordStorageNonexpensiveRouteFailed(error, monitor: monitor, request: request)
+        guard let second = stages.start(prepare(request)) else { throw CancellationError() }
+        return try await second.run()
+      }
+    },
+    abort: {
+      stages.abort()
+    }
+  )
+}
+
+/// An upload's first attempt and, when it fails on the network, the caller's own request; an abort ends whichever runs
+/// and keeps the second from starting.
+// SAFETY: `lock` guards the second operation and the abort flag.
+private final class InstantStorageUploadStages: @unchecked Sendable {
+  let first: InstantStorageTransportOperation<InstantStorageHTTPResponse>
+  private let lock = NSLock()
+  private var second: InstantStorageTransportOperation<InstantStorageHTTPResponse>?
+  private var isAborted = false
+
+  init(first: InstantStorageTransportOperation<InstantStorageHTTPResponse>) {
+    self.first = first
+  }
+
+  /// Returns `operation` to run, or nil when the upload was aborted.
+  func start(
+    _ operation: InstantStorageTransportOperation<InstantStorageHTTPResponse>
+  ) -> InstantStorageTransportOperation<InstantStorageHTTPResponse>? {
+    lock.withLock {
+      guard !isAborted else { return nil }
+      second = operation
+      return operation
+    }
+  }
+
+  func abort() {
+    let second: InstantStorageTransportOperation<InstantStorageHTTPResponse>? = lock.withLock {
+      isAborted = true
+      return self.second
+    }
+    first.abort()
+    second?.abort()
+  }
+}
+
+/// A task's route, from its own delegate's `URLSessionTaskMetrics` (#1231).
+// SAFETY: `lock` guards the route; the system calls the delegate on its own queue.
+final class InstantTransferRouteRecorder: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+  private let lock = NSLock()
+  private var measured: InstantNetworkRoute?
+
+  /// The route of the task's last transaction that reached the network, or nil before its metrics arrive.
+  var route: InstantNetworkRoute? {
+    lock.withLock { measured }
+  }
+
+  func install(on task: URLSessionTask) {
+    task.delegate = self
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+    #if !canImport(FoundationNetworking)
+      guard let transaction = metrics.transactionMetrics.last(where: { $0.resourceFetchType == .networkLoad }) else {
+        return
+      }
+      let route = InstantNetworkRoute(
+        isCellular: transaction.isCellular,
+        isExpensive: transaction.isExpensive,
+        isConstrained: transaction.isConstrained
+      )
+      _ = route
+    #endif
+  }
 }
 
 extension InstantStorageTransportClient {

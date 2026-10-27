@@ -747,19 +747,26 @@ public struct InstantLiveSessionRequest: Hashable, Sendable {
   public var refreshToken: String?
   public var adminToken: String?
   public var versions: [String: String]
+  /// Whether this attempt may open its socket over a network the system considers expensive: cellular or a personal
+  /// hotspot (#1237). The runtime asks for a route that is not expensive (`false`) whenever its transport's
+  /// ``InstantLiveTransportClient/networkPath`` has one, and the live transport passes it to its `URLRequest`. A custom
+  /// transport may ignore it.
+  public var allowsExpensiveNetworkAccess: Bool
 
   public init(
     appID: String,
     websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
     refreshToken: String? = nil,
     adminToken: String? = nil,
-    versions: [String: String] = InstantLiveMessage.defaultVersions
+    versions: [String: String] = InstantLiveMessage.defaultVersions,
+    allowsExpensiveNetworkAccess: Bool = true
   ) {
     self.appID = appID
     self.websocketURI = websocketURI
     self.refreshToken = refreshToken
     self.adminToken = adminToken
     self.versions = versions
+    self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
   }
 
   public func sessionURL() throws -> URL {
@@ -789,6 +796,11 @@ public struct InstantLiveSessionRequest: Hashable, Sendable {
       )
     }
     return url
+  }
+
+  /// The socket's opening request: ``sessionURL()``, with this attempt's network access (#1237).
+  func urlRequest() throws -> URLRequest {
+    URLRequest(url: try sessionURL())
   }
 
   public func initMessage(clientEventID: String) -> InstantLiveMessage {
@@ -1511,7 +1523,7 @@ extension InstantLiveTransportClient {
 
   public static let live: Self = {
     var live = Self.immediate { request in
-      let socket = try InstantURLSessionLiveWebSocket(url: request.sessionURL())
+      let socket = try InstantURLSessionLiveWebSocket(request: request.urlRequest())
       return InstantLiveWebSocketSession(
         send: { message in
           try await socket.send(message)
@@ -1907,7 +1919,15 @@ actor InstantURLSessionLiveWebSocket {
   }
 
   init(url: URL, wireMeter: InstantWireMeterStorage = InstantWireMeter.shared) throws {
-    let task = Self.sharedURLSession.webSocketTask(with: url)
+    try self.init(request: URLRequest(url: url), wireMeter: wireMeter)
+  }
+
+  /// Opens the socket with `request`, whose `allowsExpensiveNetworkAccess` the system honors for the connection
+  /// (#1237). Its timeout is the session's, as a socket opened from a bare URL had.
+  init(request: URLRequest, wireMeter: InstantWireMeterStorage = InstantWireMeter.shared) throws {
+    var request = request
+    request.timeoutInterval = Self.sharedURLSession.configuration.timeoutIntervalForRequest
+    let task = Self.sharedURLSession.webSocketTask(with: request)
     task.maximumMessageSize = Self.maximumMessageSize
     self.task = task
     self.abortHandle = InstantLiveWebSocketAbortHandle(task: task)
@@ -1920,11 +1940,17 @@ actor InstantURLSessionLiveWebSocket {
       event: "urlsession-websocket.resumed",
       message: "URLSession WebSocket task resumed.",
       metadata: [
-        "host": url.host ?? "unknown",
+        "host": request.url?.host ?? "unknown",
         "maximumMessageSize": String(Self.maximumMessageSize),
-        "scheme": url.scheme ?? "unknown",
+        "scheme": request.url?.scheme ?? "unknown",
+        "allowsExpensiveNetworkAccess": String(request.allowsExpensiveNetworkAccess),
       ]
     )
+  }
+
+  /// The request the socket opened with, as its task holds it (#1237).
+  nonisolated var openingRequest: URLRequest? {
+    task.originalRequest
   }
 
   func send(_ message: InstantLiveMessage) async throws {
