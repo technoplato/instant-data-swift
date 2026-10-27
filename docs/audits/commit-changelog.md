@@ -1,3 +1,30 @@
+## 2026-10-27 12:41:23 EDT — scribe `3aad3f6fa989e19ffef37e2f73369251bc92e110`
+Merge (#1246): the energy model lands on main: each energy-ledger row estimates every subsystem's energy.
+
+## 2026-10-27 12:40:58 EDT — scribe `3f22bd2a7440b6174bf262e66ec11b8bfa56c1a1`
+Changelog (#1246): the energy model's red and green commits and its audit.
+
+## 2026-10-27 12:40:18 EDT — scribe `317464347872654ad14d93fe894814ebe1cf76ef`
+Docs (#1246): the energy model's audit (each subsystem's coefficients and error on two sessions, the known gaps, the cost), the lab's section, PROGRESS.
+
+## 2026-10-27 12:38:50 EDT — scribe `a2ba2bf62663bc2dd6cdf032877f3f38b872b78a`
+Green (#1246): each energy-ledger row carries an estimate of twelve subsystems' power (display, render server, GPU, CPU, memory, Neural Engine, microphone, kernel, Live Activity, Wi-Fi, cellular, location) from its own counters and per-device coefficients; under 0.3 ms a minute.
+
+## 2026-10-27 12:11:31 EDT — scribe `bd90aead41168b8a42f92f134be4402b7a60f5de`
+Green (#1246): energy-model.py fits each subsystem on a powerlog's five-minute buckets by non-negative least squares and checks a session it never saw; Scribe's total within +0.4% and -5.0% on two sessions.
+
+## 2026-10-27 12:11:31 EDT — scribe `3d0598eb0d7be81a7e3406367870eff6781c7e69`
+Red (#1246): the row's estimate as a seam: the model type, the generated coefficients, the shared fixture.
+
+## 2026-10-27 11:59:08 EDT — scribe `077238ec31af5a7b73ef8184bb57cc8e8ea1cc93`
+Green (#1246 #1011): the ledger report counts a row by its overlap with the window and weighs averages by seconds: one hour read 59 minutes of rows, not 123.
+
+## 2026-10-27 11:59:08 EDT — scribe `d56c8945ecbc953aaff8c2f771511da3be29c69f`
+Red (#1246 #1011): the ledger report counted a row whole when it started in the window.
+
+## 2026-10-27 11:52:01 EDT — scribe `2541af1e3acf767e71dc47a81d26169dfefef2ac`
+Red (#1246): energy-model.py's tests: twelve subsystems that partition the powerlog's energy, proration, the fit and its report.
+
 ## 2026-10-27 12:27:52 EDT — scribe `f50973e13267ffb68b4f504ea57c4ad817100f3f`
 changelog(#1243, #1242): heat-1243: the cellular fix (red and green) and the heat audit
 
