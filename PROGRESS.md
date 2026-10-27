@@ -1,3 +1,17 @@
+## 2026-10-27 12:20:00 EDT — toolbox-1244 (#1244): docs/FOOTGUNS.md, 58 traps with their cost, rule and guard; two new guards
+
+- **Commits:** guards `8487391c`, the page `d27d3e74` (plan `486accdd`); change log beside them.
+- **Why:** the consuming app paid for the same classes of mistakes more than once (whole results restated per write,
+  b-tree rewrites per outbox step, temp-file staging, whole-result JSON rewrites, gate holds in proportion to whole
+  results, copies left after a container move, connections pinned to cellular); each was found by measurement after it
+  cost energy, disk or time. The page names each one, its measured cost, the rule and the test that holds it.
+- **Checks (laptop, debug, Xcode 27 beta):** `swift test --filter FootgunGuardTests`: red with the lookup statement
+  rewritten without the partial index's condition (1 failure: "SCAN instant_triples"), green 2 of 2 with #1251 as a
+  known issue (a stored "abc" takes 23 bytes against a bound of 9). Guard status of the 58: 29 always, 13 partial,
+  3 release only, 2 exercise only, 6 none yet, 5 tooling or process.
+- **Next:** the page's "Guards to add first" (a bytes-per-write budget by query shape, #1106's step count, a check that a
+  declared attribute exists on the server before the first write, building InstantSwiftData before a tag); #1251.
+
 ## 2026-10-26 23:37:47 EDT — v1.9.45 (live-tail-1117, #1117): the wire meter says which query each answer's bytes carried
 
 - **Release:** `docs/releases/v1.9.45.md` (`a4de2555`), cut at main `9936ffe4` (red `14aee4fb`, green `f52532b2`,

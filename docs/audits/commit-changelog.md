@@ -1,3 +1,32 @@
+## 2026-10-27 12:18:17 EDT — instant-data-swift `d27d3e740a940d1c5b4b04039caf56c4b5b88c00`
+docs(#1244): FOOTGUNS.md: every trap found while building on the library, with its measured cost, rule and guard
+
+## 2026-10-27 12:18:17 EDT — instant-data-swift `8487391cf6e9270c3d2ae0152d0ef00a8697dd7d`
+test(#1244): footgun guards: a lookup's partial-index plan, and the stored value wrapper as a known issue (#1251)
+
+## 2026-10-27 12:07:59 EDT — scribe `e55162c513a98806ab6cd7210667d562495f5552`
+docs(#1244): the toolbox: every Apple instrument that finds battery and CPU waste, with recipes and what each settles
+
+## 2026-10-27 11:55:37 EDT — scribe `504a513979a3c52c71a7d9b0f786ea6ecac50f82`
+docs(#1244): what we are not measuring, gating or adapting yet, ranked by estimated win per recording hour
+
+## 2026-10-27 11:49:17 EDT — scribe `d7596b92360eaff46d1215a197e1e5cdecae48d1`
+changelog(#1244): query-plans.py red and green, the query audit
+
+## 2026-10-27 11:48:43 EDT — scribe `80bb641920408a005465c1f690fff0a5993540b0`
+docs(#1244, #1248): the query audit: every live Instant query, its bytes per final, and the fast-changing hypothesis measured
+
+## 2026-10-27 11:17:36 EDT — scribe `d8cbd6ec9c80e1e1835e51224254b00d02aa2ee7`
+feat(#1244): green: query-plans.py store, plans and ledger (18 of 18 pass)
+
+## 2026-10-27 11:15:41 EDT — scribe `d396f707de4f56901abadf6cbc1d7bc1f9d868fe`
+test(#1244): red: query-plans.py, the query audit of the Instant store (17 of 18 fail on the seam)
+
+## 2026-10-27 11:04:46 EDT — instant-data-swift `486accdd45667c513994b47293458bbf742b8d9a`
+plan(#1244): footgun ledger plan 2026-10-27-toolbox-1244-footguns and claims
+
+## 2026-10-27 11:04:15 EDT — scribe `9cf6f398a4e9d6db8b9f9f84366a65c8f81eac0c`
+plan(#1244): toolbox-1244: plan 2026-10-27-toolbox-1244 and claims (toolbox, query audit, footguns)
 ## 2026-10-27 11:50:49 EDT — scribe `8461868fa5918b82e9f9e0f8c6096ec785d1b95d`
 changelog(#1243): the energy ledger's performance cores, QoS classes and CPU energy (red and green)
 

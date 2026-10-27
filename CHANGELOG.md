@@ -10,6 +10,32 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 27th, 2026 at 12:18:34 p.m. EDT — `d27d3e740a94` docs(#1244): FOOTGUNS.md: every trap found while building on the library, with its measured cost, rule and guard
+
+- **Implementation commit:** `d27d3e740a940d1c5b4b04039caf56c4b5b88c00`
+- **Change:** #1244: FOOTGUNS.md: every trap found while building on the library, with its measured cost, rule and guard
+- **Details:**
+  - 58 entries (read path, write path), each with symptom, measured cost and conditions, rule, issues and commits, guard and gate or a proposed guard, upstream source; an index, the guards to add first, the fixtures appendix; README links it.
+- **Files:**
+  - `docs/FOOTGUNS.md` — the footgun ledger
+  - `README.md` — a link under Documentation
+- **User context (verbatim):**
+  > we need to optimzie our libraries algorithms and ensure our queries are optimized, creating meticulous notes about any footguns in the library from our experience building scribe
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, toolbox-1244); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 12:18:34 p.m. EDT — `8487391cf6e9` test(#1244): footgun guards: a lookup's partial-index plan, and the stored value wrapper as a known issue (#1251)
+
+- **Implementation commit:** `8487391cf6e9270c3d2ae0152d0ef00a8697dd7d`
+- **Change:** #1244, #1251: footgun guards: a lookup's partial-index plan, and the stored value wrapper as a known issue
+- **Details:**
+  - FootgunGuardTests: the read connection's lookup statement (now entityIDsSQL) plans as a search of instant_triples_lookup and the same lookup without the index's condition as a scan; red shown on a reintroduced scan, green 2 of 2 with #1251 as a known issue (a stored "abc" takes 23 bytes).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — the lookup's SQL as entityIDsSQL, so a test plans the text the read uses
+  - `Tests/InstantSwiftDataCoreTests/FootgunGuardTests.swift` — the two guards
+- **User context (verbatim):**
+  > we need to optimzie our libraries algorithms and ensure our queries are optimized, creating meticulous notes about any footguns in the library from our experience building scribe
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, toolbox-1244); no SpecStory capture exists for headless runs.
+
 ## October 26th, 2026 at 11:38:03 p.m. EDT — `9936ffe4c6e5` feat(#1117): the per-query wire meter lands again on 1.9.44 (reverts 4fcf70e1)
 
 - **Implementation commit:** `9936ffe4c6e572ec6ca85c70acf362d88b8ea43d`
