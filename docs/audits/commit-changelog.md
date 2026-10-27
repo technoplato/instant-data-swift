@@ -1,3 +1,18 @@
+## 2026-10-27 11:50:49 EDT — scribe `8461868fa5918b82e9f9e0f8c6096ec785d1b95d`
+changelog(#1243): the energy ledger's performance cores, QoS classes and CPU energy (red and green)
+
+## 2026-10-27 11:50:49 EDT — scribe `d7e4eece66bc60e2257ed12c46c544dd42d76f1d`
+feat(#1243): green: each energy-ledger minute says the CPU on the performance cores, by QoS class, and the CPU's energy
+
+## 2026-10-27 11:50:49 EDT — scribe `941b459f68c63b728e8f967c06ef9e1b2c26e853`
+test(#1243): red: each energy-ledger minute says the CPU on the performance cores, by QoS class, and the CPU's energy
+
+## 2026-10-27 11:50:49 EDT — scribe `db831e4aadeed49c038361d4815bfd331b081f52`
+plan(#1243, #1246): channel: heat-1243 owns the ledger's rusage V6 CPU fields; ledger-1246 builds its model on them
+
+## 2026-10-27 11:50:49 EDT — scribe `e73b80385889a8fd6db0b86976649c58ca1416c1`
+plan(#1243): heat-1243: plan 2026-10-27-heat-1243 and claims (performance cores, QoS and CPU energy in the energy ledger)
+
 ## 2026-10-27 01:11:53 EDT — scribe `2ee458a6d516bc605db550df8ece550365120e3b`
 docs(#1242, #1117): PROGRESS: build 144 on every device; the 1.9.45 pin and the ledger's per-query reader
 
