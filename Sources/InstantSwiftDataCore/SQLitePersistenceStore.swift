@@ -68,6 +68,8 @@
 // - 2026-10-25: a changing result's JSON is written at most every 5 minutes, not 30 s (#1123).
 // - 2026-10-25: the outbox's three rare-state indexes are partial on the state each finds, so a live write's save,
 //   acknowledgement and echo write none of them; the queries they serve name the same literal predicates (#1115).
+// - 2026-10-27: the server apply's reduction looks a slot's surviving writers up under every name a write gives the
+//   slot, so a link written under its forward identity and held under its id is found (#1270).
 
 import Foundation
 import IssueReporting
@@ -5504,8 +5506,12 @@ public actor SQLitePersistenceStore {
   /// at the revisions the caller's seed was taken at.
   /// - Parameter absentEntityIDs: The frame's entities the store does not show. For each one a surviving write touches,
   ///   the context names the write that deletes it last, if any (#932).
+  /// - Parameter writeKeyNames: for an attribute id in `slots` that writes name otherwise, every name its write keys can
+  ///   carry (`AttributeStore.forwardWriteNames(of:)`). The outbox keeps a write's keys under the names the write used,
+  ///   and the frame names the slot by the attribute's id (#1270).
   func loadServerApplyReductionContext(
     slots: [String: Set<String>],
+    writeKeyNames: [String: [String]] = [:],
     reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
     absentEntityIDs: Set<String> = [],
     processedTransactionID: String,
@@ -5685,13 +5691,15 @@ public actor SQLitePersistenceStore {
       }
 
       // The surviving writes that insert one slot, walked in delivery order along the effect index (the write-key
-      // index is not ordered by creation), stopping at the first.
+      // index is not ordered by creation), stopping at the first. A slot's write keys can carry any name a write gives
+      // it (#1270).
       func writer(
         of attributeID: String,
         on entityID: String,
         newest: Bool,
         after position: InstantOutboxDeliveryPosition? = nil
       ) throws -> InstantOutboxDeliveryPosition? {
+        let names = writeKeyNames[attributeID] ?? [attributeID]
         var statement: OpaquePointer?
         let afterSQL = position == nil
           ? ""
@@ -5711,7 +5719,8 @@ public actor SQLitePersistenceStore {
             AND EXISTS(
               SELECT 1 FROM instant_outbox_write_keys AS write_keys
               WHERE write_keys.mutation_id = effects.mutation_id
-                AND write_keys.entity_id = ? AND write_keys.attribute_id = ?
+                AND write_keys.entity_id = ?
+                AND write_keys.attribute_id IN (\(Array(repeating: "?", count: names.count).joined(separator: ", ")))
             )
             \(afterSQL)
           ORDER BY effects.created_at_ms \(newest ? "DESC" : "ASC"), effects.mutation_id \(newest ? "DESC" : "ASC")
@@ -5724,7 +5733,7 @@ public actor SQLitePersistenceStore {
           [.int($0.createdAtMilliseconds), .int($0.createdAtMilliseconds), .text($0.mutationID)]
         } ?? []
         try bind(
-          [.text(entityID)] + prunable.bindings + [.text(entityID), .text(attributeID)] + afterBindings,
+          [.text(entityID)] + prunable.bindings + [.text(entityID)] + names.map { .text($0) } + afterBindings,
           to: statement
         )
         guard sqlite3_step(statement) == SQLITE_ROW,

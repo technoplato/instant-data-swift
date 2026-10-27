@@ -10,6 +10,8 @@ import os
 // - 2026-10-24: a many-cardinality slot keeps its values in a sharded dictionary, and the insert path writes a derived
 //   index shape only when it changes: each line linked to a long recording copied the recording's whole link set, and
 //   each such write copied the schema-sized shape map (#1152).
+// - 2026-10-27: `forwardWriteNames(of:)`, the names a forward write may give an attribute: a link the server issued an
+//   id for is written under its forward identity and held under the id (#1270).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -197,6 +199,25 @@ struct AttributeStore: Hashable, Codable, Sendable {
       namespace: attribute.linkNamespace ?? Self.namespace(in: id) ?? attribute.namespace,
       name: Self.name(in: id) ?? id
     )
+  }
+
+  /// Every name a forward write may give the attribute `attributeID` names, the attribute's id first: a link the server
+  /// issued an id for is written under its forward identity (`recordings/previewImage`), which the store resolves to the
+  /// id it holds the link under. `[attributeID]` when it names no forward attribute.
+  ///
+  /// #1270: the outbox keeps a write's keys under the names the write used, and a server frame names a slot by the id.
+  /// A lookup of one by the other found no pending writer of a device's preview link, and every frame that restated the
+  /// recording peeled and replayed the whole queue.
+  func forwardWriteNames(of attributeID: String) -> [String] {
+    guard let attribute = forwardAttribute(id: attributeID) else { return [attributeID] }
+    var names = [attribute.id]
+    if let forwardIdentity = attribute.forwardIdentity, forwardIdentity != attribute.id,
+      forwardAttribute(id: forwardIdentity)?.id == attribute.id
+    {
+      names.append(forwardIdentity)
+    }
+    if !names.contains(attributeID) { names.append(attributeID) }
+    return names
   }
 
   /// Canonicalizes a stored relation fact through the current physical schema.

@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-27: a server apply's reduction finds a slot's pending writers, and reads their values, under every name a
+//   write gives the slot: a device's preview link was written under its forward identity and held under its id, so
+//   every frame restating the recording declined into the whole-component rebase (#1270).
 // - 2026-10-25: compaction asks the app's hold once, before the operation gate, and under it re-checks only what reads
 //   at once, so the gate's hold is the VACUUM's own (#1136).
 // - 2026-10-25: a one-shot read answers as the local read does, a local observation's first answer without the
@@ -4128,10 +4131,18 @@ public final class InstantRuntime: Sendable {
     let absentEntityIDs = Set(
       slots.keys.filter { seed.preparedStore.indexes.copiedAttributeSlots(entityID: $0)?.isEmpty ?? true }
     )
+    // #1270: a link the server issued an id for is written under its forward identity, and the outbox keeps that name;
+    // this frame names the slot by the id. Its writers are looked up under both.
+    var writeKeyNames: [String: [String]] = [:]
+    for attributeID in Set(slots.values.joined()) {
+      let names = seed.preparedStore.attributes.forwardWriteNames(of: attributeID)
+      if names.count > 1 { writeKeyNames[attributeID] = names }
+    }
     let state = seed.state
     recordActorHop(.persistence)
     let load = try await persistence.loadServerApplyReductionContext(
       slots: slots,
+      writeKeyNames: writeKeyNames,
       reverseLinkSlots: reverseLinkSlots,
       absentEntityIDs: absentEntityIDs,
       processedTransactionID: processedTransactionID,
@@ -4280,7 +4291,7 @@ public final class InstantRuntime: Sendable {
             factHolds,
             let firstReverseWriter = context.bodies[firstReverseWriterID],
             let lastReverseWriter = context.lastReverseLinkWriterBySlot[reverseSlot].flatMap({ context.bodies[$0] }),
-            Self.insertedValue(of: reverseSlot, in: lastReverseWriter) == .ref(triple.entityID)
+            Self.insertedValue(of: reverseSlot, in: lastReverseWriter, attributes: attributes) == .ref(triple.entityID)
           else { return .declined(.reverseLinkWriter, fact: triple) }
           switch Self.linkBeforeImage(of: triple, in: firstReverseWriter) {
           case .present:
@@ -4310,9 +4321,9 @@ public final class InstantRuntime: Sendable {
         // too (a merge reads the base).
         guard attributes[triple.attributeID]?.cardinality == .one,
           let firstWriter = context.bodies[firstWriterID],
-          Self.insertedValue(of: slot, in: firstWriter) != nil,
+          Self.insertedValue(of: slot, in: firstWriter, attributes: attributes) != nil,
           let lastWriter = context.lastWriterBySlot[slot].flatMap({ context.bodies[$0] }),
-          let lastWrittenValue = Self.insertedValue(of: slot, in: lastWriter),
+          let lastWrittenValue = Self.insertedValue(of: slot, in: lastWriter, attributes: attributes),
           shownValue(of: slot) == lastWrittenValue
         else { return .declined(.shadowedSlotNotReplaced, fact: triple) }
         // The base value beneath the writers lives in one place: the first writer's before-image. When the server
@@ -4405,9 +4416,9 @@ public final class InstantRuntime: Sendable {
       // entity the store shows: a write that lost to a later-stamped resident fact surfaces only in the full rebase.
       guard firstWriterID != deleterID,
         let firstWriter = context.bodies[firstWriterID],
-        insertedValue(of: slot, in: firstWriter) != nil,
+        insertedValue(of: slot, in: firstWriter, attributes: attributes) != nil,
         let lastWriter = context.lastWriterBySlot[slot].flatMap({ context.bodies[$0] }),
-        let lastWrittenValue = insertedValue(of: slot, in: lastWriter),
+        let lastWrittenValue = insertedValue(of: slot, in: lastWriter, attributes: attributes),
         case let .present(restored) = beforeImageState(of: slot, in: deleter),
         restored.value == lastWrittenValue
       else { return .declined }
@@ -4588,7 +4599,7 @@ public final class InstantRuntime: Sendable {
         }
         guard attributes[slot.attributeID]?.cardinality == .one,
           let nextWriter = context.bodies[nextWriterID],
-          insertedValue(of: slot, in: nextWriter) != nil
+          insertedValue(of: slot, in: nextWriter, attributes: attributes) != nil
         else { return nil }
         let beforeImage: [InstantTriple] = slotOperations.compactMap { operation in
           if case let .insert(triple) = operation { return triple }
@@ -4772,17 +4783,23 @@ public final class InstantRuntime: Sendable {
     return InstantStoreTransaction(id: rollback.id, operations: operations)
   }
 
-  /// The value `mutation` last inserts into a slot; nil when it merges into the slot instead or never writes it.
+  /// The value `mutation` last inserts into a slot, under any name a write gives the slot's attribute; nil when it
+  /// merges into the slot instead or never writes it.
+  ///
+  /// #1270: a link the server issued an id for is written under its forward identity and held, in the store and in
+  /// every server frame, under the id. Read under the id alone, a device's preview-link writes inserted nothing.
   private static func insertedValue(
     of slot: InstantVisibleWriteKey,
-    in mutation: PendingMutation
+    in mutation: PendingMutation,
+    attributes: AttributeStore
   ) -> InstantValue? {
+    let names = attributes.forwardWriteNames(of: slot.attributeID)
     var value: InstantValue?
     for operation in mutation.transaction.operations {
       switch operation {
-      case let .insert(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
+      case let .insert(triple) where triple.entityID == slot.entityID && names.contains(triple.attributeID):
         value = triple.value
-      case let .merge(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
+      case let .merge(triple) where triple.entityID == slot.entityID && names.contains(triple.attributeID):
         return nil
       default:
         continue

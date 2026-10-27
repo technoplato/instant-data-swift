@@ -1077,6 +1077,19 @@ struct FastDrainDifferentialPair {
     let fullObservation = try await FastDrainObservation.observe(full.runtime)
     let same = reducedObservation == fullObservation
     if !same {
+      // #1270: say which device's persisted store left its own hot store, so a difference names the path that broke.
+      for (name, observation) in [("reduced", reducedObservation), ("full rebase", fullObservation)]
+      where observation.hotFacts != observation.persistedFacts {
+        let hot = Set(observation.hotFacts)
+        let persisted = Set(observation.persistedFacts)
+        Issue.record(
+          """
+          \(name) device after \(event): its persisted store differs from its hot store; \
+          only hot: \(hot.subtracting(persisted).sorted().prefix(6)); \
+          only persisted: \(persisted.subtracting(hot).sorted().prefix(6))
+          """
+        )
+      }
       expectNoDifference(
         reducedObservation.hotFacts,
         fullObservation.hotFacts,
@@ -1963,5 +1976,60 @@ extension InstantFastDrainTests {
     if maximumFrames == .max {
       expectNoDifference(pendingAfter, 0)
     }
+  }
+}
+
+extension InstantFastDrainTests {
+  /// #1270, measured: one minute of recording at the device's write rate on top of 2,000 pending writes, with the
+  /// server accepting each write as soon as the device has applied the last one's frame (one frame per accepted write,
+  /// as in the drain above). The queue must shrink. The device, recording on a queue of 1,718-1,774, had 2 writes
+  /// accepted in 30 s while it wrote 56 more. `reducesServerApply: false` is the whole-component rebase on every frame,
+  /// which is what the device ran while every frame declined; `true` is the reduced apply.
+  @Test(.measurement, arguments: [true, false])
+  func aMinuteOfRecordingShrinksAQueueOf2000(reducesServerApply: Bool) async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "minute-\(reducesServerApply)", serverSegmentCount: 20, pendingSegmentCount: 286,
+      reducesServerApply: reducesServerApply, attachments: true
+    )
+    let pendingAtStart = try await fixture.pendingCount()
+    // Seven writes a segment, one segment every 6 s: 70 writes a minute (the device wrote 45-85).
+    let clock = ContinuousClock()
+    let began = clock.now
+    var nextSegment = began
+    var written = 0
+    var accepted = 0
+    var measurement = FastDrainMeasurement()
+    let cpuStart = FastDrainProcessCPU.milliseconds()
+    recording: while clock.now - began < .seconds(60) {
+      let window = try await fixture.claimWindow(maximumMutationCount: 50)
+      guard !window.mutations.isEmpty else {
+        // Nothing to send: the queue is empty; keep writing until the minute ends.
+        guard clock.now >= nextSegment else { continue }
+        written += try await fixture.writeSegments(1).count
+        nextSegment += .seconds(6)
+        continue
+      }
+      for mutation in window.mutations {
+        if clock.now - began >= .seconds(60) { break recording }
+        while clock.now >= nextSegment {
+          written += try await fixture.writeSegments(1).count
+          nextSegment += .seconds(6)
+        }
+        measurement.record(try await fixture.acceptAndRefresh(mutation, claimToken: window.token))
+        accepted += 1
+      }
+    }
+    measurement.wall = clock.now - began
+    measurement.cpuMilliseconds = FastDrainProcessCPU.milliseconds() - cpuStart
+    let pendingAtEnd = try await fixture.pendingCount()
+    print(
+      """
+      #1270 a recording minute on \(pendingAtStart) pending (\(reducesServerApply ? "reduced" : "whole-component rebase")): \
+      written \(written), accepted \(accepted), pending \(pendingAtStart) -> \(pendingAtEnd); \(measurement)
+      """
+    )
+    // The whole-component rebase is the baseline the device ran; how far it falls behind depends on the machine.
+    guard reducesServerApply else { return }
+    #expect(pendingAtEnd < pendingAtStart, "the queue grew: \(pendingAtStart) -> \(pendingAtEnd), \(accepted) accepted, \(written) written")
   }
 }
