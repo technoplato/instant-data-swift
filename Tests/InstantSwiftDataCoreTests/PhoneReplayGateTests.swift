@@ -61,9 +61,9 @@ struct PhoneReplayGateTests {
       ?? FileManager.default.temporaryDirectory
     let url = try Self.scratchCopy(of: store, in: scratchDirectory)
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-    let selection = Self.storedSelection(url)
     let runtime = try await Self.runtime(url, appID: store.deletingPathExtension().lastPathComponent, deferred: deferred)
     let state = try await runtime.persistence.loadCompactState()
+    let selection = Self.storedSelection(url, attributes: state.snapshot.store.attributes)
     let pendingAtStart = await runtime.pendingMutations().sorted(by: PendingMutation.creationOrder)
     let failedAtStart = try await runtime.persistence.countOutboxMutations(status: .failed)
     // Every device stamp in the copy, so the server's first-set times come after them, as the phone's first offers did.
@@ -303,8 +303,11 @@ extension PhoneReplayGateTests {
     return results
   }
 
-  /// The attributes the store's stored live-query results select, by namespace.
-  static func storedSelection(_ url: URL) -> [String: Set<String>] {
+  /// The attributes the store's stored live-query results select, by namespace. A link the server issued an id for is
+  /// stored under that id, with no namespace in it, so its namespace comes from the schema (#1270: the recording list's
+  /// `previewImage`, which the selection used to leave out).
+  static func storedSelection(_ url: URL, attributes: [InstantAttribute]) -> [String: Set<String>] {
+    let namespaceByID = Dictionary(attributes.map { ($0.id, $0.namespace) }, uniquingKeysWith: { first, _ in first })
     var database: OpaquePointer?
     guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [:] }
     defer { sqlite3_close(database) }
@@ -314,8 +317,11 @@ extension PhoneReplayGateTests {
     var selection: [String: Set<String>] = [:]
     while sqlite3_step(statement) == SQLITE_ROW {
       let attributeID = String(cString: sqlite3_column_text(statement, 0))
-      guard let slash = attributeID.firstIndex(of: "/") else { continue }
-      selection[String(attributeID[..<slash]), default: []].insert(attributeID)
+      if let slash = attributeID.firstIndex(of: "/") {
+        selection[String(attributeID[..<slash]), default: []].insert(attributeID)
+      } else if let namespace = namespaceByID[attributeID] {
+        selection[namespace, default: []].insert(attributeID)
+      }
     }
     return selection
   }
@@ -408,6 +414,8 @@ struct PhoneReplayServer {
   var lastTransactionNumber: Int64 = 2_900_000_000
   let attributesByID: [String: InstantAttribute]
   let forwardByReverseIdentity: [String: InstantAttribute]
+  /// #1270: links whose id the server issued, by the name a write gives them (`recordings/previewImage`).
+  let forwardByName: [String: InstantAttribute]
   var unsupported: [String: Int] = [:]
 
   init(attributes: [InstantAttribute], clock: Int64) {
@@ -417,11 +425,23 @@ struct PhoneReplayServer {
       attributes.compactMap { attribute in attribute.reverseIdentity.map { ($0, attribute) } },
       uniquingKeysWith: { first, _ in first }
     )
+    forwardByName = Dictionary(
+      attributes.compactMap { attribute in
+        attribute.forwardIdentity.flatMap { $0 == attribute.id ? nil : ($0, attribute) }
+      },
+      uniquingKeysWith: { first, _ in first }
+    )
   }
 
+  /// A fact as Instant stores it: a reverse-form link on the forward entity, and a link named by its forward identity
+  /// under the attribute's id (#1270: the server answers every query with the id, and before this the model kept such
+  /// a write under its name, so its frames never restated what the device's writes set).
   func forward(_ entityID: String, _ attributeID: String, _ value: InstantValue) -> (String, String, InstantValue) {
     if attributesByID[attributeID] == nil, let forward = forwardByReverseIdentity[attributeID], case let .ref(target) = value {
       return (target, forward.id, .ref(entityID))
+    }
+    if attributesByID[attributeID] == nil, let forward = forwardByName[attributeID] {
+      return (entityID, forward.id, value)
     }
     return (entityID, attributeID, value)
   }

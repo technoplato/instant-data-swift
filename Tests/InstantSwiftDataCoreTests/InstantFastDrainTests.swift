@@ -13,6 +13,8 @@ import Testing
 //
 // 2026-10-23 (#932): the fixture can write Scribe's live lines (ADR 0069): interims on a `liveLines` row that the line's
 // final deletes, with the recording screen's live-lines query registered; the differential runs with them too.
+// 2026-10-27 (#1270): the fixture can write Scribe's attachments: a link the server issued an id for, written under its
+// name, held by the store and every frame under the id. One device's queue grew to 2,316 writes on it.
 
 // MARK: - Schema
 
@@ -29,6 +31,42 @@ enum FastDrainSchema {
   static func liveLineID(_ index: Int) -> String {
     "fast-drain-live-\(String(format: "%05d", index))"
   }
+
+  /// The screenshot taken while segment `index` was spoken (#1270).
+  static func attachmentID(_ index: Int) -> String {
+    "fast-drain-attachment-\(String(format: "%05d", index))"
+  }
+
+  /// #1270: ids the server issued for the recording's `previewImage` and `attachments` links. The store keeps a
+  /// server-issued relation id as the link's physical id, so a write names the link (`recordings/previewImage`) while
+  /// the store and every server frame hold it under the id, as one device's store does.
+  static let previewImageAttributeID = "0b7d2c4e-5f61-4a3b-9c8d-7e6f5a4b3c2d"
+  static let attachmentsAttributeID = "1c8e3d5f-6a72-4b4c-8d9e-8f7a6b5c4d3e"
+
+  /// #1270: Scribe's attachment rows and the two links a screenshot writes: the recording's `previewImage` (forward,
+  /// cardinality one) and the attachment's `recording` (the reverse form of the recording's `attachments`).
+  static let attachmentAttributes: [InstantAttribute] = [
+    InstantAttribute(
+      id: "recordingAttachments/id", namespace: "recordingAttachments", name: "id", valueType: .string,
+      isRequired: false, isIndexed: true, isUnique: true, primaryKey: true
+    ),
+    InstantAttribute(id: "recordingAttachments/recordingID", namespace: "recordingAttachments", name: "recordingID", valueType: .string, isRequired: false, isIndexed: true),
+    InstantAttribute(id: "recordingAttachments/kind", namespace: "recordingAttachments", name: "kind", valueType: .string, isRequired: false),
+    InstantAttribute(id: "recordingAttachments/capturedAtMs", namespace: "recordingAttachments", name: "capturedAtMs", valueType: .number, isRequired: false),
+    InstantAttribute(id: "recordingAttachments/updatedAtMs", namespace: "recordingAttachments", name: "updatedAtMs", valueType: .number, isRequired: false),
+    InstantAttribute(
+      id: previewImageAttributeID, namespace: "recordings", name: "previewImage", valueType: .ref,
+      isRequired: false, cardinality: .one,
+      forwardIdentity: "recordings/previewImage", reverseIdentity: "recordingAttachments/previewOfRecordings",
+      linkNamespace: "recordingAttachments"
+    ),
+    InstantAttribute(
+      id: attachmentsAttributeID, namespace: "recordings", name: "attachments", valueType: .ref,
+      isRequired: false, cardinality: .many, isUnique: true,
+      forwardIdentity: "recordings/attachments", reverseIdentity: "recordingAttachments/recording",
+      linkNamespace: "recordingAttachments"
+    ),
+  ]
 
   /// #932: Scribe's `liveLines` (ADR 0069): one row per line in progress, its words replaced by each interim; the line's
   /// final writes its segment and deletes the row. A string `recordingID`, no link.
@@ -127,6 +165,8 @@ struct FastDrainWriteScript {
   var writeCount = 0
   /// #932: interims write the line's `liveLines` row, and the final deletes it (ADR 0069), as Scribe writes today.
   var usesLiveLines = false
+  /// #1270: a screenshot after each final, which points the recording's preview at it.
+  var writesAttachments = false
 
   init(firstSegmentIndex: Int, deviceMilliseconds: Int64) {
     nextSegmentIndex = firstSegmentIndex
@@ -153,6 +193,9 @@ struct FastDrainWriteScript {
     }
     writes.append(finalWrite)
     wordCount += words.count
+    if writesAttachments {
+      writes.append(attachmentWrite(index: index))
+    }
     writes.append(summaryWrite(previewSegmentIndex: index))
     writes.append(durationWrite())
     return writes
@@ -219,6 +262,32 @@ struct FastDrainWriteScript {
         insert("text", .string(words.joined(separator: " "))),
         insert("wordsJSON", .string("[" + words.map { "{\"word\":\"\($0)\"}" }.joined(separator: ",") + "]")),
         insert("updatedAtMs", .number(updatedAt)),
+      ]
+    )
+  }
+
+  /// #1270: a screenshot's write, as one device's outbox holds it: the recording's id, update time and preview link
+  /// (named `recordings/previewImage`, held under the server's id), and the attachment's row with its `recording` link.
+  private mutating func attachmentWrite(index: Int) -> InstantStoreTransaction {
+    let (id, time, updatedAt) = stamp()
+    let recording = FastDrainSchema.recordingID
+    let attachment = FastDrainSchema.attachmentID(index)
+    func insert(_ entityID: String, _ attributeID: String, _ value: InstantValue) -> InstantTripleOperation {
+      .insert(InstantTriple(entityID: entityID, attributeID: attributeID, value: value, txID: id, txTime: time))
+    }
+    return InstantStoreTransaction(
+      id: id,
+      operations: [
+        .requireEntityExists(entityID: recording, namespace: "recordings"),
+        insert(recording, "recordings/id", .string(recording)),
+        insert(recording, "recordings/updatedAtMs", .number(updatedAt)),
+        insert(recording, "recordings/previewImage", .ref(attachment)),
+        insert(attachment, "recordingAttachments/id", .string(attachment)),
+        insert(attachment, "recordingAttachments/recordingID", .string(recording)),
+        insert(attachment, "recordingAttachments/kind", .string("image")),
+        insert(attachment, "recordingAttachments/capturedAtMs", .number(updatedAt - 1_000)),
+        insert(attachment, "recordingAttachments/updatedAtMs", .number(updatedAt)),
+        insert(attachment, "recordingAttachments/recording", .ref(recording)),
       ]
     )
   }
@@ -331,12 +400,21 @@ struct FastDrainServer {
   private let attributesByID: [String: InstantAttribute]
   /// Forward link attributes by their reverse identity, so a reverse-form write lands where the server keeps it.
   private let forwardByReverseIdentity: [String: InstantAttribute]
+  /// #1270: links whose id is not their name, by name, so a write naming one lands under the id, as Instant resolves a
+  /// write's attribute and answers every query with the attribute's id.
+  private let forwardByName: [String: InstantAttribute]
 
   init(serverMilliseconds: Int64, attributes: [InstantAttribute] = FastDrainSchema.attributes) {
     self.serverMilliseconds = serverMilliseconds
     attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
     forwardByReverseIdentity = Dictionary(
       attributes.compactMap { attribute in attribute.reverseIdentity.map { ($0, attribute) } },
+      uniquingKeysWith: { first, _ in first }
+    )
+    forwardByName = Dictionary(
+      attributes.compactMap { attribute in
+        attribute.forwardIdentity.flatMap { $0 == attribute.id ? nil : ($0, attribute) }
+      },
       uniquingKeysWith: { first, _ in first }
     )
   }
@@ -349,6 +427,10 @@ struct FastDrainServer {
   private mutating func store(entityID: String, attributeID: String, value: InstantValue, txTime: Int64) {
     if let forward = forwardByReverseIdentity[attributeID], case let .ref(targetID) = value {
       store(entityID: targetID, attributeID: forward.id, value: .ref(entityID), txTime: txTime)
+      return
+    }
+    if let forward = forwardByName[attributeID] {
+      store(entityID: entityID, attributeID: forward.id, value: value, txTime: txTime)
       return
     }
     if attributesByID[attributeID]?.cardinality == .many {
@@ -405,6 +487,10 @@ struct FastDrainServer {
       var entities = facts[recording] == nil ? [] : [recording]
       if case let .ref(preview)? = value(recording, "recordings/previewSegmentB"), facts[preview] != nil {
         entities.append(preview)
+      }
+      // #1270: the list's `previewImage` include, as Scribe's recording list selects it.
+      if case let .ref(image)? = value(recording, FastDrainSchema.previewImageAttributeID), facts[image] != nil {
+        entities.append(image)
       }
       return entities
     case .transcription:
@@ -495,10 +581,12 @@ struct FastDrainFixture {
     scribeLinks: Bool = false,
     endsWithStop: Bool = false,
     defersSegmentText: Bool = false,
-    liveLines: Bool = false
+    liveLines: Bool = false,
+    attachments: Bool = false
   ) async throws -> Self {
     let attributes = (scribeLinks ? FastDrainSchema.scribeLinkAttributes : FastDrainSchema.attributes)
       + (liveLines ? FastDrainSchema.liveLineAttributes : [])
+      + (attachments ? FastDrainSchema.attachmentAttributes : [])
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
       "instant-fast-drain-\(suffix)-\(UUID().uuidString).sqlite"
     )
@@ -527,6 +615,7 @@ struct FastDrainFixture {
     if liveLines { server.registeredQueries.append(.liveLines) }
     var history = FastDrainWriteScript(firstSegmentIndex: 0, deviceMilliseconds: 1_790_600_000_000)
     history.usesLiveLines = liveLines
+    history.writesAttachments = attachments
     if endsWithStop {
       _ = server.accept(history.startWrite().operations)
     }
@@ -548,6 +637,7 @@ struct FastDrainFixture {
       deviceMilliseconds: 1_790_710_000_000
     )
     script.usesLiveLines = liveLines
+    script.writesAttachments = attachments
     for _ in 0..<pendingSegmentCount {
       for write in script.nextSegmentWrites() {
         _ = try await runtime.transact(write, createdAt: InstantTimestamp(milliseconds: script.deviceMilliseconds))
@@ -948,7 +1038,8 @@ struct FastDrainDifferentialPair {
     scribeLinks: Bool = false,
     endsWithStop: Bool = false,
     defersSegmentText: Bool = false,
-    liveLines: Bool = false
+    liveLines: Bool = false,
+    attachments: Bool = false
   ) async throws -> Self {
     Self(
       reduced: try await FastDrainFixture.make(
@@ -960,7 +1051,8 @@ struct FastDrainDifferentialPair {
         scribeLinks: scribeLinks,
         endsWithStop: endsWithStop,
         defersSegmentText: defersSegmentText,
-        liveLines: liveLines
+        liveLines: liveLines,
+        attachments: attachments
       ),
       full: try await FastDrainFixture.make(
         suffix: "differential-\(seed)-full",
@@ -971,7 +1063,8 @@ struct FastDrainDifferentialPair {
         scribeLinks: scribeLinks,
         endsWithStop: endsWithStop,
         defersSegmentText: defersSegmentText,
-        liveLines: liveLines
+        liveLines: liveLines,
+        attachments: attachments
       )
     )
   }
@@ -1092,7 +1185,19 @@ extension InstantFastDrainTests {
     try await runDifferential(seed: seed, scribeLinks: true, liveLines: true)
   }
 
-  private func runDifferential(seed: UInt64, scribeLinks: Bool, liveLines: Bool = false) async throws {
+  /// #1270: the same with Scribe's screenshots: a link the server issued an id for, written under its name, and the
+  /// attachment's link to the recording, with another device moving the recording's preview now and then.
+  @Test(arguments: [UInt64(31), 32, 33, 34, 35, 36])
+  func theReducedApplyObservesWhatTheFullRebaseObservesWithAttachments(seed: UInt64) async throws {
+    try await runDifferential(seed: seed, scribeLinks: true, liveLines: true, attachments: true)
+  }
+
+  private func runDifferential(
+    seed: UInt64,
+    scribeLinks: Bool,
+    liveLines: Bool = false,
+    attachments: Bool = false
+  ) async throws {
     var random = FastDrainRandom(seed: seed)
     // Ten segments of pending writes (60 writes): past the 50-write component bound, so a refusal defers its peel to
     // the next server apply, as Recording 023's refusals did, and the reduced apply removes it there.
@@ -1103,7 +1208,8 @@ extension InstantFastDrainTests {
       scribeLinks: scribeLinks,
       endsWithStop: scribeLinks,
       defersSegmentText: scribeLinks,
-      liveLines: liveLines
+      liveLines: liveLines,
+      attachments: attachments
     )
     guard try await pair.expectSameObservation(after: "setup") else { return }
     for step in 0..<70 {
@@ -1132,13 +1238,20 @@ extension InstantFastDrainTests {
         let entityID: String
         let attributeID: String
         let value: InstantValue
-        switch random.int(1...5) {
+        switch random.int(1...(attachments ? 6 : 5)) {
         case 1: (entityID, attributeID, value) = (FastDrainSchema.recordingID, "recordings/title", .string("title \(step)"))
         case 2: (entityID, attributeID, value) = (FastDrainSchema.recordingID, "recordings/updatedAtMs", .number(Double(step)))
         case 3: (entityID, attributeID, value) = (FastDrainSchema.transcriptionID, "transcriptions/wordCount", .number(Double(step)))
         case 4:
           let index = random.int(0...(pair.reduced.script.nextSegmentIndex - 1))
           (entityID, attributeID, value) = (FastDrainSchema.segmentID(index), "transcriptionSegments/text", .string("edited \(step)"))
+        case 6:
+          // #1270: another device points the recording's preview at a screenshot the server already has.
+          let index = random.int(0...(pair.reduced.script.nextSegmentIndex - 1))
+          (entityID, attributeID, value) = (
+            FastDrainSchema.recordingID, FastDrainSchema.previewImageAttributeID, .ref(FastDrainSchema.attachmentID(index))
+          )
+          guard pair.reduced.server.facts[FastDrainSchema.attachmentID(index)] != nil else { continue }
         default:
           (entityID, attributeID, value) = (FastDrainSchema.recordingID, "recordings/activityKind", .string(random.chance(50) ? "active" : "idle"))
         }
@@ -1258,7 +1371,7 @@ extension InstantFastDrainTests {
     let metrics = await pair.reduced.runtime.persistence.serverApplyMetricsForTesting()
     print(
       """
-      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : "")\(liveLines ? " (live lines)" : ""): \
+      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : "")\(liveLines ? " (live lines)" : "")\(attachments ? " (attachments)" : ""): \
       \(metrics.reductionCount) reductions, \
       \(metrics.reducedCount) reduced, \(metrics.receiptPatchCount) receipt patches, \
       \(metrics.plannedComponentBodyCount) component bodies, \(metrics.removedFailedOverlayCount) refused overlays removed
@@ -1759,5 +1872,96 @@ extension InstantFastDrainTests {
       return triple.value
     }
     expectNoDifference(sentTitles, [.string("typed on this device")])
+  }
+}
+
+// MARK: - #1270: a link written under its name and held under the attribute's id
+
+extension InstantFastDrainTests {
+  /// #1270. One device's outbox grew from 0-1 to 2,316 pending writes in two hours of recording: 49 of its 51 slow
+  /// server applies said `full rebase: changesShadowedFact`, peeling and replaying 1,073-2,093 writes for one frame. Its
+  /// screenshots point the recording's `previewImage` at each new attachment by the link's name; the store and every
+  /// server frame hold the link under the id the server issued for it. A frame restating the recording must find
+  /// those pending writes and leave them alone, as it does for the recording's other slots, on every frame.
+  @Test
+  func aLinkWrittenUnderItsNameDoesNotForceARebase() async throws {
+    let fixture = try await FastDrainFixture.make(
+      suffix: "link-name", serverSegmentCount: 6, pendingSegmentCount: 4, attachments: true
+    )
+    // While it records, the device's frames restate the recording: the recording list and the timeline.
+    for round in 1...3 {
+      for query in [FastDrainQuery.list, .timeline] {
+        let (frame, declines) = try await FastDrainDeclineCounter.counting {
+          try await fixture.refresh(queries: [query])
+        }
+        expectNoDifference(frame.plannedBodyCount, 0, "round \(round), \(query): declines \(declines)")
+      }
+    }
+    // Four segments of seven writes, all still pending, and the store still shows the newest screenshot.
+    let pending = try await fixture.pendingCount()
+    expectNoDifference(pending, 28)
+    let shownPreview = await fixture.runtime.store.snapshot().triples.first {
+      $0.entityID == FastDrainSchema.recordingID && $0.attributeID == FastDrainSchema.previewImageAttributeID
+    }?.value
+    expectNoDifference(shownPreview, .ref(FastDrainSchema.attachmentID(9)))
+  }
+
+  /// #1270, measured: what one frame restating the recording costs against the queue's length, in the device's write
+  /// shape (seven writes a segment: three interims, the final, a screenshot, the summary, a duration tick). On the
+  /// device each such frame peeled and replayed the whole queue, so its cost grew with the queue.
+  @Test(.measurement, arguments: [100, 1_000, 2_000])
+  func measureOneFrameAgainstTheQueue(writes: Int) async throws {
+    let setupStarted = ContinuousClock.now
+    let fixture = try await FastDrainFixture.make(
+      suffix: "frame-\(writes)", serverSegmentCount: 20, pendingSegmentCount: (writes + 6) / 7, attachments: true
+    )
+    let setup = ContinuousClock.now - setupStarted
+    let pending = try await fixture.pendingCount()
+    var lines: [String] = []
+    var frames: [FastDrainFrameMeasurement] = []
+    for round in 1...3 {
+      for query in [FastDrainQuery.list, .timeline] {
+        let (frame, declines) = try await FastDrainDeclineCounter.counting {
+          try await fixture.refresh(queries: [query])
+        }
+        frames.append(frame)
+        lines.append("round \(round) \(query): \(frame.duration), bodies \(frame.plannedBodyCount), declines \(declines)")
+      }
+    }
+    print(
+      """
+      #1270 one frame against \(pending) pending writes (setup \(setup)):
+        \(lines.joined(separator: "\n  "))
+      """
+    )
+    for frame in frames {
+      expectNoDifference(frame.plannedBodyCount, 0, "\(pending) pending: \(lines.joined(separator: "; "))")
+    }
+  }
+
+  /// #1270, measured: the drain of a queue with no new writes, one server frame per accepted write as the device gets
+  /// them: frames (refresh and acknowledgement cycles), frames that rebased, writes replayed, time applying.
+  /// `INSTANT_FAST_DRAIN_MAX_FRAMES` caps the frames (the whole-component rebase makes a full drain of 2,000 writes take
+  /// hours in a debug build).
+  @Test(.measurement, arguments: [100, 1_000, 2_000])
+  func measureTheDrainOfTheQueue(writes: Int) async throws {
+    let maximumFrames = ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_MAX_FRAMES"].flatMap(Int.init) ?? .max
+    var fixture = try await FastDrainFixture.make(
+      suffix: "drain-\(writes)", serverSegmentCount: 20, pendingSegmentCount: (writes + 6) / 7, attachments: true
+    )
+    let (drain, declines) = try await FastDrainDeclineCounter.counting {
+      try await fixture.drain(maximumFrames: maximumFrames)
+    }
+    let pendingAfter = try await fixture.pendingCount()
+    print(
+      """
+      #1270 drain of \(drain.writesAtStart) pending writes: \(drain)
+        pending after: \(pendingAfter); declines: \(declines.sorted { $0.key < $1.key })
+      """
+    )
+    expectNoDifference(drain.rebases, 0, "declines: \(declines)")
+    if maximumFrames == .max {
+      expectNoDifference(pendingAfter, 0)
+    }
   }
 }
