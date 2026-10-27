@@ -1,3 +1,21 @@
+## 2026-10-27 00:19:09 EDT — scribe `24c4ca6ee09522a4a8cca6d47e485556a56810dc`
+changelog(#1242): build 144 cut 3db5cc18c
+
+## 2026-10-27 00:19:09 EDT — scribe `3db5cc18c58dc90f47d51070b1c7fe5a692333ab`
+release(#1242): cut Scribe 0.1 (144) and Scribe Playback 144: CURRENT_PROJECT_VERSION 144, What's New for #1231, #1237 and #1117
+
+## 2026-10-27 00:19:09 EDT — scribe `c677047029389eb55ab9781474797939a8c12cb1`
+changelog(#1117, #1242): release-144: the 1.9.45 pin, red and green
+
+## 2026-10-27 00:19:09 EDT — scribe `b63354cb2c217b90b3e23d4be56d803bda5821c6`
+feat(#1117): green: each energy-ledger minute names the Instant queries whose answers the socket received (net.instant.queries)
+
+## 2026-10-27 00:19:09 EDT — scribe `29d7f20fc2f1c7a0dd369dcf40e13a53bb038382`
+test(#1117): red: each energy-ledger minute names the Instant queries whose answers the socket received, from the library's per-query wire meter
+
+## 2026-10-27 00:19:09 EDT — scribe `34a65f4c3ce546b0e6b948e71a290d22f97e59b2`
+Pin instant-data-swift exactly 1.9.45 instead of 1.9.44 in Scribe and Scribe Playback: the wire meter counts each live query's received bytes (#1117, #1242)
+
 ## 2026-10-27 00:00:45 EDT — scribe `0224f08e8366a41123225a6d67db2c86562a7777`
 changelog(#1231, #1237): cellular-1231: the 1.9.44 pin, red and green
 
