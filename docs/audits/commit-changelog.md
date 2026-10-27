@@ -1,3 +1,12 @@
+## 2026-10-26 22:49:35 EDT — scribe `51d536292952407b056dd4b60360e039b0c896b3`
+changelog(#1117): live-tail-1117: the ledger's net.instant.queries
+
+## 2026-10-26 22:49:19 EDT — scribe `934a117a20109483926156524ee289cddbb0c9fe`
+feat(#1117): green: the energy ledger's minute can name the Instant queries whose answers carried the socket's bytes
+
+## 2026-10-26 22:39:47 EDT — scribe `2cb930d9758120617cdc13b69884c39be9262175`
+test(#1117): red: the energy ledger's minute names the Instant queries whose answers carried the socket's bytes
+
 ## 2026-10-26 22:36:50 EDT — scribe `719f9dc28474c5f42e8867fa2e98dcd365f9fdba`
 changelog(#1117, #1239): live-tail-1117: the Without Audio follow's groups, the 16-line window and its tail, the timeline tests' waits
 
