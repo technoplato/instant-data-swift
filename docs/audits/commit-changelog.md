@@ -1,3 +1,9 @@
+## 2026-10-26 22:53:39 EDT — scribe `8bd31846d2ee433f3b4f39f485bbaa895f9a2e4e`
+release(#1240): cut Scribe 0.1 (143) from main a5c9c6708: #1239 and #1117 (live-tail-1117) so the next recording measures the Instant socket's drop; instant-data-swift 1.9.43 unchanged; Scribe Playback stays 142.
+
+## 2026-10-26 22:53:39 EDT — scribe `020fd654dda74efd9084a4bc671e17f44c92577e`
+changelog(#1240): CHANGELOG entry for build 143's cut.
+
 ## 2026-10-26 22:49:35 EDT — scribe `51d536292952407b056dd4b60360e039b0c896b3`
 changelog(#1117): live-tail-1117: the ledger's net.instant.queries
 
