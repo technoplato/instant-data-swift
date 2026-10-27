@@ -1,3 +1,48 @@
+## 2026-10-26 23:41:43 EDT — scribe `6756d87d9fd0848232486b35e7147fc5ffdfc011`
+changelog(#1214): the attribution tool's later commits in CHANGELOG.md
+
+## 2026-10-26 23:41:26 EDT — scribe `aa2ccec902bbbfc2aff1c9ee0dc4226357f5c37c`
+docs(#1214): progress entry and the attribution audit's index row
+
+## 2026-10-26 23:40:41 EDT — scribe `2af159bbe191df97395374504eb8e8e292584ebc`
+docs(#1214): the attribution audit's daily-file section, a clearer sentence
+
+## 2026-10-26 23:40:31 EDT — scribe `f1e4a3e8d723ecd9427a469ab746426ab9baa0f4`
+docs(#1214): the daily power log equals iOS's hourly aggregate, which can fall short of its five-minute accounting
+
+## 2026-10-26 23:40:06 EDT — scribe `3f998b645503f21e9b2f8bf8035be8e2733eb300`
+docs(#1214): power-session.py's header: each record, the clock offset, the cable
+
+## 2026-10-26 23:39:23 EDT — scribe `55b31bb841f5163f8d0889d77984935b55c11784`
+feat(#1214): green: plsql prints the hourly aggregate the daily file sums beside the five-minute accounting
+
+## 2026-10-26 23:39:23 EDT — scribe `cd760c546939fc42696428786d0d0962a6ffd906`
+test(#1214): red: plsql prints the hourly aggregate
+
+## 2026-10-26 23:04:09 EDT — scribe `e0b2090ed92cd43b233604d6185c9f7e956a1b66`
+changelog(#1214): the attribution tool's commits in CHANGELOG.md
+
+## 2026-10-26 22:53:35 EDT — scribe `fa169febd293834ab1b5378f86a374099277523d`
+fix(#1214): green: the unattended sysdiagnose names the cable when the phone is on Wi-Fi
+
+## 2026-10-26 22:53:35 EDT — scribe `28ff28edbb8cdb7a4d4f1274a5fc99e721758f75`
+test(#1214): red: a phone off the cable is told to plug in
+
+## 2026-10-26 18:51:00 EDT — scribe `828dec21b6d6befdba4e1b3c84e987dd2d4d2652`
+docs(#1214): energy per byte on cellular and Wi-Fi by iOS's accounting
+
+## 2026-10-26 18:49:28 EDT — scribe `ead8d2aa8dc18509ff00a0cf5e2cf5cb9e9b3501`
+docs(#1214): the powerlog's clock offset and the location rows corrected
+
+## 2026-10-26 18:48:56 EDT — scribe `c26ba9f5a393978fb5d53685e8bd612ba974f1f5`
+fix(#1214): green: plsql reads wall-clock windows in the powerlog's own time and counts location rows as samples
+
+## 2026-10-26 18:47:47 EDT — scribe `94326d788279a665d21cb5c47986837498c09917`
+test(#1214): red: the powerlog's clock offset and location rows as samples
+
+## 2026-10-26 18:45:16 EDT — scribe `e71268e41b2dceb3a94316d02cbb0faa4416f754`
+docs(#1214): the unattended sysdiagnose proven end to end; what a sysdiagnose costs
+
 ## 2026-10-26 23:37:32 EDT — instant-data-swift `a4de2555233d0e4cd3791ef11f6e35e033a415bb`
 docs(#1117): the v1.9.45 release document: the wire meter says which query each answer's bytes carried
 
