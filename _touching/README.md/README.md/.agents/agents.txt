@@ -1,1 +1,2 @@
 claude-opus-5.5-rooms 2026-10-03T18:50:55-04:00 grower plan=2026-10-03-rooms #461
+claude-code/toolbox-1244@strangelearning 2026-10-27T11:04:46-0400 grower plan=2026-10-27-toolbox-1244-footguns #1244
