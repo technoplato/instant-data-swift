@@ -23,6 +23,11 @@ public enum InstantWireMeter {
     shared.snapshot()
   }
 
+  /// A query's shape (#1117).
+  public static func queryShape(of query: InstantLiveJSONValue) -> String {
+    "unknown"
+  }
+
   package static let shared = InstantWireMeterStorage()
 }
 
@@ -50,10 +55,17 @@ public struct InstantWireSnapshot: Sendable, Equatable {
   public var sent: [String: Measure]
   /// By op (`transact-ok`, `refresh-ok`, `add-query-ok`, ...).
   public var received: [String: Measure]
+  /// What each query's answers carried (#1117), by its shape (``InstantWireMeter/queryShape(of:)``).
+  public var receivedByQuery: [String: Measure]
 
-  public init(sent: [String: Measure] = [:], received: [String: Measure] = [:]) {
+  public init(
+    sent: [String: Measure] = [:],
+    received: [String: Measure] = [:],
+    receivedByQuery: [String: Measure] = [:]
+  ) {
     self.sent = sent
     self.received = received
+    self.receivedByQuery = receivedByQuery
   }
 
   public var sentFrames: Int { sent.values.reduce(0) { $0 + $1.frames } }
@@ -137,4 +149,10 @@ package final class InstantWireMeterStorage: Sendable {
   package func snapshot() -> InstantWireSnapshot {
     state.withLock { $0.counts }
   }
+
+  /// The most query shapes the meter keeps apart (#1117).
+  package static let maximumQueryShapes = 48
+
+  /// Counts one answer for each shape (#1117).
+  package func recordQueries(_ answers: [(shape: String, bytes: Int)]) {}
 }

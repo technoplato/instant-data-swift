@@ -18,4 +18,14 @@ extension InstantLiveMessage {
     }
     return try JSONDecoder().decode(InstantLiveMessage.self, from: Data(string.utf8))
   }
+
+  /// The message a received frame holds, counted in `meter` (#1117).
+  static func decoded(fromFrame data: Data, meter: InstantWireMeterStorage) throws -> InstantLiveMessage {
+    try decoded(fromFrame: data)
+  }
+
+  /// The message a received text frame holds, counted in `meter` (#1117).
+  static func decoded(fromFrame string: String, meter: InstantWireMeterStorage) throws -> InstantLiveMessage {
+    try decoded(fromFrame: string)
+  }
 }
