@@ -1,3 +1,16 @@
+## 2026-10-27 13:40:09 EDT — v1.9.47 (sqlite-1245, #1253): a progressive media stream's later writes carry only what changes
+
+- **Release:** `docs/releases/v1.9.47.md` (`3822618a`), cut at main `6fb8b654` (red `464d057f`, green `6fb8b654`;
+  plan amendment `962e8a10`), carrying 1.9.46. No migration, no stored format change; `InstantProgressiveMediaRow`
+  gains `.streamProgress` (an exhaustive switch over it needs the case).
+- **Why:** a stream's row restated its 13 fields every segment where 4 change: 59% of the fact records one device's
+  store log held in a quiet 72 s. Measured on the same store: a stream write's save 29 -> 17 pages, its outbox body
+  8,627 -> 3,515 bytes.
+- **Checks (laptop, debug):** red 3 of 12 fail, green InstantProgressiveMedia* 31 tests in 5 suites; the whole
+  InstantSwiftDataCoreTests bundle (1,567 tests, 3 failing: 2 listed, 1 new that passes alone 3 of 3); InstantSwiftData
+  builds.
+- **Next:** the consuming app pins 1.9.47 for its next build.
+
 ## 2026-10-27 12:51:01 EDT — v1.9.46 (sqlite-1245, #1245): SQLite's own counters per store call, and what SQLite writes to each kind of file
 
 - **Release:** `docs/releases/v1.9.46.md` (`2ed46017`), cut at main `b4ee694b` (red `3332dc8a`, green `b4ee694b`;

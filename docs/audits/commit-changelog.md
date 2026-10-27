@@ -1,3 +1,33 @@
+## 2026-10-27 13:40:09 EDT — instant-data-swift `3822618a301da38a2087cdb7b1a285804751a834`
+docs(#1253): the v1.9.47 release document: a progressive media stream's later writes carry only what changes
+
+## 2026-10-27 13:40:09 EDT — instant-data-swift `6fb8b6541ffaf5f9be47835f083ea71d43a21cde`
+feat(#1253): green: a progressive media stream's later writes carry only its state, segment count, duration and update time
+
+## 2026-10-27 13:40:09 EDT — instant-data-swift `464d057f5465963cde5e0182bd3db51dd3f94c5f`
+test(#1253): red: a progressive media stream's later writes carry only what changes (3 of 12 fail on the seam)
+
+## 2026-10-27 13:40:09 EDT — scribe `b288d821ed94f3a22feb30057a94c39821fac721`
+changelog(#1245): the ledger's SQLite file writers (50439e356, b37e82ff6), the 1.9.46 pin (0ee978e2c), the meter's mapping (b036938a0, ca98a8b4a), the audit (504071355)
+
+## 2026-10-27 13:40:09 EDT — scribe `50407135520cd41b4726182daa69ede645b3eb7a`
+docs(#1245): audit: SQLite's own tools on the iPhone's Instant store, and where its writes go; README row
+
+## 2026-10-27 13:40:09 EDT — scribe `ca98a8b4a645cb65b817a74885561e43476b2328`
+feat(#1245): green: each energy-ledger minute reads the library's SQLite file meter, so the disk writers name checkpoints and temporary files
+
+## 2026-10-27 13:40:09 EDT — scribe `b036938a045d813aab893838e9e99d5657768978`
+test(#1245): red: the energy ledger keys the library's SQLite file meter by kind (1 of 4 fails on the seam)
+
+## 2026-10-27 13:40:09 EDT — scribe `0ee978e2c307571813fa613fdfa8b904e5008460`
+Pin instant-data-swift exactly 1.9.46 instead of 1.9.45 in Scribe and Scribe Playback: SQLite's own counters per store call and per kind of file (#1245)
+
+## 2026-10-27 13:40:09 EDT — scribe `b37e82ff6979cd833ae9bca31eb1fb6fd239d60f`
+feat(#1245): green: the ledger's disk writers name SQLite's checkpoints, temporary files and the log's own bytes
+
+## 2026-10-27 13:40:09 EDT — scribe `50439e35688707c59fe0e8cb1507b6d7f3c5b122`
+test(#1245): red: the ledger's disk writers name the SQLite files no store call counts (2 of 121 fail on the seams)
+
 ## 2026-10-27 12:53:31 EDT — scribe `79a307ec4e8cf2b5d1375e58c99ff3d766847a0d`
 Merge (#1246): the energy model's display has the panel's base; fitted on three sessions.
 
