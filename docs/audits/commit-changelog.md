@@ -1,3 +1,12 @@
+## 2026-10-27 01:11:53 EDT — scribe `2ee458a6d516bc605db550df8ece550365120e3b`
+docs(#1242, #1117): PROGRESS: build 144 on every device; the 1.9.45 pin and the ledger's per-query reader
+
+## 2026-10-27 01:11:53 EDT — scribe `6dfafde4a7956fc040c4478573c4c607bd188456`
+changelog(#1242): What's New bracket fix f64f1285b
+
+## 2026-10-27 01:11:53 EDT — scribe `f64f1285b88ff5996ade4c1cda1ef36e66084a00`
+fix(#1242): What's New: Build 144's Wi-Fi story names #1231 and #1237 in one bracket, so the app shows no stray bracket
+
 ## 2026-10-27 00:19:09 EDT — scribe `24c4ca6ee09522a4a8cca6d47e485556a56810dc`
 changelog(#1242): build 144 cut 3db5cc18c
 
