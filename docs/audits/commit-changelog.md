@@ -1,3 +1,6 @@
+## 2026-10-27 12:20:55 EDT — instant-data-swift `11e7679526a8cf2d9a1b48f759149615b3519512`
+docs(#1244, #1245): FOOTGUNS.md: six traps found with SQLite's own counters (F59-F64)
+
 ## 2026-10-27 12:18:17 EDT — instant-data-swift `d27d3e740a940d1c5b4b04039caf56c4b5b88c00`
 docs(#1244): FOOTGUNS.md: every trap found while building on the library, with its measured cost, rule and guard
 

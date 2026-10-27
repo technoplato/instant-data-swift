@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 27th, 2026 at 12:20:56 p.m. EDT — `11e7679526a8` docs(#1244, #1245): FOOTGUNS.md: six traps found with SQLite's own counters (F59-F64)
+
+- **Implementation commit:** `11e7679526a8cf2d9a1b48f759149615b3519512`
+- **Change:** #1244, #1245: FOOTGUNS.md: six traps found with SQLite's own counters (F59-F64)
+- **Details:**
+  - Overflow-chain rewrites from small mutable columns after a blob (55% of claim and acceptance frames), cached statement counters without reset, unindexed foreign key children, a revision counter in a shared page (5.5% of the log), full-row and uncollapsible partial writes, the writer's 10 s busy timeout.
+- **Files:**
+  - `docs/FOOTGUNS.md` — F59-F64 and their index rows
+- **User context (verbatim):**
+  > Oh, let's do SQ Lite's own tools as well and figure out how to optimize our writing strategies.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, toolbox-1244); no SpecStory capture exists for headless runs.
+
 ## October 27th, 2026 at 12:18:34 p.m. EDT — `d27d3e740a94` docs(#1244): FOOTGUNS.md: every trap found while building on the library, with its measured cost, rule and guard
 
 - **Implementation commit:** `d27d3e740a940d1c5b4b04039caf56c4b5b88c00`
