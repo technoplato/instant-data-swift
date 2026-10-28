@@ -1,3 +1,12 @@
+## 2026-10-28 18:18:31 EDT — scribe `c0f69514b5072cfa05c754fe968d374a7f0e2c46`
+docs(#1305, #1314): the audit's macOS 26 bisect: uneven row heights lose the lazy stack's place on a width change.
+
+## 2026-10-28 18:18:31 EDT — scribe `065caa7235443f13bdc9c24f47de5784f2550c8c`
+docs(#1305): the audit of the Mac playback window's live resize: two causes fixed, the third filed as #1314.
+
+## 2026-10-28 18:18:31 EDT — scribe `b374fbb94689ec29e30679b67685cad25ebb28fe`
+docs(#1305): What's New for build 150: a window resize no longer rebuilds the whole window at each step.
+
 ## 2026-10-28 17:51:44 EDT — scribe `e6336f2778fb0c6e71536335a6ebc3f2422cedc7`
 Docs (#1308): build 151 on his Watch streams to his Mac (17:43, his tap): the audit's on-Watch section, its row, PROGRESS.
 
