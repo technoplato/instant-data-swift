@@ -1,3 +1,21 @@
+## 2026-10-28 17:14:12 EDT — scribe `f21dd49f3628cdfeee50799ce1e7b4b38022f033`
+Red (#1308): the Watch transcribes on his Mac with Deepgram standing in, and the iPhone hands it the Mac's code (seams keep today's Deepgram-only Watch).
+
+## 2026-10-28 17:14:12 EDT — scribe `763ba95e35bc595aef1515350a121240a9a6b319`
+Green (#1308, ADR 0100): the Watch's provider is Your Mac through ADR 0066's failover with Deepgram as the stand-in; the iPhone hands the Watch its Mac code in the WatchConnectivity context; the Watch is ready when either engine is.
+
+## 2026-10-28 17:14:12 EDT — scribe `9d0f584bae810b3cd99bab8f6f90ff57357ebb5e`
+Red (#1308): a stream's first and last lines carry no power, battery or heat.
+
+## 2026-10-28 17:14:12 EDT — scribe `4c8d112c55c8f6b8c2a205a2ba874f90e496f1c0`
+Green (#1308): a stream's first and last lines say the device's power, battery and heat, the Watch's included.
+
+## 2026-10-28 17:14:12 EDT — scribe `d515c26f2636271581a5d4371b0c6c0af8d340c1`
+Docs (#1308): ADR 0100, amendments to ADR 0053, 0066 and 0067, the Watch doc, audits/2026-10-28-watch-mac-1308.md.
+
+## 2026-10-28 17:14:12 EDT — scribe `343ef6b8837f229fa74c0e9c395021df3f95da92`
+Merge (#1308): the Watch on his Mac lands on main.
+
 ## 2026-10-28 17:11:39 EDT — scribe `bd0319c5879534b342a038625a0bfc12f77de180`
 test(#1306): red: the Mac sidebar is a new list once its first page has loaded.
 
