@@ -1,3 +1,12 @@
+## 2026-10-28 17:11:39 EDT — scribe `bd0319c5879534b342a038625a0bfc12f77de180`
+test(#1306): red: the Mac sidebar is a new list once its first page has loaded.
+
+## 2026-10-28 17:11:39 EDT — scribe `d37c6055b2ef67a9b1c918179c3e860c119739fc`
+fix(#1306): the Mac sidebar is a new list once its first page has loaded, so a first launch shows it from its top.
+
+## 2026-10-28 17:11:39 EDT — scribe `ed312172686be099b0df006150b205c8b54de408`
+merge(#1306): F2 on main.
+
 ## 2026-10-28 16:37:26 EDT — scribe `0060c565dac00927a1e1e41b9525aaa1fa656c8f`
 cut(#1306, #1305): Scribe 0.1 (150): the Mac list's keyboard and selection, nothing under the playback's controls, help tags, menu commands; a live resize no longer redraws rows or rebuilds the window.
 
