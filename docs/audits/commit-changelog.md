@@ -1,3 +1,9 @@
+## 2026-10-28 11:53:24 EDT — scribe `fb77fef4e84f7292ed0f6e1a2ab251211afaf702`
+docs(#1282): scribe-guide feedback history: the diagrams skill keeps drawings off the Desktop (in ~/Sync/audit/diagrams).
+
+## 2026-10-28 11:53:24 EDT — scribe `12a9923c6653cbd4e316aa7a20734c6092262cc8`
+changelog(#1282) for fb77fef4e.
+
 ## 2026-10-28 11:13:36 EDT — scribe `0adcd996319ec8988a53ffb4e2789d4bc8fb4fe1`
 docs(#1300, #958): PROGRESS: Scribe 0.1 (148) and Scribe Playback 148 on every device; #958's after; cleanup.
 
