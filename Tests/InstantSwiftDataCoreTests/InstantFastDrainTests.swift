@@ -1205,6 +1205,22 @@ extension InstantFastDrainTests {
     try await runDifferential(seed: seed, scribeLinks: true, liveLines: true, attachments: true)
   }
 
+  /// #1270: the attachment differential over more seeds, for a release check: `INSTANT_FAST_DRAIN_SEEDS=N` runs seeds
+  /// from `INSTANT_FAST_DRAIN_FIRST_SEED` (100) on, each as above (about 14 s a seed in a debug build). At 1.9.48 seeds
+  /// 124 and 131 of 100-139 end a step with the preview link different on the two devices: a local write lost
+  /// last-write-wins to a pending value re-stamped past the device clock, which the whole-component rebase heals at once
+  /// and the reduced apply when a frame restates the slot (#1275). The live-lines shape matches on all 40.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_SEEDS"] != nil))
+  func theReducedApplyObservesWhatTheFullRebaseObservesWithAttachmentsOverManySeeds() async throws {
+    let count = ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_SEEDS"].flatMap(Int.init) ?? 0
+    let first = ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_FIRST_SEED"].flatMap(UInt64.init) ?? 100
+    // INSTANT_FAST_DRAIN_SEEDS_WITHOUT_ATTACHMENTS=1 runs the live-lines shape instead, which has no link written by name.
+    let attachments = ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_SEEDS_WITHOUT_ATTACHMENTS"] != "1"
+    for seed in first..<(first + UInt64(count)) {
+      try await runDifferential(seed: seed, scribeLinks: true, liveLines: true, attachments: attachments)
+    }
+  }
+
   private func runDifferential(
     seed: UInt64,
     scribeLinks: Bool,
@@ -1364,9 +1380,12 @@ extension InstantFastDrainTests {
       pair.log.append("\(step): \(event)")
       if ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_TRACE"] == "1" {
         let metrics = await pair.reduced.runtime.persistence.serverApplyMetricsForTesting()
+        // #1270: INSTANT_FAST_DRAIN_TRACE_ATTRIBUTE names the recording's slot to follow (its duration by default).
+        let tracedAttributeID = ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_TRACE_ATTRIBUTE"]
+          ?? "recordings/durationSeconds"
         func duration(_ runtime: InstantRuntime) async -> String {
           await runtime.store.snapshot().triples.first {
-            $0.entityID == FastDrainSchema.recordingID && $0.attributeID == "recordings/durationSeconds"
+            $0.entityID == FastDrainSchema.recordingID && $0.attributeID == tracedAttributeID
           }.map { "\($0.value) tx \($0.txID) t \($0.txTime.milliseconds)" } ?? "none"
         }
         let pendingIDs = await pair.reduced.runtime.pendingMutations().map(\.id)
@@ -1374,7 +1393,7 @@ extension InstantFastDrainTests {
           """
           trace \(step): \(event) | reductions \(metrics.reductionCount) reduced \(metrics.reducedCount) \
           | reduced \(await duration(pair.reduced.runtime)) | full \(await duration(pair.full.runtime)) \
-          | server \(pair.reduced.server.value(FastDrainSchema.recordingID, "recordings/durationSeconds").map { "\($0)" } ?? "none") \
+          | server \(pair.reduced.server.value(FastDrainSchema.recordingID, tracedAttributeID).map { "\($0)" } ?? "none") \
           | pending \(pendingIDs.count) first \(pendingIDs.first ?? "-")
           """
         )
