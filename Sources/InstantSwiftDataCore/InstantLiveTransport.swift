@@ -1523,7 +1523,12 @@ extension InstantLiveTransportClient {
     )
   }
 
-  public static let live: Self = {
+  /// The live session for this platform (``liveKind``): the event stream on watchOS, which blocks a WebSocket outside
+  /// an audio stream or a call (TN3135, #1315), and the WebSocket everywhere else.
+  public static let live: Self = liveKind == .eventStream ? liveEventStream : liveWebSocket
+
+  /// The live session over one `URLSessionWebSocketTask`, as upstream `WSConnection`.
+  public static let liveWebSocket: Self = {
     var live = Self.immediate { request in
       let socket = try InstantURLSessionLiveWebSocket(request: request.urlRequest())
       return InstantLiveWebSocketSession(
@@ -2029,7 +2034,7 @@ actor InstantURLSessionLiveWebSocket {
 
   /// What the socket's traffic added since the last summary, at info, at most once a minute (#1124). Bytes are the
   /// frames' text before permessage-deflate, as the trace-level frame events report them.
-  private static func logWireSummary(_ summary: InstantWireSnapshot?) {
+  static func logWireSummary(_ summary: InstantWireSnapshot?) {
     guard let summary, InstantDiagnostics.shared.isEnabled(at: .info) else { return }
     InstantDiagnostics.shared.record(
       .info,
