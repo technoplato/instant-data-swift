@@ -1,3 +1,18 @@
+## 2026-10-28 14:56:51 EDT — scribe `7af3fb3e7e41f9716b6a58f6c507594f500afc8f`
+changelog(#1305) for 16888260c.
+
+## 2026-10-28 14:56:51 EDT — scribe `16888260c2d6cece968c2a371c0327feae690f06`
+fix(#1305): a live resize of the Mac playback window redraws no transcript row (the width is a box the rows hold by identity), and the pinned name's lookup reads the drawn document by index instead of walking every line.
+
+## 2026-10-28 14:56:51 EDT — scribe `b31c9f00719a176601ad63cdf582e5126c0f0ec4`
+plan(#1305): claim the row snapshot test (one argument).
+
+## 2026-10-28 14:56:51 EDT — scribe `95c09bfdb2afb8be329776129dbfe206a953848c`
+test(#1305): red tests: a live-resize step redraws no line already drawn; the pinned speaker lookup takes no walk.
+
+## 2026-10-28 14:56:51 EDT — scribe `d36238a6d835191922f3e6eee772235adbee71a1`
+plan(#1305): plan and claims for the Mac playback window live-resize fix.
+
 ## 2026-10-28 14:26:09 EDT — scribe `e88bd025f1d00fa97489b0414896a11fd1840872`
 changelog(#1307) for 7d0c88b89.
 
