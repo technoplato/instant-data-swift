@@ -1,3 +1,24 @@
+## 2026-10-27 20:38:28 EDT — instant-data-swift `6c077e01ea8cbcde9a63fd3d14c8bb9b6ca59b3d`
+docs(#1270): the v1.9.48 release document, and FOOTGUNS F65: a queue that slows its own drain never recovers
+
+## 2026-10-27 20:38:28 EDT — instant-data-swift `5209e44ba32719e4e2458d3def1300eba6f8e4ee`
+test(#1270, #1275): the attachment differential over many seeds, and a trace that follows any slot of the recording
+
+## 2026-10-27 20:38:28 EDT — instant-data-swift `68fa970c4bcc5f39f70ae5df45ce1e0b6a92b6e3`
+feat(#1270): the gate-held line names the attribute that declined a server apply's reduction
+
+## 2026-10-27 20:38:28 EDT — instant-data-swift `792c5411279f259d6e9857066cf3229450d7e553`
+fix(#1270): green: a server apply finds a link's pending writers under every name a write gives it
+
+## 2026-10-27 20:38:28 EDT — instant-data-swift `fdd08d363c9c376f1fdbd223c7635e3e2ceac32f`
+test(#1270): red: a frame restating the recording peels and replays the whole queue when a link is written by name
+
+## 2026-10-27 20:38:28 EDT — instant-data-swift `8e2e0cef857636ce12fb0228cbacf5ba3b963050`
+plan(#1270): sync-jam-1270: a server apply finds a link's pending writers under the link's written name; claims
+
+## 2026-10-27 20:38:28 EDT — scribe `5616b83a51ae3b6ff55781bbfb6b2b2599cf5f7e`
+plan(#1270): sync-jam-1270: pin the library's fix for the sync jam, and the audit; claims
+
 ## 2026-10-27 17:54:28 EDT — scribe `95c38922aeccea8b142d02b67ffda8e99d8ae99b`
 changelog(#1266): the clipboard green (4895d1297) and the audit's update (cb3126f4a)
 

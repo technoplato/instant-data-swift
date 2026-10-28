@@ -1,3 +1,24 @@
+## 2026-10-27 20:38:28 EDT — v1.9.48 (sync-jam-1270, #1270, P0): a server frame no longer replays the whole outbox when a write named a link by its name
+
+- **Release:** `docs/releases/v1.9.48.md` (`6c077e01`), cut at main `68fa970c` (red `fdd08d36`, green `792c5411`, the
+  gate-held line's attribute `68fa970c`; plan `8e2e0cef`), carrying 1.9.47. No migration, no stored format change, no
+  public API change.
+- **Why:** one device's outbox grew from 0-1 to 2,316 pending writes in two hours of recording: 49 of its 51 slow
+  server applies were `full rebase: changesShadowedFact`, 1,073-2,093 writes replayed per frame. Its screenshots set
+  the recording's `previewImage` under the link's name while the store and every frame hold it under the server-issued
+  id; the reduction looked writers up by the id and never found them, and the replay made the next frame decline too.
+- **Measured (laptop, debug):** one frame 0.25 / 2.8 / 7.0 s at 105 / 1,001 / 2,002 pending, every write replayed ->
+  4-9 ms, none; a recording minute on 2,002 pending 2,002 -> 2,063 (old path) -> 2,002 -> 7; the device's own store
+  through the phone-replay gate: 42-44 s per frame -> 1,241 writes drained in 9.9 s, 78 frames, none rebased, all 473
+  touched entities matching the model server.
+- **Checks:** red then green; the attachment differential (seeds 31-36, and 40 more: 38 match, seeds 124 and 131 are #1275, filed; the live-lines shape matches on all 40); 109 tests in 13 neighbouring
+  suites; the whole InstantSwiftDataCoreTests bundle (1,573 tests, 2 failing, both listed); the public InstantSwiftData module builds.
+- **Also:** docs/FOOTGUNS.md F65 (the queue-length spiral); the phone-replay gate's model server resolves a link's
+  written name to its id (it kept the name, so no replay could show this).
+- **Next:** the consuming app pins 1.9.48; its next build's gate-held lines should say `reduced` while screenshots are
+  pending. Outbox coalescing of superseded writes (#1270's brief, step 2a) is not done: it reverses ADR 0015's
+  immediate-tail decision and needs its own ADR question.
+
 ## 2026-10-27 13:40:09 EDT — v1.9.47 (sqlite-1245, #1253): a progressive media stream's later writes carry only what changes
 
 - **Release:** `docs/releases/v1.9.47.md` (`3822618a`), cut at main `6fb8b654` (red `464d057f`, green `6fb8b654`;
