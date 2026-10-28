@@ -1,3 +1,6 @@
+## 2026-10-28 19:27:38 EDT — scribe `3f68daf6de6d0e9c95cede5a1d8c7a8c7baed2a1`
+Merge (#1313): Voice Memos go the full ingest path through one endpoint: POST /v1/process?ingest=recording on the Mac mini keeps a recording's audio as a phone recording's (WAV and compressed copy), hears words and named speakers an hour at a time, retires the old lines, signs the recording on demand into scribe-recordings and writes the rows; `ingest last voice memos` is its thin client.
+
 ## 2026-10-28 19:25:23 EDT — scribe `591a0fbff48d60863c85a365f88f6d20adaeab6b`
 fix(#1315, #1316): the Watch's Instant session runs over HTTP: instant-data-swift 1.9.49.
 
