@@ -1,3 +1,9 @@
+## 2026-10-27 20:42:30 EDT — scribe `6d709f1d5bcd86df6c4b8c6e125529036189e530`
+Changelog (#1274): the build 146 hotfix cut recorded in CHANGELOG.md.
+
+## 2026-10-27 20:42:30 EDT — scribe `34159c49e2c3d81a4f11098625cccedbcd56d5d3`
+Cut (#1274): Scribe 0.1 (146), a hotfix on branch release/146-hotfix: build 145 (1a21903e4) plus only instant-data-swift exactly 1.9.48 (#1270).
+
 ## 2026-10-27 20:38:28 EDT — instant-data-swift `6c077e01ea8cbcde9a63fd3d14c8bb9b6ca59b3d`
 docs(#1270): the v1.9.48 release document, and FOOTGUNS F65: a queue that slows its own drain never recovers
 
