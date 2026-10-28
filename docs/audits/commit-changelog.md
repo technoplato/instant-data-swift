@@ -1,3 +1,9 @@
+## 2026-10-28 11:13:36 EDT — scribe `0adcd996319ec8988a53ffb4e2789d4bc8fb4fe1`
+docs(#1300, #958): PROGRESS: Scribe 0.1 (148) and Scribe Playback 148 on every device; #958's after; cleanup.
+
+## 2026-10-28 11:13:36 EDT — scribe `981f41b0c908e45f6e9b8d4e7d5dbfea03e08a06`
+changelog(#1300, #958) for 0adcd9963.
+
 ## 2026-10-28 11:10:32 EDT — scribe `5cd6242c3f45bb30ce7d5d62aa6571c28a5727ae`
 docs(#958): the audit's after-measurement on build 148 (the follow is gone at launch) and a correction: the unbounded owner shape is not the lookup.
 
