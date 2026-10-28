@@ -1,3 +1,27 @@
+## 2026-10-28 14:24:50 EDT — scribe `614dd749888b37ea1fba74a95d6b1bf0040406dc`
+docs(#1307): PROGRESS entry for the macOS HIG skill and its rubric.
+
+## 2026-10-28 14:24:50 EDT — scribe `f1d367d9e59cb9da7f54ec63ab4aff95a70c3f53`
+changelog(#1307) for 2021f3083, 2c489e955 and 2564ab06a.
+
+## 2026-10-28 14:24:50 EDT — scribe `2564ab06aa4df44a39da90dac67d8bd130f335c1`
+docs(#1307): the mac-hig skill and its rubric: Apple's macOS pages for each Mac surface, 55 pass/fail usability and performance gates with reviewer instructions and a scoring sheet; scribe-hig links it; the agent guide installs it.
+
+## 2026-10-28 14:24:50 EDT — scribe `2c489e9554924d5b2f5085585512d4df7cf5807b`
+feat(#1307): resize_sweep.py times window resizes, scroll steps and opens through the Accessibility API without moving the pointer.
+
+## 2026-10-28 14:24:50 EDT — scribe `645d774a620d8db7e254dff44b1eab8f94516fa2`
+test(#1307): red tests for resize_sweep.py's plans, statistics, idle reading and pid refusal.
+
+## 2026-10-28 14:24:50 EDT — scribe `2021f30830f294906837a8d9b2a4aad2e98b18a5`
+feat(#1307): 128 Apple macOS pages kept offline with source and fetch time; checks that every quote is word for word and no rubric verdict lacks evidence.
+
+## 2026-10-28 14:24:50 EDT — scribe `d8527a996e8d1adc19acd1bf24d1381f65b9a92f`
+test(#1307): red tests for the quote, scoring-sheet and Apple-copy checks.
+
+## 2026-10-28 14:24:50 EDT — scribe `abde909c7d6da263ac0570ce0b3512448ccb051a`
+plan(#1307): plan and claims for the macOS HIG skill and rubric.
+
 ## 2026-10-28 13:12:49 EDT — scribe `ce59bf3b2bb9ba4ea1d016328961216605d81cee`
 changelog(#1303) for 64dbc4b19.
 
