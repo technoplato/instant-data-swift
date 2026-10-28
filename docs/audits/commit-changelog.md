@@ -1,6 +1,18 @@
 ## 2026-10-28 16:12:37 EDT — scribe `658ac0a2f7ed0e311fed405fb8e324db5c280def`
 merge(#1306): lands the Mac sidebar's selection and arrow keys, nothing under the playback's transport strip, help tags on long titles, and the menu commands on main.
 
+## 2026-10-28 16:31:01 EDT — scribe `43d181e5231cc5de877e80f279c45b277cb35e31`
+changelog(#1305) for 29911ccfb.
+
+## 2026-10-28 16:31:01 EDT — scribe `29911ccfbcc457444f407ca9399994a83bcbc657`
+fix(#1305): the Mac window keeps the band its width falls in (compact chrome, toolbar density), so a live resize step runs the window's root body only when the chrome changes, not at every step.
+
+## 2026-10-28 16:31:01 EDT — scribe `6793feab23774be4d5d4d2b8795a945ac9d56cf3`
+test(#1305): red: a resize step inside one width band runs the Mac window's root body no time (it ran at every step).
+
+## 2026-10-28 16:31:01 EDT — scribe `7e808dd5a634dc5f804bae5d3ee488a3e630607e`
+plan(#1305): amendment A: the window's root re-renders at every resize step; keep the width's band, not the width.
+
 ## 2026-10-28 16:12:37 EDT — scribe `b2378e81d5942dc6907b8abb1489b3414ddc7715`
 test(#1306): the Mac window suites take the quiet Instant client through the dependencies trait (a once-per-process prepare covered only the first test).
 
