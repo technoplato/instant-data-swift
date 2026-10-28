@@ -1,3 +1,9 @@
+## 2026-10-28 14:26:09 EDT — scribe `e88bd025f1d00fa97489b0414896a11fd1840872`
+changelog(#1307) for 7d0c88b89.
+
+## 2026-10-28 14:26:09 EDT — scribe `7d0c88b89a7280f9fa4d5464af193799821506c0`
+docs(#1307): the rubric's settings-window gate quotes two more clauses; the open timing reports its resolution.
+
 ## 2026-10-28 14:24:50 EDT — scribe `614dd749888b37ea1fba74a95d6b1bf0040406dc`
 docs(#1307): PROGRESS entry for the macOS HIG skill and its rubric.
 
