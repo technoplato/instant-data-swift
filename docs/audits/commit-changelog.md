@@ -1,3 +1,9 @@
+## 2026-10-28 12:09:40 EDT — scribe `a12939bb06fff8995978ea2aa7e2b836ad982789`
+guide(#844): the listener dispatches all work to subagents; lookups and triage on Haiku, the rest on Opus.
+
+## 2026-10-28 12:09:40 EDT — scribe `3e19f2f643c4d32a9fddf30512975f0969cae30e`
+changelog(#844) for a12939bb0.
+
 ## 2026-10-28 11:53:24 EDT — scribe `fb77fef4e84f7292ed0f6e1a2ab251211afaf702`
 docs(#1282): scribe-guide feedback history: the diagrams skill keeps drawings off the Desktop (in ~/Sync/audit/diagrams).
 
