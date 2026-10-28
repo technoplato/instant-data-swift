@@ -101,6 +101,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F62](#f62) | Keep per-write counters out of a shared key-value page | #1245, #1254 | none yet |
 | [F63](#f63) | Write only the fields that changed, and keep partial writes collapsible | #1245, #1253, #1255 | none yet |
 | [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
+| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #296, #932 | always |
 
 ## Read path
 
@@ -1150,6 +1151,45 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 - Issues: #1245.
 - Guard: none yet. Proposed (always): the writer's configured busy timeout is 5,000 ms.
 - Upstream: -
+
+### The queue and the server apply (#1270)
+
+<a id="f65"></a>
+#### F65. Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers
+
+- Symptom: one device's outbox grew from 0-1 to 2,316 pending writes in two hours of recording and never drained. Every
+  frame that restated the recording peeled and replayed every pending write, so each accepted write cost more the
+  longer the queue was; acknowledgements, reads and local writes queued behind the operation gate, live queries timed
+  out, and 2-14 writes were accepted a minute while recording wrote 45-85. A drain rate that falls as the queue grows
+  has a tipping point: once it is below the write rate, the queue grows, which lowers the drain rate further.
+- Measured cost: device (2026-10-27 16:47-19:00, three builds): 49 of 51 gate-held lines `full rebase:
+  changesShadowedFact`, 1,073-2,093 writes replayed for one frame, holds 700-5,347 ms. The trigger: the outbox keeps a
+  write's keys under the names the write used, and a link the server issued an id for (`recordings/previewImage`) is
+  written under its forward identity and held, in the store and in every frame, under the id. The reduction (#296)
+  looked the slot's pending writers up by the id, found none, saw the store not showing the server's value (it showed
+  the newest pending screenshot), and declined; the replay put the pending value back, so the next frame declined the
+  same way. Laptop, debug, the fast-drain fixture in the device's write shape: one frame 0.25 s at 105 pending, 2.8 s at
+  1,001, 7.0 s at 2,002, every pending write replayed every time; a drain of 60 accepted writes from 1,001 pending
+  replayed 58,290 writes in 173 s. The device's own store through the phone-replay gate: the first window's 75-fact
+  frame declined on the same attribute id and replayed 1,093 writes (44 s in debug). After the fix (1.9.48): one
+  frame 4-9 ms at 105-2,002 pending, none replayed; the 2,002-write drain 24.7 s applying (60 accepted writes took
+  410 s before); a recording minute at 70 writes on 2,002 pending: 2,002 -> 7 (the whole-component rebase: 2,002 ->
+  2,063); the device's store drains 1,241 -> 0 in 9.9 s, 78 frames, none rebased.
+- Rule: a server frame's work is in proportion to what it changes, never to the queue. Look an outbox key up under
+  every name a write can give the slot (`AttributeStore.forwardWriteNames(of:)`), or key it by the slot the store and
+  the server use. A decline into the whole-component rebase must not repeat on the next frame for the same reason:
+  when it does, it is a bug in the reduction. The gate-held line names the reason (#932) and, from 1.9.48, the
+  attribute that decided it (`declinedAttributeID`), so a device's own logs say which slot keeps declining.
+- Issues: #1270, #296, #932.
+- Guard: `InstantFastDrainTests/aLinkWrittenUnderItsNameDoesNotForceARebase`,
+  `theReducedApplyObservesWhatTheFullRebaseObservesWithAttachments` and `aDeclinedFrameNamesItsAttributeInTheGateHeldLine`
+  (always); `measureOneFrameAgainstTheQueue`,
+  `measureTheDrainOfTheQueue` and `aMinuteOfRecordingShrinksAQueueOf2000` (measurement pass); the phone-replay gate,
+  whose model server now resolves a link's written name to its id (it kept the name, so no replay could show this).
+- Upstream: `Reactor.js` `dataForQuery` reapplies every pending mutation to each query's server result on each change
+  (`_applyOptimisticUpdates`), in memory; this library keeps one materialized store and replays durable receipts under
+  its operation gate, so the same queue-sized work costs disk and the gate. The reduction exists to keep it off the
+  common frame.
 
 ## Guards to add first
 
