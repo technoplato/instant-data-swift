@@ -1,7 +1,8 @@
 // History:
 // - 2026-10-27: a server apply's reduction finds a slot's pending writers, and reads their values, under every name a
 //   write gives the slot: a device's preview link was written under its forward identity and held under its id, so
-//   every frame restating the recording declined into the whole-component rebase (#1270).
+//   every frame restating the recording declined into the whole-component rebase (#1270). The gate-held line names
+//   the attribute that declined a frame, which only the debug-level decline named (#1270).
 // - 2026-10-25: compaction asks the app's hold once, before the operation gate, and under it re-checks only what reads
 //   at once, so the gate's hold is the VACUUM's own (#1136).
 // - 2026-10-25: a one-shot read answers as the local read does, a local observation's first answer without the
@@ -1365,6 +1366,8 @@ private struct InstantServerApplyAttemptPlan: Sendable {
   var failureSplice: InstantServerApplyFailureSplice
   /// "reduced", or why the attempt peels and replays its whole component, for the gate-held event.
   var reductionPath: String
+  /// The attribute of the fact that declined the reduction, when one fact decided it (#1270).
+  var reductionDeclinedAttributeID: String?
   var plan: InstantServerApplyPlan
 }
 
@@ -3159,6 +3162,9 @@ public final class InstantRuntime: Sendable {
         // #932: the path this apply takes, for the gate-held event. The reduction's decline was logged at debug only, so
         // the phone could not say why a frame peeled and replayed ~2,560 pending writes.
         var reductionDecline: InstantServerApplyReductionIneligibility?
+        // #1270: the attribute that decided a decline, for the gate-held line. Only the debug-level decline named it, so
+        // a device that declined on every frame could not say which slot from its logs.
+        var reductionDeclinedAttributeID: String?
         let reductionPath: String
         if !configuration.reducesServerApplyToAffectedOverlays {
           reductionPath = "full rebase: reduction off"
@@ -3172,7 +3178,8 @@ public final class InstantRuntime: Sendable {
           authoritativeTransaction.operations,
           processedTransactionID: processedTransactionID,
           seed: seed,
-          declineReason: &reductionDecline
+          declineReason: &reductionDecline,
+          declinedAttributeID: &reductionDeclinedAttributeID
         ) {
           authoritativeTransaction.operations = reduced.operations
           receiptPatches = reduced.receiptPatches
@@ -3264,6 +3271,7 @@ public final class InstantRuntime: Sendable {
           receiptPatches: receiptPatches,
           failureSplice: failureSplice,
           reductionPath: reductionPath,
+          reductionDeclinedAttributeID: reductionPath == "reduced" ? nil : reductionDeclinedAttributeID,
           plan: plan
         )
       } catch {
@@ -3288,6 +3296,7 @@ public final class InstantRuntime: Sendable {
       let receiptPatches = planned.receiptPatches
       let failureSplice = planned.failureSplice
       let reductionPath = planned.reductionPath
+      let reductionDeclinedAttributeID = planned.reductionDeclinedAttributeID
       let plan = planned.plan
 
       var enteredOperationGateForCommit = false
@@ -3902,6 +3911,7 @@ public final class InstantRuntime: Sendable {
           catchUpBodyCount: catchUpBodyCount,
           changedEntityCount: changedEntityIDs.count,
           path: reductionPath,
+          declinedAttributeID: reductionDeclinedAttributeID,
           attempt: attempt,
           heldFromSeed: operationGateAlreadyHeld,
           planningHeldMilliseconds: planningHeldMilliseconds,
@@ -4077,7 +4087,8 @@ public final class InstantRuntime: Sendable {
     _ operations: [InstantTripleOperation],
     processedTransactionID: String,
     seed: InstantServerApplySeed,
-    declineReason: inout InstantServerApplyReductionIneligibility?
+    declineReason: inout InstantServerApplyReductionIneligibility?,
+    declinedAttributeID: inout String?
   ) async throws -> (
     operations: [InstantTripleOperation],
     receiptPatches: [String: [InstantTriple]],
@@ -4092,6 +4103,7 @@ public final class InstantRuntime: Sendable {
       failureSplice: InstantServerApplyFailureSplice
     )? {
       declineReason = reason
+      declinedAttributeID = fact?.attributeID
       var metadata = ["reason": reason.rawValue, "operationCount": String(operations.count)]
       if let fact {
         metadata["entityID"] = fact.entityID
@@ -4833,6 +4845,7 @@ public final class InstantRuntime: Sendable {
     catchUpBodyCount: Int,
     changedEntityCount: Int,
     path: String,
+    declinedAttributeID: String? = nil,
     attempt: Int,
     heldFromSeed: Bool,
     planningHeldMilliseconds: Int,
@@ -4874,6 +4887,8 @@ public final class InstantRuntime: Sendable {
     for phase in phases {
       metadata["\(phase.name)Milliseconds"] = String(phase.milliseconds)
     }
+    if let declinedAttributeID { metadata["declinedAttributeID"] = declinedAttributeID }
+    let declinedOn = declinedAttributeID.map { " on \($0)" } ?? ""
     let summary = phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
     let commitSummary = [
       ("validate", commitTiming.validateMilliseconds),
@@ -4890,7 +4905,7 @@ public final class InstantRuntime: Sendable {
       event: "server-apply.operation-gate-held",
       message: """
         Server apply held the operation gate \(heldMilliseconds) ms with \(pendingMutationCount) \
-        pending mutations (\(summary)); \(waiterCount) caller(s) queued behind it. \(path), attempt \(attempt), \
+        pending mutations (\(summary)); \(waiterCount) caller(s) queued behind it. \(path)\(declinedOn), attempt \(attempt), \
         \(plan.plannedComponentBodyCount) writes peeled and replayed; commit inside the store \
         \(commitTiming.insideMilliseconds) ms (\(commitSummary)).
         """,

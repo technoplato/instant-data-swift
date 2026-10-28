@@ -2033,3 +2033,43 @@ extension InstantFastDrainTests {
     #expect(pendingAtEnd < pendingAtStart, "the queue grew: \(pendingAtStart) -> \(pendingAtEnd), \(accepted) accepted, \(written) written")
   }
 }
+
+extension InstantFastDrainTests {
+  /// #1270: the gate-held line names the attribute that declined the reduction. The device's lines said only
+  /// `full rebase: changesShadowedFact`; which slot declined took a copy of its store to find. Another device's title,
+  /// which no pending write sets, declines once (#431) and must be named.
+  @Test
+  func aDeclinedFrameNamesItsAttributeInTheGateHeldLine() async throws {
+    var fixture = try await FastDrainFixture.make(suffix: "declined-attribute", serverSegmentCount: 4, pendingSegmentCount: 1)
+    let transactionID = fixture.server.acceptForeignWrite(
+      entityID: FastDrainSchema.recordingID, attributeID: "recordings/title", value: .string("another device's title")
+    )
+    let lines = FastDrainGateHeldLines()
+    let token = InstantDiagnostics.shared.addHandler { entry in
+      guard entry.event == "server-apply.operation-gate-held", entry.correlationID == transactionID else { return }
+      lines.record(entry.metadata)
+    }
+    defer { InstantDiagnostics.shared.removeHandler(token) }
+    let queries = fixture.server.queries(touching: [FastDrainSchema.recordingID])
+    _ = try await fixture.refresh(queries: queries, processedTransactionID: transactionID)
+    let declined = lines.snapshot().first { $0["path"] == "full rebase: changesShadowedFact" }
+    expectNoDifference(declined?["declinedAttributeID"], "recordings/title", "lines: \(lines.snapshot())")
+  }
+}
+
+final class FastDrainGateHeldLines: @unchecked Sendable {
+  private let lock = NSLock()
+  private var lines: [[String: String]] = []
+
+  func record(_ metadata: [String: String]) {
+    lock.lock()
+    defer { lock.unlock() }
+    lines.append(metadata)
+  }
+
+  func snapshot() -> [[String: String]] {
+    lock.lock()
+    defer { lock.unlock() }
+    return lines
+  }
+}
