@@ -1,3 +1,21 @@
+## 2026-10-28 16:12:37 EDT — scribe `658ac0a2f7ed0e311fed405fb8e324db5c280def`
+merge(#1306): lands the Mac sidebar's selection and arrow keys, nothing under the playback's transport strip, help tags on long titles, and the menu commands on main.
+
+## 2026-10-28 16:12:37 EDT — scribe `b2378e81d5942dc6907b8abb1489b3414ddc7715`
+test(#1306): the Mac window suites take the quiet Instant client through the dependencies trait (a once-per-process prepare covered only the first test).
+
+## 2026-10-28 16:12:37 EDT — scribe `dafee1f9d5b57ba1fde93ea68f446c1507610f64`
+changelog(#1306) for 402a2efe3.
+
+## 2026-10-28 16:12:37 EDT — scribe `bad08a3acee5ccd228c11df6339939d89ddaabcb`
+docs(#1306): the audit of the Mac's list and transcript against the macOS HIG: six findings, the test harness, the fixes, the sidebar offset at first launch open.
+
+## 2026-10-28 16:12:37 EDT — scribe `402a2efe36d189a082e22939988c7f33e4953d83`
+fix(#1306): the Mac sidebar selects the recording the detail shows so the arrow keys open recordings; the playback's transport strip sits above the screen instead of in an inset the threads panel did not pass on; long row titles carry a help tag; every toolbar item is a menu command.
+
+## 2026-10-28 16:12:37 EDT — scribe `93f0774b19f77f9ec699b4dbbf64f37182d3912f`
+test(#1306): red tests: the sidebar's arrow keys, nothing under the transport strip at 1,100/700/360/240 pt, a long title's help tag (read through the Accessibility API).
+
 ## 2026-10-28 14:56:51 EDT — scribe `7af3fb3e7e41f9716b6a58f6c507594f500afc8f`
 changelog(#1305) for 16888260c.
 
