@@ -1,3 +1,6 @@
+## 2026-10-28 19:25:23 EDT — scribe `591a0fbff48d60863c85a365f88f6d20adaeab6b`
+fix(#1315, #1316): the Watch's Instant session runs over HTTP: instant-data-swift 1.9.49.
+
 ## 2026-10-28 19:24:21 EDT — instant-data-swift `ab81ff40613a829ee5f43deed4745d662a30ebf1`
 feat(#1315): the live session over Server-Sent Events, and watchOS uses it: watchOS blocks the WebSocket outside audio (TN3135).
 
