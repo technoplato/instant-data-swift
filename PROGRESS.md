@@ -1,3 +1,12 @@
+## 2026-10-28 19:24:13 EDT — v1.9.49 (watch-list-1315, #1315): on watchOS the live session runs over Server-Sent Events
+
+- **Release:** `docs/releases/v1.9.49.md`, cut at `ab81ff40`, carrying 1.9.48. No migration; new public
+  `liveEventStream`, `liveWebSocket`, `liveKind`; `live` picks the event stream on watchOS.
+- **Why:** watchOS blocks `URLSessionWebSocketTask` outside an audio stream or a call (TN3135): a Watch's socket timed
+  out at 5 s on every attempt, so its live queries never answered and its queued writes waited for the next recording.
+- **Checks:** InstantLiveEventStreamTests 8/8 incl. a live probe (35 s quiet hold); 118 transport tests; watchOS compile.
+- **Next:** the consuming app pins 1.9.49 and measures on a physical Watch.
+
 ## 2026-10-27 20:38:28 EDT — v1.9.48 (sync-jam-1270, #1270, P0): a server frame no longer replays the whole outbox when a write named a link by its name
 
 - **Release:** `docs/releases/v1.9.48.md` (`6c077e01`), cut at main `68fa970c` (red `fdd08d36`, green `792c5411`, the

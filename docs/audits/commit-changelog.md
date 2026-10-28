@@ -1,3 +1,6 @@
+## 2026-10-28 19:24:21 EDT — instant-data-swift `ab81ff40613a829ee5f43deed4745d662a30ebf1`
+feat(#1315): the live session over Server-Sent Events, and watchOS uses it: watchOS blocks the WebSocket outside audio (TN3135).
+
 ## 2026-10-28 18:18:31 EDT — scribe `c0f69514b5072cfa05c754fe968d374a7f0e2c46`
 docs(#1305, #1314): the audit's macOS 26 bisect: uneven row heights lose the lazy stack's place on a width change.
 
