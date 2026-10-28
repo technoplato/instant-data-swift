@@ -1,3 +1,15 @@
+## 2026-10-28 11:10:32 EDT — scribe `5cd6242c3f45bb30ce7d5d62aa6571c28a5727ae`
+docs(#958): the audit's after-measurement on build 148 (the follow is gone at launch) and a correction: the unbounded owner shape is not the lookup.
+
+## 2026-10-28 11:10:32 EDT — scribe `f0cc7968473cd90e299ec69e04b3a0020bc27935`
+docs(#958): the audit's launch rows named with their own sizes.
+
+## 2026-10-28 11:10:32 EDT — scribe `0b08963fd476bddca331c4511637123b40581731`
+test(#958): the layout harness's home screen, drawer and jump-back references show the recordings without audio in the list (11 re-recorded).
+
+## 2026-10-28 11:10:32 EDT — scribe `ff4ca3d7cac2ecab6dbaabbc63309b7f1fb025be`
+changelog(#958) for the three commits above.
+
 ## 2026-10-28 10:08:43 EDT — scribe `368ff621145b02837c22ed4a712da1a019fa247a`
 cut(#1300, #958): Scribe 0.1 (148) and Scribe Playback 148 from main d68bee33a: the Without Audio filter removed (#958), #1260/#1266, #1288, #1295, #1285/#1291, #1293 and instant-data-swift 1.9.48; 146 and 147 hotfix notes carried to main.
 
