@@ -1,3 +1,6 @@
+## 2026-10-28 16:37:26 EDT — scribe `0060c565dac00927a1e1e41b9525aaa1fa656c8f`
+cut(#1306, #1305): Scribe 0.1 (150): the Mac list's keyboard and selection, nothing under the playback's controls, help tags, menu commands; a live resize no longer redraws rows or rebuilds the window.
+
 ## 2026-10-28 16:31:01 EDT — scribe `43d181e5231cc5de877e80f279c45b277cb35e31`
 changelog(#1305) for 29911ccfb.
 
