@@ -1,3 +1,15 @@
+## 2026-10-28 13:12:49 EDT — scribe `ce59bf3b2bb9ba4ea1d016328961216605d81cee`
+changelog(#1303) for 64dbc4b19.
+
+## 2026-10-28 13:12:49 EDT — scribe `8dae468b5bbe67caefd7a3b3ec124e2bb2205394`
+docs(#1303): the audit's interleaved before/after frame times: no regression while scrolling 2,000 lines.
+
+## 2026-10-28 13:12:49 EDT — scribe `64dbc4b195e21ce062158a3480b6a9c5f1d958df`
+fix(#1303): a cancelled handle drag ends the drag (no edge scrolling after the finger); an unanswered double tap is dropped.
+
+## 2026-10-28 13:12:49 EDT — scribe `5d6b09789b20d8d2dff0ab07fa9051c52b7e9a3f`
+changelog(#1303) for b1e1705dc, ce829109d and ea44b3a5f.
+
 ## 2026-10-28 12:57:21 EDT — scribe `5d6b09789b20d8d2dff0ab07fa9051c52b7e9a3f`
 changelog(#1303) for b1e1705dc, ce829109d and ea44b3a5f.
 
