@@ -1,3 +1,9 @@
+## 2026-10-28 17:15:27 EDT — scribe `93c8c507088c512372f1f12cf2d508fd3570e8d1`
+Cut (#1308, #1306): Scribe 0.1 (151): the Watch transcribes on his Mac with Deepgram standing in; the Mac list starts at the top on a first launch.
+
+## 2026-10-28 17:15:27 EDT — scribe `85926e1dda0fbf321aefd578c74528ea10c80ab5`
+Changelog (#1308): build 151 cut 93c8c5070.
+
 ## 2026-10-28 17:14:12 EDT — scribe `f21dd49f3628cdfeee50799ce1e7b4b38022f033`
 Red (#1308): the Watch transcribes on his Mac with Deepgram standing in, and the iPhone hands it the Mac's code (seams keep today's Deepgram-only Watch).
 
