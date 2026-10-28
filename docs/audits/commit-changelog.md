@@ -1,3 +1,15 @@
+## 2026-10-28 12:57:21 EDT — scribe `5d6b09789b20d8d2dff0ab07fa9051c52b7e9a3f`
+changelog(#1303) for b1e1705dc, ce829109d and ea44b3a5f.
+
+## 2026-10-28 12:57:21 EDT — scribe `ea44b3a5f467b8723e606533e7f3aeec1e319915`
+merge(#1303): select text across the timeline's lines: one selection layer over the rows from SwiftUI's own glyphs (live screen and playback), the harness's UI check, ADR 0099, FEATURES item 28 (draft), the audit.
+
+## 2026-10-28 12:57:21 EDT — scribe `ce829109de7356e38087e95835219b27ff6729f8`
+fix(#1303): a finished recording keeps its selection across lines; Copy copies them as the rows show them.
+
+## 2026-10-28 12:57:21 EDT — scribe `b1e1705dcf27a01b8a62ce0fe031a9b84962343d`
+fix(#1303): the selection across lines, its geometry and Copy in the recording's reducer.
+
 ## 2026-10-28 12:09:40 EDT — scribe `a12939bb06fff8995978ea2aa7e2b836ad982789`
 guide(#844): the listener dispatches all work to subagents; lookups and triage on Haiku, the rest on Opus.
 
