@@ -10,6 +10,72 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 27th, 2026 at 8:39:09 p.m. EDT — `6c077e01ea8c` docs(#1270): the v1.9.48 release document, and FOOTGUNS F65: a queue that slows its own drain never recovers
+
+- **Implementation commit:** `6c077e01ea8cbcde9a63fd3d14c8bb9b6ca59b3d`
+- **Change:** #1270: the v1.9.48 release document, and FOOTGUNS F65
+- **Details:**
+  - Release notes with the before and after numbers and #1275 under Known; F65: never let a server frame's cost grow with the outbox
+- **Files:**
+  - `docs/releases/v1.9.48.md` — the release
+  - `docs/FOOTGUNS.md` — F65 and its index row
+- **User context (verbatim):**
+  > Please pull what you can and work on the immediate recovery and nothing else.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sync-jam-1270); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 8:39:09 p.m. EDT — `5209e44ba327` test(#1270, #1275): the attachment differential over many seeds, and a trace that follows any slot of the recording
+
+- **Implementation commit:** `5209e44ba32719e4e2458d3def1300eba6f8e4ee`
+- **Change:** #1270, #1275: the attachment differential over many seeds, and a trace that follows any slot
+- **Details:**
+  - Env-gated; 38 of 40 attachment seeds match, 124 and 131 are #1275; the live-lines shape matches on all 40
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — INSTANT_FAST_DRAIN_SEEDS, FIRST_SEED, TRACE_ATTRIBUTE
+- **User context (verbatim):**
+  > Please pull what you can and work on the immediate recovery and nothing else.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sync-jam-1270); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 8:39:09 p.m. EDT — `68fa970c4bcc` feat(#1270): the gate-held line names the attribute that declined a server apply's reduction
+
+- **Implementation commit:** `68fa970c4bcc5f39f70ae5df45ce1e0b6a92b6e3`
+- **Change:** #1270: the gate-held line names the attribute that declined a server apply's reduction
+- **Details:**
+  - declinedAttributeID in the gate-held line's metadata and message; finding the device's declining slot took a store copy
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the attempt plan carries the deciding attribute
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — aDeclinedFrameNamesItsAttributeInTheGateHeldLine
+- **User context (verbatim):**
+  > Please pull what you can and work on the immediate recovery and nothing else.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sync-jam-1270); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 8:39:09 p.m. EDT — `792c5411279f` fix(#1270): green: a server apply finds a link's pending writers under every name a write gives it
+
+- **Implementation commit:** `792c5411279f259d6e9857066cf3229450d7e553`
+- **Change:** #1270: green: a server apply finds a link's pending writers under every name a write gives it
+- **Details:**
+  - AttributeStore.forwardWriteNames(of:); the reduction context's writer lookup and insertedValue read every name; one frame 4-9 ms, none replayed; the device's store drains 1,241 writes in 9.9 s; released as 1.9.48
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — forwardWriteNames(of:)
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the writer lookup under every name
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the names passed; insertedValue under every name
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the recording minute; the differential names the device whose store left its hot store
+- **User context (verbatim):**
+  > Please pull what you can and work on the immediate recovery and nothing else.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sync-jam-1270); no SpecStory capture exists for headless runs.
+
+## October 27th, 2026 at 8:39:08 p.m. EDT — `fdd08d363c9c` test(#1270): red: a frame restating the recording peels and replays the whole queue when a link is written by name
+
+- **Implementation commit:** `fdd08d363c9c376f1fdbd223c7635e3e2ceac32f`
+- **Change:** #1270: red: a frame restating the recording peels and replays the whole queue when a link is written by name
+- **Details:**
+  - The fixture gains the device's screenshot write (previewImage written by name, held by the server-issued id); red: every frame replayed every pending write (0.25 / 2.8 / 7.0 s at 105 / 1,001 / 2,002)
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the attachment shape, the always-run red, the measurements, the attachment differential
+  - `Tests/InstantSwiftDataCoreTests/PhoneReplayGateTests.swift` — the model server resolves a link's written name to its id; the selection keeps links stored under ids
+- **User context (verbatim):**
+  > Please pull what you can and work on the immediate recovery and nothing else.
+- **SpecStory:** unavailable — Headless claude -p run (tools/agent-run, sync-jam-1270); no SpecStory capture exists for headless runs.
+
 ## October 27th, 2026 at 1:40:27 p.m. EDT — `6fb8b6541ffa` feat(#1253): green: a progressive media stream's later writes carry only its state, segment count, duration and update time
 
 - **Implementation commit:** `6fb8b6541ffaf5f9be47835f083ea71d43a21cde`
