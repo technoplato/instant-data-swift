@@ -1,3 +1,12 @@
+## 2026-10-28 17:51:44 EDT — scribe `e6336f2778fb0c6e71536335a6ebc3f2422cedc7`
+Docs (#1308): build 151 on his Watch streams to his Mac (17:43, his tap): the audit's on-Watch section, its row, PROGRESS.
+
+## 2026-10-28 17:51:44 EDT — scribe `e92a013ae5f88346473a77f434c84c614561948a`
+Changelog (#1308): the on-Watch docs.
+
+## 2026-10-28 17:51:44 EDT — scribe `115f8f33e52850f7d3674adb5eb92d8d6365c3a5`
+Merge (#1308): the on-Watch docs land on main.
+
 ## 2026-10-28 17:15:27 EDT — scribe `93c8c507088c512372f1f12cf2d508fd3570e8d1`
 Cut (#1308, #1306): Scribe 0.1 (151): the Watch transcribes on his Mac with Deepgram standing in; the Mac list starts at the top on a first launch.
 
