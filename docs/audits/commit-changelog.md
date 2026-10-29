@@ -1,3 +1,9 @@
+## 2026-10-28 23:44:28 EDT — scribe `eccb33a129d7bc2bb266c452f9337fc832a12819`
+Changelog (#1317): build 154's cut.
+
+## 2026-10-28 23:44:28 EDT — scribe `4f0fc8afee4ffe96442aca1d638c702e407df76e`
+Cut (#1317): Scribe 0.1 (154): a recording's transcript shows no retired line (the Voice Memos' old 30 s lines), and scroll-back still reaches the first line; instant-data-swift 1.9.50 as in 153.
+
 ## 2026-10-28 23:09:37 EDT — scribe `e506797be32e087522a8704876135faa6040392a`
 Changelog (#1317): red, green and docs of the retired-lines fix.
 
