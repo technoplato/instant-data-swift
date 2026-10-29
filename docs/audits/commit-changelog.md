@@ -1,3 +1,21 @@
+## 2026-10-29 03:03:11 EDT — scribe `3a2173a6c0fcce46a0d1e0806a35a466095a231f`
+Merge (#1324): red 9fd245d84, green 76b4c33ec and changelog 2e64f3612 onto main.
+
+## 2026-10-29 03:02:56 EDT — scribe `2e64f3612d0e1d45ed1cfd23b87d9ff3739f6c35`
+Changelog (#1324): red 9fd245d84 and green 76b4c33ec in CHANGELOG.md.
+
+## 2026-10-29 02:54:05 EDT — scribe `76b4c33ec6951d3b40dc017cf0dc2adc98f0de2e`
+Green (#1324): the stream agent (watch, interact, ask), the follow-along tail and the voices backfill skip retired transcript lines: the agent's reads select the retirement and the seal and move their cursor past a retired row as a words-free frame; the tail never prints a retired line, says segment.retired once for a line it may have shown, and reads a full one-version page again larger so a bulk retirement never stops it; the backfill never hears a retired line.
+
+## 2026-10-29 02:54:05 EDT — scribe `9fd245d84b57a788ac713c60aa632f4f49f0ae63`
+Red (#1324): 19 tests (7 agent rows and cursors, 2 query plans, 7 tail, 3 backfill) fail for their reasons; synthetic rows.
+
+## 2026-10-29 02:53:03 EDT — scribe `78fe236cdcccdf3400209db0a26eb4fc65a5ce1d`
+Claim (#1324): TranscriptLineReadersTests.swift, its six #1324 known exceptions.
+
+## 2026-10-29 01:35:57 EDT — scribe `416af3522e2ea519f7e8d8c32362e2954143c9ec`
+Plan (#1324): 2026-10-29-stream-1324, the stream agent, the follow-along tail and the voices backfill skip retired lines; claims.
+
 ## 2026-10-29 02:50:55 EDT — scribe `322bb5f552b89509bc6437542ff1d7d1d7107163`
 Changelog (#1329): docs 74ea164c1 in CHANGELOG.md.
 
