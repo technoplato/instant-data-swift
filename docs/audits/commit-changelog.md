@@ -1,3 +1,15 @@
+## 2026-10-29 13:54:59 EDT — scribe `953974da7d77ffe468fe14d961073ab5103d8122`
+Changelog (#1357): the ledger entry for the share check's blocked causes.
+
+## 2026-10-29 13:54:59 EDT — scribe `074b58c1a01258fa2be5f272c7e57b670db80281`
+Docs (#1357): the mini got the invalid name mapping from the 10-29 02:33 install.
+
+## 2026-10-29 13:54:59 EDT — scribe `69f0da5a17f420c5089db5de40d7a138b39e1253`
+Fix (#1357): a share the privacy check could not run on says which file stops it and its fix, and is checked again once fixed; heartbeat checksBlocked.
+
+## 2026-10-29 13:54:59 EDT — scribe `d337e6320230aad948cc1a169a76def1f78ff7a4`
+Test (#1357): red tests for blocked share checks, their reasons and the retry.
+
 ## 2026-10-29 13:11:50 EDT — scribe `cae1e1686912302c83baefb0de0b415e644b5738`
 Merge (#1348): the Mac's Answers window, its notification click, a Mac left alone posts answers quietly; on main.
 
