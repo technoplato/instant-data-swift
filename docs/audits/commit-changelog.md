@@ -1,3 +1,12 @@
+## 2026-10-28 20:04:09 EDT — scribe `16c985746bb24c8ea563b9f518c052cee02ebc30`
+Green (#1032): a recording still going on keeps its chunks fetched so far in a cache on the Mac mini, so each 10-minute re-sign into scribe-recordings fetches only the new chunks (Recording 314's 26 chunks through the cache equal its whole WAV's samples).
+
+## 2026-10-28 20:04:09 EDT — scribe `52d7abbca386da3d17d30cad9cc848a51fde3958`
+Red (#1032): a live recording's chunks were fetched again from its first at every re-sign (Recording 316's 6.8 hours would have been about 50 GB).
+
+## 2026-10-28 20:04:09 EDT — scribe `fcccc35e0c681e9b800de2975f7534a922e09ee8`
+Docs (#1032): FEATURES item 30 (draft), every recording in our ShazamKit catalog, matched on demand; no line removed.
+
 ## 2026-10-28 20:00:24 EDT — scribe `d2621d87df2e7e078a2247c9921665b72bd6f9fd`
 docs(#1315, #1316): audit: build 152 on his Watch: the event stream opens; a new iPhone recording on an active Watch not yet shown
 
