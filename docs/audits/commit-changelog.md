@@ -1,3 +1,15 @@
+## 2026-10-28 23:09:37 EDT — scribe `e506797be32e087522a8704876135faa6040392a`
+Changelog (#1317): red, green and docs of the retired-lines fix.
+
+## 2026-10-28 23:09:37 EDT — scribe `6112ce08daa297fecf60fc2b2f743aa96db1e41e`
+Docs (#1317): ADR 0064 amendment (the app's readers skip a retired line; why not a where-clause; the once-per-open read of which lines are retired) and WHATS-NEW Build 154 (next) opened with #1317's story.
+
+## 2026-10-28 23:09:37 EDT — scribe `6b82d7d37b5b8117c13662e1b2572451a071dc39`
+Green (#1317): every transcript query selects retiredAtMs (one shared selection, with #1183's seal fields it never sent); a retired row is read first and never wins a shared #; the recording screen publishes no retired section while the row keeps its # for paging; a once-per-open read of which lines are retired covers a store holding lines from before their retirement; Copy Transcript, the playback and list projection, and a person's lines skip them.
+
+## 2026-10-28 23:09:37 EDT — scribe `c5ad9bcea1235d3dac5494e35cc2405767196bbf`
+Red (#1317): no reader shows a retired line, and scroll-back over retired lines (a whole page of them too) reaches the first line; the real library's store filters retiredAtMs is null and is not null.
+
 ## 2026-10-28 22:58:32 EDT — scribe `8ba10e6095be868fe28aae34a27f4f89fbef3cae`
 Changelog (#1319): build 153's cut.
 
