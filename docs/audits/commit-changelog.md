@@ -1,3 +1,36 @@
+## 2026-10-29 14:59:12 EDT — scribe `079ed3f8725be7cc0db0c92f72ff1a4518544db9`
+Presence (#1321): vad-fix-1321b's claims released.
+
+## 2026-10-29 14:59:12 EDT — scribe `923988f1826f4685a2446299cc59cf6446634eda`
+What's New (#1321): Build 162 (next) story and the progress entry.
+
+## 2026-10-29 14:59:12 EDT — scribe `30a06f653d6ba8ba6a086ff6a15815f391910aa8`
+Changelog (#1321): ledger entries for the sound floor, the edge context and a line's own words.
+
+## 2026-10-29 14:59:12 EDT — scribe `02be04cb1f5407c99377390d933b30931036f648`
+Docs (#1321): the audit of the sound floor beside the speech detector, measured by replaying a recording through the device stream against references, and the on-device engine ADR's amendment G.
+
+## 2026-10-29 14:59:12 EDT — scribe `e25196c8962e04fa8154c15f86e3b2fdf8b61685`
+Test (#1321): audio the voice filter withholds (zeros) never opens on sound; agreed_reference.py keeps the reference words that window-shifted passes of the same recognizer also hear.
+
+## 2026-10-29 14:59:12 EDT — scribe `5c0b6be5f60679ade74b2413b7258c8ef74e5f9b`
+Green (#1321): a line at an edge keeps what its decode heard after the previous final's last word; otherwise the edge decides.
+
+## 2026-10-29 14:59:12 EDT — scribe `34c76e9b9fa4618de85e9b968623afacf3502a8d`
+Red (#1321): two edge-context tests: a word the previous final dropped at its end, a word timed across a cut.
+
+## 2026-10-29 14:59:12 EDT — scribe `c21fe217d406987cd929fd357ea0a2d5465fdcc1`
+Green (#1321): on the microphone a line that starts where the previous final ended is decoded with up to 2 s of the audio before it (no extra decode) and keeps its own words.
+
+## 2026-10-29 14:59:12 EDT — scribe `291293f0d994eed1a9070212d1fe3b80fe0b4330`
+Red (#1321): edge-context tests: a line decoded from a decode that began before it keeps only its own words.
+
+## 2026-10-29 14:59:12 EDT — scribe `453efd1ff13332c5cb06d5a148d15533f2fe4dd0`
+Green (#1321): on the microphone a 256 ms step at -50 dBFS or louder opens an utterance the speech detector heard no speech in, decoded once at its final; quiet for the endpointing ends it; the detector still starts and ends the lines it hears; the logs name the floor.
+
+## 2026-10-29 14:59:12 EDT — scribe `618e62ca2fdc5cb2cdc45f52a5a9dc5ba0d78fc9`
+Red (#1321): sound-floor segmenter tests, the microphone-only wire option, a word-recall scorer, and an opt-in replay of a recording through the device stream scored against a reference.
+
 ## 2026-10-29 14:25:57 EDT — scribe `4b25d489b2849deaa256831632f9afa43a14dd05`
 Cut (#1335): Scribe 0.1 (161): WHATS-NEW story and build number 160 to 161.
 
