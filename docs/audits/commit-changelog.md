@@ -1,3 +1,12 @@
+## 2026-10-29 12:06:07 EDT — scribe `0092bf1ce97c0bf8cc5542be6b40ad24ae8fd143`
+Docs (#1349): scribe-listener skill: scribe speaker NAME; never grep transcript.md for [Name].
+
+## 2026-10-29 12:06:07 EDT — scribe `9c6a73ae554196104122f64f135dd1ab41680953`
+Green (#1349): scribe speaker NAME, one person's lines across recordings, confirmed names and (Name?) guesses apart.
+
+## 2026-10-29 12:06:07 EDT — scribe `1d956ea2d9147c76d9d9eb8b2c443e39e510e510`
+Red (#1349): scribe speaker NAME finds one person's lines across recordings.
+
 ## 2026-10-29 11:31:08 EDT — scribe `6067ba4b793aa808fdbfdc526b69e8a573eb2d7e`
 Merge (#1337): a recording delete goes to Recently Deleted at once, with no confirmation dialog.
 
