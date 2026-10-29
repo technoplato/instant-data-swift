@@ -1,3 +1,21 @@
+## 2026-10-29 02:51:07 EDT — scribe `347d4f1f5dd7669372ef2954ec3b7d8f510c5b78`
+Changelog (#1325, #1327, #1328): build 155 cut 0318c75c7.
+
+## 2026-10-29 02:50:23 EDT — scribe `0318c75c753c864728878963e6ee2314f7aca7de`
+Cut (#1325, #1327, #1328): Scribe 0.1 (155) and Scribe Playback 155; four files; installed on iPhone, iPad, Watch and Mac 03:02-03:16.
+
+## 2026-10-29 02:10:14 EDT — scribe `ea7fc219e388ee615b61af98cb4ef844882910fc`
+Changelog (#1325, #1327): red/green pairs, the Swift guard and the ADR 0064 amendment.
+
+## 2026-10-29 02:27:55 EDT — scribe `f1826c70f9d7699b9a9ed6cc20764ca3eae22693`
+Docs (#1328): Scribe Playback's Build 155 story names what #1328 measured.
+
+## 2026-10-29 02:27:45 EDT — scribe `942eb264ffaf6840c0d449104392cdde94c46b30`
+Docs (#1328): Scribe Playback's What's New: Build 155 (next); #1328's pin rule reaches Scribe Playback, so 155 rebuilds it.
+
+## 2026-10-29 02:11:28 EDT — scribe `9b50740ed205d6ebf080040c9f67b2952ca27c26`
+Docs (#1325, #1327): What's New: Build 155 (next) opens with SharePlay's and the share sheet's stories.
+
 ## 2026-10-29 03:03:11 EDT — scribe `3a2173a6c0fcce46a0d1e0806a35a466095a231f`
 Merge (#1324): red 9fd245d84, green 76b4c33ec and changelog 2e64f3612 onto main.
 
