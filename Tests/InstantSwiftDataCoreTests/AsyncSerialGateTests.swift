@@ -380,7 +380,7 @@ private actor GateOutcomeRecorder {
   }
 }
 
-private actor GateStallReportRecorder {
+actor GateStallReportRecorder {
   private var values: [AsyncSerialGate.StallReport] = []
 
   func record(_ value: AsyncSerialGate.StallReport) {
@@ -401,7 +401,7 @@ private actor GateStallReportRecorder {
   }
 }
 
-private struct GateTestTimeout: Error, CustomStringConvertible {
+struct GateTestTimeout: Error, CustomStringConvertible {
   var reason: String
   var description: String { "Timed out waiting on the gate under test: \(reason)" }
 }
@@ -410,7 +410,7 @@ extension AsyncSerialGate {
   /// Test-only probe that waits until the queue reaches `count`, so a test can
   /// prove a waiter is genuinely enqueued before cancelling it instead of
   /// guessing with a sleep.
-  fileprivate func waitForWaiterCount(_ count: Int, timeout: Duration = .seconds(5)) async throws {
+  func waitForWaiterCount(_ count: Int, timeout: Duration = .seconds(5)) async throws {
     let deadline = ContinuousClock.now.advanced(by: timeout)
     while waiterCount != count {
       if ContinuousClock.now >= deadline {
@@ -421,7 +421,7 @@ extension AsyncSerialGate {
   }
 }
 
-private actor GateWaitReportRecorder {
+actor GateWaitReportRecorder {
   private var values: [AsyncSerialGate.WaitReport] = []
 
   func record(_ value: AsyncSerialGate.WaitReport) {

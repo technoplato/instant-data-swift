@@ -67,6 +67,22 @@ actor AsyncSerialGate {
     /// When the longest-queued caller started waiting.
     var longestWaitingSince: Date?
   }
+  /// One reading of the gate's clocks (#1319).
+  struct Instant: Sendable, Equatable {
+    /// Nanoseconds on a clock that keeps counting while the device sleeps and the process is suspended.
+    var elapsedNanoseconds: UInt64
+    /// Nanoseconds on `CLOCK_UPTIME_RAW`, which stops while the device sleeps; process suspensions are recorded on it.
+    var uptimeNanoseconds: UInt64
+  }
+
+  /// How the gate tells time (#1319).
+  struct Clock: Sendable {
+    /// The clocks now.
+    var now: @Sendable () -> Instant
+    /// How many nanoseconds the process was recorded suspended between two readings of the uptime clock.
+    var suspendedNanoseconds: @Sendable (_ fromUptime: UInt64, _ toUptime: UInt64) -> UInt64
+  }
+
   /// Emitted when the gate has been held long enough that a caller waiting on
   /// it can no longer be explained by ordinary contention.
   struct StallReport: Sendable, Equatable {
@@ -88,6 +104,10 @@ actor AsyncSerialGate {
     var holderPhase: String? = nil
     /// Whose gate it is, when the gate was given an owner: the runtime's app ID for its operation gate.
     var owner: String? = nil
+    /// How long the process was suspended, or the device asleep, while the holder held the gate (#1319).
+    var holderSuspendedMilliseconds = 0
+    /// How long the process was suspended, or the device asleep, while the longest-queued caller waited (#1319).
+    var longestWaitSuspendedMilliseconds = 0
   }
 
   /// Emitted when a caller acquires the gate after queuing past the wait threshold, so a slow
@@ -111,6 +131,10 @@ actor AsyncSerialGate {
     var waitingPriority: Priority = .standard
     /// Whose gate it is, when the gate was given an owner: the runtime's app ID for its operation gate.
     var owner: String? = nil
+    /// How long the process was suspended, or the device asleep, while the caller waited (#1319).
+    var waitSuspendedMilliseconds = 0
+    /// How long the process was suspended, or the device asleep, while the holder before it held the gate (#1319).
+    var previousHolderSuspendedMilliseconds = 0
   }
 
   /// One step in the gate's life, reported to the timeline closure given at `init` (#1074). The wait and stall reports
@@ -276,11 +300,16 @@ actor AsyncSerialGate {
     report: (@Sendable (StallReport) -> Void)? = nil,
     waitReport: (@Sendable (WaitReport) -> Void)? = nil,
     timeline: (@Sendable (TimelineEvent) -> Void)? = nil,
-    uptimeNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
+    uptimeNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+    clock: Clock? = nil
   ) {
     self.label = label
     self.owner = owner
-    self.currentDate = now
+    if let clock {
+      self.currentDate = { Date(timeIntervalSince1970: Double(clock.now().elapsedNanoseconds) / 1e9) }
+    } else {
+      self.currentDate = now
+    }
     self.stallThresholdMilliseconds = stallThresholdMilliseconds
     self.waitReportThresholdMilliseconds = waitReportThresholdMilliseconds
     self.agingMilliseconds = agingMilliseconds

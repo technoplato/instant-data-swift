@@ -477,6 +477,9 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// waited; `nil` prunes everything at once. 1,000 since #1129: a batch also holds the server-apply gate, so a refresh
   /// that arrives during one waits for it, and a batch of 5,000 held both about 100 ms.
   var liveQueryResultPruneBatchTripleCount: Int? = 1_000
+  /// What keeps the process running while the live-query prune works, and says when the system is about to suspend it
+  /// (#1319).
+  public var maintenanceActivity = InstantMaintenanceActivity.unbounded
   /// How many of a closed result's facts one operation-gate hold loads back when its query reopens (#1131). The reload
   /// of the `$files` list's 75,640 facts held the gate about 1.3 s in one hold on the Mac mini after its read moved out
   /// of the gate; 2,048 facts are about 30 ms there.
@@ -7932,6 +7935,19 @@ public final class InstantRuntime: Sendable {
   @concurrent
   package func liveQueryResultActiveKeysForTesting() async -> Set<String> {
     await liveQueryResultState.activeKeysForTesting()
+  }
+
+  /// Marks `keys` as queries whose registration is under way, so the prune keeps their stored results as it keeps a
+  /// registering query's (#1131). A measurement on a copy of a device's store has no socket to open its queries with
+  /// (#1319); give each lease back with ``endLiveQueryRegistrationForTesting(_:)``.
+  func beginLiveQueryRegistrationsForTesting(_ keys: Set<String>) async -> [InstantLiveQueryRegistrations.Lease] {
+    var leases: [InstantLiveQueryRegistrations.Lease] = []
+    for key in keys.sorted() { leases.append(await liveQueryRegistrations.begin(key)) }
+    return leases
+  }
+
+  func endLiveQueryRegistrationForTesting(_ lease: InstantLiveQueryRegistrations.Lease) {
+    liveQueryRegistrations.end(lease)
   }
 
   private func startAutomaticLiveConnectionIfNeeded() {

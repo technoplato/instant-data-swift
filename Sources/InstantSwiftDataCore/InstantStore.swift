@@ -3320,7 +3320,16 @@ public actor InstantStore {
   /// The facts the store holds of `entityIDs` (#1006): a local read evaluates its plan over them together with what
   /// this device keeps on disk, and a live-query prune decides from them what it drops (#654).
   func facts(of entityIDs: Set<String>) -> [InstantTriple] {
-    entityIDs.sorted().flatMap { indexes.triples(entityID: $0) }
+    let facts = entityIDs.sorted().flatMap { indexes.triples(entityID: $0) }
+    factsMaterializedForPruneForTesting += facts.count
+    return facts
+  }
+
+  /// How many facts this store has materialized for live-query prune batches (#1319).
+  package private(set) var factsMaterializedForPruneForTesting = 0
+
+  package func resetFactsMaterializedForPruneForTesting() {
+    factsMaterializedForPruneForTesting = 0
   }
 
   /// Retracts the facts a live-query prune dropped, in place, at a cost in proportion to them (#654).
