@@ -1,3 +1,12 @@
+## 2026-10-29 16:51:49 EDT — scribe `94a01ecf2d3e1306f80f8c8205d7fb9b70e45752`
+Merge (#1321): the audit's shipped section onto main.
+
+## 2026-10-29 16:51:49 EDT — scribe `e42a0b9e1eb0a4346454eab00970d01f93d0fe22`
+Docs (#1321): shipped: build 162 on the device with the sound floor running, the server at da3dc0ca4.
+
+## 2026-10-29 16:51:49 EDT — scribe `da3dc0ca4490506856748910094eb0da8a2dd3a4`
+Cut (#1321): Scribe 0.1 (162): WHATS-NEW story and build number 161 to 162.
+
 ## 2026-10-29 15:46:56 EDT — scribe `59bea156327f55930cb5563008a847bcdb2169b3`
 changelog(#1348): the ledger for one-run iPhone-first installs
 
