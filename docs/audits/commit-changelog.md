@@ -1,3 +1,18 @@
+## 2026-10-28 22:58:32 EDT — scribe `8ba10e6095be868fe28aae34a27f4f89fbef3cae`
+Changelog (#1319): build 153's cut.
+
+## 2026-10-28 22:58:32 EDT — scribe `1e502d83ab2575cec5ce19ff997cb409a9d90636`
+Cut (#1319): Scribe 0.1 (153), instant-data-swift 1.9.50; What's New Build 153 (#1319, #1321); Scribe Playback stays 148.
+
+## 2026-10-28 22:58:32 EDT — scribe `4b9b3728e2cfba725dcd8651c2c8d4a856b39c7b`
+Changelog (#1319): red 30500859c, green 6f4ed4fe7.
+
+## 2026-10-28 22:58:32 EDT — scribe `6f4ed4fe72ce97511b7ba4669b788e4e13382014`
+Green (#1319): pin instant-data-swift 1.9.50; the StallWatchdog hands each resume to InstantProcessSuspensions; session.health gateStallSuspendedMs; the installer's expected version; audit audits/2026-10-28-gate-1319.md.
+
+## 2026-10-28 22:58:32 EDT — scribe `30500859c6d3ebbf638d1d3b66a1e2aeb7d0f59d`
+Red (#1319): session.health had no suspended time beside a stall; the watchdog's resumes never reached Instant.
+
 ## 2026-10-28 22:38:19 EDT — scribe `5b4702ed8a692fbf32afa9764748602a0599e945`
 Docs (#1321): the audit of a recording's speech the engine never decoded (the speech detector never opened on it), its proposals, and the on-device engine ADR's amendment F (the unopened-audio counters).
 
