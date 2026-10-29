@@ -1,3 +1,9 @@
+## 2026-10-29 18:15:49 EDT — scribe `d613f8f2180c19b9d510e829d56a8f5592b6a6d9`
+#1338: green: other devices read the live room beats (the list selects liveRoomKey), and the player reports a wait for audio this device does not hold.
+
+## 2026-10-29 18:15:49 EDT — scribe `4a42107f0182b6457ac7f81d69e55ff5a9cf17dc`
+#1338: red: the list selects liveRoomKey, a waiting player says how far the audio reaches, a quiet device's stored copy plays.
+
 ## 2026-10-29 17:51:53 EDT — scribe `622ede8052bf60f9b75df7fc26db060d479406d9`
 #1342: land: a continued take gives out no line index before this device's store answers.
 
