@@ -1,3 +1,30 @@
+## 2026-10-28 20:21:07 EDT — scribe `01202f082412597e493d20126761d19fc5202bce`
+Docs (#1032): ADR 0083 amendment A, what the backfill found (297 of 302 recordings with a WAV signed, 164.4 h) and how the worker meets it.
+
+## 2026-10-28 20:21:07 EDT — scribe `b823066be1e9dffbb814013d0f76583e59cc3ed8`
+Green (#1032): a WAV with no samples is counted as no audio in its file.
+
+## 2026-10-28 20:21:07 EDT — scribe `2da4e131c60e258d307daa6c365c299183ab32a4`
+Red (#1032): a header-only WAV was counted as a failure in the pass counts.
+
+## 2026-10-28 20:21:07 EDT — scribe `510caa9e99540a26e3f965ee43d5002add685020`
+Green (#1032): SIGTERM ends a pass through its cleanup: the download's folder removed, the state saved.
+
+## 2026-10-28 20:21:07 EDT — scribe `334e0826b0372e899bc6512b88619eaa972b07a8`
+Red (#1032): SIGTERM (launchd's bootout, kill) ended a pass at once and left its download in the temporary folder.
+
+## 2026-10-28 20:21:07 EDT — scribe `dc815a30719aed5601cc56fd771a470d1459e8a0`
+Green (#1032): a failure records the program's version (its own hash), and a new version tries it again at once.
+
+## 2026-10-28 20:21:07 EDT — scribe `07b1ccebdd20a9e3e46c2cce72f93308737d4974`
+Red (#1032): a failure recorded by an older version of recording_catalog.py waited a day though the new version may fix it.
+
+## 2026-10-28 20:21:07 EDT — scribe `eb7a41dac25e2beba7b7bb41da652916114b9088`
+Green (#1032): a WAV recorded at 16 kHz is signed at its own rate.
+
+## 2026-10-28 20:21:07 EDT — scribe `189baf80fce81f6410ef97fb1b753391644fb71c`
+Red (#1032): a WAV recorded at 16 kHz was refused as not the phone's 48 kHz (backfill 2, recording e17d7d30).
+
 ## 2026-10-28 20:04:09 EDT — scribe `16c985746bb24c8ea563b9f518c052cee02ebc30`
 Green (#1032): a recording still going on keeps its chunks fetched so far in a cache on the Mac mini, so each 10-minute re-sign into scribe-recordings fetches only the new chunks (Recording 314's 26 chunks through the cache equal its whole WAV's samples).
 
