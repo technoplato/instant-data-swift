@@ -1,3 +1,9 @@
+## 2026-10-29 16:59:10 EDT — scribe `19fb078ac7ec1481af511681451fba998cb50988`
+#1347: green: a Photos screenshot or photo sits on the timeline at its capture time, not its pickup time.
+
+## 2026-10-29 16:59:10 EDT — scribe `ab9a838c0a8d3d3e8dc5e410b5d800bb433a3856`
+#1347: red: a screenshot sits at its capture time, not its pickup time.
+
 ## 2026-10-29 16:55:25 EDT — scribe `458abe373a731a498dd8c1ea4f31677b9d3790b6`
 #1367: ADR 0096 amendment D: adoptions reach the lines; the diarizer's short-line mixes, measured.
 
