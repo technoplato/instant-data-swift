@@ -7991,6 +7991,11 @@ public final class InstantRuntime: Sendable {
     liveQueryRegistrations.end(lease)
   }
 
+  /// What holds the server-apply gate now, with no hop onto it (#1319).
+  package func serverApplyGateHolderForTesting() -> String? {
+    serverApplyGate.snapshot.holder
+  }
+
   private func startAutomaticLiveConnectionIfNeeded() {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
