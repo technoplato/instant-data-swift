@@ -1,3 +1,9 @@
+## 2026-10-29 02:50:55 EDT — scribe `322bb5f552b89509bc6437542ff1d7d1d7107163`
+Changelog (#1329): docs 74ea164c1 in CHANGELOG.md.
+
+## 2026-10-29 02:50:46 EDT — scribe `74ea164c15ed11ddc09b4f5331189a1364150a61`
+Docs (#1329): ADR 0014 section 14.3, a share's scrubbed copy follows its sources: the rule at every copy write, the follower's look and sweep on every kind of share, sealed clips, shareScrubbedLines.wordsSeal, and what was measured.
+
 ## 2026-10-29 02:46:51 EDT — scribe `b6c6d2aa9926a7bb0c09e59da54a41651cc0f5b6`
 Changelog (#1329): red 53695d7ef and green 8d01d8c66 in CHANGELOG.md.
 
