@@ -7416,16 +7416,23 @@ public final class InstantRuntime: Sendable {
     // #1129: a closed result larger than a batch is released over later batches, each checking the next whole entities
     // of its released row's ownership rows; a released row is checked before another result is removed.
     let chunkTripleCount = configuration.liveQueryResultPruneBatchTripleCount ?? Int.max
+    func recordStopForSuspension(holdingGates: Bool) {
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "live-query-results.prune-stopped-for-suspension",
+        message: "Stopped pruning live query results between batches: the system is about to suspend the process.",
+        metadata: [
+          "batchCount": String(batchCount),
+          "removedCount": String(removedQueryKeys.count),
+          "gaveBackGates": String(holdingGates),
+        ]
+      )
+    }
     while true {
       if activity.isExpired {
-        InstantDiagnostics.shared.record(
-          .notice,
-          subsystem: "instant-swift-data-core",
-          category: "query",
-          event: "live-query-results.prune-stopped-for-suspension",
-          message: "Stopped pruning live query results between batches: the system is about to suspend the process.",
-          metadata: ["batchCount": String(batchCount), "removedCount": String(removedQueryKeys.count)]
-        )
+        recordStopForSuspension(holdingGates: false)
         break
       }
       batchCount += 1
@@ -7442,10 +7449,19 @@ public final class InstantRuntime: Sendable {
         break
       }
       await enterOperationGate(priority: .background, writes: [])
+      await configuration.onLiveQueryResultPruneBatchHoldsOperationGateForTesting?()
+      // #1319: the system's notice can come while the batch waits for its gates; then it gives them back unworked. A
+      // device's batch held the server-apply gate 86 minutes across a suspension that began as its background time ran
+      // out.
+      if activity.isExpired {
+        await leaveOperationGate()
+        await serverApplyGate.leave()
+        recordStopForSuspension(holdingGates: true)
+        break
+      }
       let application: InstantLiveQueryResultPruneBatchApplication
       var checkedReleasedChunk = false
       do {
-        await configuration.onLiveQueryResultPruneBatchHoldsOperationGateForTesting?()
         recordActorHop(.persistence)
         if let chunk = try await persistence.nextReleasedLiveQueryResultChunk(maximumTripleCount: chunkTripleCount) {
           application = try await pruneReleasedLiveQueryResultChunk(chunk, carriedReleasedIdentities: carried)
