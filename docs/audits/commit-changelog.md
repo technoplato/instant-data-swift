@@ -1,3 +1,15 @@
+## 2026-10-28 22:38:19 EDT — scribe `5b4702ed8a692fbf32afa9764748602a0599e945`
+Docs (#1321): the audit of a recording's speech the engine never decoded (the speech detector never opened on it), its proposals, and the on-device engine ADR's amendment F (the unopened-audio counters).
+
+## 2026-10-28 22:34:17 EDT — scribe `3deb2af5ab953bfbb8d0b61ea3cf6ff9f871e581`
+Green (#1321): every transcription stream counts the audio its speech detector never opened (never decoded), its loud part (a 256 ms step at -40 dBFS or louder) and the longest loud stretch, in the device's per-minute and closing lines and the server's closing log; diagnostics only, the replayed recording's results and words identical before and after.
+
+## 2026-10-28 22:29:13 EDT — scribe `2df7a681281ee29dbf685f651efadcb14ba81788`
+Red (#1321): UnopenedAudioTests against a stub (5 of 6 fail): opened audio not counted, quiet and loud apart, the longest loud stretch, the loud level, a step's RMS dBFS, a million steps in constant memory.
+
+## 2026-10-28 22:25:43 EDT — scribe `c305288d7ad022bc841839e49cf4b645ddbc315f`
+Plan (#1321): dropped-speech-1321 plan and claims.
+
 ## 2026-10-28 22:38:18 EDT — instant-data-swift `1a7a18990e4c59308e9203476ae5d392327aae24`
 Green (#1319): a prune batch whose activity expires while it takes the server-apply and operation gates gives both back unworked.
 
