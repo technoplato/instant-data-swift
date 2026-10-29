@@ -1,3 +1,21 @@
+## 2026-10-29 14:08:30 EDT — scribe `eff0f1353456e1c3c0502d7eddd2b5b3686b92a5`
+Docs (#1343): the audits index says stall-1343 is in build 160.
+
+## 2026-10-29 14:08:10 EDT — scribe `7e681826c4548b56f4ed89e2145be5816685282e`
+Progress (#1343): PROGRESS entry; audit section 7: 159 did not install (the reader did not compile for watchOS), 160 carries #1343 and launched on his iPhone 13:55:18.
+
+## 2026-10-29 12:40:24 EDT — scribe `38c2eed1414cdf4bebac53d75cb77c4564d9311e`
+Docs (#1343): WHATS-NEW Build 159 wording: the 2.7 s freeze came on a return to Scribe.
+
+## 2026-10-29 12:40:06 EDT — scribe `fbe754210269f21c161682734bea216d725695c4`
+Presence (#1343): stall-1343's claims released.
+
+## 2026-10-29 12:38:37 EDT — scribe `df8aeb56850d795b170f7b0833124bdd7c57b742`
+Test (#1343): a watchdog started on the main thread reports a 1.8 s block of it once, with the main thread's stack.
+
+## 2026-10-29 12:36:20 EDT — scribe `bfcc606d4e6c994fa191958c997998a03921f34f`
+Docs (#1343): audit section 4: the reader's fault-safe reads.
+
 ## 2026-10-29 13:54:59 EDT — scribe `953974da7d77ffe468fe14d961073ab5103d8122`
 Changelog (#1357): the ledger entry for the share check's blocked causes.
 
