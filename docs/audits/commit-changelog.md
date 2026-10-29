@@ -1,3 +1,18 @@
+## 2026-10-29 02:32:09 EDT — scribe `65b7caeee259aae301fdfb8abec52799a9b0ee13`
+Changelog (#1329): red 1763777bc and green 1adfa0627 in CHANGELOG.md.
+
+## 2026-10-29 02:30:46 EDT — scribe `1360603a0b5ae189fe5ecf5c4d9e03b857803dd0`
+Test (#1329): the share rules matrix's sealed copies (a link holder reads a place and a seal, never words; the rules refuse words beside a seal), 49/49 on the throwaway app, and the follower's proof there (scripts/scribe-scrubber/follow-proof.ts): one look takes a retired line out of a sections, a whole-recording and a legacy share and copies a sealed one sealed; the sweep catches a retirement with its old stamp.
+
+## 2026-10-29 02:30:46 EDT — scribe `1adfa062743fe46621570a30f61512012e5aa12a`
+Green (#1329): a share's scrubbed copy follows its source line's retirement and seal, on every kind of share: the scrubber reads every line with the rule's fields, re-reads its retirement and seal inside the share's lock at every write of a copy, follows every readable share every 2 s and sweeps every copy every 10 minutes, mutes sealed lines in clips; shareScrubbedLines.wordsSeal and its rule pushed to production 02:30 EDT (drift 0).
+
+## 2026-10-29 01:47:36 EDT — scribe `1763777bc3e505a7f6a24c45311077e98fbda7ff`
+Red (#1329): 24 tests: the rule at copy time, the follower on every kind of share, sealed clips, live shares, the scrubber's guard (every read selects lineFields) and the schema's wordsSeal.
+
+## 2026-10-29 01:38:11 EDT — scribe `298b156de14165991563e7efef9c5093619ae5d4`
+Plan (#1329): 2026-10-29-scrub-1329, a share's scrubbed copy follows its source line's retirement and seal; claims.
+
 ## 2026-10-29 02:25:14 EDT — scribe `7d8e954587eb72d964d6be5a9c63cbf1ac3f87b7`
 Changelog (#1328): red ecd982811 and green 3a48e5140 in CHANGELOG.md.
 
