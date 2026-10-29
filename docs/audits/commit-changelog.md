@@ -1,3 +1,6 @@
+## 2026-10-29 18:26:16 EDT — scribe `6dc3d6bd349bc6202b5628797ab5f956e3b209a3`
+#1345: scribe-issues tells agents to include the pictures of the moment (screenshots and screen frames that issues file and mention --said now attach), always for design issues.
+
 ## 2026-10-29 18:15:49 EDT — scribe `d613f8f2180c19b9d510e829d56a8f5592b6a6d9`
 #1338: green: other devices read the live room beats (the list selects liveRoomKey), and the player reports a wait for audio this device does not hold.
 
