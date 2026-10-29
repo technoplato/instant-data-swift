@@ -1,3 +1,12 @@
+## 2026-10-28 20:00:24 EDT — scribe `d2621d87df2e7e078a2247c9921665b72bd6f9fd`
+docs(#1315, #1316): audit: build 152 on his Watch: the event stream opens; a new iPhone recording on an active Watch not yet shown
+
+## 2026-10-28 20:00:24 EDT — scribe `53c79b5a0c793ecd4eabcdf37532a52cb2012996`
+fix(#1315): the installer's expected instant-data-swift moves to 1.9.49 with the pin
+
+## 2026-10-28 20:00:24 EDT — scribe `67e2f7a0ee426c83160c4b9033c4083461eb7d18`
+cut(#1315): Scribe 0.1 (152): the Watch's list gets iPhone recordings: its Instant session runs over HTTP (instant-data-swift 1.9.49)
+
 ## 2026-10-28 19:57:15 EDT — scribe `152aed3bbc06b3937ba683e192d9d8a6eae16cd8`
 Merge (#1032, #922): every Scribe recording signed on demand into scribe-recordings within minutes of its audio (recording_catalog.py on the Mac mini, a pass every 5 minutes, newest first; its whole WAV or live chunks; mediaItems and mediaCatalogEntries rows naming the recording and its start), the existing ones backfilled; a book reading's catalog row carries its recording's audio shift (audioShiftSeconds), so a match leads to the right word.
 
