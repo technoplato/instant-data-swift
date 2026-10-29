@@ -1,3 +1,18 @@
+## 2026-10-29 12:28:25 EDT — scribe `2a217364ab7b8557b752059d3abab130870fe7b6`
+Docs (#1343): audit 2026-10-29-stall-1343: builds 156-157's scene-change stalls are not a 156 regression (155 did the same main-thread work per move; the stalls came at thermal serious); the phone holds no stack for them.
+
+## 2026-10-29 12:28:25 EDT — scribe `db3c7e1cac4662fafec6ff063816d3aeedd0eb33`
+Change log (#1343): red 86f0e3cb7, green 9b5cfc9aa.
+
+## 2026-10-29 12:27:29 EDT — scribe `9b5cfc9aa3456ad19f5b964e773be74d7fd4d0c2`
+Green (#1343): the photo sheet's camera keeps its preview through a scene change and runs again after it (no AVCaptureVideoPreviewLayer.setSession on the main thread at a move to the background); the stall watchdog samples the main thread's stack in every turn of a second or more and logs watchdog.main-thread.slow-turn.
+
+## 2026-10-29 12:27:28 EDT — scribe `86f0e3cb751bd6e5be068ac07f646dc9f12aa9cf`
+Red (#1343): after an interruption ends the photo sheet's camera stays paused; the watchdog has no reader of the main thread's stack.
+
+## 2026-10-29 12:05:53 EDT — scribe `af13d93333928c7fad0b863fd5fa37655da406ba`
+Plan (#1343): 2026-10-29-stall-1343; claims.
+
 ## 2026-10-29 12:06:07 EDT — scribe `0092bf1ce97c0bf8cc5542be6b40ad24ae8fd143`
 Docs (#1349): scribe-listener skill: scribe speaker NAME; never grep transcript.md for [Name].
 
