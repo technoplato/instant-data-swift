@@ -1,3 +1,33 @@
+## 2026-10-29 02:03:37 EDT — scribe `da61ec71319fb5851a460e028d9f42fd95d79e6f`
+Changelog (#1323): the red, green and docs commits of the CLI, Mac scripts and mirror retired-line fix.
+
+## 2026-10-29 02:02:39 EDT — scribe `4c1414e3e64194fee1250e4862ba96293fe95b62`
+Docs (#1323): ADR 0064 amendment: one rule per language with a guard each, a # naming its kept line, the mirror's transcript files written again when a written line is retired, and a 5-minute look for retirements in folders the mirror does not follow.
+
+## 2026-10-29 01:52:31 EDT — foldkit `b60b9df628b0c58f4f052a58833afd4a6052591b`
+Green (Scribe #1323): issues --said never quotes a retired or a sealed Scribe line; installed as the issues CLI 1.6.1.
+
+## 2026-10-29 01:52:28 EDT — foldkit `c7691347e806d70f3c142fa6e1e32ac7c5a3d084`
+Red (Scribe #1323): issues --said quotes a retired copy written after its kept line, and a sealed line.
+
+## 2026-10-29 01:45:59 EDT — scribe `5594e56e20aa38a9a481ef84fe77d8055fcdb46e`
+Green (#1323): scripts/media-transcription/transcript_lines.py, the one Python rule for his lines; every Python reader goes through it.
+
+## 2026-10-29 01:45:57 EDT — scribe `b551e4342c3274f9c3d397ce896e91dae6840864`
+Red (#1323): the Python guard (9 problems in 4 readers on the old code) and the rule's tests.
+
+## 2026-10-29 01:40:30 EDT — scribe `dcdd5a0eb8417907ed57bfd006861d759d6e7428`
+Green (#1323): the Mac scripts (topics-tagger, youtube-companion, qa-backfill, triage-import, debug tools) read his lines through model.ts's rule; installers carry it.
+
+## 2026-10-29 01:40:30 EDT — scribe `9d0b111d3aa7c15b254d7b39805f592d50c5fd20`
+Red (#1323): the TS guard (20 problems in 18 readers on the old code) and the scripts' tests.
+
+## 2026-10-29 01:29:32 EDT — scribe `3234f4a4be6d7067b40aec452a4844cc567073d7`
+Green (#1323): one TS rule for his lines in model.ts; the mirror writes its transcript files again when a written line is retired; --segment and --quote take the kept line.
+
+## 2026-10-29 01:29:32 EDT — scribe `373c66c3a94ce867b8efe16d891c527ef927ed8e`
+Red (#1323): 16 mirror cases (the rule, the rewrite on retirement, capture, --segment/--quote, the day's read, the transcript.jsonl readers).
+
 ## 2026-10-28 23:44:28 EDT — scribe `eccb33a129d7bc2bb266c452f9337fc832a12819`
 Changelog (#1317): build 154's cut.
 
