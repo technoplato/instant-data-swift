@@ -12,3 +12,4 @@ claude-code/lib-audit-1072@halfjew22 2026-10-24T18:57:02-0400 mower plan=2026-10
 claude-code/fix-memory-1075@ld 2026-10-24T21:15:35-0400 mower plan=2026-10-24-fix-memory-1075 #1152 (AttrSlot's many storage, insert's derived-shape write, the sites that build a many slot; not TxIDInterner)
 claude-code/fix-memory-1075@ld 2026-10-24T23:40:43-0400 mower plan=2026-10-24-fix-memory-1075 #1153 amendment 5 (AttributeStore: one read-only method, the namespaces a delete reaches)
 claude-code/sync-jam-1270@al 2026-10-27T19:14:47-0400 mower plan=2026-10-27-sync-jam-1270 #1270
+claude-code/gate-1319@al 2026-10-28T21:32:54-0400 mower plan=2026-10-28-gate-1319 #1319

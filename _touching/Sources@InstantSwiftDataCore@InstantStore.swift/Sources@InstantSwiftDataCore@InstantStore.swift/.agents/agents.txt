@@ -23,3 +23,4 @@ claude-code/fix-memory-1075@ld 2026-10-24T21:15:35-0400 mower plan=2026-10-24-fi
 claude-code/fix-memory-1075@ld 2026-10-24T23:40:43-0400 mower plan=2026-10-24-fix-memory-1075 #1153 amendment 5 (a testing counter of prepares in prepareMutating only)
 claude-code/fix-memory-1075@ld 2026-10-25T01:33:15-0400 mower plan=2026-10-24-fix-memory-1075 #1150 amendment 9 (a new attributeStoreSnapshot() only)
 claude-code/fix-memory-1075@ld 2026-10-25T02:52:55-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (new releaseUnobservedEntities(_:) only)
+claude-code/gate-1319@al 2026-10-28T21:32:54-0400 mower plan=2026-10-28-gate-1319 #1319
