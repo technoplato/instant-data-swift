@@ -1,3 +1,15 @@
+## 2026-10-29 18:54:34 EDT — scribe `30dd314c11df9aad741c1bb9f14ee8c75a5f6451`
+#1344, #1331: merge: the broadcast's screen frames show in a band pinned at the top of the live screen, above the speaker name, never as rows among the words; the band carries #1331's Show Screen Frames As.
+
+## 2026-10-29 18:54:34 EDT — scribe `32b4f851e319b51a2fd575fdd40e6de913f66149`
+#1344: the frames' bookkeeping reads each row's case once, never compares the rows (cost test bound).
+
+## 2026-10-29 18:54:34 EDT — scribe `f5ebbf7508c995b4b8eb3c1981f81674512bc4d7`
+#1344: green: frames leave the live lines; RecordingFrameBandView pinned above Now Playing and the speaker name.
+
+## 2026-10-29 18:54:34 EDT — scribe `2ce3f5c2b796c2e7d706e3a0807adbefde068adb`
+#1344: red: frames are not lines of the live transcript; the band's state follows frames and the clock.
+
 ## 2026-10-29 18:26:16 EDT — scribe `6dc3d6bd349bc6202b5628797ab5f956e3b209a3`
 #1345: scribe-issues tells agents to include the pictures of the moment (screenshots and screen frames that issues file and mention --said now attach), always for design issues.
 
