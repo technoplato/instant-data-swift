@@ -1,3 +1,18 @@
+## 2026-10-29 02:25:14 EDT — scribe `7d8e954587eb72d964d6be5a9c63cbf1ac3f87b7`
+Changelog (#1328): red ecd982811 and green 3a48e5140 in CHANGELOG.md.
+
+## 2026-10-29 02:24:02 EDT — scribe `cd7b41a6d1d3950c3c8aa0bebf8f7b5f26a56b5e`
+Docs (#1328): What's New Build 155 (next): the playback opens with its first speaker named once at the top.
+
+## 2026-10-29 02:23:02 EDT — scribe `3a48e51408a03a69c3a32e53cab231ef83e4b663`
+Green (#1328): a recording whose first line starts a speaker's block opens its playback with that speaker named once (build 154's Mac pinned the name over the first row's own at offset 0); the pinned name takes over once that name scrolls away, and #992's hand-over is unchanged. Scribe Playback's media timeline shares the rule.
+
+## 2026-10-29 01:51:17 EDT — scribe `ecd982811fa65008fc5490593501940c2e492e86`
+Red (#1328): at the Mac's, iPhone/iPad's and AX5 metrics, and in the Mac's real playback window, a first row at the top of the words pins nobody; stubs answer as before.
+
+## 2026-10-29 01:07:33 EDT — scribe `8bcb3bc03b47033256729f475f2090bc51edf827`
+Plan (#1328): 2026-10-29-pin-1328 and its claims.
+
 ## 2026-10-29 02:05:53 EDT — scribe `bc63f2b84275add43ee4e1ffe259970fea4099f8`
 Docs (#1325, #1327): ADR 0064 amendment: the readers #1317 left, one rule per language, and the guard.
 
