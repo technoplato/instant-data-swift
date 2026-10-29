@@ -1,3 +1,24 @@
+## 2026-10-29 16:55:25 EDT — scribe `458abe373a731a498dd8c1ea4f31677b9d3790b6`
+#1367: ADR 0096 amendment D: adoptions reach the lines; the diarizer's short-line mixes, measured.
+
+## 2026-10-29 16:55:25 EDT — scribe `6681b31ab0ca4c7aab8b9006b5a959965d483c90`
+#1367: green: the mirror writes a moved line again under the speaker it moved to.
+
+## 2026-10-29 16:55:25 EDT — scribe `c17990eb24d2c4e7d1939989c738b65fb2c24634`
+#1367: red: the mirror writes a line again when it moves to another speaker.
+
+## 2026-10-29 16:55:25 EDT — scribe `b7db1a2eec2e6e1f0ea3b3e7f34f214438e2ded5`
+#1367: a restarted broadcast voice's adoption moves its lines, as the microphone's do.
+
+## 2026-10-29 16:55:25 EDT — scribe `2ef01163de3e0790797c9109d3005a1a8032ef6d`
+#1367: red: a restarted broadcast voice's adoption reaches the recording and moves its lines.
+
+## 2026-10-29 16:55:25 EDT — scribe `73d3c682740cd4f37e64d7fd8a3c6dec8a61b14b`
+#1367: a line shifted to the recording's clock keeps the stream's speaker adoption and voice print.
+
+## 2026-10-29 16:55:25 EDT — scribe `cb4dc0787bdd368550599a9ab4abbad2d4e16440`
+#1367: red: a line shifted to the recording's clock keeps the stream's speaker adoption, identity and seal.
+
 ## 2026-10-29 16:51:49 EDT — scribe `94a01ecf2d3e1306f80f8c8205d7fb9b70e45752`
 Merge (#1321): the audit's shipped section onto main.
 
