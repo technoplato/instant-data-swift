@@ -70,6 +70,8 @@
 //   acknowledgement and echo write none of them; the queries they serve name the same literal predicates (#1115).
 // - 2026-10-27: the server apply's reduction looks a slot's surviving writers up under every name a write gives the
 //   slot, so a link written under its forward identity and held under its id is found (#1270).
+// - 2026-10-28: the prune's release decision takes the hot store's residency (InstantPruneResidency), and a released
+//   chunk names its facts from its rows' text (#1319).
 
 import Foundation
 import IssueReporting
@@ -409,6 +411,55 @@ struct InstantReleasedLiveQueryResultChunk: Sendable {
   /// The entities the chunk's rows name; every row of each is in the chunk.
   var entityIDs: Set<String>
   fileprivate var ownership: Set<LiveQueryOwnershipIdentity>
+  /// The facts the chunk's rows name, their values read back from the rows' text (#1319): the batch asks the hot store
+  /// which of them it holds instead of materializing every fact of the chunk's entities to match them.
+  var releasedIdentities: Set<InstantLiveTripleIdentity> = []
+}
+
+/// What a prune batch knows of the hot store's facts of the entities it releases facts of (#1319).
+///
+/// The whole-entity rule (#259) drops an entity only when every fact the store holds of it was released and no stored
+/// result still owns it. Reading every fact of each such entity cost a device's batches 1.0-3.5 s: a recording keeps its
+/// has-many links on itself (2,888 attachment links on one), so a batch that released a list of recordings read tens of
+/// thousands of facts for a few hundred entities, and decided to keep them. The batch needs which released facts the
+/// store holds and how many facts it holds of each entity; it materializes only the entities all of whose held facts
+/// were released, the only ones the rule can drop. The decisions are the rule's, from the same facts.
+struct InstantPruneResidency: Sendable {
+  /// The released facts the store holds.
+  var heldIdentities: Set<InstantLiveTripleIdentity> = []
+  /// How many facts the store holds of each entity a held released fact names.
+  var factCounts: [String: Int] = [:]
+  /// Every fact the store holds of each entity all of whose held facts were released.
+  var factsOfDroppableEntities: [String: [InstantTriple]] = [:]
+  /// Of ``heldIdentities``, those of entities the rule keeps whatever the ownership says: the store holds a fact of them
+  /// that no removed result released. A later batch that releases the rest of an entity checks it again.
+  var keptIdentities: Set<InstantLiveTripleIdentity> = []
+
+  init() {}
+
+  /// From every fact the store holds of the released facts' entities, as a caller without a hot store reads them.
+  init(released: Set<InstantLiveTripleIdentity>, residentFacts: [InstantTriple]) {
+    var factsByEntity: [String: [InstantTriple]] = [:]
+    for fact in residentFacts { factsByEntity[fact.entityID, default: []].append(fact) }
+    let resident = Set(residentFacts.lazy.map(InstantLiveTripleIdentity.init))
+    var heldByEntity: [String: Int] = [:]
+    for identity in released where resident.contains(identity) {
+      heldIdentities.insert(identity)
+      heldByEntity[identity.entityID, default: 0] += 1
+    }
+    for (entityID, held) in heldByEntity {
+      let facts = factsByEntity[entityID] ?? []
+      factCounts[entityID] = facts.count
+      if held >= facts.count {
+        factsOfDroppableEntities[entityID] = facts
+      }
+    }
+    keptIdentities = heldIdentities.filter { factsOfDroppableEntities[$0.entityID] == nil }
+  }
+
+  func holds(_ identity: InstantLiveTripleIdentity) -> Bool { heldIdentities.contains(identity) }
+
+  func factCount(of entityID: String) -> Int { factCounts[entityID] ?? 0 }
 }
 
 /// What a live-query prune batch removed (#654).
@@ -12894,7 +12945,10 @@ public actor SQLitePersistenceStore {
         batch,
         policy: policy,
         now: now,
-        residentFacts: currentState.snapshot.store.triples.filter { releasedEntityIDs.contains($0.entityID) }
+        residency: InstantPruneResidency(
+          released: batch.releasedIdentities,
+          residentFacts: currentState.snapshot.store.triples.filter { releasedEntityIDs.contains($0.entityID) }
+        )
       )
       var snapshot = currentState.snapshot
       let removedEntityIDs = applied.removedEntityIDs
@@ -12991,15 +13045,14 @@ public actor SQLitePersistenceStore {
   /// the store holds it; an entity is dropped whole or not at all, so one with a fact no result released stays (#259).
   /// SQLite loses each dropped entity's rows by its id. The cached state moves past the batch without being rebuilt.
   ///
-  /// - Parameter residentFacts: The hot store's facts of `batch.releasedEntityIDs`, all of them: the whole-entity rule
-  ///   needs every fact of each entity it might drop.
+  /// - Parameter residency: What the hot store holds of the released facts' entities (#1319).
   /// - Returns: The batch's changes, its `removedFacts` for the hot store to retract; nil when the store, its schema,
   ///   the outbox or the stored results changed after `batch` was chosen, with nothing written, to choose again.
   func applyLiveQueryResultPruneBatch(
     _ batch: InstantLiveQueryResultPruneBatch,
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
-    residentFacts: [InstantTriple]
+    residency: InstantPruneResidency
   ) throws -> InstantLiveQueryResultPruneBatchApplication? {
     let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
     let application: InstantLiveQueryResultPruneBatchApplication? = try transaction {
@@ -13008,13 +13061,29 @@ public actor SQLitePersistenceStore {
         batch,
         policy: policy,
         now: now,
-        residentFacts: residentFacts
+        residency: residency
       )
     }
     if let application {
       advanceCachedStateAfterLiveQueryResultPrune(from: batch.revisions, application: application)
     }
     return application
+  }
+
+  /// ``applyLiveQueryResultPruneBatch(_:policy:now:residency:)`` from `residentFacts`, the store's facts of
+  /// `batch.releasedEntityIDs`, all of them, for a caller that read them.
+  func applyLiveQueryResultPruneBatch(
+    _ batch: InstantLiveQueryResultPruneBatch,
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    residentFacts: [InstantTriple]
+  ) throws -> InstantLiveQueryResultPruneBatchApplication? {
+    try applyLiveQueryResultPruneBatch(
+      batch,
+      policy: policy,
+      now: now,
+      residency: InstantPruneResidency(released: batch.releasedIdentities, residentFacts: residentFacts)
+    )
   }
 
   private func liveQueryResultPruneRevisionsWithoutTransaction() throws -> LiveQueryResultPruneRevisions {
@@ -13161,7 +13230,7 @@ public actor SQLitePersistenceStore {
     _ batch: InstantLiveQueryResultPruneBatch,
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
-    residentFacts: [InstantTriple]
+    residency: InstantPruneResidency
   ) throws -> InstantLiveQueryResultPruneBatchApplication {
     var unloadedKeys: [String] = []
     for queryKey in batch.removedQueryKeys where !batch.unreadableQueryKeys.contains(queryKey) {
@@ -13193,7 +13262,7 @@ public actor SQLitePersistenceStore {
 
     let (removedFacts, retainedReleasedIdentities) = try releaseLiveQueryResultFactsWithoutTransaction(
       batch.releasedIdentities,
-      residentFacts: residentFacts
+      residency: residency
     )
     let storeRevision = removedFacts.isEmpty
       ? batch.revisions.store
@@ -13221,20 +13290,24 @@ public actor SQLitePersistenceStore {
   /// Drops, among `releasedIdentities`, the facts no stored result owns any more, whole entities only (#654, #259),
   /// and returns them with the released facts the whole-entity rule kept.
   ///
-  /// - Parameter residentFacts: The hot store's facts of the released identities' entities, all of them: the
-  ///   whole-entity rule needs every fact of each entity it might drop.
+  /// - Parameter residency: What the hot store holds of the released identities' entities (#1319): which released
+  ///   facts it holds, how many facts it holds of each entity, and every fact of each entity all of whose held facts
+  ///   were released. An entity of which the store holds a fact no removed result released stays whatever the
+  ///   ownership says, so its facts are neither read nor checked here; its held released facts are carried.
   private func releaseLiveQueryResultFactsWithoutTransaction(
     _ releasedIdentities: Set<InstantLiveTripleIdentity>,
-    residentFacts: [InstantTriple]
+    residency: InstantPruneResidency
   ) throws -> (removedFacts: [InstantTriple], retainedReleasedIdentities: Set<InstantLiveTripleIdentity>) {
     // #654: the released entities' own facts stand in for the whole store, which each batch used to copy into a
-    // dictionary of every fact to answer these same questions.
-    let residentIdentities = Set(residentFacts.lazy.map(InstantLiveTripleIdentity.init))
-    let candidates = releasedIdentities.filter { residentIdentities.contains($0) }
+    // dictionary of every fact to answer these same questions. #1319: of those, only the entities the rule can drop.
+    let candidates = releasedIdentities.filter {
+      residency.holds($0) && residency.factsOfDroppableEntities[$0.entityID] != nil
+    }
     // #1129: one read of the ownership rows of the candidates' entities, not one probe per fact: 75,640 probes for the
     // closed `$files` list's batch.
     let owned = try liveQueryOwnershipWithoutTransaction(entityIDs: Set(candidates.lazy.map(\.entityID)))
     var orphanedIdentities: Set<InstantLiveTripleIdentity> = []
+    var orphanedCountByEntity: [String: Int] = [:]
     for identity in candidates {
       let ownership = LiveQueryOwnershipIdentity(
         entityID: identity.entityID,
@@ -13243,24 +13316,20 @@ public actor SQLitePersistenceStore {
       )
       guard !owned.contains(ownership) else { continue }
       orphanedIdentities.insert(identity)
+      orphanedCountByEntity[identity.entityID, default: 0] += 1
     }
     // Collect whole entities only. An entity that still has a fact no remaining result owns
     // (typically one this device wrote that the pruned query never selected) is local data;
     // removing just the pruned query's facts left rows with `text` but no `recordingID`, which
-    // no relationship or filter can reach again (#259).
-    let candidateEntityIDs = Set(orphanedIdentities.lazy.map(\.entityID))
-    var retainedEntityIDs: Set<String> = []
-    for triple in residentFacts
-    where candidateEntityIDs.contains(triple.entityID)
-      && !orphanedIdentities.contains(InstantLiveTripleIdentity(triple))
-    {
-      retainedEntityIDs.insert(triple.entityID)
-    }
-    let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
-    let removedFacts = residentFacts.filter { removedEntityIDs.contains($0.entityID) }
+    // no relationship or filter can reach again (#259). An entity goes when every fact the store holds of it is
+    // orphaned: the orphaned facts are some of the facts it holds, so when they are as many, they are all of them.
+    let candidateEntityIDs = Set(orphanedCountByEntity.keys)
+    let removedEntityIDs = candidateEntityIDs.filter { orphanedCountByEntity[$0] == residency.factCount(of: $0) }
+    let retainedEntityIDs = candidateEntityIDs.subtracting(removedEntityIDs)
+    let removedFacts = removedEntityIDs.sorted().flatMap { residency.factsOfDroppableEntities[$0] ?? [] }
     let retainedReleasedIdentities = Set(
       releasedIdentities.lazy.filter {
-        retainedEntityIDs.contains($0.entityID) && residentIdentities.contains($0)
+        (retainedEntityIDs.contains($0.entityID) && residency.holds($0)) || residency.keptIdentities.contains($0)
       }
     )
     // The whole-store diff this replaced deleted every row of each entity that left the store, its deferred payloads
@@ -13347,10 +13416,26 @@ public actor SQLitePersistenceStore {
           )
         )
       }
+      // #1319: each row's value read back from the text an ownership row keeps, which `encode` wrote for the fact, so
+      // the batch asks the hot store which of them it holds. A row whose text does not read back names no fact here.
+      var releasedIdentities: Set<InstantLiveTripleIdentity> = []
+      var scratch: [UInt8] = []
+      for row in rows {
+        let value = row.valueJSON.utf8.withContiguousStorageIfAvailable {
+          InstantStoredJSON.value(stored: $0, scratch: &scratch)
+        } ?? nil
+        guard let value = value ?? (try? decoder.decode(InstantValue.self, from: Data(row.valueJSON.utf8))) else {
+          continue
+        }
+        releasedIdentities.insert(
+          InstantLiveTripleIdentity(entityID: row.entityID, attributeID: row.attributeID, value: value)
+        )
+      }
       return InstantReleasedLiveQueryResultChunk(
         queryID: queryID,
         entityIDs: Set(rows.lazy.map(\.entityID)),
-        ownership: Set(rows)
+        ownership: Set(rows),
+        releasedIdentities: releasedIdentities
       )
     }
   }
@@ -13369,11 +13454,12 @@ public actor SQLitePersistenceStore {
   /// more, whole entities only, as the batch that removed their result would have dropped them; the released row goes
   /// with its last rows. `carriedReleasedIdentities` are facts earlier batches released that the whole-entity rule kept.
   ///
-  /// - Parameter residentFacts: The hot store's facts of the chunk's entities and the carried ones, all of them.
+  /// - Parameter residency: What the hot store holds of the chunk's entities (#1319), for the chunk's facts and the
+  ///   carried ones.
   func applyReleasedLiveQueryResultChunk(
     _ chunk: InstantReleasedLiveQueryResultChunk,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
-    residentFacts: [InstantTriple]
+    residency: InstantPruneResidency
   ) throws -> InstantLiveQueryResultPruneBatchApplication {
     let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
     var revisions = LiveQueryResultPruneRevisions(store: 0, attribute: 0, outbox: 0, queryResult: 0)
@@ -13388,20 +13474,12 @@ public actor SQLitePersistenceStore {
           [.int(chunk.queryID)] + batch.map(SQLiteBinding.text)
         )
       }
-      var releasedIdentities = carriedReleasedIdentities
-      for fact in residentFacts where chunk.entityIDs.contains(fact.entityID) {
-        let ownership = LiveQueryOwnershipIdentity(
-          entityID: fact.entityID,
-          attributeID: fact.attributeID,
-          valueJSON: try encode(fact.value)
-        )
-        if chunk.ownership.contains(ownership) {
-          releasedIdentities.insert(InstantLiveTripleIdentity(fact))
-        }
-      }
+      // #1319: the chunk's rows name its facts, read back from their text; the hot store said which of them it holds.
+      // Matching every fact of the chunk's entities against the rows read all of a recording's links to find its title.
+      let releasedIdentities = carriedReleasedIdentities.union(chunk.releasedIdentities)
       let (removedFacts, retainedReleasedIdentities) = try releaseLiveQueryResultFactsWithoutTransaction(
         releasedIdentities,
-        residentFacts: residentFacts
+        residency: residency
       )
       let rowsLeft = try selectScalar(
         "SELECT 1 FROM instant_live_query_triples WHERE query_id = ? LIMIT 1",
@@ -13435,6 +13513,23 @@ public actor SQLitePersistenceStore {
     }
     advanceCachedStateAfterLiveQueryResultPrune(from: revisions, application: application)
     return application
+  }
+
+  /// ``applyReleasedLiveQueryResultChunk(_:carriedReleasedIdentities:residency:)`` from `residentFacts`, the store's
+  /// facts of the chunk's entities and the carried ones, all of them, for a caller that read them.
+  func applyReleasedLiveQueryResultChunk(
+    _ chunk: InstantReleasedLiveQueryResultChunk,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
+    residentFacts: [InstantTriple]
+  ) throws -> InstantLiveQueryResultPruneBatchApplication {
+    try applyReleasedLiveQueryResultChunk(
+      chunk,
+      carriedReleasedIdentities: carriedReleasedIdentities,
+      residency: InstantPruneResidency(
+        released: carriedReleasedIdentities.union(chunk.releasedIdentities),
+        residentFacts: residentFacts
+      )
+    )
   }
 
   /// Ownership rows read by `sql`, which selects `entity_id, attribute_id, value_json`.
@@ -13580,7 +13675,10 @@ public actor SQLitePersistenceStore {
           released.insert(InstantLiveTripleIdentity(fact))
         }
       }
-      let (removedFacts, _) = try releaseLiveQueryResultFactsWithoutTransaction(released, residentFacts: residentFacts)
+      let (removedFacts, _) = try releaseLiveQueryResultFactsWithoutTransaction(
+        released,
+        residency: InstantPruneResidency(released: released, residentFacts: residentFacts)
+      )
       if !removedFacts.isEmpty {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       }

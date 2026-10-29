@@ -84,6 +84,9 @@
 // - 2026-10-23: a live operation's own failure (a one-shot query cancelled or answered with an error, a query's
 //   encoding, registration or removal, a stream reader's, a share observation's) no longer stores the connection as
 //   `.errored`; one failed query left open sockets reading errored for hours on builds 114-116 (#1024).
+// - 2026-10-28: a prune batch reads the hot store's residency of what it releases, not every fact of those entities,
+//   checks a kept entity again only where it releases more of it, and runs inside a maintenance activity that stops it
+//   between batches before a suspension (#1319).
 
 import Foundation
 import IssueReporting
@@ -479,7 +482,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   var liveQueryResultPruneBatchTripleCount: Int? = 1_000
   /// What keeps the process running while the live-query prune works, and says when the system is about to suspend it
   /// (#1319).
-  public var maintenanceActivity = InstantMaintenanceActivity.unbounded
+  public var maintenanceActivity = InstantMaintenanceActivity.live
   /// How many of a closed result's facts one operation-gate hold loads back when its query reopens (#1131). The reload
   /// of the `$files` list's 75,640 facts held the gate about 1.3 s in one hold on the Mac mini after its read moved out
   /// of the gate; 2,048 facts are about 30 ms there.
@@ -7399,15 +7402,33 @@ public final class InstantRuntime: Sendable {
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp
   ) async throws -> InstantLiveQueryResultPruningResult {
+    // #1319: the prune works inside an activity that keeps the process running, and stops before its next batch when
+    // the system is about to suspend the process or refused it the time. A device's batch held the operation gate from
+    // 3 s after the app left the front until it ran again 37 minutes later, and an outbox release waited behind it.
+    let activity = configuration.maintenanceActivity.begin("prune live query results")
+    defer { activity.end() }
     var carried: Set<InstantLiveTripleIdentity> = []
     var removedQueryKeys: [String] = []
     var unloadedQueryKeys: [String] = []
     var removedOrphanedTripleCount = 0
     var lastRemoval: InstantLiveQueryResultPruneBatchApplication?
+    var batchCount = 0
     // #1129: a closed result larger than a batch is released over later batches, each checking the next whole entities
     // of its released row's ownership rows; a released row is checked before another result is removed.
     let chunkTripleCount = configuration.liveQueryResultPruneBatchTripleCount ?? Int.max
     while true {
+      if activity.isExpired {
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "live-query-results.prune-stopped-for-suspension",
+          message: "Stopped pruning live query results between batches: the system is about to suspend the process.",
+          metadata: ["batchCount": String(batchCount), "removedCount": String(removedQueryKeys.count)]
+        )
+        break
+      }
+      batchCount += 1
       recordActorHop(.persistence)
       let releasing = (try? await persistence.hasReleasedLiveQueryResult()) ?? false
       let predecoded = releasing ? [:] : await predecodedPruneResults(policy: policy, now: now)
@@ -7502,18 +7523,21 @@ public final class InstantRuntime: Sendable {
     _ chunk: InstantReleasedLiveQueryResultChunk,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
-    let checkedEntityIDs = chunk.entityIDs.union(carriedReleasedIdentities.lazy.map(\.entityID))
+    // #1319: an entity an earlier batch kept is checked again only here, where a fact of it is released again: its
+    // decision cannot change in a batch that releases none of its facts. Every carried entity was read in every batch.
+    let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: chunk.entityIDs)
     recordActorHop(.store)
-    let residentFacts = await store.facts(of: checkedEntityIDs)
+    let residency = await store.pruneResidency(of: chunk.releasedIdentities.union(touched))
     // #1133: from SQLite's delete to the store's retraction, the batch writes only these entities' facts, which no open
     // query holds, so a hydration that read others need not wait for it.
-    operationGate.markHolderWrites(checkedEntityIDs)
+    operationGate.markHolderWrites(chunk.entityIDs)
     recordActorHop(.persistence)
-    let application = try await persistence.applyReleasedLiveQueryResultChunk(
+    var application = try await persistence.applyReleasedLiveQueryResultChunk(
       chunk,
-      carriedReleasedIdentities: carriedReleasedIdentities,
-      residentFacts: residentFacts
+      carriedReleasedIdentities: touched,
+      residency: residency
     )
+    application.retainedReleasedIdentities.formUnion(untouched)
     if !application.removedFacts.isEmpty {
       recordActorHop(.store)
       await store.retractFactsReleasedByPrune(application.removedFacts)
@@ -7537,6 +7561,19 @@ public final class InstantRuntime: Sendable {
       ]
     )
     return application
+  }
+
+  /// `carried` split into the facts of `entityIDs` and the rest (#1319).
+  private static func partition(
+    _ carried: Set<InstantLiveTripleIdentity>,
+    touching entityIDs: Set<String>
+  ) -> (touched: Set<InstantLiveTripleIdentity>, untouched: Set<InstantLiveTripleIdentity>) {
+    var touched: Set<InstantLiveTripleIdentity> = []
+    var untouched: Set<InstantLiveTripleIdentity> = []
+    for identity in carried {
+      if entityIDs.contains(identity.entityID) { touched.insert(identity) } else { untouched.insert(identity) }
+    }
+    return (touched, untouched)
   }
 
   private func performPruneLiveQueryResults(
@@ -7610,27 +7647,31 @@ public final class InstantRuntime: Sendable {
     var staleAttempts = 0
     repeat {
       recordActorHop(.persistence)
+      // #1319: the batch's own facts first; the carried ones join only where it releases another fact of their entity.
       batch = try await persistence.liveQueryResultPruneBatch(
         policy: policy,
         now: now,
         preservingQueryKeys: preservingQueryKeys,
         maximumRemovedTripleCount: maximumRemovedTripleCount,
-        carriedReleasedIdentities: carriedReleasedIdentities,
+        carriedReleasedIdentities: [],
         predecoded: predecoded
       )
       guard !batch.removedQueryKeys.isEmpty else { return batch.applicationRemovingNothing }
+      let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: batch.releasedEntityIDs)
+      batch.releasedIdentities.formUnion(touched)
       recordActorHop(.store)
-      let residentFacts = await store.facts(of: batch.releasedEntityIDs)
+      let residency = await store.pruneResidency(of: batch.releasedIdentities)
       // #1133: from SQLite's delete to the store's retraction, the batch writes only these entities' facts, which no
       // open query holds. At bootstrap nothing holds the gate, so the marks change nothing.
       operationGate.markHolderWrites(batch.releasedEntityIDs)
       recordActorHop(.persistence)
-      if let application = try await persistence.applyLiveQueryResultPruneBatch(
+      if var application = try await persistence.applyLiveQueryResultPruneBatch(
         batch,
         policy: policy,
         now: now,
-        residentFacts: residentFacts
+        residency: residency
       ) {
+        application.retainedReleasedIdentities.formUnion(untouched)
         if !application.removedFacts.isEmpty {
           recordActorHop(.store)
           await store.retractFactsReleasedByPrune(application.removedFacts)

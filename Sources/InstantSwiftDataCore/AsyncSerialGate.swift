@@ -6,6 +6,8 @@
 // - 2026-10-25: a caller names what it writes as it enters, and the gate sets it as it hands the caller the gate, so a
 //   holder that writes no store facts never reads as writing everything (#1133).
 // - 2026-10-25: waitForRelease() waits for the holder to leave without taking the gate (#1134).
+// - 2026-10-28: waits, holds, aging and the stall threshold count the time the process ran: CLOCK_UPTIME_RAW minus the
+//   suspensions the app's watchdog records; the reports give the time suspended or asleep beside them (#1319).
 
 import Foundation
 import IssueReporting
@@ -76,11 +78,46 @@ actor AsyncSerialGate {
   }
 
   /// How the gate tells time (#1319).
+  ///
+  /// A device's gate reported a prune batch holding it 2,236,773 ms and an outbox release waiting 391,652 ms: the
+  /// process had been suspended about 1,564 s of it and the device asleep about 681 s, and the gate timed on the wall
+  /// clock. A wait or a hold is the time the process ran: the uptime clock, which stops while the device sleeps, minus
+  /// the suspensions the app's watchdog records (``InstantProcessSuspensions``). The rest of the wall time is reported
+  /// beside it as suspended.
   struct Clock: Sendable {
     /// The clocks now.
     var now: @Sendable () -> Instant
     /// How many nanoseconds the process was recorded suspended between two readings of the uptime clock.
     var suspendedNanoseconds: @Sendable (_ fromUptime: UInt64, _ toUptime: UInt64) -> UInt64
+
+    /// `CLOCK_MONOTONIC_RAW`, which counts sleep, and `CLOCK_UPTIME_RAW`, which does not, with the app's recorded
+    /// suspensions.
+    static let live = Clock(
+      now: {
+        Instant(
+          elapsedNanoseconds: clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW),
+          uptimeNanoseconds: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        )
+      },
+      suspendedNanoseconds: { InstantProcessSuspensions.suspendedNanoseconds(fromUptime: $0, toUptime: $1) }
+    )
+
+    /// A wall clock that never sleeps or suspends: a test that stands it still makes every wait and hold zero (#1021).
+    static func wall(_ now: @escaping @Sendable () -> Date) -> Clock {
+      Clock(
+        now: {
+          let nanoseconds = UInt64(max(0, now().timeIntervalSince1970 * 1e9))
+          return Instant(elapsedNanoseconds: nanoseconds, uptimeNanoseconds: nanoseconds)
+        },
+        suspendedNanoseconds: { _, _ in 0 }
+      )
+    }
+  }
+
+  /// A wait or a hold: the milliseconds the process ran, and the rest of the wall time, suspended or asleep (#1319).
+  struct Span: Sendable, Equatable {
+    var runningMilliseconds: Int
+    var suspendedMilliseconds: Int
   }
 
   /// Emitted when the gate has been held long enough that a caller waiting on
@@ -186,14 +223,24 @@ actor AsyncSerialGate {
     let operation: String
     let priority: Priority
     let enqueuedAt: Date
+    /// When the caller queued, on the gate's clocks (#1319).
+    let enqueuedInstant: Instant
     let ticket: UInt64
     /// What the caller said it writes as it entered (``markHolderWrites(_:)``), set as it takes the gate (#1133).
     let writes: Set<String>?
 
-    init(operation: String, priority: Priority, enqueuedAt: Date, ticket: UInt64, writes: Set<String>?) {
+    init(
+      operation: String,
+      priority: Priority,
+      enqueuedAt: Date,
+      enqueuedInstant: Instant,
+      ticket: UInt64,
+      writes: Set<String>?
+    ) {
       self.operation = operation
       self.priority = priority
       self.enqueuedAt = enqueuedAt
+      self.enqueuedInstant = enqueuedInstant
       self.writes = writes
       self.ticket = ticket
     }
@@ -268,6 +315,8 @@ actor AsyncSerialGate {
       snapshotState.withLock { $0.heldSince = heldSince }
     }
   }
+  /// When the holder took the gate, on the gate's clocks (#1319).
+  private var holderAcquiredInstant: Instant?
   private var stallCount = 0
   /// Whether the current holder's stall was reported. A holder is reported once, however long it holds the gate
   /// (freeze-185 item 2): the Mac logged a critical stall line every 5 s through a 331 s server catch-up. The next
@@ -275,9 +324,12 @@ actor AsyncSerialGate {
   private var stallReportedForHolder = false
   private var stallWatchdog: Task<Void, Never>?
 
-  /// The clock waits and holds are timed by. A test that asserts no wait is reported passes one that stands still:
-  /// on the wall clock, a quick handoff took over the 1 s report threshold under the whole test bundle's load (#1021).
+  /// The date the snapshot's `heldSince` and `longestWaitingSince` are given in.
   private let currentDate: @Sendable () -> Date
+  /// The clock waits and holds are timed by (#1319). A test that asserts no wait is reported passes a `now` that stands
+  /// still: on the wall clock, a quick handoff took over the 1 s report threshold under the whole test bundle's load
+  /// (#1021).
+  private let clock: Clock
 
   /// Receives every step of the gate's life (#1074), on this actor and in the same turn as the step, so it must only
   /// record. Nil in production: each step then costs one nil check.
@@ -296,7 +348,7 @@ actor AsyncSerialGate {
     stallThresholdMilliseconds: UInt64 = 5_000,
     waitReportThresholdMilliseconds: Int = 250,
     agingMilliseconds: Int = 2_000,
-    now: @escaping @Sendable () -> Date = { Date() },
+    now: (@Sendable () -> Date)? = nil,
     report: (@Sendable (StallReport) -> Void)? = nil,
     waitReport: (@Sendable (WaitReport) -> Void)? = nil,
     timeline: (@Sendable (TimelineEvent) -> Void)? = nil,
@@ -305,11 +357,8 @@ actor AsyncSerialGate {
   ) {
     self.label = label
     self.owner = owner
-    if let clock {
-      self.currentDate = { Date(timeIntervalSince1970: Double(clock.now().elapsedNanoseconds) / 1e9) }
-    } else {
-      self.currentDate = now
-    }
+    self.currentDate = now ?? { Date() }
+    self.clock = clock ?? now.map { Clock.wall($0) } ?? .live
     self.stallThresholdMilliseconds = stallThresholdMilliseconds
     self.waitReportThresholdMilliseconds = waitReportThresholdMilliseconds
     self.agingMilliseconds = agingMilliseconds
@@ -451,7 +500,7 @@ actor AsyncSerialGate {
     stallReportedForHolder = false
     let previousHolder = holderOperation
     let previousHolderPhase = currentHolderPhase
-    let previousHolderAcquiredAt = holderAcquiredAt
+    let previousHolderAcquiredInstant = holderAcquiredInstant
     if let previousHolder {
       record(.released, ticket: holderTicket, operation: previousHolder, priority: holderPriority, phase: previousHolderPhase)
     }
@@ -468,12 +517,14 @@ actor AsyncSerialGate {
       waiters.removeAll { !$0.isWaiting }
     }
     let now = currentDate()
-    if let index = nextWaiterIndex(at: now) {
+    let instant = clock.now()
+    if let index = nextWaiterIndex(at: instant) {
       let waiter = waiters.remove(at: index)
       guard case .waiting(let continuation) = waiter.state else {
         reportIssue("Instant's \(label) gate chose a waiter that was not waiting; AsyncSerialGate has a bug.")
         holderOperation = nil
         holderAcquiredAt = nil
+        holderAcquiredInstant = nil
         stopStallWatchdog()
         return
       }
@@ -482,25 +533,27 @@ actor AsyncSerialGate {
       markedWrites.withLock { $0 = waiter.writes }
       holderOperation = waiter.operation
       holderAcquiredAt = now
+      holderAcquiredInstant = instant
       holderTicket = waiter.ticket
       holderPriority = waiter.priority
       record(.acquired, ticket: waiter.ticket, operation: waiter.operation, priority: waiter.priority)
-      let waitMilliseconds = Self.milliseconds(since: waiter.enqueuedAt, to: now)
+      let waited = span(from: waiter.enqueuedInstant, to: instant)
       // The report runs off this actor (#473): it records a diagnostics line and runs the app's handlers, and the
       // next holder, which resumes on this actor, must never wait for them.
-      if waitMilliseconds >= waitReportThresholdMilliseconds, let previousHolder {
+      if waited.runningMilliseconds >= waitReportThresholdMilliseconds, let previousHolder {
+        let held = previousHolderAcquiredInstant.map { span(from: $0, to: instant) }
         let wait = WaitReport(
           label: label,
           waitingOperation: waiter.operation,
-          waitMilliseconds: waitMilliseconds,
+          waitMilliseconds: waited.runningMilliseconds,
           previousHolder: previousHolder,
           previousHolderPhase: previousHolderPhase,
-          previousHolderHeldMilliseconds: previousHolderAcquiredAt.map {
-            Self.milliseconds(since: $0, to: now)
-          } ?? 0,
+          previousHolderHeldMilliseconds: held?.runningMilliseconds ?? 0,
           remainingWaiterCount: waiters.count,
           waitingPriority: waiter.priority,
-          owner: owner
+          owner: owner,
+          waitSuspendedMilliseconds: waited.suspendedMilliseconds,
+          previousHolderSuspendedMilliseconds: held?.suspendedMilliseconds ?? 0
         )
         let waitReport = self.waitReport
         Task.detached(priority: .utility) { waitReport(wait) }
@@ -512,17 +565,19 @@ actor AsyncSerialGate {
 
     holderOperation = nil
     holderAcquiredAt = nil
+    holderAcquiredInstant = nil
     stopStallWatchdog()
   }
 
   /// The queued caller that takes the gate next: the highest rank, where a caller's rank is its priority plus one for
   /// every ``agingMilliseconds`` it has waited, and the longest-queued caller among equal ranks. So within a priority
   /// the queue stays first in, first out, and a background caller that waited long enough goes ahead of newer
-  /// interactive ones.
-  private func nextWaiterIndex(at now: Date) -> Int? {
+  /// interactive ones. A caller ages only while the process runs (#1319): a background prune queued before a 30-minute
+  /// suspension would otherwise go ahead of every write queued after it.
+  private func nextWaiterIndex(at now: Instant) -> Int? {
     var best: (index: Int, rank: Int)?
     for (index, waiter) in waiters.enumerated() where waiter.isWaiting {
-      let waited = max(0, Self.milliseconds(since: waiter.enqueuedAt, to: now))
+      let waited = max(0, span(from: waiter.enqueuedInstant, to: now).runningMilliseconds)
       let rank = waiter.priority.rawValue + (agingMilliseconds > 0 ? waited / agingMilliseconds : 0)
       if let current = best, rank <= current.rank { continue }
       best = (index, rank)
@@ -536,6 +591,7 @@ actor AsyncSerialGate {
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
     holderAcquiredAt = currentDate()
+    holderAcquiredInstant = clock.now()
     holderTicket = ticket
     holderPriority = priority
     stallCount = 0
@@ -579,7 +635,12 @@ actor AsyncSerialGate {
     honoringCancellation: Bool
   ) async throws {
     let waiter = Waiter(
-      operation: operation, priority: priority, enqueuedAt: currentDate(), ticket: ticket, writes: writes
+      operation: operation,
+      priority: priority,
+      enqueuedAt: currentDate(),
+      enqueuedInstant: clock.now(),
+      ticket: ticket,
+      writes: writes
     )
     guard honoringCancellation else {
       return try await withCheckedThrowingContinuation { continuation in
@@ -661,14 +722,16 @@ actor AsyncSerialGate {
     guard
       let longestWaiting = waiters.first,
       let holderOperation,
-      let holderAcquiredAt
+      let holderAcquiredInstant
     else {
       stallWatchdog = nil
       return false
     }
 
-    let now = currentDate()
-    let longestWaitMilliseconds = Self.milliseconds(since: longestWaiting.enqueuedAt, to: now)
+    // #1319: a stall is time the process ran; a wait that only spans a suspension is none.
+    let now = clock.now()
+    let waited = span(from: longestWaiting.enqueuedInstant, to: now)
+    let longestWaitMilliseconds = waited.runningMilliseconds
     guard longestWaitMilliseconds >= Int(stallThresholdMilliseconds) else {
       // The current holder only just took the baton. Keep watching instead of
       // reporting a stall that has not happened yet.
@@ -681,29 +744,51 @@ actor AsyncSerialGate {
     stallCount += 1
     // Reported off this actor (#473): the stall line is a critical diagnostics entry plus `reportIssue`, and on the
     // iPhone writing it held the gate's actor for seconds while the holder it reports waited to leave.
+    let held = span(from: holderAcquiredInstant, to: now)
     let stall = StallReport(
       label: label,
       holder: holderOperation,
-      holderHeldMilliseconds: Self.milliseconds(since: holderAcquiredAt, to: now),
+      holderHeldMilliseconds: held.runningMilliseconds,
       longestWaitingOperation: longestWaiting.operation,
       longestWaitMilliseconds: longestWaitMilliseconds,
       waiterCount: waiters.count,
       stallCount: stallCount,
       holderPhase: currentHolderPhase,
-      owner: owner
+      owner: owner,
+      holderSuspendedMilliseconds: held.suspendedMilliseconds,
+      longestWaitSuspendedMilliseconds: waited.suspendedMilliseconds
     )
     let report = self.report
     Task.detached(priority: .utility) { report(stall) }
     return true
   }
 
-  private static func milliseconds(since start: Date, to end: Date) -> Int {
-    Int((end.timeIntervalSince(start) * 1_000).rounded())
+  /// The time from `start` to `end` the process ran, and the rest, suspended or asleep (#1319).
+  private func span(from start: Instant, to end: Instant) -> Span {
+    let uptime = end.uptimeNanoseconds > start.uptimeNanoseconds ? end.uptimeNanoseconds - start.uptimeNanoseconds : 0
+    let suspended = min(clock.suspendedNanoseconds(start.uptimeNanoseconds, end.uptimeNanoseconds), uptime)
+    let running = uptime - suspended
+    let elapsed = end.elapsedNanoseconds > start.elapsedNanoseconds
+      ? end.elapsedNanoseconds - start.elapsedNanoseconds : 0
+    let notRunning = elapsed > running ? elapsed - running : 0
+    return Span(
+      runningMilliseconds: Self.milliseconds(nanoseconds: running),
+      suspendedMilliseconds: Self.milliseconds(nanoseconds: notRunning)
+    )
+  }
+
+  private static func milliseconds(nanoseconds: UInt64) -> Int {
+    Int((Double(nanoseconds) / 1_000_000).rounded())
   }
 
   /// A slow handoff is evidence, not a library bug: logged, never `reportIssue`d.
   private static func reportWait(_ wait: WaitReport) {
     let phase = wait.previousHolderPhase.map { " (phase: \($0))" } ?? ""
+    // #1319: the times above count only the time the process ran; what was spent suspended or asleep is said apart.
+    let suspended = wait.waitSuspendedMilliseconds > 0 || wait.previousHolderSuspendedMilliseconds > 0
+      ? " Not counted: \(wait.waitSuspendedMilliseconds) ms of the wait and \(wait.previousHolderSuspendedMilliseconds) ms "
+        + "of the hold, suspended or asleep."
+      : ""
     var metadata: [String: String] = [
       "gate": wait.label,
       "waitingOperation": wait.waitingOperation,
@@ -713,6 +798,8 @@ actor AsyncSerialGate {
       "previousHolderHeldMilliseconds": String(wait.previousHolderHeldMilliseconds),
       "remainingWaiterCount": String(wait.remainingWaiterCount),
       "waitingPriority": wait.waitingPriority.description,
+      "waitSuspendedMilliseconds": String(wait.waitSuspendedMilliseconds),
+      "previousHolderSuspendedMilliseconds": String(wait.previousHolderSuspendedMilliseconds),
     ]
     if let owner = wait.owner {
       metadata["owner"] = owner
@@ -725,7 +812,7 @@ actor AsyncSerialGate {
       message: """
         \(wait.waitingOperation) waited \(wait.waitMilliseconds) ms for Instant's \(wait.label) \
         gate behind \(wait.previousHolder)\(phase), which held it \
-        \(wait.previousHolderHeldMilliseconds) ms.
+        \(wait.previousHolderHeldMilliseconds) ms.\(suspended)
         """,
       metadata: metadata
     )
@@ -733,11 +820,16 @@ actor AsyncSerialGate {
 
   private static func reportStallLoudly(_ stall: StallReport) {
     let phase = stall.holderPhase.map { " (phase: \($0))" } ?? ""
+    // #1319: the times count only the time the process ran; what was spent suspended or asleep is said apart.
+    let suspended = stall.holderSuspendedMilliseconds > 0 || stall.longestWaitSuspendedMilliseconds > 0
+      ? " Not counted: \(stall.holderSuspendedMilliseconds) ms of the hold and \(stall.longestWaitSuspendedMilliseconds) ms "
+        + "of the wait, suspended or asleep."
+      : ""
     let message = """
       Instant's \(stall.label) gate has been held by \(stall.holder)\(phase) for \
       \(stall.holderHeldMilliseconds) ms. \(stall.waiterCount) caller(s) are \
       queued behind it; \(stall.longestWaitingOperation) has waited \
-      \(stall.longestWaitMilliseconds) ms. Every transact, query, observe, and \
+      \(stall.longestWaitMilliseconds) ms.\(suspended) Every transact, query, observe, and \
       connection-status call on this gate is blocked until \(stall.holder) \
       calls leave(). Look at \(stall.holder) in \
       Sources/InstantSwiftDataCore/InstantRuntime.swift for an await that never \
@@ -752,6 +844,8 @@ actor AsyncSerialGate {
       "longestWaitMilliseconds": String(stall.longestWaitMilliseconds),
       "waiterCount": String(stall.waiterCount),
       "stallCount": String(stall.stallCount),
+      "holderSuspendedMilliseconds": String(stall.holderSuspendedMilliseconds),
+      "longestWaitSuspendedMilliseconds": String(stall.longestWaitSuspendedMilliseconds),
     ]
     if let owner = stall.owner {
       metadata["owner"] = owner

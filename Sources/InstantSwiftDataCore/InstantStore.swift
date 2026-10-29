@@ -11,6 +11,8 @@ import Foundation
 //   prepared off the actor's turn without a snapshot; tests count the store's full copies (#1035).
 // - 2026-10-23: the facts a live-query prune drops are retracted in place (`retractFactsReleasedByPrune`), without
 //   indexing the store again (#654).
+// - 2026-10-28: `pruneResidency(of:)` says which released facts the store holds and materializes only entities the
+//   whole-entity rule can drop (#1319).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -3320,9 +3322,38 @@ public actor InstantStore {
   /// The facts the store holds of `entityIDs` (#1006): a local read evaluates its plan over them together with what
   /// this device keeps on disk, and a live-query prune decides from them what it drops (#654).
   func facts(of entityIDs: Set<String>) -> [InstantTriple] {
-    let facts = entityIDs.sorted().flatMap { indexes.triples(entityID: $0) }
-    factsMaterializedForPruneForTesting += facts.count
-    return facts
+    entityIDs.sorted().flatMap { indexes.triples(entityID: $0) }
+  }
+
+  /// What a live-query prune batch needs of this store's facts for `released`, the facts its removed results released
+  /// (#1319): which of them the store holds, how many facts it holds of each of their entities, and every fact of each
+  /// entity all of whose held facts were released, the only entities the whole-entity rule (#259) can drop.
+  ///
+  /// A batch read every fact of every entity it released a fact of (``facts(of:)``). A recording keeps its has-many
+  /// links on itself, so on a device's store a batch that released a list of recordings read 31,000-57,000 facts for a
+  /// few hundred entities and held the operation gate 300-660 ms on a Mac, 1.0-3.5 s on the device. This reads an
+  /// index entry per released fact and an attribute count per entity, and materializes only what the batch may drop.
+  func pruneResidency(of released: Set<InstantLiveTripleIdentity>) -> InstantPruneResidency {
+    var heldByEntity: [String: [InstantLiveTripleIdentity]] = [:]
+    for identity in released
+    where indexes.holdsFact(entityID: identity.entityID, attributeID: identity.attributeID, value: identity.value) {
+      heldByEntity[identity.entityID, default: []].append(identity)
+    }
+    var residency = InstantPruneResidency()
+    for (entityID, held) in heldByEntity {
+      let count = indexes.factCount(entityID: entityID)
+      residency.factCounts[entityID] = count
+      residency.heldIdentities.formUnion(held)
+      // The held facts are distinct facts of the entity, so as many of them as it has facts are all of its facts.
+      if held.count >= count {
+        let facts = indexes.triples(entityID: entityID)
+        factsMaterializedForPruneForTesting += facts.count
+        residency.factsOfDroppableEntities[entityID] = facts
+      } else {
+        residency.keptIdentities.formUnion(held)
+      }
+    }
+    return residency
   }
 
   /// How many facts this store has materialized for live-query prune batches (#1319).

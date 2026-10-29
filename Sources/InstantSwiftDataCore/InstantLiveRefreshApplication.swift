@@ -78,6 +78,12 @@ struct InstantLiveTripleIdentity: Hashable, Sendable {
     attributeID = triple.attributeID
     value = triple.value
   }
+
+  init(entityID: String, attributeID: String, value: InstantValue) {
+    self.entityID = entityID
+    self.attributeID = attributeID
+    self.value = value
+  }
 }
 
 actor InstantLiveQueryResultState {

@@ -125,17 +125,19 @@ struct AsyncSerialGateSuspensionTests {
   func aMillionRecordedResumesKeepTheRecordBounded() {
     InstantProcessSuspensions.resetForTesting()
     defer { InstantProcessSuspensions.resetForTesting() }
+    // Far past any uptime a running test reads, so the gates other suites run meanwhile never overlap these.
+    let base: UInt64 = 1 << 62
     for index in 1...1_000_000 {
       InstantProcessSuspensions.record(
-        suspensionEndingAtUptime: UInt64(index) * 10_000_000_000,
+        suspensionEndingAtUptime: base + UInt64(index) * 10_000_000_000,
         nanoseconds: 1_000_000_000
       )
     }
     #expect(InstantProcessSuspensions.recordedCountForTesting <= InstantProcessSuspensions.capacity)
     expectNoDifference(
       InstantProcessSuspensions.suspendedNanoseconds(
-        fromUptime: 999_998 * 10_000_000_000,
-        toUptime: 1_000_000 * 10_000_000_000
+        fromUptime: base + 999_998 * 10_000_000_000,
+        toUptime: base + 1_000_000 * 10_000_000_000
       ),
       2_000_000_000,
       "the two newest suspensions inside the span"

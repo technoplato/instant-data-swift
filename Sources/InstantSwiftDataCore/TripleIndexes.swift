@@ -12,6 +12,7 @@ import os
 //   each such write copied the schema-sized shape map (#1152).
 // - 2026-10-27: `forwardWriteNames(of:)`, the names a forward write may give an attribute: a link the server issued an
 //   id for is written under its forward identity and held under the id (#1270).
+// - 2026-10-28: `holdsFact` and `factCount(entityID:)` answer a prune batch without materializing an entity (#1319).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -1667,6 +1668,20 @@ struct TripleIndexes: Codable, Sendable {
   func triples(entityID: String) -> [InstantTriple] {
     guard let attributesByID = eav[entityID] else { return [] }
     return materializedTriples(entityID: entityID, attributesByID: attributesByID)
+  }
+
+  /// Whether the store holds the fact `(entityID, attributeID, value)`, with `value` as the store keeps it: the test a
+  /// set of ``triples(entityID:)`` answers, without materializing the entity's facts (#1319).
+  func holdsFact(entityID: String, attributeID: String, value: InstantValue) -> Bool {
+    eav[entityID]?[attributeID]?[value] != nil
+  }
+
+  /// How many facts the store holds of `entityID`: ``triples(entityID:)``'s count, without materializing them (#1319).
+  func factCount(entityID: String) -> Int {
+    guard let attributesByID = eav[entityID] else { return 0 }
+    var count = 0
+    for slot in attributesByID.values { count += slot.count }
+    return count
   }
 
   func copiedAttributeSlots(entityID: String) -> [String: AttrSlot]? {
