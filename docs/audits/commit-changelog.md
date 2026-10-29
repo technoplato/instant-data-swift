@@ -1,3 +1,18 @@
+## 2026-10-29 14:25:57 EDT — scribe `4b25d489b2849deaa256831632f9afa43a14dd05`
+Cut (#1335): Scribe 0.1 (161): WHATS-NEW story and build number 160 to 161.
+
+## 2026-10-29 14:25:57 EDT — scribe `13cd20014b4172fc05411cee00e31aa82c8bbb7a`
+Presence (#1335): answers-thread-1335's claims released.
+
+## 2026-10-29 14:25:57 EDT — scribe `7fec0744ee738ccc48b03a09a910ade9587365fe`
+Changelog (#1335): ledger entries for the Answers thread fix.
+
+## 2026-10-29 14:25:57 EDT — scribe `f9ad7bdb599f7522834525f3033b586d14eb6b97`
+Fix (#1335): Answers lists every thread with no answer, on a line or not, newest activity first.
+
+## 2026-10-29 14:25:57 EDT — scribe `3f952576fabc19b841b77683af97372b270918a8`
+Test (#1335): a thread on a line spoken into before its answer shows in Answers, newest activity first.
+
 ## 2026-10-29 14:08:30 EDT — scribe `eff0f1353456e1c3c0502d7eddd2b5b3686b92a5`
 Docs (#1343): the audits index says stall-1343 is in build 160.
 
