@@ -1,3 +1,20 @@
+## 2026-10-29 13:11:50 EDT — scribe `cae1e1686912302c83baefb0de0b415e644b5738`
+Merge (#1348): the Mac's Answers window, its notification click, a Mac left alone posts answers quietly; on main.
+
+## 2026-10-29 13:11:50 EDT — scribe `f758c2467e60a47b995a8f050b8b22be479f4621`
+Fix (#1348): Answers loads older answers as the last row comes into view, never from a Show More control (#299).
+
+## 2026-10-29 13:11:50 EDT — scribe `525e2eb6c6513aa0f3b8f536d33713eb54c3c8da`
+Fix (#1348): the green compiles (bare-executable client, the post a let, CasePathable delegate); 139 + 12 tests pass.
+
+## 2026-10-29 13:11:50 EDT — scribe `3cf05421e90616b12217ab817dfefedb9e9b916d`
+Docs (#1348): ADR 0029 section 9: one place on the Mac, a click opens it there, which device rings, 35 of 35 answers on both within 5 s.
+
+## 2026-10-29 13:11:50 EDT — scribe `831142b7ef67dfe7e5187566f182c0122cec3810`
+Green (#1348): the Mac's Answers window lists every agent answer across recordings; its notification click opens it there.
+
+## 2026-10-29 13:11:50 EDT — scribe `e0e57ea8499a57c14d3c890b203cd040522e63b9`
+Red (#1348): Answers lists every agent answer and the work under way across recordings, newest first.
 ## 2026-10-29 12:35:05 EDT — scribe `2e323192f11c22094b5e59392e0634a9fcb9b11e`
 Change log (#1343): red 3ea3993a8, green 032e3727e.
 
