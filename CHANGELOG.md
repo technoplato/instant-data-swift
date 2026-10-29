@@ -10,6 +10,65 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 28th, 2026 at 10:38:36 p.m. EDT — `1a7a18990e4c` fix(#1319): green: a batch whose activity expires while it takes its gates gives the server-apply and operation gates back
+
+- **Implementation commit:** `1a7a18990e4c59308e9203476ae5d392327aae24`
+- **Change:** fix(#1319): green: a batch whose activity expires while it takes its gates gives the server-apply and operation gates back
+- **Details:**
+  - See docs/releases/v1.9.50.md and Scribe audits/2026-10-28-gate-1319.md
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1319 fix(#1319): green: a batch whose activity expires while it t
+- **User context (verbatim):**
+  > Deal make that a real about when auditing and make those mistakes impossible
+- **SpecStory:** unavailable — Claude Code in-session subagent gate-1319 (claude-code/battery-301@al's); no SpecStory capture exists for this run.
+
+## October 28th, 2026 at 10:38:36 p.m. EDT — `05a0edc9022e` test(#1319): red: a batch whose activity expires while it takes the server-apply and operation gates gives both back
+
+- **Implementation commit:** `05a0edc9022e197ab665666a44fc827655fe1246`
+- **Change:** test(#1319): red: a batch whose activity expires while it takes the server-apply and operation gates gives both back
+- **Details:**
+  - See docs/releases/v1.9.50.md and Scribe audits/2026-10-28-gate-1319.md
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1319 test(#1319): red: a batch whose activity expires while it ta
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneMaintenanceActivityTests.swift` — #1319 test(#1319): red: a batch whose activity expires while it ta
+- **User context (verbatim):**
+  > Deal make that a real about when auditing and make those mistakes impossible
+- **SpecStory:** unavailable — Claude Code in-session subagent gate-1319 (claude-code/battery-301@al's); no SpecStory capture exists for this run.
+
+## October 28th, 2026 at 10:38:36 p.m. EDT — `0edc7f14ab0c` fix(#1319): green: a prune batch reads only what it can drop and never spans a suspension; the gate counts running time
+
+- **Implementation commit:** `0edc7f14ab0cc9c6befd38e03c723c475e850f16`
+- **Change:** fix(#1319): green: a prune batch reads only what it can drop and never spans a suspension; the gate counts running time
+- **Details:**
+  - See docs/releases/v1.9.50.md and Scribe audits/2026-10-28-gate-1319.md
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — #1319 fix(#1319): green: a prune batch reads only what it can drop
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — #1319 fix(#1319): green: a prune batch reads only what it can drop
+  - `Sources/InstantSwiftDataCore/InstantMaintenanceActivity.swift` — #1319 fix(#1319): green: a prune batch reads only what it can drop
+  - `Sources/InstantSwiftDataCore/InstantProcessSuspensions.swift` — #1319 fix(#1319): green: a prune batch reads only what it can drop
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1319 fix(#1319): green: a prune batch reads only what it can drop
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1319 fix(#1319): green: a prune batch reads only what it can drop
+- **User context (verbatim):**
+  > Deal make that a real about when auditing and make those mistakes impossible
+- **SpecStory:** unavailable — Claude Code in-session subagent gate-1319 (claude-code/battery-301@al's); no SpecStory capture exists for this run.
+
+## October 28th, 2026 at 10:38:36 p.m. EDT — `39de8c92ec02` test(#1319): red: a prune batch reads only what it can drop, never spans a suspension; the gate counts running time
+
+- **Implementation commit:** `39de8c92ec02d3fce6249f4c5b1c2622d9c723c1`
+- **Change:** test(#1319): red: a prune batch reads only what it can drop, never spans a suspension; the gate counts running time
+- **Details:**
+  - See docs/releases/v1.9.50.md and Scribe audits/2026-10-28-gate-1319.md
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — #1319 test(#1319): red: a prune batch reads only what it can drop,
+  - `Sources/InstantSwiftDataCore/InstantMaintenanceActivity.swift` — #1319 test(#1319): red: a prune batch reads only what it can drop,
+  - `Sources/InstantSwiftDataCore/InstantProcessSuspensions.swift` — #1319 test(#1319): red: a prune batch reads only what it can drop,
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1319 test(#1319): red: a prune batch reads only what it can drop,
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1319 test(#1319): red: a prune batch reads only what it can drop,
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateSuspensionTests.swift` — #1319 test(#1319): red: a prune batch reads only what it can drop,
+- **User context (verbatim):**
+  > Deal make that a real about when auditing and make those mistakes impossible
+- **SpecStory:** unavailable — Claude Code in-session subagent gate-1319 (claude-code/battery-301@al's); no SpecStory capture exists for this run.
+
 ## October 27th, 2026 at 8:39:09 p.m. EDT — `6c077e01ea8c` docs(#1270): the v1.9.48 release document, and FOOTGUNS F65: a queue that slows its own drain never recovers
 
 - **Implementation commit:** `6c077e01ea8cbcde9a63fd3d14c8bb9b6ca59b3d`

@@ -1,3 +1,18 @@
+## 2026-10-28 22:38:18 EDT — instant-data-swift `1a7a18990e4c59308e9203476ae5d392327aae24`
+Green (#1319): a prune batch whose activity expires while it takes the server-apply and operation gates gives both back unworked.
+
+## 2026-10-28 22:38:18 EDT — instant-data-swift `05a0edc9022e197ab665666a44fc827655fe1246`
+Red (#1319): a batch whose activity expired once it held both gates still pruned.
+
+## 2026-10-28 22:38:18 EDT — instant-data-swift `0edc7f14ab0cc9c6befd38e03c723c475e850f16`
+Green (#1319): a prune batch reads the hot store's residency (only entities it can drop are materialized), re-checks a kept entity only where it releases more of it, runs inside an expiring maintenance activity; every gate counts running time (CLOCK_UPTIME_RAW minus recorded suspensions) with the suspended time beside it. Store copy: holds 300-660 ms -> 5-55 ms.
+
+## 2026-10-28 22:38:18 EDT — instant-data-swift `39de8c92ec02d3fce6249f4c5b1c2622d9c723c1`
+Red (#1319): a hub entity's 5,000 unowned facts were materialized every batch (70,824 facts to release 10,850); the gate counted a 30-minute suspension as a 1,801,000 ms wait; a prune told to stop ran all 12 batches.
+
+## 2026-10-28 22:38:18 EDT — instant-data-swift `236915aaa901b3adf33c4b2461565fb78f0702ab`
+Plan (#1319): gate-1319 plan and claims.
+
 ## 2026-10-28 20:59:36 EDT — scribe `493be905598562026ec984ecad9676ef10f4169b`
 Green (#1032): a recording an ingest job is still working on (queued, held, running) is left to the ingest.
 

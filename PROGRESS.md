@@ -1,3 +1,16 @@
+## 2026-10-28 22:38:18 EDT — v1.9.50 (gate-1319, #1319): a prune batch reads only what it can drop, never runs across a suspension; the gates count running time
+
+- **Release:** `docs/releases/v1.9.50.md`, cut at `1a7a1899` (red `39de8c92`, green `0edc7f14`, red `05a0edc9`, green
+  `1a7a1899`), carrying 1.9.49. No migration; new public `InstantProcessSuspensions.recordResume(afterSuspensionOf:)`,
+  `InstantMaintenanceActivity`, `InstantRuntimeConfiguration.maintenanceActivity`.
+- **Why:** a device's prune batch held the operation gate 37 min and another the server-apply gate 86 min, almost all
+  iOS suspension and the phone asleep (the gates timed on the wall clock); each batch cost 1.0-3.5 s in the background
+  because the whole-entity rule read every fact of each entity it might drop (recordings carry thousands of links).
+- **Checks:** on a copy of the device's store every prune hold without a WAL checkpoint 5-55 ms (was up to 660 ms);
+  the whole core bundle at `8c448a52`: 1,592 tests, 5 failing (3 listed, 2 load-only, each passed alone).
+- **Known:** #1320, the WAL checkpoint inside a gate-held commit (310-363 ms of one prune batch on the copy).
+- **Next:** the consuming app pins 1.9.50, feeds its watchdog's resumes to `recordResume`, and checks on the device.
+
 ## 2026-10-28 19:24:13 EDT — v1.9.49 (watch-list-1315, #1315): on watchOS the live session runs over Server-Sent Events
 
 - **Release:** `docs/releases/v1.9.49.md`, cut at `ab81ff40`, carrying 1.9.48. No migration; new public
