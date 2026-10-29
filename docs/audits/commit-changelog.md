@@ -1,3 +1,15 @@
+## 2026-10-29 15:46:56 EDT — scribe `59bea156327f55930cb5563008a847bcdb2169b3`
+changelog(#1348): the ledger for one-run iPhone-first installs
+
+## 2026-10-29 15:46:56 EDT — scribe `85dcefd87d01c3dd76dc4766d1ff5b74c3320737`
+docs(#1348): scribe-builds, scribe-install: nothing turns an install into a wait for his go
+
+## 2026-10-29 15:46:56 EDT — scribe `6ed52c9262793cbd254d38906576a8c7533abb3a`
+fix(#1348): one installer run puts a build on every device, the iPhone first, behind one drift check
+
+## 2026-10-29 15:46:56 EDT — scribe `5148b323f491dc49b4473cae67fd54ea411a3110`
+test(#1348): red: one installer run, iPhone first, one drift check, npm ci in a fresh worktree
+
 ## 2026-10-29 14:59:12 EDT — scribe `079ed3f8725be7cc0db0c92f72ff1a4518544db9`
 Presence (#1321): vad-fix-1321b's claims released.
 
