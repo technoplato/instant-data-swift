@@ -1,3 +1,15 @@
+## 2026-10-28 20:27:34 EDT — scribe `569638767cc4de07781f65d12156481946ac5f1d`
+Green (#1032): a catalog pass counts empty WAVs apart, and as waiting only what it did not reach.
+
+## 2026-10-28 20:27:34 EDT — scribe `579c5d5dd81f4588ea3279d6d352edb4d860e040`
+Red (#1032): a catalog pass counted the WAVs it found empty as waiting.
+
+## 2026-10-28 20:27:34 EDT — scribe `e458e51f8ba870e004d9a764b93cba8bc0cfb329`
+Green (#1032): a recording is signed while a live stream is open when the Mac mini has memory to spare (normal pressure, 3 GB left after the signer's peak; signing an hour takes about 2 s of CPU and 230 MB).
+
+## 2026-10-28 20:27:34 EDT — scribe `bfce178e6183de87d71ee3681ec7c1ebf5a48fb6`
+Red (#1032): a recording streamed to the Mac waited for its stream to close before it was signed into scribe-recordings.
+
 ## 2026-10-28 20:21:07 EDT — scribe `01202f082412597e493d20126761d19fc5202bce`
 Docs (#1032): ADR 0083 amendment A, what the backfill found (297 of 302 recordings with a WAV signed, 164.4 h) and how the worker meets it.
 
