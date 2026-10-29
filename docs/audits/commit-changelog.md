@@ -1,3 +1,12 @@
+## 2026-10-29 02:46:51 EDT — scribe `b6c6d2aa9926a7bb0c09e59da54a41651cc0f5b6`
+Changelog (#1329): red 53695d7ef and green 8d01d8c66 in CHANGELOG.md.
+
+## 2026-10-29 02:45:42 EDT — scribe `8d01d8c66fde245fac91498eb81b6031d5c29fa9`
+Green (#1329): the share scrubber's follower asks Instant one query per idle look (every followed recording in one or of windows; rows already held against the copies are not asked about again) and a few per sweep (copies, section lines, whole recordings five to a query, strays); the first sweep comes 15 s after start and a failed one is tried again after 30 s, doubling to 10 min. Its first sweep on production had met the rate limit.
+
+## 2026-10-29 02:36:48 EDT — scribe `53695d7ef84aad93f01d12af3e05410617b20e35`
+Red (#1329): an idle look over four shares asked 4 queries (want 1), a sweep of four asked 9 (want at most 5), and a failed sweep waited 10 min (want 30 s, doubling); stubs answer as before.
+
 ## 2026-10-29 02:32:09 EDT — scribe `65b7caeee259aae301fdfb8abec52799a9b0ee13`
 Changelog (#1329): red 1763777bc and green 1adfa0627 in CHANGELOG.md.
 
