@@ -1,3 +1,12 @@
+## 2026-10-29 11:31:08 EDT — scribe `6067ba4b793aa808fdbfdc526b69e8a573eb2d7e`
+Merge (#1337): a recording delete goes to Recently Deleted at once, with no confirmation dialog.
+
+## 2026-10-29 11:31:08 EDT — scribe `068b40b69176a8541b42641860f4d28dd70bb71b`
+Green (#1337): the recording delete dialog is gone; Undo and Recover bring a deleted recording back; FEATURES.md item 31.
+
+## 2026-10-29 11:31:08 EDT — scribe `99f84e7b3190116ed48e53d6c5e26b11dd5785f8`
+Red (#1337): a recording delete moves to Recently Deleted at once, with no dialog.
+
 ## 2026-10-29 10:41:34 EDT — scribe `13e3d9c088108b6ecc4fd8d63c0b79d912ef56f2`
 Cut (#1331): Scribe 0.1 (157), long-press a picture in a recording to choose its kind's size.
 
