@@ -1,3 +1,18 @@
+## 2026-10-29 17:51:53 EDT — scribe `622ede8052bf60f9b75df7fc26db060d479406d9`
+#1342: land: a continued take gives out no line index before this device's store answers.
+
+## 2026-10-29 17:51:53 EDT — scribe `bc40b95c63d559fd520210d0373762550e8e4aa6`
+#1342: green: after a relaunch mid-recording, the take holds its new lines until this device's store says where they continue; the wait reports itself every three seconds.
+
+## 2026-10-29 17:51:53 EDT — scribe `cc0b0328b889df7f5c081d3afa5e45b55b24fe7e`
+#1342: red: a failed store read is asked again (test compile fix).
+
+## 2026-10-29 17:51:53 EDT — scribe `13c26eebf915c20cf96ee9384db0061ba21b757e`
+#1342: ADR 0049 amendment B: a line index comes from the store before the first write, never from the row's count.
+
+## 2026-10-29 17:51:53 EDT — scribe `3e0368757bfad704481e764d0ba015121fe49596`
+#1342: red: a continued take from a row without counts waits past three seconds for the store; withheld voice lines wait too.
+
 ## 2026-10-29 16:59:10 EDT — scribe `19fb078ac7ec1481af511681451fba998cb50988`
 #1347: green: a Photos screenshot or photo sits on the timeline at its capture time, not its pickup time.
 
