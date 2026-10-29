@@ -1,3 +1,15 @@
+## 2026-10-29 18:55:28 EDT — scribe `4836e767a7bb1902938396cc7544bb1872038081`
+Land (#1321): a line only the sound floor opened is re-decoded every second for partials, so speech a speech detector does not hear shows within about a second instead of at its line's end.
+
+## 2026-10-29 18:55:28 EDT — scribe `5a5483b0104098f36b8da8b7e725d0fbc2b426a5`
+Docs (#1321): audit section 12 and ADR 0074 amendment H: the sweep of caps and partial cadences, recall, shown latency and decode cost per recording.
+
+## 2026-10-29 18:55:28 EDT — scribe `5a077af1fe74366ab68ea22e5b314a5b598266a0`
+Green (#1321): the segmenter honors a slower partial cadence (1 s) for a line only the sound floor opened; every final is unchanged.
+
+## 2026-10-29 18:55:28 EDT — scribe `807880294f2c8514afc9e9cd111b92fccd38bf23`
+Red (#1321): a sound-only line gets no partials; the replay measures how soon each word is first shown and fails above 3% of words more than 2 s late.
+
 ## 2026-10-29 18:54:34 EDT — scribe `30dd314c11df9aad741c1bb9f14ee8c75a5f6451`
 #1344, #1331: merge: the broadcast's screen frames show in a band pinned at the top of the live screen, above the speaker name, never as rows among the words; the band carries #1331's Show Screen Frames As.
 
