@@ -1,3 +1,9 @@
+## 2026-10-29 19:10:11 EDT — scribe `eeb38f9750a581541e4caba331dfb572b7c737f9`
+Feature (#1332, #1333): the thread a person speaks into shows the line being said as it forms, and its composer listens by default with a keyboard button; the row that covered the newest message is gone.
+
+## 2026-10-29 19:10:11 EDT — scribe `5f8c60bf8ff5cbd050fe5c8b30f6f41673d8faac`
+Feature (#1332): the thread composer listens by default (waveform, Listening, keyboard button).
+
 ## 2026-10-29 18:55:28 EDT — scribe `4836e767a7bb1902938396cc7544bb1872038081`
 Land (#1321): a line only the sound floor opened is re-decoded every second for partials, so speech a speech detector does not hear shows within about a second instead of at its line's end.
 
