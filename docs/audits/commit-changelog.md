@@ -1,3 +1,21 @@
+## 2026-10-29 02:05:53 EDT — scribe `bc63f2b84275add43ee4e1ffe259970fea4099f8`
+Docs (#1325, #1327): ADR 0064 amendment: the readers #1317 left, one rule per language, and the guard.
+
+## 2026-10-29 02:05:45 EDT — scribe `1f9a43e7335a697c0cf864ce0d4f4f3a2531b34c`
+Test (#1325): the Swift guard TranscriptLineReadersTests: every reader of lines names the line rule or says why not; proven on a scratch branch.
+
+## 2026-10-29 02:05:45 EDT — scribe `d637c6194612f5be680a74d5d88718000cf0ecf6`
+Green (#1327): the range picker selects retiredAtMs and wordsSeal and lists no retired line; sealed lines drawn sealed; a share is named by its first kept line.
+
+## 2026-10-29 02:05:45 EDT — scribe `6457f5706b56b06b3743a61604721896d09337e7`
+Red (#1327): the share sheet lists no retired line and draws a sealed one sealed; the Shares list never names a share by a retired line.
+
+## 2026-10-29 01:17:50 EDT — scribe `2734b37bb61298bf937870471a30bde881bdbea9`
+Green (#1325): SharePlay reads through the timeline line rule; a retired row is a skipped cursor DurableCursorDrain moves past without sending; a sealed line goes sealed without words or envelope (RecognizedSection.withoutSealedWords).
+
+## 2026-10-29 01:17:50 EDT — scribe `d10d5e4e3627a219f7ed365469b28cad7055a73d`
+Red (#1325): SharePlay sends no retired or sealed line, and a run of retired lines never stops the drain (10 new cases fail for their reason).
+
 ## 2026-10-29 02:03:37 EDT — scribe `da61ec71319fb5851a460e028d9f42fd95d79e6f`
 Changelog (#1323): the red, green and docs commits of the CLI, Mac scripts and mirror retired-line fix.
 
