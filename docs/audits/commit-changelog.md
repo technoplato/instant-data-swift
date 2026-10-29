@@ -1,3 +1,12 @@
+## 2026-10-28 20:59:36 EDT — scribe `493be905598562026ec984ecad9676ef10f4169b`
+Green (#1032): a recording an ingest job is still working on (queued, held, running) is left to the ingest.
+
+## 2026-10-28 20:59:36 EDT — scribe `bf4226b1449ba95508d0a91100006fdf897a3d14`
+Red (#1032): the catalog pass signed memo 433 from its WAV minutes before its own ingest did (3 GB fetched twice).
+
+## 2026-10-28 20:59:36 EDT — scribe `7c67b04b635ae0cff78fd9d94c796d20bb7b8372`
+Docs (#1032): ADR 0083 amendment A, the catalog worker signs during an open stream with memory to spare.
+
 ## 2026-10-28 20:27:34 EDT — scribe `569638767cc4de07781f65d12156481946ac5f1d`
 Green (#1032): a catalog pass counts empty WAVs apart, and as waiting only what it did not reach.
 
