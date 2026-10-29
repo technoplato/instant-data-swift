@@ -1,3 +1,15 @@
+## 2026-10-29 12:35:05 EDT — scribe `2e323192f11c22094b5e59392e0634a9fcb9b11e`
+Change log (#1343): red 3ea3993a8, green 032e3727e.
+
+## 2026-10-29 12:34:40 EDT — scribe `032e3727ef83d900e8758eb5a6f244061c6274a6`
+Green (#1343): the stack reader reads each frame record with vm_read_overwrite, so a stray frame pointer ends the walk instead of faulting (#1285); 100,000 reads at 3,545 ns, flat.
+
+## 2026-10-29 12:32:06 EDT — scribe `3ea3993a8c53c594d1b764acd0997c74b9b05b5a`
+Red (#1343): a frame record with no memory behind it must be no record and no crash.
+
+## 2026-10-29 12:29:52 EDT — scribe `75437a0a4ab50a5aaf499eea72c4c6f2b41f44f5`
+Cut (#1343): Scribe 0.1 (159): WHATS-NEW Build 159, project.yml 158 -> 159.
+
 ## 2026-10-29 12:28:25 EDT — scribe `2a217364ab7b8557b752059d3abab130870fe7b6`
 Docs (#1343): audit 2026-10-29-stall-1343: builds 156-157's scene-change stalls are not a 156 regression (155 did the same main-thread work per move; the stalls came at thermal serious); the phone holds no stack for them.
 
