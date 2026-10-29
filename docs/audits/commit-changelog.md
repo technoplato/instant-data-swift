@@ -1,3 +1,18 @@
+## 2026-10-29 10:41:34 EDT — scribe `13e3d9c088108b6ecc4fd8d63c0b79d912ef56f2`
+Cut (#1331): Scribe 0.1 (157), long-press a picture in a recording to choose its kind's size.
+
+## 2026-10-29 10:41:34 EDT — scribe `1a13494eab4e298cc1d5078c6b9520304f7860d5`
+Changelog (#1331): red, schema and green entries.
+
+## 2026-10-29 10:41:34 EDT — scribe `6bb90b66723a588c27b489c7e67a14d5d3e1d3d3`
+Green (#1331): a long-press on a timeline picture shows its kind collapsed, as a thumbnail, medium or large, on the live screen and in playback; one size per kind for the account, synced through settingsAccounts.timelineEmbedSizes.
+
+## 2026-10-29 10:41:34 EDT — scribe `e9340dffdea5e315259d536539939c01f7585246`
+Schema (#1331): settingsAccounts.timelineEmbedSizes, an optional string of at most 1 KiB; pushed to production, drift 0.
+
+## 2026-10-29 10:41:34 EDT — scribe `6b9f6669ee4bfa504d6f08b2aacecf2bb4b5562f`
+Red (#1331): tests for per-kind picture sizes in the timeline and their account sync.
+
 ## 2026-10-29 10:23:44 EDT — scribe `dff44d769e0124688aec17fdc1919972a1fd9dda`
 changelog(#1334): red a16a2ad05, green cf12ad7f4; plan 33bf77b5e
 
