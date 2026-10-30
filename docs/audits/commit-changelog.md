@@ -1,3 +1,6 @@
+## 2026-10-30 14:04:40 EDT — scribe `293112a0f8b5772e5e0b2f69863e15d3bdab678c`
+land(#1393): the two ADRs.
+
 ## 2026-10-30 13:58:10 EDT — scribe `567f800f896abba0e501bdb5a7701e59b1d2d40d`
 Tooling (#1412): the old heavy.sh name forwards to build.sh and says so.
 
@@ -15,6 +18,9 @@ Perf (#1412): the build machine's bare repo keeps each slot's last commit as a r
 
 ## 2026-10-30 13:58:10 EDT — scribe `f5b9801411c805b2d44b6e328230031818c505fa`
 Revert (#1412): the stable build info variable never reaches the package plugin.
+
+## 2026-10-30 13:15:59 EDT — scribe `6852adc40de1db5a2d98fdaf3d727efbec72f83c`
+land(#1393): Scribe 0.1 (186).
 
 ## 2026-10-30 13:07:11 EDT — scribe `8b1713a02887ed22c56d9fff47678d1ba5532b06`
 Fix (#1395): a speech utterance's partial waits for voice since the last partial.
@@ -66,6 +72,18 @@ Tooling (#1412): the build machine's free-space floor is an operator's file.
 
 ## 2026-10-30 13:03:32 EDT — scribe `c2a4d74cfbb58cb6f0113f96a02111b122d365f4`
 Fix (#1412): the laptop's build worker no longer creates the build machine's folders.
+
+## 2026-10-30 12:50:01 EDT — scribe `97df897bb71bb5471f619a57c28aa05034647488`
+land(#1393): Scribe 0.1 (184).
+
+## 2026-10-30 12:48:53 EDT — scribe `bd6db6b955436efb60068bb3b8158b02d671da85`
+land(#1393): the playground's other half: main builds again.
+
+## 2026-10-30 12:48:32 EDT — scribe `2c4c56464ce3cc523dc9ea4add9ee6730a27052b`
+land(#1393): the playground after his review, event colors, two fingers from rest, playback's words under the bar, answers paging.
+
+## 2026-10-30 11:34:06 EDT — scribe `8101192de99b4a4be5e77aeee1331e01c716eb5e`
+land(#1393): Scribe 0.1 (183).
 
 ## 2026-10-30 11:32:49 EDT — scribe `ed5c24a3cb3357c7b8667775b9105aa92aaa1ed6`
 Tooling (#1412): heavy.sh renamed build.sh and versioned in the Scribe repo (scripts/build-jobs); HEAVY_* variables are BUILD_*; a transition forwarder keeps waiters queued before the rename on the old code.
