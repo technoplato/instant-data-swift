@@ -1,3 +1,15 @@
+## 2026-10-30 00:19:39 EDT — scribe `785d7952840c0d60a47b44fcaf20ed8dbce3f7f1`
+Green (#1343): the slow-turn sampler keeps 256 frames a sample, counts cut-short samples, and names the samples off its heaviest path.
+
+## 2026-10-30 00:19:39 EDT — scribe `642eccddace177ee2709ba270c693c1395386a3f`
+Test (#1343): the main-thread tests run one at a time; the deep test asks for the whole path.
+
+## 2026-10-30 00:19:39 EDT — scribe `f43673e83e6bde936e11871f484ed2986ac0a2dc`
+Red (#1343): a deep main thread is sampled to its root; cut-short samples are counted.
+
+## 2026-10-30 00:19:39 EDT — scribe `e0475e34426be177d1f764fb8ce20034eb9cfa1a`
+Red (#1343): a slow turn names the samples off its heaviest path.
+
 ## 2026-10-30 00:08:52 EDT — scribe `577005270d7d6d33f34c38770e5f176078a07aad`
 Docs (#1339): What's New for the next build: hear a speaker before naming them.
 
