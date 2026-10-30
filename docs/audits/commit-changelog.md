@@ -1,6 +1,3 @@
-## 2026-10-29 19:10:11 EDT — scribe `eeb38f9750a581541e4caba331dfb572b7c737f9`
-Feature (#1332, #1333): the thread a person speaks into shows the line being said as it forms, and its composer listens by default with a keyboard button; the row that covered the newest message is gone.
-
 ## 2026-10-29 20:07:16 EDT — scribe `42b042d5319062aa20bde305e02be37324678b2e`
 #1331: change-log and progress entries for long-pressing the live screen's frames.
 
@@ -12,6 +9,9 @@ Feature (#1332, #1333): the thread a person speaks into shows the line being sai
 
 ## 2026-10-29 18:51:41 EDT — scribe `deadceadb913157e46f419741e89af75c206dfcc`
 #1331: red: live screen frames are the Screen Frames kind and take a slot per size.
+
+## 2026-10-29 19:10:11 EDT — scribe `eeb38f9750a581541e4caba331dfb572b7c737f9`
+Feature (#1332, #1333): the thread a person speaks into shows the line being said as it forms, and its composer listens by default with a keyboard button; the row that covered the newest message is gone.
 
 ## 2026-10-29 19:10:11 EDT — scribe `5f8c60bf8ff5cbd050fe5c8b30f6f41673d8faac`
 Feature (#1332): the thread composer listens by default (waveform, Listening, keyboard button).
