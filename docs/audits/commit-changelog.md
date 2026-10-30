@@ -1,3 +1,9 @@
+## 2026-10-30 04:05:50 EDT — scribe `623cfdaf16e7dcb9263ee7700554b5f574ed0980`
+Green (#1376): the live transcript draws one row per line and pins the speaker's name itself, because SwiftUI's lazy stack walks every Section on each placement.
+
+## 2026-10-30 04:05:50 EDT — scribe `747c8d409c3e613a01e69ec3783b98cabf4db5c9`
+Fix (#1376): a jump to a line settles with a second scroll on macOS 26.
+
 ## 2026-10-30 03:39:29 EDT — scribe `6ccf7ebb546181805871393f7640110a4c97508f`
 Fix (#1386): a post's name never waits on ps, and a post over 5 s says which step took the time.
 
