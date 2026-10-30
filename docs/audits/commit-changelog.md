@@ -1,3 +1,15 @@
+## 2026-10-29 23:31:26 EDT — scribe `93eddaf55b2acad2596f1a226d2e34d99887b641`
+#424/#921: What's New for build 173: pasted links and book pages as cards.
+
+## 2026-10-29 23:31:26 EDT — scribe `bab7617299cfb7b93d6ea923e7d09be591953b9b`
+#424/#921: merge: a link in a thread or on the timeline is its card (a YouTube video that plays in Scribe Playback, a book and each page read, any page's Open Graph), fetched once per link and cached.
+
+## 2026-10-29 23:31:26 EDT — scribe `3629118e957f1a7a77da38e3bab0ab2180c85481`
+#424/#921: green: link cards in thread answers, messages, statuses, the live answer card and the timeline; Scribe Playback queues a card's video.
+
+## 2026-10-29 23:31:26 EDT — scribe `aa2e9d5958a8ec5585a4275376b9f4fe302031fb`
+#921: green: a book page's status carries the page's books link, so the app draws each page as a card.
+
 ## 2026-10-29 23:28:48 EDT — scribe `f69f746304afb3c08f3817d6889256c77c1b9ab8`
 #1378/#1383: the audit and progress for builds 171 and 172 on the iPhone: the 7,602-write backlog drains after the relaunches, no deferral expiry; the line lag after the drain is not measured yet.
 
