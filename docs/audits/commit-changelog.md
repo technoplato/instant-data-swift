@@ -1,3 +1,45 @@
+## 2026-10-30 00:06:08 EDT — scribe `731abe4aceebc8474a62379e677f7bd2aa7ad0e6`
+Ledger (#1236): What's New and change-log entries for the compressed copy as the audio that travels.
+
+## 2026-10-30 00:06:08 EDT — scribe `775f8b1e3db1903684350f3b4586853b338dcda7`
+Docs (#1236): the exact path's word error rate and voice prints; the decision record's step for the kept copy.
+
+## 2026-10-30 00:06:08 EDT — scribe `16ce77dc5a464323680c908df5648f6a471c31f4`
+Green (#1236): a finished recording keeps its AAC copy once storage holds its WAV; continuing it restores the WAV from the copy.
+
+## 2026-10-30 00:06:08 EDT — scribe `228d2cdeed168315b6417c720c35824612e2cb57`
+Red (#1236): the kept copy's decision table, its encode and retire, and the restore on continue.
+
+## 2026-10-30 00:06:08 EDT — scribe `8f2a3185f77163857d1894650f51085b4e14f12d`
+Docs (#1236): the feature contract and decision record: the copy at 48 kbps is the audio that travels.
+
+## 2026-10-30 00:06:08 EDT — scribe `3fa57fcbfc914f2840ccfa85f762cac61be04a0c`
+Green (#1236): the copy at 48 kbps; a stream keeps its starting format; Stop sends no whole file when the copy reaches the end; no live chunks while the copy carries the audio.
+
+## 2026-10-30 00:06:08 EDT — scribe `35ae26ab32c460113d79f2b83f6fe53d8690a749`
+Red (#1236): the copy's format, its finished state and wake, the Stop decision, and the chunker's switch.
+
+## 2026-10-30 00:06:08 EDT — scribe `5417d4f7fbebf198369dcd1214f92b776c0b6811`
+Ledger (#1236): change-log entries for the schema value, the desktop decode, the catalog and the installer.
+
+## 2026-10-30 00:06:08 EDT — scribe `35527e4ff29f5631f2caf8d925b682b2fd88d99b`
+Fix (#1236): the share scrubber's installer ships the copy reader.
+
+## 2026-10-30 00:06:08 EDT — scribe `143239c7aeb135d7da2ffb83015f93e88242ce98`
+Fix (#1236): the catalog takes the copy only when no chunk exists, and never overwrites the chunk cache.
+
+## 2026-10-30 00:06:08 EDT — scribe `57c7d5012bd5188b0c8ff49753f6e3ff5972a49b`
+Feature (#1236): the catalog signs a live recording from its compressed copy.
+
+## 2026-10-30 00:06:08 EDT — scribe `b5fbedc7b7bab24b81a371dbf37221c8b7ce9d65`
+Feature (#1236): the desktop mirror decodes the compressed copy into its WAV and attaches it at Stop; the scrubber reads a live share from the copy.
+
+## 2026-10-30 00:06:08 EDT — scribe `03118f9c4ccd330ffcf36aca2b0d16ebcb0705e3`
+Schema (#1236): the audio row's upload kind gains compressedStream.
+
+## 2026-10-30 00:06:08 EDT — scribe `fa7dc161eac2e206b8459bb5422adf65e74c4444`
+Plan (#1236): the compressed copy as the audio that travels; claims.
+
 ## 2026-10-29 23:43:45 EDT — scribe `38c6225bc4fc1af6d38b50ccc73ec5a3e8ea4390`
 #1377: the audit gains the like-for-like test diffs and the build 172 install; the claims are released.
 
