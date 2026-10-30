@@ -1,4 +1,4 @@
-## 2026-10-30 16:22:57 EDT — scribe 
+## 2026-10-30 16:22:57 EDT — scribe `443b848d28329c75095cad40d23a12c79d467584`
 Fix (#1404): the Vision Pro icon has a real top layer, and an install no longer launches on the headset.
 
 ## 2026-10-30 14:54:10 EDT — scribe `b689465ba635452c9c0df7d9a88f46c848275f32`
