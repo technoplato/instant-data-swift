@@ -1,3 +1,18 @@
+## 2026-10-30 00:45:51 EDT — scribe `274a1878d0ab4102265e760973a5287b2ac7acf5`
+Ledger (#1236): the change-log entry for the keeper's storage read.
+
+## 2026-10-30 00:45:51 EDT — scribe `6a948f5a00078f3204618cbb981381df6e800e5c`
+Cut (#1236): build 177.
+
+## 2026-10-30 00:45:51 EDT — scribe `7a3a6f79542b7fa0a6cb19c94f6fa2608e1addda`
+Green (#1236): the kept-copy keeper reads storage from the device's audio rows and the server's, under the five-second bound.
+
+## 2026-10-30 00:45:51 EDT — scribe `f25b4adab51114863f89334d64d98e4aca54392f`
+Red (#1236): the keeper's storage read merges the device's rows and the server's.
+
+## 2026-10-30 00:45:51 EDT — scribe `218f6d3f4e86110a3b4f559a7cb568a6a194a175`
+Cut (#1236, #424): build 173.
+
 ## 2026-10-30 00:24:53 EDT — scribe `5799c5f2370eef885f4e71ac816b3a741eac0684`
 Cut (#1367): Scribe 0.1 (176), whose story is one speaker per phrase.
 
