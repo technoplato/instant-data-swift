@@ -1,3 +1,15 @@
+## 2026-10-30 19:43:41 EDT — scribe `d78cb20150dba640f9dd07ac8a02c1588e146ea9`
+Docs (#1431): the builds skill keeps every installed build's symbols, with their sizes and retention.
+
+## 2026-10-30 19:43:41 EDT — scribe `3304ef57fb41fa6fe48d3e29bd6f4d15f3bbe80b`
+Feature (#1431): a script names an iOS report's main thread from the kept build whose UUID it names.
+
+## 2026-10-30 19:43:41 EDT — scribe `31c695383975250c665f4ed5b31708818b204e87`
+Fix (#1431): the installer keeps each verified build's app, dSYMs and image UUIDs before the build output is cleaned.
+
+## 2026-10-30 19:43:41 EDT — scribe `f05be3dbc468915cc0242463b1b6129a0d2f1a25`
+Test (#1431): red tests for the installer's keep step.
+
 ## 2026-10-30 18:46:38 EDT — scribe `c33e377ec94554ee5fe0438febaf3bb3255dbb66`
 Cut (#1258): Scribe 0.1 (192): launch never waits on the system's upload daemon.
 
