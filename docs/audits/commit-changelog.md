@@ -1,3 +1,18 @@
+## 2026-10-30 13:07:11 EDT — scribe `8b1713a02887ed22c56d9fff47678d1ba5532b06`
+Fix (#1395): a speech utterance's partial waits for voice since the last partial.
+
+## 2026-10-30 13:07:11 EDT — scribe `01cebb86efd4e75c26e337f634b1f8993e1402d0`
+Fix (#1395, #1219): a repeated partial stops in the reducer; a tick keeps the stamp's render-server schedule; a slow turn says what its CPU covers.
+
+## 2026-10-30 13:07:11 EDT — scribe `8c116f7130f1574ea8b9d9b1a5572dbdac133a41`
+Fix (#800, #1395): the level reaches the store every two seconds.
+
+## 2026-10-30 13:07:11 EDT — scribe `5ddeb9b8b006c445855e275a5cb3cf2049cdfdc3`
+Fix (#1395): a saved interim no longer updates the list rows under the recording screen.
+
+## 2026-10-30 13:07:11 EDT — scribe `518e06a0caea59e38f2f33552139368a09b72374`
+Cut (#1395): build 185.
+
 ## 2026-10-30 13:03:32 EDT — scribe `4d7c50b2e287a43cfc7438870797c68001eb2776`
 Tooling (#1412): mini build jobs reach two warm slots by git over SSH (a dirty tree becomes a throwaway commit on no branch) and run in tmux; scratch removed after each job.
 
