@@ -1,3 +1,6 @@
+## 2026-10-30 02:26:04 EDT — scribe `e8b3d331fc06858acde001e60313446d89102d43`
+Fix (#1343): the slow-turn stack reader stops the thread for its walk and reads through async frames, so a running main thread's stack reaches its root.
+
 ## 2026-10-30 00:45:51 EDT — scribe `274a1878d0ab4102265e760973a5287b2ac7acf5`
 Ledger (#1236): the change-log entry for the keeper's storage read.
 
