@@ -1,3 +1,15 @@
+## 2026-10-30 09:20:39 EDT — scribe `fe90eb83728647764c1428428f0be7139548e99b`
+Guide (#1393, #1394): one agent for all UI work as a trial, and every claim of a decision cites the decision log.
+
+## 2026-10-30 09:20:39 EDT — scribe `9851db98e3fec215db094bdf89d719f3106d143f`
+Fix (#1394): only a message whose origin is human counts as typed words; pasted text is taken out.
+
+## 2026-10-30 09:14:56 EDT — scribe `b6ee9429175b8b13818ae37c8aa03eae14491cdc`
+Feature (#1394): scribe decision: an entry stands only on spoken or typed words the machine copied.
+
+## 2026-10-30 09:14:56 EDT — scribe `433218b1576adbc48ea701dd8c896fba0c200ce1`
+Schema (#1394): decisions, on sourceMoments, never deleted (ADR 0103).
+
 ## 2026-10-30 04:52:13 EDT — scribe `5929f47f1eb23fc934f5e55767ac27842a7454b1`
 Fix (#1343): the app holds the window's appearance through the system's app-switcher snapshots, cutting main-thread work at a move to the background.
 
