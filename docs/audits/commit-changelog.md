@@ -1,3 +1,24 @@
+## 2026-10-29 20:44:45 EDT — scribe `8457c5ed441b7a77bd61517bdd026402ecc224bc`
+Cut (#1371): build 169: turning the phone keeps the live transcript.
+
+## 2026-10-29 20:44:45 EDT — scribe `44ceff319009d0f1fd339a06b70caccbbba0fc87`
+Green (#1371): the recording screen keeps one layout container across a turn, so the transcript keeps its identity instead of being rebuilt.
+
+## 2026-10-29 20:44:45 EDT — scribe `959f2612f29469c434ccfc7ac8b9a20e0c0dc52d`
+Red (#1371): a layout-harness test that the transcript's scroll view survives a turn.
+
+## 2026-10-29 20:44:45 EDT — scribe `917bb6efc7eec4191f3aa631dfdedfa62ec98453`
+Green (#1371): each recording keeps one log-only, synced row a minute of the app's own CPU, heat and turn.
+
+## 2026-10-29 20:44:45 EDT — scribe `fb1ad16599d34b609ff7907a76ead955e7a7b140`
+Red (#1371): the per-minute CPU and heat row's meter, sync and log-only tests.
+
+## 2026-10-29 20:44:45 EDT — scribe `c3055ea160b432ee9948b74acff6f9bbf588ef2d`
+Green (#1371): the Mac mirror writes the per-minute CPU and heat rows.
+
+## 2026-10-29 20:44:45 EDT — scribe `eab00f777b92371b271f0df322c2ec44506fa5fd`
+Perms (#1371): production accepts the deviceMinute runtime-event kind.
+
 ## 2026-10-29 20:43:09 EDT — scribe `2f8c9a2447b7651d69fa999691a574e6aacf54e3`
 Ledger (#1372): the change-log entry for mapping the recognizer's unknown token to text.
 
