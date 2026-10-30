@@ -18,6 +18,9 @@ let package = Package(
     .macCatalyst(.v16),
     .tvOS(.v16),
     .watchOS(.v9),
+    // A `*` in an availability list covers any platform not named, at the package's minimum. With no visionOS line that
+    // minimum is visionOS 1, under what the stored-value reader needs (#396).
+    .visionOS(.v2),
   ],
   products: [
     .library(name: "InstantSwiftData", targets: ["InstantSwiftData"]),
