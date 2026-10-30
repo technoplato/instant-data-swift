@@ -15,6 +15,8 @@ import Testing
 // final deletes, with the recording screen's live-lines query registered; the differential runs with them too.
 // 2026-10-27 (#1270): the fixture can write Scribe's attachments: a link the server issued an id for, written under its
 // name, held by the store and every frame under the id. One device's queue grew to 2,316 writes on it.
+// 2026-10-29 (#1378): the recording list's preview can select an optional field no write sets, which the server
+// restates as null on each new preview segment. One device's queue grew from 29 to 524 in eight minutes on it.
 
 // MARK: - Schema
 
@@ -65,6 +67,17 @@ enum FastDrainSchema {
       isRequired: false, cardinality: .many, isUnique: true,
       forwardIdentity: "recordings/attachments", reverseIdentity: "recordingAttachments/recording",
       linkNamespace: "recordingAttachments"
+    ),
+  ]
+
+  /// #1378: an optional field the recording list's preview selects and no write sets (Scribe's `retiredAtMs`, which
+  /// only a script sets when it retires a line). The server answers each preview segment with it as `null`, as one
+  /// device's store holds it on the two newest segments of every recording.
+  static let previewUnsetFieldAttributeID = "transcriptionSegments/retiredAtMs"
+  static let previewUnsetFieldAttributes: [InstantAttribute] = [
+    InstantAttribute(
+      id: previewUnsetFieldAttributeID, namespace: "transcriptionSegments", name: "retiredAtMs", valueType: .number,
+      isRequired: false, isIndexed: true
     ),
   ]
 
@@ -503,9 +516,14 @@ struct FastDrainServer {
     }
   }
 
+  /// #1378: the list's preview selects ``FastDrainSchema/previewUnsetFieldAttributeID``, and the server answers a
+  /// preview segment that has no value there with `null`. Off unless the fixture registers the field.
+  var restatesPreviewUnsetField = false
+
   func triples(in query: FastDrainQuery, transactionID: String) -> [InstantTriple] {
-    entities(in: query).flatMap { entityID in
-      (facts[entityID] ?? [:]).keys.sorted().filter { attributeID in
+    let preview = value(FastDrainSchema.recordingID, "recordings/previewSegmentB")?.refValue
+    return entities(in: query).flatMap { entityID -> [InstantTriple] in
+      var triples = (facts[entityID] ?? [:]).keys.sorted().filter { attributeID in
         guard !query.omittedAttributeIDs.contains(attributeID) else { return false }
         // Links from the recording travel only in the list result, as Scribe's attachments do.
         return query == .list || attributesByID[attributeID]?.cardinality != .many
@@ -524,6 +542,21 @@ struct FastDrainServer {
           )
         }
       }
+      if restatesPreviewUnsetField, query == .list, entityID == preview,
+        facts[entityID]?[FastDrainSchema.previewUnsetFieldAttributeID] == nil,
+        let createdAt = facts[entityID]?["transcriptionSegments/id"]?.values.first
+      {
+        triples.append(
+          InstantTriple(
+            entityID: entityID,
+            attributeID: FastDrainSchema.previewUnsetFieldAttributeID,
+            value: .null,
+            txID: transactionID,
+            txTime: InstantTimestamp(milliseconds: createdAt)
+          )
+        )
+      }
+      return triples
     }
   }
 
@@ -582,11 +615,13 @@ struct FastDrainFixture {
     endsWithStop: Bool = false,
     defersSegmentText: Bool = false,
     liveLines: Bool = false,
-    attachments: Bool = false
+    attachments: Bool = false,
+    previewUnsetField: Bool = false
   ) async throws -> Self {
     let attributes = (scribeLinks ? FastDrainSchema.scribeLinkAttributes : FastDrainSchema.attributes)
       + (liveLines ? FastDrainSchema.liveLineAttributes : [])
       + (attachments ? FastDrainSchema.attachmentAttributes : [])
+      + (previewUnsetField ? FastDrainSchema.previewUnsetFieldAttributes : [])
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
       "instant-fast-drain-\(suffix)-\(UUID().uuidString).sqlite"
     )
@@ -613,6 +648,7 @@ struct FastDrainFixture {
     var server = FastDrainServer(serverMilliseconds: 1_790_700_000_000, attributes: attributes)
     if let timelineWindow { server.timelineWindow = timelineWindow }
     if liveLines { server.registeredQueries.append(.liveLines) }
+    server.restatesPreviewUnsetField = previewUnsetField
     var history = FastDrainWriteScript(firstSegmentIndex: 0, deviceMilliseconds: 1_790_600_000_000)
     history.usesLiveLines = liveLines
     history.writesAttachments = attachments
@@ -1039,7 +1075,8 @@ struct FastDrainDifferentialPair {
     endsWithStop: Bool = false,
     defersSegmentText: Bool = false,
     liveLines: Bool = false,
-    attachments: Bool = false
+    attachments: Bool = false,
+    previewUnsetField: Bool = false
   ) async throws -> Self {
     Self(
       reduced: try await FastDrainFixture.make(
@@ -1052,7 +1089,8 @@ struct FastDrainDifferentialPair {
         endsWithStop: endsWithStop,
         defersSegmentText: defersSegmentText,
         liveLines: liveLines,
-        attachments: attachments
+        attachments: attachments,
+        previewUnsetField: previewUnsetField
       ),
       full: try await FastDrainFixture.make(
         suffix: "differential-\(seed)-full",
@@ -1064,7 +1102,8 @@ struct FastDrainDifferentialPair {
         endsWithStop: endsWithStop,
         defersSegmentText: defersSegmentText,
         liveLines: liveLines,
-        attachments: attachments
+        attachments: attachments,
+        previewUnsetField: previewUnsetField
       )
     )
   }
@@ -1221,11 +1260,21 @@ extension InstantFastDrainTests {
     }
   }
 
+  /// #1378: the same with the recording list's preview selecting an optional field no write sets, which the server
+  /// restates as null on each new preview segment while that segment's writes are pending. Without Scribe's links:
+  /// their cascade from the recording to its segments keeps the reduction from proving a segment's empty slot, so
+  /// those frames take the full rebase there, as before.
+  @Test(arguments: [UInt64(41), 42, 43, 44, 45, 46])
+  func theReducedApplyObservesWhatTheFullRebaseObservesWithThePreviewsUnsetField(seed: UInt64) async throws {
+    try await runDifferential(seed: seed, scribeLinks: false, liveLines: true, attachments: true, previewUnsetField: true)
+  }
+
   private func runDifferential(
     seed: UInt64,
     scribeLinks: Bool,
     liveLines: Bool = false,
-    attachments: Bool = false
+    attachments: Bool = false,
+    previewUnsetField: Bool = false
   ) async throws {
     var random = FastDrainRandom(seed: seed)
     // Ten segments of pending writes (60 writes): past the 50-write component bound, so a refusal defers its peel to
@@ -1238,7 +1287,8 @@ extension InstantFastDrainTests {
       endsWithStop: scribeLinks,
       defersSegmentText: scribeLinks,
       liveLines: liveLines,
-      attachments: attachments
+      attachments: attachments,
+      previewUnsetField: previewUnsetField
     )
     guard try await pair.expectSameObservation(after: "setup") else { return }
     for step in 0..<70 {
@@ -1403,7 +1453,7 @@ extension InstantFastDrainTests {
     let metrics = await pair.reduced.runtime.persistence.serverApplyMetricsForTesting()
     print(
       """
-      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : "")\(liveLines ? " (live lines)" : "")\(attachments ? " (attachments)" : ""): \
+      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : "")\(liveLines ? " (live lines)" : "")\(attachments ? " (attachments)" : "")\(previewUnsetField ? " (preview's unset field)" : ""): \
       \(metrics.reductionCount) reductions, \
       \(metrics.reducedCount) reduced, \(metrics.receiptPatchCount) receipt patches, \
       \(metrics.plannedComponentBodyCount) component bodies, \(metrics.removedFailedOverlayCount) refused overlays removed
@@ -2056,10 +2106,30 @@ extension InstantFastDrainTests {
 extension InstantFastDrainTests {
   /// #1270: the gate-held line names the attribute that declined the reduction. The device's lines said only
   /// `full rebase: changesShadowedFact`; which slot declined took a copy of its store to find. Another device's title,
-  /// which no pending write sets, declines once (#431) and must be named.
+  /// which no pending write sets, over the title this device wrote earlier, declines once (#431) and must be named.
+  /// #1378: over a title the store does not hold it no longer declines, so this one lands on a resident title.
   @Test
   func aDeclinedFrameNamesItsAttributeInTheGateHeldLine() async throws {
-    var fixture = try await FastDrainFixture.make(suffix: "declined-attribute", serverSegmentCount: 4, pendingSegmentCount: 1)
+    var fixture = try await FastDrainFixture.make(suffix: "declined-attribute", serverSegmentCount: 4, pendingSegmentCount: 0)
+    let title = InstantStoreTransaction(
+      id: "fast-drain-local-title",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: FastDrainSchema.recordingID,
+            attributeID: "recordings/title",
+            value: .string("local title"),
+            txID: "fast-drain-local-title",
+            txTime: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds)
+          )
+        ),
+      ]
+    )
+    _ = try await fixture.runtime.transact(title, createdAt: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds))
+    _ = try await fixture.writeSegments(1)
+    let window = try await fixture.claimWindow(maximumMutationCount: 1)
+    let head = try #require(window.mutations.first)
+    _ = try await fixture.acceptAndRefresh(head, claimToken: window.token)
     let transactionID = fixture.server.acceptForeignWrite(
       entityID: FastDrainSchema.recordingID, attributeID: "recordings/title", value: .string("another device's title")
     )
@@ -2073,6 +2143,153 @@ extension InstantFastDrainTests {
     _ = try await fixture.refresh(queries: queries, processedTransactionID: transactionID)
     let declined = lines.snapshot().first { $0["path"] == "full rebase: changesShadowedFact" }
     expectNoDifference(declined?["declinedAttributeID"], "recordings/title", "lines: \(lines.snapshot())")
+  }
+}
+
+extension InstantFastDrainTests {
+  /// #1378: one device's queue grew from 29 to 524 pending writes in eight minutes after a relaunch mid-recording.
+  /// Its recording list's preview selects an optional field no write sets, and the server answers each preview
+  /// segment with it as `null`. Each new line becomes a preview segment while the outbox still holds a write that
+  /// shadows it (the next summary's receipt restores the preview link to it), so the reduction found no writer of the
+  /// field and a store that did not show the server's value, declined (`changesShadowedFact`), and the frame peeled and
+  /// replayed the whole queue. Every new line did it again. The drain must rebase nothing and leave what the
+  /// whole-component rebase leaves.
+  @Test
+  func thePreviewsUnsetFieldDoesNotForceARebase() async throws {
+    var reduced = try await FastDrainFixture.make(
+      suffix: "unset-field-reduced", serverSegmentCount: 6, pendingSegmentCount: 4, previewUnsetField: true
+    )
+    var full = try await FastDrainFixture.make(
+      suffix: "unset-field-full", serverSegmentCount: 6, pendingSegmentCount: 4, reducesServerApply: false,
+      previewUnsetField: true
+    )
+    let (drain, declines) = try await FastDrainDeclineCounter.counting {
+      try await reduced.drain()
+    }
+    _ = try await full.drain()
+    expectNoDifference(drain.rebases, 0, "declines: \(declines)")
+    let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+    let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+    // The server's null is on every segment that was the preview, as the full rebase leaves it.
+    let restated = reducedObservation.persistedFacts
+      .filter { $0.attributeID == FastDrainSchema.previewUnsetFieldAttributeID }
+      .map(\.entityID)
+    expectNoDifference(restated, (5...9).map(FastDrainSchema.segmentID))
+  }
+
+  enum PreviewFieldRemoval: String, CaseIterable, Sendable {
+    case retractsTheField
+    case deletesAndWritesTheSegmentAgain
+  }
+
+  /// #1378: the full rebase replays every pending write over the server's facts, so a pending write that retracts the
+  /// preview's unset field, or deletes the segment before another writes it again, removes the server's null there.
+  /// Keeping that fact without the rebase would leave a value the full rebase does not; the reduced apply must leave
+  /// what the full rebase leaves.
+  @Test(arguments: PreviewFieldRemoval.allCases)
+  func aPendingRemovalOfThePreviewsUnsetFieldLeavesWhatTheFullRebaseLeaves(removal: PreviewFieldRemoval) async throws {
+    let segment = FastDrainSchema.segmentID(6)
+    var fixtures: [FastDrainFixture] = []
+    for reduces in [true, false] {
+      var fixture = try await FastDrainFixture.make(
+        suffix: "unset-removal-\(removal.rawValue)-\(reduces)", serverSegmentCount: 6, pendingSegmentCount: 2,
+        reducesServerApply: reduces, previewUnsetField: true
+      )
+      let time = InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds + 1_000)
+      func write(_ id: String, _ operations: [InstantTripleOperation]) -> InstantStoreTransaction {
+        InstantStoreTransaction(id: id, operations: operations)
+      }
+      func insert(_ id: String, _ attribute: String, _ value: InstantValue) -> InstantTripleOperation {
+        .insert(InstantTriple(entityID: segment, attributeID: "transcriptionSegments/\(attribute)", value: value, txID: id, txTime: time))
+      }
+      let removals: [InstantStoreTransaction]
+      switch removal {
+      case .retractsTheField:
+        removals = [
+          write(
+            "fast-drain-unset-retract",
+            [
+              .retract(
+                InstantTriple(
+                  entityID: segment, attributeID: FastDrainSchema.previewUnsetFieldAttributeID, value: .null,
+                  txID: "fast-drain-unset-retract", txTime: time
+                )
+              ),
+            ]
+          ),
+        ]
+      case .deletesAndWritesTheSegmentAgain:
+        removals = [
+          write("fast-drain-unset-delete", [.deleteEntity(segment)]),
+          write(
+            "fast-drain-unset-rewrite",
+            [
+              insert("fast-drain-unset-rewrite", "id", .string(segment)),
+              insert("fast-drain-unset-rewrite", "recordingID", .string(FastDrainSchema.recordingID)),
+              insert("fast-drain-unset-rewrite", "segmentIndex", .number(6)),
+              insert("fast-drain-unset-rewrite", "text", .string("written again")),
+            ]
+          ),
+        ]
+      }
+      for transaction in removals {
+        _ = try await fixture.runtime.transact(transaction, createdAt: time)
+      }
+      fixtures.append(fixture)
+    }
+    // Segment 6's six writes reach the server one frame each; its summary makes it the preview while the removal is
+    // pending.
+    for index in fixtures.indices {
+      let window = try await fixtures[index].claimWindow(maximumMutationCount: 6)
+      expectNoDifference(window.mutations.count, 6)
+      for mutation in window.mutations {
+        _ = try await fixtures[index].acceptAndRefresh(mutation, claimToken: window.token)
+      }
+    }
+    let reducedObservation = try await FastDrainObservation.observe(fixtures[0].runtime)
+    let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+  }
+
+  /// #1378, measured: what the frames of a new preview segment cost against the queue's length. One segment's six
+  /// writes are accepted one frame each; its summary's frame restates the segment as the preview with the unset
+  /// field, while the next segment's summary still shadows it. On the device each such frame peeled and replayed the
+  /// whole queue.
+  @Test(.measurement, arguments: [100, 1_000, 2_000])
+  func measureANewPreviewSegmentsFramesAgainstTheQueue(writes: Int) async throws {
+    let setupStarted = ContinuousClock.now
+    var fixture = try await FastDrainFixture.make(
+      suffix: "unset-frame-\(writes)", serverSegmentCount: 20, pendingSegmentCount: (writes + 5) / 6,
+      previewUnsetField: true
+    )
+    let setup = ContinuousClock.now - setupStarted
+    let pending = try await fixture.pendingCount()
+    var lines: [String] = []
+    var frames: [FastDrainFrameMeasurement] = []
+    for round in 1...3 {
+      let window = try await fixture.claimWindow(maximumMutationCount: 6)
+      for mutation in window.mutations {
+        let (frame, declines) = try await FastDrainDeclineCounter.counting {
+          try await fixture.acceptAndRefresh(mutation, claimToken: window.token)
+        }
+        frames.append(frame)
+        lines.append("round \(round) \(mutation.id): \(frame.duration), bodies \(frame.plannedBodyCount), declines \(declines)")
+      }
+    }
+    print(
+      """
+      #1378 a new preview segment's frames against \(pending) pending writes (setup \(setup)):
+        \(lines.joined(separator: "\n  "))
+      """
+    )
+    for frame in frames {
+      expectNoDifference(frame.plannedBodyCount, 0, "\(pending) pending: \(lines.joined(separator: "; "))")
+    }
   }
 }
 
