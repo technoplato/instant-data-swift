@@ -1,3 +1,9 @@
+## 2026-10-29 20:14:30 EDT — scribe `5c139e59f5e0a9be679029685eb31b16044e05e8`
+Green (#1336): the Mac writes its idle stretch and the app in front once per change; a recording lapsing as live and coming back no longer repeats them.
+
+## 2026-10-29 20:14:30 EDT — scribe `8d0f1efe2bb0eabeeeb4dbdf3021dde486932df2`
+Red (#1336): restarted Mac context sources repeat the idle stretch and app in front on the same recording.
+
 ## 2026-10-29 20:12:46 EDT — scribe `37d4139c8e257c8b3d71f17e4542abda508b334a`
 #1366, #1368: cut build 167.
 
