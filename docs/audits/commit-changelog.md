@@ -1,3 +1,15 @@
+## 2026-10-29 22:41:44 EDT — scribe `b90ac545d42a4989ae4969286b7084da20c746bf`
+#1377: merge: a recording armed while the app is not in front waits for the app in front, says so at once, and resumes there.
+
+## 2026-10-29 22:41:44 EDT — scribe `b4488355b54edb691609db209287dd0bbf1b6608`
+#1377: the audit, ADR 0011's amendment, What's New and progress for that change.
+
+## 2026-10-29 22:41:44 EDT — scribe `128317446f749dcb18c6739ad130c7873d874d7a`
+#1377: green: the recording asks whether the app is in front when its audio-session listener arms; a refused start behind another app waits for the app and alerts at once.
+
+## 2026-10-29 22:41:44 EDT — scribe `d1ee8f35bd862dd8ed47c7a8ec79fb3e2f5e6369`
+#1377: red: tests for a recording armed behind another app, the failure read again, '!int' with and without an interruption, and the alert at once.
+
 ## 2026-10-29 21:48:10 EDT — v1.9.52 (sync-jam-1378, #1383): a slow server frame that keeps working keeps its acknowledgement claims
 
 - **Release:** `docs/releases/v1.9.52.md`, cut at `00b245bc` (plan `8c6de2be`, red `17149a7e`, guard `cda06974`,
