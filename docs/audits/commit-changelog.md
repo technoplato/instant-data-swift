@@ -1,3 +1,21 @@
+## 2026-10-30 13:58:10 EDT — scribe `567f800f896abba0e501bdb5a7701e59b1d2d40d`
+Tooling (#1412): the old heavy.sh name forwards to build.sh and says so.
+
+## 2026-10-30 13:58:10 EDT — scribe `1016cb8617c14e7e9d7b445a3039979d1a676627`
+Docs (#1412): the agents skill describes build jobs; a historical guide line restored.
+
+## 2026-10-30 13:58:10 EDT — scribe `f82a0f1db356e80fff47b56bffd6cfb15494f678`
+Tooling (#1412): stable build info for mini test jobs (reverted: ineffective).
+
+## 2026-10-30 13:58:10 EDT — scribe `59b1ec67df844808ca039df42f852361991d4ba7`
+Docs (#1412): ADR 0104 measurements.
+
+## 2026-10-30 13:58:10 EDT — scribe `e1f28a2f92bc8fff526467a91736736672108854`
+Perf (#1412): the build machine's bare repo keeps each slot's last commit as a ref, so pushes send only new objects (12 s to 0.4 s).
+
+## 2026-10-30 13:58:10 EDT — scribe `f5b9801411c805b2d44b6e328230031818c505fa`
+Revert (#1412): the stable build info variable never reaches the package plugin.
+
 ## 2026-10-30 13:07:11 EDT — scribe `8b1713a02887ed22c56d9fff47678d1ba5532b06`
 Fix (#1395): a speech utterance's partial waits for voice since the last partial.
 
