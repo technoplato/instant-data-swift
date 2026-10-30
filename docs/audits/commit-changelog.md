@@ -1,3 +1,18 @@
+## 2026-10-30 00:24:53 EDT — scribe `5799c5f2370eef885f4e71ac816b3a741eac0684`
+Cut (#1367): Scribe 0.1 (176), whose story is one speaker per phrase.
+
+## 2026-10-30 00:24:53 EDT — scribe `ee033ef990828c2784844f42a8a16a89aab71fbc`
+Test (#1367): the phrase tests compare with expectNoDifference.
+
+## 2026-10-30 00:24:53 EDT — scribe `ba3736d5acd945d28e05b9554ab7cfe9947164fc`
+Docs (#1367): audit of speaker over-splitting and ADR 0096 amendment E: the speaker changes only at a pause.
+
+## 2026-10-30 00:24:53 EDT — scribe `dd695678ee7bb975751c272ae8ae4c9c41abb637`
+Green (#1367): one speaker per phrase; a final's words are grouped at 0.25 s pauses and each phrase takes the slot most active over all its frames.
+
+## 2026-10-30 00:24:53 EDT — scribe `6c579b1a0bb22e8e6dd86cfcfcb916c9aa0cf6bb`
+Red (#1367): a sentence without a pause keeps one speaker; an opt-in replay suite counts speaker switches without a pause.
+
 ## 2026-10-30 00:19:39 EDT — scribe `785d7952840c0d60a47b44fcaf20ed8dbce3f7f1`
 Green (#1343): the slow-turn sampler keeps 256 frames a sample, counts cut-short samples, and names the samples off its heaviest path.
 
