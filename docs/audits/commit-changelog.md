@@ -1,3 +1,12 @@
+## 2026-10-30 03:26:52 EDT — scribe `224726a91fc5b075e9b043e89083014cdff28f2e`
+Cut (#1236): build 178.
+
+## 2026-10-30 03:26:52 EDT — scribe `5d4fa1919e60316e17ee22c47adf037a248a92be`
+Green (#1236): the keeper waits for the signed-in connection, uses the device's rows when the server is slow, and looks again a minute later.
+
+## 2026-10-30 03:26:52 EDT — scribe `5f60a275f8c9f78ed9a81641a383772d79c6d80b`
+Red (#1236): a launch that finds audio not in storage looks once more a minute later.
+
 ## 2026-10-30 02:26:04 EDT — scribe `e8b3d331fc06858acde001e60313446d89102d43`
 Fix (#1343): the slow-turn stack reader stops the thread for its walk and reads through async frames, so a running main thread's stack reaches its root.
 
