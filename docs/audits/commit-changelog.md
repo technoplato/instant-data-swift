@@ -1,3 +1,14 @@
+## 2026-10-29 21:19:26 EDT — v1.9.51 (sync-jam-1378, #1378): a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
+
+- **Release:** `docs/releases/v1.9.51.md`, cut at `c133c598` (plan `676f56a5`, red `19c0b3ca`, green `c133c598`),
+  carrying 1.9.50. No migration, no public API change.
+- **Why:** every frame restating a new list-preview entity declined the reduction on an unset field restated as null,
+  so one device's queue grew 29 -> 4,000+ in an hour (F65's spiral, second trigger).
+- **Checks:** see the release document. **Known:** #1383. **Next:** the Scribe pin and build 170.
+
+## 2026-10-29 21:19:26 EDT — scribe `71a6175044962f7448728d67037be419fa3fe583`
+#1378: What's New opens Build 170 (next) for the instant-data-swift 1.9.51 pin.
+
 ## 2026-10-29 20:44:45 EDT — scribe `8457c5ed441b7a77bd61517bdd026402ecc224bc`
 Cut (#1371): build 169: turning the phone keeps the live transcript.
 

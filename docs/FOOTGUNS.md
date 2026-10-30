@@ -101,7 +101,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F62](#f62) | Keep per-write counters out of a shared key-value page | #1245, #1254 | none yet |
 | [F63](#f63) | Write only the fields that changed, and keep partial writes collapsible | #1245, #1253, #1255 | none yet |
 | [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
-| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #296, #932 | always |
+| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #296, #932 | always |
 
 ## Read path
 
@@ -1175,17 +1175,30 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   frame 4-9 ms at 105-2,002 pending, none replayed; the 2,002-write drain 24.7 s applying (60 accepted writes took
   410 s before); a recording minute at 70 writes on 2,002 pending: 2,002 -> 7 (the whole-component rebase: 2,002 ->
   2,063); the device's store drains 1,241 -> 0 in 9.9 s, 78 frames, none rebased.
+- Second trigger (#1378, 2026-10-29, 1.9.50): the same device's queue grew from 29 to 524 pending writes in eight
+  minutes after a relaunch mid-recording, and past 3,000 within the hour, with every gate-held line `full rebase:
+  changesShadowedFact` on `transcriptionSegments/retiredAtMs` (139-2,827 writes replayed per frame, 0.3-3.1 s). The
+  app's list preview selects an optional field no write sets, and the server restates it as `null` on each segment the
+  list newly shows. While a pending write shadows that segment (the summary that moves the preview slot on restores the
+  link to it), the no-writer branch found nothing in the store and declined. "The rebase runs once: the next frame
+  holds" was true per entity, but a live recording names a new entity on every line, so every line's frame declined.
+  Before the relaunch the queue held 0-16 and each such rebase was small; the relaunch's backlog tipped it.
 - Rule: a server frame's work is in proportion to what it changes, never to the queue. Look an outbox key up under
   every name a write can give the slot (`AttributeStore.forwardWriteNames(of:)`), or key it by the slot the store and
-  the server use. A decline into the whole-component rebase must not repeat on the next frame for the same reason:
-  when it does, it is a bug in the reduction. The gate-held line names the reason (#932) and, from 1.9.48, the
+  the server use. A decline into the whole-component rebase must not repeat on the next frame for the same reason, and
+  not on the next entity either: when it does, it is a bug in the reduction. A slot the store leaves empty that no
+  surviving write sets or removes takes the server's fact without the rebase (1.9.51): the full rebase would leave the
+  same fact there. The gate-held line names the reason (#932) and, from 1.9.48, the
   attribute that decided it (`declinedAttributeID`), so a device's own logs say which slot keeps declining.
-- Issues: #1270, #296, #932.
+- Issues: #1270, #1378, #296, #932.
 - Guard: `InstantFastDrainTests/aLinkWrittenUnderItsNameDoesNotForceARebase`,
   `theReducedApplyObservesWhatTheFullRebaseObservesWithAttachments` and `aDeclinedFrameNamesItsAttributeInTheGateHeldLine`
   (always); `measureOneFrameAgainstTheQueue`,
   `measureTheDrainOfTheQueue` and `aMinuteOfRecordingShrinksAQueueOf2000` (measurement pass); the phone-replay gate,
   whose model server now resolves a link's written name to its id (it kept the name, so no replay could show this).
+  #1378: `thePreviewsUnsetFieldDoesNotForceARebase`, `aPendingRemovalOfThePreviewsUnsetFieldLeavesWhatTheFullRebaseLeaves`
+  and `theReducedApplyObservesWhatTheFullRebaseObservesWithThePreviewsUnsetField` (always);
+  `measureANewPreviewSegmentsFramesAgainstTheQueue` (measurement pass).
 - Upstream: `Reactor.js` `dataForQuery` reapplies every pending mutation to each query's server result on each change
   (`_applyOptimisticUpdates`), in memory; this library keeps one materialized store and replays durable receipts under
   its operation gate, so the same queue-sized work costs disk and the gate. The reduction exists to keep it off the

@@ -10,6 +10,31 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 29th, 2026 at 9:19:09 p.m. EDT — `c133c59882fa` fix(#1378): green: a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
+
+- **Implementation commit:** `c133c59882fad11b1bc8c54f1e002e74222d92d3`
+- **Change:** fix(#1378): green: a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
+- **Details:**
+  - See docs/releases/v1.9.51.md and Scribe audits/2026-10-29-sync-jam-1378.md
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1378 reducedServerApplyOperations keeps a commuting fact; emptyServerApplySlots; the plan's footprint leaves it out
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1378 loadServerApplyReductionContext proves unwrittenEmptySlots from the entity's surviving writes (at most 64)
+- **User context (verbatim):**
+  > docs/FEATURES.md items 2 and 7 (live words; sync, offline first)
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sync-jam-1378@halfjew22); no SpecStory capture
+
+## October 29th, 2026 at 9:19:08 p.m. EDT — `19c0b3ca3890` test(#1378): red: a new preview segment's unset field restated as null does not peel and replay the queue
+
+- **Implementation commit:** `19c0b3ca38907a5ab9cb15f1bb844368eab31ceb`
+- **Change:** test(#1378): red: a new preview segment's unset field restated as null does not peel and replay the queue
+- **Details:**
+  - See docs/releases/v1.9.51.md and Scribe audits/2026-10-29-sync-jam-1378.md
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — #1378 the preview's unset field in the fixture; drain, removal-guard, differential and measurement tests
+- **User context (verbatim):**
+  > docs/FEATURES.md items 2 and 7 (live words; sync, offline first)
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sync-jam-1378@halfjew22); no SpecStory capture
+
 ## October 28th, 2026 at 10:38:36 p.m. EDT — `1a7a18990e4c` fix(#1319): green: a batch whose activity expires while it takes its gates gives the server-apply and operation gates back
 
 - **Implementation commit:** `1a7a18990e4c59308e9203476ae5d392327aae24`

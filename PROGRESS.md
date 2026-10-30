@@ -1,3 +1,17 @@
+## 2026-10-29 21:19:26 EDT — v1.9.51 (sync-jam-1378, #1378): a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
+
+- **Release:** `docs/releases/v1.9.51.md`, cut at `c133c598` (red `19c0b3ca`, green `c133c598`), carrying 1.9.50. No
+  migration, no public API change.
+- **Why:** one device's queue grew 29 -> 4,000+ in an hour after a relaunch mid-recording: the consuming app's list
+  selects an optional field no write sets, the server restates it as null on each newly previewed entity, and while a
+  pending write shadowed that entity every such frame declined (`changesShadowedFact`) and replayed the whole queue.
+- **Checks:** red failed only the new drain test; green: the new tests, 104 tests in 14 neighbouring suites; the frame
+  that restates a new preview segment 0.16 / 1.71 / 3.94 s (98 / 998 / 2,000 replayed) -> 4.7 / 11.6 / 12.1 ms (none) at
+  102 / 1,002 / 2,004 pending (Mac mini, debug). The whole core bundle runs after the tag; its result follows here.
+- **Known:** #1383, the second loop: frames past the 120 s acknowledgement deferral expire claims, replace the session
+  and leave a non-prefix watermark, so every later frame takes the full rebase.
+- **Next:** the consuming app pins 1.9.51 and checks the drain on the device after its next relaunch mid-recording.
+
 ## 2026-10-28 22:38:18 EDT — v1.9.50 (gate-1319, #1319): a prune batch reads only what it can drop, never runs across a suspension; the gates count running time
 
 - **Release:** `docs/releases/v1.9.50.md`, cut at `1a7a1899` (red `39de8c92`, green `0edc7f14`, red `05a0edc9`, green
