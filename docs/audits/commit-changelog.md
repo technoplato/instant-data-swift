@@ -1,3 +1,15 @@
+## 2026-10-29 20:43:09 EDT — scribe `2f8c9a2447b7651d69fa999691a574e6aacf54e3`
+Ledger (#1372): the change-log entry for mapping the recognizer's unknown token to text.
+
+## 2026-10-29 20:43:09 EDT — scribe `2aade7eb1a7c7e3e22f3ca85d3c7d18902a01a5a`
+Green (#1372): the transcription server maps the recognizer's unknown token to text before any line is written (an ampersand between capitals or between two names; otherwise dropped).
+
+## 2026-10-29 20:43:09 EDT — scribe `2c3491d213a67028723ae4d4e373a0fbcaecc993`
+Red (#1372): recognizer output with unknown tokens, as fixtures, reaches lines unchanged.
+
+## 2026-10-29 20:43:09 EDT — scribe `952da6727f347ecc2f8a0ad28d5b525c667001db`
+Plan (#1372): the plan and claims for mapping the unknown token.
+
 ## 2026-10-29 20:19:09 EDT — scribe `039cf33d6370c6014eba5584ccbe7f679821c401`
 References (#1373): a screenshot row on a phone upright and on its side, upright and sideways, every size.
 
