@@ -1,3 +1,9 @@
+## 2026-10-30 17:01:17 EDT — scribe `e77e17445f99cf8eb0e16ee890ca36eaa6b78d3c`
+Fix (#1395): restores the audits index a plumbing commit emptied.
+
+## 2026-10-30 17:01:17 EDT — scribe `59410da727fe9df55b20ce8c04819fa72b8e5aee`
+Docs (#1395): an after-the-fact performance and energy audit of one long recording.
+
 ## 2026-10-30 16:22:57 EDT — scribe `443b848d28329c75095cad40d23a12c79d467584`
 Fix (#1404): the Vision Pro icon has a real top layer, and an install no longer launches on the headset.
 
