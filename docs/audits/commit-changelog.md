@@ -1,3 +1,21 @@
+## 2026-10-29 20:12:46 EDT — scribe `37d4139c8e257c8b3d71f17e4542abda508b334a`
+#1366, #1368: cut build 167.
+
+## 2026-10-29 20:12:46 EDT — scribe `9ab4ff16cea7e2d988f3a297ae83557024c738d6`
+#1366: change-log entries.
+
+## 2026-10-29 20:12:46 EDT — scribe `2888a2b65cda8563f50d177647abb6d5bab2bb93`
+#1366: What's New and progress entries.
+
+## 2026-10-29 20:12:46 EDT — scribe `811c515fb75d648f33b8178ef413e81c45677f9e`
+#1366: audit, ADR note and the script that turned the stored upside-down frames upright.
+
+## 2026-10-29 20:12:46 EDT — scribe `d7f3bb84b3576e40a4384f70250d43440e666083`
+#1366: green: ReplayKit's sideways screen-frame orientations turn the opposite way from EXIF's.
+
+## 2026-10-29 20:12:46 EDT — scribe `571841a06428b1128f2d29f4baa201474247b9bc`
+#1366: red: orientation cases expect ReplayKit's turns.
+
 ## 2026-10-29 20:07:16 EDT — scribe `42b042d5319062aa20bde305e02be37324678b2e`
 #1331: change-log and progress entries for long-pressing the live screen's frames.
 
