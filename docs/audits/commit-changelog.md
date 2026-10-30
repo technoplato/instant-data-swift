@@ -1,3 +1,9 @@
+## 2026-10-29 23:43:45 EDT — scribe `38c6225bc4fc1af6d38b50ccc73ec5a3e8ea4390`
+#1377: the audit gains the like-for-like test diffs and the build 172 install; the claims are released.
+
+## 2026-10-29 23:43:45 EDT — scribe `db15f7c866703c91baee4c9d1bc718965b8c37da`
+Cut (#1377): build 172: a recording that cannot start its microphone behind another app says so at once and resumes in front.
+
 ## 2026-10-29 23:31:26 EDT — scribe `93eddaf55b2acad2596f1a226d2e34d99887b641`
 #424/#921: What's New for build 173: pasted links and book pages as cards.
 
