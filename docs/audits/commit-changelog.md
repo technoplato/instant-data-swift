@@ -1,3 +1,6 @@
+## 2026-10-30 04:52:13 EDT — scribe `5929f47f1eb23fc934f5e55767ac27842a7454b1`
+Fix (#1343): the app holds the window's appearance through the system's app-switcher snapshots, cutting main-thread work at a move to the background.
+
 ## 2026-10-30 04:05:50 EDT — scribe `623cfdaf16e7dcb9263ee7700554b5f574ed0980`
 Green (#1376): the live transcript draws one row per line and pins the speaker's name itself, because SwiftUI's lazy stack walks every Section on each placement.
 
