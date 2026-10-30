@@ -1,3 +1,27 @@
+## 2026-10-30 18:46:38 EDT — scribe `c33e377ec94554ee5fe0438febaf3bb3255dbb66`
+Cut (#1258): Scribe 0.1 (192): launch never waits on the system's upload daemon.
+
+## 2026-10-30 18:46:38 EDT — scribe `1eceff6ee6676120f4433a06f7896ae426676486`
+land(#1258): the background upload session made off the launch path, and the ledger's task count.
+
+## 2026-10-30 18:46:38 EDT — scribe `a463b14842dd04cb6ff769ad6aa8855849d1d3e4`
+Docs (#1258, #1428): the diagnostics inventory's row for the background session's task count.
+
+## 2026-10-30 18:46:38 EDT — scribe `75d911f1a816eddfc0d67940562c82d3dd66693c`
+Docs (#1258, #1428): an amendment on making the background upload session off the launch path.
+
+## 2026-10-30 18:46:38 EDT — scribe `c946d86db3c4da13e7b1cb2082eb4fcb372f0a84`
+Feature (#1258, #1428): each energy-ledger minute counts the background upload session's tasks.
+
+## 2026-10-30 18:46:38 EDT — scribe `7411cf9eee70e68c1f304bea5cc5a731daf3c948`
+Test (#1258, #1428): red tests for the background session's task count.
+
+## 2026-10-30 18:46:38 EDT — scribe `569fbc8429206b8fd878d8ebac5198c34689272a`
+Fix (#1258): the background upload session is made on its own queue; launch never waits for it.
+
+## 2026-10-30 18:46:38 EDT — scribe `8c7c919b4520ca5818578ea4d9b3a99e03abfcb9`
+Test (#1258): red tests: launch returns while the system still makes the background upload session.
+
 ## 2026-10-30 18:43:15 EDT — scribe `d223db45153c9a00128d17c2019f821a0a9a84fb`
 Cut (#1404): Scribe 0.1 (191).
 
