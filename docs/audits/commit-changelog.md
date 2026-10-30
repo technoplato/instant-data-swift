@@ -1,3 +1,6 @@
+## 2026-10-30 09:52:15 EDT — scribe `435e33af28acb3bab032c0c336ab13c54f31e587`
+Fix (#290): a recording shows the newest heart rate at once, and readings keep coming behind another app.
+
 ## 2026-10-30 09:20:39 EDT — scribe `fe90eb83728647764c1428428f0be7139548e99b`
 Guide (#1393, #1394): one agent for all UI work as a trial, and every claim of a decision cites the decision log.
 
