@@ -1,3 +1,6 @@
+## 2026-10-30 11:08:09 EDT — instant-data-swift `1c5fc76d9aa1329f90612ee158aa7c36d7950bfb`
+Fix (#396): the package declares visionOS 2, so it cross-compiles for Vision Pro.
+
 ## 2026-10-30 09:52:15 EDT — scribe `435e33af28acb3bab032c0c336ab13c54f31e587`
 Fix (#290): a recording shows the newest heart rate at once, and readings keep coming behind another app.
 

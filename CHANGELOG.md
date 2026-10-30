@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 30th, 2026 at 11:07:59 a.m. EDT — `1c5fc76d9aa1` fix(#396): the package declares visionOS 2
+
+- **Implementation commit:** `1c5fc76d9aa1329f90612ee158aa7c36d7950bfb`
+- **Change:** fix(#396): the package declares visionOS 2
+- **Details:**
+  - See docs/releases/v1.9.53.md
+- **Files:**
+  - `Package.swift` — #396 the package's minimum visionOS reaches what the stored-value reader needs
+- **User context (verbatim):**
+  > docs/FEATURES.md item 9 (settings and diagnostics)
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, vision-opus@halfjew22); no SpecStory capture
+
 ## October 29th, 2026 at 9:47:55 p.m. EDT — `00b245bcf9f9` fix(#1383): green: a slow server frame that keeps working keeps its acknowledgement claims; only one that stops is stuck
 
 - **Implementation commit:** `00b245bcf9f9a1ec23e8c8bff166218031983a0a`

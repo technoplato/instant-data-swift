@@ -1,3 +1,11 @@
+## 2026-10-30 11:07:58 EDT — v1.9.53 (vision-opus, #396): the package declares visionOS 2
+
+- **Release:** `docs/releases/v1.9.53.md`, cut at `1c5fc76d`, carrying 1.9.52. No migration, no public API change.
+- **Why:** with no visionOS line the package built for visionOS 1, and the stored-value reader's availability check
+  stopped the build.
+- **Checks:** four targets cross-compile for the visionOS simulator, AuthV3App included; the first failed before.
+- **Next:** the consuming app pins 1.9.53 and links AuthV3App on visionOS.
+
 ## 2026-10-29 21:48:10 EDT — v1.9.52 (sync-jam-1378, #1383): a slow server frame that keeps working keeps its acknowledgement claims
 
 - **Release:** `docs/releases/v1.9.52.md`, cut at `00b245bc` (red `17149a7e`, guard `cda06974`, green `00b245bc`),
