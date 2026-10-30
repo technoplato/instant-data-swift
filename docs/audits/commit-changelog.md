@@ -1,3 +1,6 @@
+## 2026-10-30 03:39:29 EDT — scribe `6ccf7ebb546181805871393f7640110a4c97508f`
+Fix (#1386): a post's name never waits on ps, and a post over 5 s says which step took the time.
+
 ## 2026-10-30 03:26:52 EDT — scribe `224726a91fc5b075e9b043e89083014cdff28f2e`
 Cut (#1236): build 178.
 
