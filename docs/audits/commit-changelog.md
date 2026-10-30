@@ -1,3 +1,39 @@
+## 2026-10-30 13:03:32 EDT — scribe `4d7c50b2e287a43cfc7438870797c68001eb2776`
+Tooling (#1412): mini build jobs reach two warm slots by git over SSH (a dirty tree becomes a throwaway commit on no branch) and run in tmux; scratch removed after each job.
+
+## 2026-10-30 13:03:32 EDT — scribe `a5fe0f69c1dea575b37df375f64fc58ee5d79a11`
+Fix (#1412): build.sh's default mini root matches the worker's.
+
+## 2026-10-30 13:03:32 EDT — scribe `0961160e079ab7f4ead99c1a1047aae10a33055d`
+Schema (#1412): buildJobs, one row per build job, owner-only, a state machine in its update rules.
+
+## 2026-10-30 13:03:32 EDT — scribe `4182c19cd94d4d960a7a0763895e33d9ff949db4`
+Tooling (#1412): every build job a buildJobs row through an offline outbox; a worker per machine; mini jobs run with a fixed environment so warm builds stay incremental.
+
+## 2026-10-30 13:03:32 EDT — scribe `8be14eef91b324d0b60c2fd6cfa8d33821e9833e`
+Tooling (#1412): the mini takes jobs first; snapshot and macOS-26-behavior tests stay on the laptop; a job that cannot fit is refused before it starts.
+
+## 2026-10-30 13:03:32 EDT — scribe `3075aa38789a9ddabb71f95cfb0cdbfed0b74fd8`
+Tooling (#1412): the status page lists the build jobs in progress.
+
+## 2026-10-30 13:03:32 EDT — scribe `811e995684052f2d642b1899441b42148f2a7cbc`
+Docs (#1412): ADR 0104, the build machine and buildJobs.
+
+## 2026-10-30 13:03:32 EDT — scribe `d62db404c52b3585cb6f17a205aba62844e4cf96`
+Fix (#1412): buildJobs' terminal-state rule check carries its own parentheses (a bare || split the whole update rule).
+
+## 2026-10-30 13:03:32 EDT — scribe `601db2328d040efbff9752b52a7e6c3824ce10fe`
+Tooling (#1412): the build workers run under launchd on both machines.
+
+## 2026-10-30 13:03:32 EDT — scribe `a4b8755e2f33fc844c29ef32ca273673ef6f8bb0`
+Fix (#1412): the outbox flush counts only writes still waiting.
+
+## 2026-10-30 13:03:32 EDT — scribe `a2b32bd8e1a53d116e5d7e6fbe3c8e7ea6d91cdf`
+Tooling (#1412): the build machine's free-space floor is an operator's file.
+
+## 2026-10-30 13:03:32 EDT — scribe `c2a4d74cfbb58cb6f0113f96a02111b122d365f4`
+Fix (#1412): the laptop's build worker no longer creates the build machine's folders.
+
 ## 2026-10-30 11:32:49 EDT — scribe `ed5c24a3cb3357c7b8667775b9105aa92aaa1ed6`
 Tooling (#1412): heavy.sh renamed build.sh and versioned in the Scribe repo (scripts/build-jobs); HEAVY_* variables are BUILD_*; a transition forwarder keeps waiters queued before the rename on the old code.
 
