@@ -1,3 +1,18 @@
+## 2026-10-30 18:43:15 EDT — scribe `d223db45153c9a00128d17c2019f821a0a9a84fb`
+Cut (#1404): Scribe 0.1 (191).
+
+## 2026-10-30 18:43:15 EDT — scribe `93ebbda5b58d4876347f1ebc2c2c7e437a881481`
+Fix (#1404): a live recording's length and full screen clock run on its beats.
+
+## 2026-10-30 18:43:15 EDT — scribe `e695c0eab6f456e0437c8ed2a9817d04a461c28e`
+Fix (#1404): one highlight shape, taller lines, closer rows and an opaque drawer on Vision Pro.
+
+## 2026-10-30 18:43:15 EDT — scribe `b82d12c748e9fdfe71f4668717ff33b6c96f6c35`
+Fix (#1404): Vision Pro takes the move to a speech provider with speaker labels.
+
+## 2026-10-30 18:43:15 EDT — scribe `3889dcf3409255d737ef72c327c828ccf4fbe920`
+Fix (#1404): a recording's own window reads the live room and reaches the list.
+
 ## 2026-10-30 17:01:17 EDT — scribe `e77e17445f99cf8eb0e16ee890ca36eaa6b78d3c`
 Fix (#1395): restores the audits index a plumbing commit emptied.
 
