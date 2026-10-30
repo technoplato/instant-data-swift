@@ -3187,11 +3187,12 @@ public final class InstantRuntime: Sendable {
           declineReason: &reductionDecline,
           declinedAttributeID: &reductionDeclinedAttributeID
         ) {
-          authoritativeTransaction.operations = reduced.operations
+          authoritativeTransaction.operations = reduced.operations + reduced.commuting
           receiptPatches = reduced.receiptPatches
           failureSplice = reduced.failureSplice
           // A reduced apply changes only entities no surviving pending write touches, so a link it changes is no
-          // reason to peel the linked entity's writes.
+          // reason to peel the linked entity's writes. #1378: its commuting facts sit on entities surviving writes do
+          // touch, in slots none of them sets or removes, so peeling and replaying those writes could not change them.
           footprint = Self.serverApplyFootprint(operations: reduced.operations, includingReferenceTargets: false)
           excludesWatermarkRoots = true
           reductionPath = "reduced"
@@ -4098,6 +4099,7 @@ public final class InstantRuntime: Sendable {
   ) async throws -> (
     operations: [InstantTripleOperation],
     receiptPatches: [String: [InstantTriple]],
+    commuting: [InstantTripleOperation],
     failureSplice: InstantServerApplyFailureSplice
   )? {
     func declined(
@@ -4106,6 +4108,7 @@ public final class InstantRuntime: Sendable {
     ) -> (
       operations: [InstantTripleOperation],
       receiptPatches: [String: [InstantTriple]],
+      commuting: [InstantTripleOperation],
       failureSplice: InstantServerApplyFailureSplice
     )? {
       declineReason = reason
@@ -4143,11 +4146,20 @@ public final class InstantRuntime: Sendable {
         return declined(.unsupportedOperation)
       }
     }
-    guard !slots.isEmpty else { return (operations, [:], InstantServerApplyFailureSplice()) }
+    guard !slots.isEmpty else { return (operations, [:], [], InstantServerApplyFailureSplice()) }
     let reverseLinkSlots = Self.reverseLinkSlots(of: operations, attributes: seed.preparedStore.attributes)
     // #932: entities the store does not show, so the context can name a pending write that deletes one.
     let absentEntityIDs = Set(
       slots.keys.filter { seed.preparedStore.indexes.copiedAttributeSlots(entityID: $0)?.isEmpty ?? true }
+    )
+    // #1378: the frame's scalar facts in cardinality-one slots the store leaves empty, on entities it shows, so the
+    // context can prove that no surviving write removes one. Only where no delete can cascade into the entity's
+    // namespace: a write deleting another entity could then remove the slot on the full rebase's replay.
+    let emptySlots = Self.emptyServerApplySlots(
+      of: operations,
+      absentEntityIDs: absentEntityIDs,
+      attributes: seed.preparedStore.attributes,
+      indexes: seed.preparedStore.indexes
     )
     // #1270: a link the server issued an id for is written under its forward identity, and the outbox keeps that name;
     // this frame names the slot by the id. Its writers are looked up under both.
@@ -4163,6 +4175,7 @@ public final class InstantRuntime: Sendable {
       writeKeyNames: writeKeyNames,
       reverseLinkSlots: reverseLinkSlots,
       absentEntityIDs: absentEntityIDs,
+      emptySlots: emptySlots,
       processedTransactionID: processedTransactionID,
       expectedStoreRevision: state.storeRevision,
       expectedAttributeRevision: state.attributeRevision,
@@ -4241,8 +4254,8 @@ public final class InstantRuntime: Sendable {
       attributes: classified.attributes,
       indexes: classified.indexes
     ) {
-    case let .reduced(reduced, receiptPatches):
-      return (reduced, receiptPatches, failureSplice)
+    case let .reduced(reduced, receiptPatches, commuting):
+      return (reduced, receiptPatches, commuting, failureSplice)
     case let .declined(reason, fact):
       return declined(reason, fact: fact)
     }
@@ -4266,6 +4279,7 @@ public final class InstantRuntime: Sendable {
       return value
     }
     var kept: [InstantTripleOperation] = []
+    var commuting: [InstantTripleOperation] = []
     var receiptPatches: [String: [InstantTriple]] = [:]
     for operation in operations {
       switch operation {
@@ -4328,8 +4342,26 @@ public final class InstantRuntime: Sendable {
           // (`applyInsert` with `.preserveExactResident`). A resident fact a pruned local write left behind carries
           // this device's clock, later than the slot's `created_at` that every later server value of the slot keeps,
           // and last-write-wins kept it forever. The rebase runs once: the next frame's restatement holds.
-          guard factHolds else {
+          if factHolds { continue }
+          // #1378: a slot the store leaves empty holds no such fact. When no surviving write on the entity deletes it
+          // or retracts the slot, the full rebase leaves the server's fact as the slot's only value: the peel leaves
+          // the slot empty and the replay does not touch it. "The next frame holds" fails here: a live recording's
+          // list restates its newest segment's unset field as null on every new line, so every frame declined.
+          guard context.unwrittenEmptySlots.contains(slot), Self.visibleSlot(
+            indexes,
+            entityID: triple.entityID,
+            attributeID: triple.attributeID
+          ) == nil else {
             return .declined(.changesShadowedFact, fact: triple)
+          }
+          commuting.append(operation)
+          // A pending write that created the entity deletes it on rollback; with the server holding the entity, the
+          // full rebase's replay of that write restores only the slots it writes, as its patched receipt does.
+          if let firstOverlayID = context.firstOverlayByEntity[triple.entityID],
+            let firstOverlay = context.bodies[firstOverlayID],
+            Self.beforeImageState(of: slot, in: firstOverlay) == .entityCreated
+          {
+            receiptPatches[firstOverlayID, default: []].append(triple)
           }
           continue
         }
@@ -4394,7 +4426,48 @@ public final class InstantRuntime: Sendable {
         return .declined(.unsupportedOperation)
       }
     }
-    return .reduced(kept, receiptPatches: receiptPatches)
+    return .reduced(kept, receiptPatches: receiptPatches, commuting: commuting)
+  }
+
+  /// The frame's scalar facts in cardinality-one slots the store leaves empty, by entity, on entities the store shows
+  /// and in namespaces no delete can cascade into (#1378). ``reducedServerApplyOperations(_:context:attributes:indexes:)``
+  /// keeps such a fact without the full rebase once the context proves no surviving write removes it.
+  static func emptyServerApplySlots(
+    of operations: [InstantTripleOperation],
+    absentEntityIDs: Set<String>,
+    attributes: AttributeStore,
+    indexes: TripleIndexes
+  ) -> [String: Set<String>] {
+    var candidates: [InstantTriple] = []
+    for operation in operations {
+      guard case let .insert(triple) = operation, !absentEntityIDs.contains(triple.entityID) else { continue }
+      switch triple.value {
+      case .ref, .lookupRef:
+        continue
+      case .null, .string, .number, .bool, .date, .json:
+        break
+      }
+      guard attributes[triple.attributeID]?.cardinality == .one,
+        visibleSlot(indexes, entityID: triple.entityID, attributeID: triple.attributeID) == nil
+      else { continue }
+      candidates.append(triple)
+    }
+    guard !candidates.isEmpty else { return [:] }
+    // A delete cascades along a link into its target's namespace (`onDeleteReverse`) or its source's (`onDelete`).
+    var cascadeNamespaces: Set<String> = []
+    for attribute in attributes.attributes where attribute.valueType == .ref {
+      if attribute.onDeleteReverse == .cascade, let linkNamespace = attribute.linkNamespace {
+        cascadeNamespaces.insert(linkNamespace)
+      }
+      if attribute.onDelete == .cascade { cascadeNamespaces.insert(attribute.namespace) }
+    }
+    var slots: [String: Set<String>] = [:]
+    for triple in candidates {
+      guard let namespace = attributes[triple.attributeID]?.namespace, !cascadeNamespaces.contains(namespace)
+      else { continue }
+      slots[triple.entityID, default: []].insert(triple.attributeID)
+    }
+    return slots
   }
 
   enum DeletedEntityReceiptPatch: Equatable {

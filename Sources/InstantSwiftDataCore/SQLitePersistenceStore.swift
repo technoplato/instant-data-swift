@@ -781,7 +781,13 @@ enum InstantServerApplyReduction: Sendable {
   /// The operations that can change the base; every other one already holds beneath the pending writes. Where the
   /// server changed a slot beneath its pending writers, `receiptPatches` names each slot's first surviving writer and
   /// the server fact that becomes its before-image, which is the only receipt the full rebase would change there.
-  case reduced([InstantTripleOperation], receiptPatches: [String: [InstantTriple]] = [:])
+  /// `commuting` are facts on entities surviving writes touch, in slots none of them sets or can remove and the store
+  /// leaves empty (#1378): applied as they are, they leave what peeling and replaying those writes would.
+  case reduced(
+    [InstantTripleOperation],
+    receiptPatches: [String: [InstantTriple]] = [:],
+    commuting: [InstantTripleOperation] = []
+  )
   /// The first fact that needs the whole-component rebase, when one fact decided it.
   case declined(InstantServerApplyReductionIneligibility, fact: InstantTriple? = nil)
 }
@@ -841,6 +847,12 @@ struct InstantServerApplyReductionContext: Sendable {
   /// by its line's final; while a backlog drains, the server's results still show the row. A delete has no write keys,
   /// so the slot rules above cannot see it.
   var deletingWriterByEntity: [String: String] = [:]
+  /// Slots of shadowed entities the store leaves empty that no surviving write inserts, merges, or retracts, on an
+  /// entity none of them deletes, read from every surviving write on the entity (#1378). A server fact there lands as
+  /// the slot's only value on the full rebase too: the peel leaves the slot empty, and the replay does not touch it.
+  /// A recording list's preview selects a field no write sets, which the server restates as null on each new preview
+  /// segment; one device's queue grew from 29 to 524 while every such frame peeled and replayed it.
+  var unwrittenEmptySlots: Set<InstantVisibleWriteKey> = []
   /// The durable bodies of every write named above.
   var bodies: [String: PendingMutation] = [:]
 }
@@ -871,6 +883,9 @@ enum InstantServerApplyReductionLimits {
   static let maximumBodies = 256
   /// Refused writes one apply removes without the full rebase; past it, the full rebase removes them all at once.
   static let maximumFailedOverlays = 16
+  /// Surviving writes on one entity the loader reads to prove that none removes an empty slot (#1378); past it, the
+  /// full rebase decides that slot, as before. A live recording's newest segment has a few; its recording, hundreds.
+  static let maximumWritesProvingAnEmptySlot = 64
 }
 
 struct InstantServerApplyPlan: Sendable {
@@ -5560,11 +5575,15 @@ public actor SQLitePersistenceStore {
   /// - Parameter writeKeyNames: for an attribute id in `slots` that writes name otherwise, every name its write keys can
   ///   carry (`AttributeStore.forwardWriteNames(of:)`). The outbox keeps a write's keys under the names the write used,
   ///   and the frame names the slot by the attribute's id (#1270).
+  /// - Parameter emptySlots: Slots of the frame's facts that the store leaves empty, by entity (#1378). For each one on
+  ///   a shadowed entity that no surviving write inserts, the context says whether any surviving write on the entity
+  ///   deletes it or retracts the slot (``InstantServerApplyReductionContext/unwrittenEmptySlots``).
   func loadServerApplyReductionContext(
     slots: [String: Set<String>],
     writeKeyNames: [String: [String]] = [:],
     reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
     absentEntityIDs: Set<String> = [],
+    emptySlots: [String: Set<String>] = [:],
     processedTransactionID: String,
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64,
@@ -5916,6 +5935,36 @@ public actor SQLitePersistenceStore {
           bodyIDs.insert(last.mutationID)
         }
       }
+      // #1378: every surviving write on an entity with an empty slot no surviving write inserts, in delivery order, so
+      // their bodies can show that none deletes the entity or retracts the slot. Deletes and retracts leave no write
+      // keys. An entity with more writes than the bound is left to the full rebase, as before.
+      var unwrittenEmptySlotWritesByEntity: [String: [String]] = [:]
+      for entityID in context.shadowedEntityIDs.intersection(emptySlots.keys).sorted() {
+        guard let candidates = emptySlots[entityID], candidates.contains(where: { attributeID in
+          context.firstWriterBySlot[InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID)] == nil
+        }) else { continue }
+        let writes = try selectStrings(
+          """
+          SELECT effects.mutation_id
+          FROM instant_outbox_effect_entities AS effects
+            INDEXED BY instant_outbox_effect_entities_lookup_idx
+          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+          WHERE effects.entity_id = ? AND \(remaining)
+          ORDER BY effects.created_at_ms, effects.mutation_id
+          LIMIT ?
+          """,
+          [.text(entityID)] + prunable.bindings
+            + [.int(Int64(InstantServerApplyReductionLimits.maximumWritesProvingAnEmptySlot + 1))]
+        )
+        guard !writes.isEmpty, writes.count <= InstantServerApplyReductionLimits.maximumWritesProvingAnEmptySlot
+        else { continue }
+        unwrittenEmptySlotWritesByEntity[entityID] = writes
+        bodyIDs.formUnion(writes)
+        // The earliest of them: its receipt says whether a pending write created the entity.
+        if context.firstOverlayByEntity[entityID] == nil {
+          context.firstOverlayByEntity[entityID] = writes[0]
+        }
+      }
       guard bodyIDs.count <= InstantServerApplyReductionLimits.maximumBodies else {
         return .ineligible(.tooManyBodies)
       }
@@ -5933,6 +5982,38 @@ public actor SQLitePersistenceStore {
           InstantServerApplyDeletion.deletesLast(entityID, in: body.transaction.operations)
         else { continue }
         context.deletingWriterByEntity[entityID] = mutationID
+      }
+      for (entityID, writes) in unwrittenEmptySlotWritesByEntity {
+        var retracted: Set<String> = []
+        var deletesEntity = false
+        for mutationID in writes {
+          guard let body = context.bodies[mutationID] else {
+            deletesEntity = true
+            break
+          }
+          for operation in body.transaction.operations {
+            switch operation {
+            case let .deleteEntity(deletedID), let .deleteEntityInNamespace(deletedID, _):
+              if deletedID == entityID { deletesEntity = true }
+            case let .retract(triple) where triple.entityID == entityID:
+              retracted.insert(triple.attributeID)
+            case .deleteEntityByLookup, .retractByLookup:
+              // Which entity a lookup names is not known here (a lookup's write is global, so this frame is not
+              // reduced anyway).
+              deletesEntity = true
+            default:
+              continue
+            }
+          }
+          if deletesEntity { break }
+        }
+        guard !deletesEntity else { continue }
+        for attributeID in emptySlots[entityID] ?? [] {
+          let slot = InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID)
+          let names = writeKeyNames[attributeID] ?? [attributeID]
+          guard context.firstWriterBySlot[slot] == nil, !names.contains(where: retracted.contains) else { continue }
+          context.unwrittenEmptySlots.insert(slot)
+        }
       }
       // An entity a refused write created stays only if no surviving write after it touches the entity; the reduction
       // then deletes it, as the full rebase's replay would leave it out.
