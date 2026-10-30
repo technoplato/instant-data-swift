@@ -1,3 +1,9 @@
+## 2026-10-29 23:28:48 EDT — scribe `f69f746304afb3c08f3817d6889256c77c1b9ab8`
+#1378/#1383: the audit and progress for builds 171 and 172 on the iPhone: the 7,602-write backlog drains after the relaunches, no deferral expiry; the line lag after the drain is not measured yet.
+
+## 2026-10-29 23:27:35 EDT — instant-data-swift `2be4e25dc7c97942d038c7737130864dd2d7c420`
+#1383: v1.9.52's release note gets the whole-bundle result (1,599 tests, one unlisted decode timing ratio) and the device drain.
+
 ## 2026-10-29 22:41:44 EDT — scribe `b90ac545d42a4989ae4969286b7084da20c746bf`
 #1377: merge: a recording armed while the app is not in front waits for the app in front, says so at once, and resumes there.
 
