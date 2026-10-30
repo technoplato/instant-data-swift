@@ -1,3 +1,12 @@
+## 2026-10-30 00:08:52 EDT — scribe `577005270d7d6d33f34c38770e5f176078a07aad`
+Docs (#1339): What's New for the next build: hear a speaker before naming them.
+
+## 2026-10-30 00:08:52 EDT — scribe `927ec80c0ea1d6f899cf396fcb63a756b695c0db`
+Green (#1339): the naming sheet plays a few of the speaker's lines, each alone; Play on a suggestion; Play This Line in the line menu.
+
+## 2026-10-30 00:08:52 EDT — scribe `4ddecc5f06cf2f958eded43b4b7dbfe220356854`
+Red (#1339): tests for the naming sheet's voice lines and both Play paths.
+
 ## 2026-10-30 00:06:08 EDT — scribe `731abe4aceebc8474a62379e677f7bd2aa7ad0e6`
 Ledger (#1236): What's New and change-log entries for the compressed copy as the audio that travels.
 
