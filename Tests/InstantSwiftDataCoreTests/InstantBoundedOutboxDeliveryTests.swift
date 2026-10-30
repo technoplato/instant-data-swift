@@ -4174,6 +4174,135 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try? await runtime.closeConnection()
   }
 
+  /// #1383: after a relaunch with 4,344 pending writes, every `add-query-ok` frame peeled and replayed the whole queue,
+  /// and 30 of them passed the 120 s deferral: each expiry reclaimed the socket's claims and replaced the session,
+  /// which dropped the frame being applied, so the rebase never finished and the next session started it again. A frame
+  /// that keeps reporting server-apply progress is slow, not stuck: its claims and its connection outlast the limit.
+  @Test
+  func aSlowFrameThatKeepsWorkingKeepsItsClaimsPastTheDeferralLimit() async throws {
+    let outcome = try await holdAFramePastTheDeferralLimit(prefix: "ack-slow-frame", reportsProgress: true)
+    expectNoDifference(outcome.reconnectDelay, nil, "A frame that keeps working is not stuck; keep the socket.")
+    expectNoDifference(outcome.connectionRequests, 1)
+    expectNoDifference(outcome.sentHeads, [outcome.headID], "The head is sent once and acknowledged on its first connection.")
+    expectNoDifference(outcome.pendingAfterRelease, 0)
+  }
+
+  /// #1383: a frame that reports no progress is still treated as stuck once the limit passes, as before (#296).
+  @Test
+  func aFrameThatStopsWorkingIsStillTreatedAsStuckAfterTheDeferralLimit() async throws {
+    let outcome = try await holdAFramePastTheDeferralLimit(prefix: "ack-stuck-frame", reportsProgress: false)
+    #expect(outcome.reconnectDelay != nil, "A frame that stops working must not hold the claims forever.")
+  }
+
+  struct HeldFrameOutcome {
+    var headID: String
+    var reconnectDelay: UInt64?
+    var connectionRequests: Int
+    var sentHeads: [String]
+    var pendingAfterRelease: Int?
+  }
+
+  /// Holds one frame in the receive loop, the head's answer queued behind it, for thirty 6 s deadline passes (180 s,
+  /// past the default 120 s limit), reporting server-apply progress before each pass when `reportsProgress`.
+  private func holdAFramePastTheDeferralLimit(prefix: String, reportsProgress: Bool) async throws -> HeldFrameOutcome {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let head = boundedMutation(index: 0, prefix: prefix, entityID: "\(prefix)-entity")
+    try await seedBoundedOutbox([head], cacheURL: cacheURL)
+    let clock = BoundedOutboxLockedClock(milliseconds: 100_000)
+    let deadlineSleep = BoundedOutboxSteppedSleep()
+    let reconnectSleep = BoundedOutboxControlledSleep()
+    let receiverEventGate = BoundedOutboxReceiverEventGate(blockingEventOrdinal: 1)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "\(prefix)-applying")
+    ])
+    let replacementSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "\(prefix)-replacement")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, replacementSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-\(prefix)",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.liveMutationDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.onLiveReceiverEventAcquiredForTesting = {
+      await receiverEventGate.eventAcquired()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the head's send",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      try await firstSession.waitForSentMessageCount(2)
+    }
+    await firstSession.enqueue(
+      InstantLiveMessage(op: "long-frame-for-test", clientEventID: nil, fields: [:])
+    )
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: head.id,
+        fields: ["tx-id": .string("server-\(head.id)")]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "hold the earlier frame in the receive loop",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      await receiverEventGate.waitUntilBlocked()
+    }
+    for pass in 1...30 {
+      try await instantLiveWithTimeout(
+        operation: "wait for deadline pass \(pass), or a reconnect",
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
+      ) {
+        while await !deadlineSleep.hasPendingDelay(), await reconnectSleep.firstDelay() == nil {
+          await Task.yield()
+        }
+      }
+      if await reconnectSleep.firstDelay() != nil { break }
+      if reportsProgress { runtime.noteServerApplyProgressForTesting() }
+      clock.advance(by: 6_000)
+      await deadlineSleep.resumePendingDelays()
+    }
+    let reconnectDelay = await reconnectSleep.firstDelay()
+    let connectionRequests = await transport.connectionRequests().count
+    var pendingAfterRelease: Int?
+    await receiverEventGate.releaseBlockedEvent()
+    if reconnectDelay == nil {
+      try await instantLiveWithTimeout(
+        operation: "wait for the head's acknowledgement on the first connection",
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
+      ) {
+        while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+          await Task.yield()
+        }
+      }
+      pendingAfterRelease = try await runtime.persistence.countOutboxMutations(status: .pending)
+    }
+    let sentHeads = await firstSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    _ = try? await runtime.closeConnection()
+    return HeldFrameOutcome(
+      headID: head.id,
+      reconnectDelay: reconnectDelay,
+      connectionRequests: connectionRequests,
+      sentHeads: sentHeads,
+      pendingAfterRelease: pendingAfterRelease
+    )
+  }
+
   /// #296: in Recording 023 every refusal was a re-send of a write an earlier connection had offered without an
   /// answer, and the device log said only "Permission denied: not perms-pass?". A refusal now says whether it was
   /// such a replay, and names the refused namespace, entity, attributes, and values.
@@ -5870,6 +5999,43 @@ private actor BoundedOutboxControlledSleep {
 
   private func cancelDelayWaiter(id: UUID) {
     delayWaiters.removeValue(forKey: id)?.resume()
+  }
+}
+
+/// #1383: a deadline sleep that answers every call, not only the first: each delivery pass schedules the next wake.
+/// The test resumes whatever is pending once it has moved the clock past the deadline.
+private actor BoundedOutboxSteppedSleep {
+  private var pending: [Int: CheckedContinuation<Void, Error>] = [:]
+  private var nextID = 0
+
+  func sleep(milliseconds: UInt64) async throws {
+    let id = nextID
+    nextID += 1
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        if Task.isCancelled {
+          continuation.resume(throwing: CancellationError())
+        } else {
+          pending[id] = continuation
+        }
+      }
+    } onCancel: {
+      Task { await self.cancel(id) }
+    }
+  }
+
+  func hasPendingDelay() -> Bool {
+    !pending.isEmpty
+  }
+
+  func resumePendingDelays() {
+    let resumed = pending
+    pending.removeAll()
+    for (_, continuation) in resumed.sorted(by: { $0.key < $1.key }) { continuation.resume() }
+  }
+
+  private func cancel(_ id: Int) {
+    pending.removeValue(forKey: id)?.resume(throwing: CancellationError())
   }
 }
 

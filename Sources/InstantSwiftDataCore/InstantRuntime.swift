@@ -1699,6 +1699,9 @@ public final class InstantRuntime: Sendable {
   /// Names this runtime's process and launch, so that a later launch can tell that this one has ended (#990).
   private let automaticDeliveryClaimantID: String
   private let acknowledgementDeferral = InstantRuntimeAcknowledgementDeferral()
+  /// #1383: how much work server applies have done (attempts, staged body pages, commits), so the acknowledgement
+  /// deferral can tell a slow frame, which keeps adding to it, from a stuck one, which does not.
+  private let serverApplyProgress = OSAllocatedUnfairLock<UInt64>(initialState: 0)
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
   /// Writes the server answered with a transient error, and the delivery pause they started (#376).
   private let mutationServerErrorBackoff = InstantMutationServerErrorBackoffState()
@@ -10639,6 +10642,16 @@ public final class InstantRuntime: Sendable {
   /// while a frame is handled. This moves the claims' deadlines instead of reclaiming them, which keeps that outcome
   /// under Swift's durable claims. A frame applied for longer than `acknowledgementDeferralLimitMilliseconds` is
   /// treated as stuck: the deadline expires as before, and that is reported as a warning.
+  /// #1383: a server apply did one more piece of work.
+  private func noteServerApplyProgress() {
+    serverApplyProgress.withLock { $0 &+= 1 }
+  }
+
+  /// #1383: the progress a server apply reports between its steps, for a test frame that stands in for a long apply.
+  package func noteServerApplyProgressForTesting() {
+    noteServerApplyProgress()
+  }
+
   private func deferAcknowledgementDeadlinesWhileAFrameIsApplied() async throws {
     let limit = configuration.acknowledgementDeferralLimitMilliseconds
     recordActorHop(.liveSession)
