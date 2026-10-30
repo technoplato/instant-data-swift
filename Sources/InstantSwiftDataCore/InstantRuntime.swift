@@ -1,4 +1,8 @@
 // History:
+// - 2026-10-29: the acknowledgement deferral times a frame from its last server-apply progress, so a slow rebase keeps
+//   its claims and its session past 120 s and only a frame that stopped is treated as stuck (#1383). A server fact on a
+//   slot no pending write sets, and the store leaves empty, is kept without the whole-component rebase: a list
+//   restating an unset field as null on each new row declined every frame of a live recording (#1378).
 // - 2026-10-27: a server apply's reduction finds a slot's pending writers, and reads their values, under every name a
 //   write gives the slot: a device's preview link was written under its forward identity and held under its id, so
 //   every frame restating the recording declined into the whole-component rebase (#1270). The gate-held line names
@@ -1263,18 +1267,23 @@ private final class InstantExplicitMutationFlushOwner: @unchecked Sendable {
   }
 }
 
-/// Remembers when the delivery pump first saw each server frame still being applied, so the runtime can bound how
-/// long durable acknowledgement deadlines wait behind any single frame (#296).
+/// Remembers when the delivery pump last saw each server frame still being applied make progress, so the runtime can
+/// bound how long durable acknowledgement deadlines wait behind any single frame that has stopped (#296).
+///
+/// #1383: it timed a frame from its first sighting, so a slow frame that kept working was treated as stuck at 120 s. After
+/// a relaunch with 4,344 pending writes, 30 `add-query-ok` frames passed the limit while they peeled and replayed the
+/// queue; each expiry replaced the session, which dropped the frame, so the rebase never finished.
 private actor InstantRuntimeAcknowledgementDeferral {
-  private var frame: (sequence: UInt64, firstSeenAt: InstantTimestamp)?
+  private var frame: (sequence: UInt64, progress: UInt64, since: InstantTimestamp)?
 
-  /// Milliseconds since the pump first saw this frame being applied (0 the first time).
-  func milliseconds(behindFrame sequence: UInt64, now: InstantTimestamp) -> Int64 {
-    guard let frame, frame.sequence == sequence else {
-      self.frame = (sequence, now)
+  /// Milliseconds since the pump first saw this frame being applied, or since server applies last reported progress
+  /// while it was (0 the first time, and whenever `progress` moved).
+  func milliseconds(behindFrame sequence: UInt64, progress: UInt64, now: InstantTimestamp) -> Int64 {
+    guard let frame, frame.sequence == sequence, frame.progress == progress else {
+      self.frame = (sequence, progress, now)
       return 0
     }
-    return max(0, now.milliseconds - frame.firstSeenAt.milliseconds)
+    return max(0, now.milliseconds - frame.since.milliseconds)
   }
 
   func reset() {
@@ -3055,6 +3064,8 @@ public final class InstantRuntime: Sendable {
     var initialSeed = initialSeed
     applyAttempts: for attemptIndex in 0..<maximumAttempts {
       let attempt = attemptIndex + 1
+      // #1383: each attempt, staged body page and commit is progress the acknowledgement deferral can see.
+      noteServerApplyProgress()
       // #932: an attempt plans outside the operation gate, and a local write that lands between its seed and its plan
       // makes it stale. While a recording writes, every attempt went stale, and after five the apply ran again holding
       // the gate from seed to commit, so every read and write waited for the whole apply (25
@@ -3332,6 +3343,7 @@ public final class InstantRuntime: Sendable {
             direction: .reverse,
             after: reversePosition
           )
+          noteServerApplyProgress()
           if page.isStale {
             stalePlan = true
             break
@@ -3447,6 +3459,7 @@ public final class InstantRuntime: Sendable {
             direction: .forward,
             after: forwardPosition
           )
+          noteServerApplyProgress()
           if page.isStale {
             stalePlan = true
             break
@@ -3670,6 +3683,7 @@ public final class InstantRuntime: Sendable {
               direction: .forward,
               after: catchUpPosition
             )
+            noteServerApplyProgress()
             if page.isStale {
               stalePlan = true
               break
@@ -3817,6 +3831,7 @@ public final class InstantRuntime: Sendable {
             ? preparedForCommit.result.changedEntityIDs : nil
         )
         operationGate.markHolderPhase("commit plan")
+        noteServerApplyProgress()
         recordActorHop(.persistence)
         guard let commit = try await persistence.commitServerApplyPlan(
           planID: plan.id,
@@ -10660,8 +10675,11 @@ public final class InstantRuntime: Sendable {
       return
     }
     let now = configuration.now()
+    // #1383: timed from the frame's last progress, so the limit catches a frame that stopped, not one still working.
+    let progress = serverApplyProgress.withLock { $0 }
     let behindFrameMilliseconds = await acknowledgementDeferral.milliseconds(
       behindFrame: frame.sequence,
+      progress: progress,
       now: now
     )
     guard behindFrameMilliseconds < limit else {
@@ -10671,11 +10689,13 @@ public final class InstantRuntime: Sendable {
         category: "outbox",
         event: "outbox.mutation.ack-deadline-deferral-exhausted",
         message:
-          "A server frame has been applying longer than the acknowledgement deferral limit; unacknowledged claims now expire as timeouts.",
+          "A server frame has made no progress for longer than the acknowledgement deferral limit; unacknowledged claims now expire as timeouts.",
         metadata: [
           "frameOp": frame.op,
+          // Since the frame was first seen, or since server applies last reported progress (#1383).
           "applyingForMilliseconds": String(behindFrameMilliseconds),
           "limitMilliseconds": String(limit),
+          "serverApplyProgress": String(progress),
         ]
       )
       return
