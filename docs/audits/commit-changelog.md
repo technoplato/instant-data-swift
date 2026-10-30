@@ -1,3 +1,21 @@
+## 2026-10-30 14:54:10 EDT — scribe `b689465ba635452c9c0df7d9a88f46c848275f32`
+Cut (#396): Scribe 0.1 (187): Settings and sign-in on Vision Pro.
+
+## 2026-10-30 14:54:10 EDT — scribe `c0ff3be7ec2328978cca7cca8c9fddaa20876d00`
+Fix (#396): the floating bar inside the Settings sheet, and a sidebar wide enough for its toolbar on Vision Pro.
+
+## 2026-10-30 14:54:10 EDT — scribe `dbfa5faa2504ecbe5b5cf254bf3a6ac1c198e16e`
+Fix (#396): the Settings gear stays on the Vision Pro list, out of a More overflow.
+
+## 2026-10-30 14:54:10 EDT — scribe `15e7dbff4a8570aa3f729e9bfbfe33aa81c23e27`
+Docs (#1404): scribe-vision-pro, one skill for building and auditing the Vision Pro app.
+
+## 2026-10-30 14:54:10 EDT — scribe `af7d8a6ca25220be836e0a9372beefaf1483cdfe`
+Feature (#396): ui-check, an XCUITest run that drives the app on a visionOS simulator.
+
+## 2026-10-30 14:54:10 EDT — scribe `ba99ae1c861870a1ef0e0eaea384372b1210ac40`
+Fix (#396): Settings and sign-in on Vision Pro, the 1.9.53 pin, and the installer's Vision Pro role.
+
 ## 2026-10-30 14:04:40 EDT — scribe `293112a0f8b5772e5e0b2f69863e15d3bdab678c`
 land(#1393): the two ADRs.
 
