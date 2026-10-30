@@ -1,5 +1,14 @@
+## 2026-10-30 11:31:22 EDT — scribe `abcaaccbc1bb8035c6c5af3d450aa291a57270e6`
+Landing (#1393, #1398, #1389, #1365, #1388): the frames band stays and pages, a thread opens in its own sheet, the broadcast long press starts it, Select moves to the long press, Search Settings, the Playback player's X, and the playground's proposals after the review.
+
 ## 2026-10-30 11:08:09 EDT — instant-data-swift `1c5fc76d9aa1329f90612ee158aa7c36d7950bfb`
 Fix (#396): the package declares visionOS 2, so it cross-compiles for Vision Pro.
+
+## 2026-10-30 10:41:06 EDT — scribe `7052cf37e586863f74709c9836afe79bd46441d5`
+Scribe 0.1 (182): a line's time is the link, a card on long press, the X on everything.
+
+## 2026-10-30 10:40:50 EDT — scribe `0d4a39bcdc8ba06879e0ee047d736ffd205c0845`
+Landing (#1393, #1392, #1391, #1390, #1389): the time is the link, a card on long press, the X everywhere, side bars he writes, the map's pictures, the proposals.
 
 ## 2026-10-30 09:52:15 EDT — scribe `435e33af28acb3bab032c0c336ab13c54f31e587`
 Fix (#290): a recording shows the newest heart rate at once, and readings keep coming behind another app.
