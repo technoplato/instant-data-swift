@@ -1,3 +1,13 @@
+## 2026-10-29 21:48:10 EDT — v1.9.52 (sync-jam-1378, #1383): a slow server frame that keeps working keeps its acknowledgement claims
+
+- **Release:** `docs/releases/v1.9.52.md`, cut at `00b245bc` (red `17149a7e`, guard `cda06974`, green `00b245bc`),
+  carrying 1.9.51. No migration, no public API change.
+- **Why:** a device relaunched with 4,344 pending writes accepted nothing for ten minutes: 30 add-query-ok frames that
+  peeled and replayed the queue passed the 120 s acknowledgement deferral, and each expiry replaced the session, which
+  dropped the frame, so the rebase never finished.
+- **Checks:** red failed only the slow-frame test; green: 4 focused tests, 119 tests in 8 neighbouring suites.
+- **Next:** the consuming app pins 1.9.52 (build 171) and checks the drain after its relaunch with the queue it has.
+
 ## 2026-10-29 21:19:26 EDT — v1.9.51 (sync-jam-1378, #1378): a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
 
 - **Release:** `docs/releases/v1.9.51.md`, cut at `c133c598` (red `19c0b3ca`, green `c133c598`), carrying 1.9.50. No

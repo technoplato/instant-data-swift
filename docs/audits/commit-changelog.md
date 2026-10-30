@@ -1,3 +1,10 @@
+## 2026-10-29 21:48:10 EDT — v1.9.52 (sync-jam-1378, #1383): a slow server frame that keeps working keeps its acknowledgement claims
+
+- **Release:** `docs/releases/v1.9.52.md`, cut at `00b245bc` (plan `8c6de2be`, red `17149a7e`, guard `cda06974`,
+  green `00b245bc`), carrying 1.9.51; also `6388bd37` (1.9.51's release note gets its whole-bundle result).
+- **Why:** frames past the 120 s deferral replaced the session and dropped the rebase, so a relaunch with a large queue
+  never drained (#1383). **Next:** Scribe build 171.
+
 ## 2026-10-29 21:19:26 EDT — v1.9.51 (sync-jam-1378, #1378): a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
 
 - **Release:** `docs/releases/v1.9.51.md`, cut at `c133c598` (plan `676f56a5`, red `19c0b3ca`, green `c133c598`),

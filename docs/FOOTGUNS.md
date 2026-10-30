@@ -101,7 +101,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F62](#f62) | Keep per-write counters out of a shared key-value page | #1245, #1254 | none yet |
 | [F63](#f63) | Write only the fields that changed, and keep partial writes collapsible | #1245, #1253, #1255 | none yet |
 | [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
-| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #296, #932 | always |
+| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #296, #932 | always |
 
 ## Read path
 
@@ -1190,7 +1190,10 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   surviving write sets or removes takes the server's fact without the rebase (1.9.51): the full rebase would leave the
   same fact there. The gate-held line names the reason (#932) and, from 1.9.48, the
   attribute that decided it (`declinedAttributeID`), so a device's own logs say which slot keeps declining.
-- Issues: #1270, #1378, #296, #932.
+- Third piece (#1383, 1.9.52): the acknowledgement deferral treated a frame applying for 120 s as stuck, replaced the
+  session and dropped the frame, so a full rebase that took longer never finished and the next session started it again;
+  a deferral that waits behind a frame times it from its last progress.
+- Issues: #1270, #1378, #1383, #296, #932.
 - Guard: `InstantFastDrainTests/aLinkWrittenUnderItsNameDoesNotForceARebase`,
   `theReducedApplyObservesWhatTheFullRebaseObservesWithAttachments` and `aDeclinedFrameNamesItsAttributeInTheGateHeldLine`
   (always); `measureOneFrameAgainstTheQueue`,

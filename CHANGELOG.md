@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 29th, 2026 at 9:47:55 p.m. EDT — `00b245bcf9f9` fix(#1383): green: a slow server frame that keeps working keeps its acknowledgement claims; only one that stops is stuck
+
+- **Implementation commit:** `00b245bcf9f9a1ec23e8c8bff166218031983a0a`
+- **Change:** fix(#1383): green: a slow server frame that keeps working keeps its acknowledgement claims; only one that stops is stuck
+- **Details:**
+  - See docs/releases/v1.9.52.md and Scribe audits/2026-10-29-sync-jam-1378.md
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1383 the acknowledgement deferral times a frame from its last server-apply progress; progress marks in the server apply
+- **User context (verbatim):**
+  > docs/FEATURES.md item 7 (sync, offline first)
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sync-jam-1378@halfjew22); no SpecStory capture
+
+## October 29th, 2026 at 9:47:54 p.m. EDT — `cda069744c33` test(#1383): the stuck-frame guard expects the unacknowledged writes it reports
+
+- **Implementation commit:** `cda069744c3309badb8277d2ef8dd7cf479d8917`
+- **Change:** test(#1383): the stuck-frame guard expects the unacknowledged writes it reports
+- **Details:**
+  - See docs/releases/v1.9.52.md and Scribe audits/2026-10-29-sync-jam-1378.md
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — #1383 a slow frame keeps its claims; a stuck one still reconnects
+- **User context (verbatim):**
+  > docs/FEATURES.md item 7 (sync, offline first)
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sync-jam-1378@halfjew22); no SpecStory capture
+
+## October 29th, 2026 at 9:47:54 p.m. EDT — `17149a7e9baa` test(#1383): red: a slow server frame that keeps working keeps its acknowledgement claims past the deferral limit
+
+- **Implementation commit:** `17149a7e9baa1bb1867175816f8b15fab9731d14`
+- **Change:** test(#1383): red: a slow server frame that keeps working keeps its acknowledgement claims past the deferral limit
+- **Details:**
+  - See docs/releases/v1.9.52.md and Scribe audits/2026-10-29-sync-jam-1378.md
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — #1383 a slow frame keeps its claims; a stuck one still reconnects
+- **User context (verbatim):**
+  > docs/FEATURES.md item 7 (sync, offline first)
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sync-jam-1378@halfjew22); no SpecStory capture
+
 ## October 29th, 2026 at 9:19:09 p.m. EDT — `c133c59882fa` fix(#1378): green: a server fact on a slot no pending write sets, and the store leaves empty, is kept without the rebase
 
 - **Implementation commit:** `c133c59882fad11b1bc8c54f1e002e74222d92d3`
