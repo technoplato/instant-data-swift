@@ -1,3 +1,15 @@
+## 2026-10-29 20:19:09 EDT — scribe `039cf33d6370c6014eba5584ccbe7f679821c401`
+References (#1373): a screenshot row on a phone upright and on its side, upright and sideways, every size.
+
+## 2026-10-29 20:19:09 EDT — scribe `cfb60a43e9c236f7e68d492f95929d9f01b6327f`
+Docs (#1373): ADR 0055 records that a picture's slot takes the picture's own shape.
+
+## 2026-10-29 20:19:09 EDT — scribe `3b38d6f75771ac013719522ed86e9440afe22264`
+Green (#1373): a picture under its timeline row takes its own shape from its file's header, so a sideways screenshot leaves no empty block below it.
+
+## 2026-10-29 20:19:09 EDT — scribe `85d9bd8b0d6fbafb68fb9ea36bed7edec59eb0b8`
+Red (#1373): a sideways screenshot's slot took an upright shape and left 190 points empty under it in landscape.
+
 ## 2026-10-29 20:14:30 EDT — scribe `5c139e59f5e0a9be679029685eb31b16044e05e8`
 Green (#1336): the Mac writes its idle stretch and the app in front once per change; a recording lapsing as live and coming back no longer repeats them.
 
