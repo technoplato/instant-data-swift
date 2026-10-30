@@ -1,3 +1,6 @@
+## 2026-10-30 11:32:49 EDT — scribe `ed5c24a3cb3357c7b8667775b9105aa92aaa1ed6`
+Tooling (#1412): heavy.sh renamed build.sh and versioned in the Scribe repo (scripts/build-jobs); HEAVY_* variables are BUILD_*; a transition forwarder keeps waiters queued before the rename on the old code.
+
 ## 2026-10-30 11:31:22 EDT — scribe `abcaaccbc1bb8035c6c5af3d450aa291a57270e6`
 Landing (#1393, #1398, #1389, #1365, #1388): the frames band stays and pages, a thread opens in its own sheet, the broadcast long press starts it, Select moves to the long press, Search Settings, the Playback player's X, and the playground's proposals after the review.
 
