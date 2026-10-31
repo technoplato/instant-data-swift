@@ -602,6 +602,12 @@ struct InstantOutboxBodyRow: Sendable {
 /// A write's status, server transaction id and confirmation source: its outbox row's columns, which its stored body
 /// does not carry (#1435). A claim and an acknowledgement change these and the claim columns only, so they write the
 /// narrow row and never the body.
+/// A test's statement trace, handed to SQLite as its context pointer (#1436).
+final class InstantStatementTraceBox: Sendable {
+  let record: @Sendable (String) -> Void
+  init(_ record: @escaping @Sendable (String) -> Void) { self.record = record }
+}
+
 struct InstantOutboxRowDelivery: Hashable, Sendable {
   var status: InstantMutationStatus
   var serverTransactionID: String?
@@ -1286,6 +1292,8 @@ public actor SQLitePersistenceStore {
     """
   private let fileURL: URL
   private let startupTrace: InstantStartupTrace
+  /// The statement trace a test installed (#1436), kept alive while SQLite holds its pointer.
+  private var statementTraceForTesting: InstantStatementTraceBox?
   private let deferredValueResidency: InstantDeferredValueResidencyPolicy
   private let localLookup: InstantLocalLookupPolicy
   private let declaredAttributes: [InstantAttribute]
@@ -17971,6 +17979,43 @@ public actor SQLitePersistenceStore {
         firstUntrustedMutationID: nil
       )
     }
+  }
+
+  /// Calls `record` with the SQL of each statement this store's writer runs, as prepared, until it is set to nil
+  /// (#1436): which statements a live write's steps run, so a test can ask SQLite for each one's plan.
+  package func traceStatementsForTesting(_ record: (@Sendable (String) -> Void)?) {
+    statementTraceForTesting = record.map(InstantStatementTraceBox.init)
+    guard let box = statementTraceForTesting else {
+      sqlite3_trace_v2(connection.raw, 0, nil, nil)
+      return
+    }
+    sqlite3_trace_v2(
+      connection.raw,
+      UInt32(SQLITE_TRACE_STMT),
+      { _, context, _, sql in
+        guard let context, let sql else { return 0 }
+        let text = String(cString: sql.assumingMemoryBound(to: CChar.self))
+        // A trigger's statements arrive as comments; only the statements themselves are planned.
+        guard !text.hasPrefix("--") else { return 0 }
+        Unmanaged<InstantStatementTraceBox>.fromOpaque(context).takeUnretainedValue().record(text)
+        return 0
+      },
+      Unmanaged.passUnretained(box).toOpaque()
+    )
+  }
+
+  /// SQLite's `EXPLAIN QUERY PLAN` lines for `sql` on this store's writer, where its temporary tables live (#1436).
+  package func queryPlanForTesting(_ sql: String) throws -> [String] {
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(connection.raw, "EXPLAIN QUERY PLAN " + sql, -1, &statement, nil) == SQLITE_OK else {
+      throw persistenceError(operation: "plan a statement", message: lastErrorMessage())
+    }
+    defer { sqlite3_finalize(statement) }
+    var lines: [String] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      lines.append(sqlite3_column_text(statement, 3).map { String(cString: $0) } ?? "")
+    }
+    return lines
   }
 
   package func optimisticEffectReceiptFingerprintForTesting(id: String) throws -> String? {
