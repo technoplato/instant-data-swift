@@ -13960,6 +13960,11 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The writer's `PRAGMA temp_store`: 0 SQLite's build default (a file here), 1 a file, 2 memory (#1504).
+  func temporaryStoreForTesting() throws -> Int64 {
+    try selectInt64("PRAGMA temp_store")
+  }
+
   /// Finishes a prune's release of facts that a crash or a failure cut short (#1129), before anything reads the store.
   ///
   /// A closed result larger than a prune batch is released over several batches; a fact left unchecked would stay in

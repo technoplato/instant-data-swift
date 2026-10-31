@@ -79,6 +79,21 @@ Not built in this session: it changes the prune, the registration, the bootstrap
 SQLitePersistenceStore.swift while four lanes (#1491 #1492 #1493 #1498) edit that file. It is the next library step
 after their landings, on this plan, by one agent in this worktree.
 
+## Amendment 2 (2026-10-31): #1504 as built
+
+- Where: the writer sets `PRAGMA temp_store = MEMORY` at the end of `bootstrap()`, after the one-time migrations (one
+  copies every fact's key into a temporary table: 647,723 keys on the 10-30 iPhone store, which stay on SQLite's file)
+  and before `ensureServerApplyStagingSchema()`, because a change of the setting drops every temporary table that
+  exists. A writer that reopens its connection sets it again (today only a test closes the writer). Every read
+  connection sets it at open, beside its 2 MiB cache.
+- Red: `InstantTemporaryStoreTests.everyConnectionKeepsItsTemporaryStructuresInMemory` reads `PRAGMA temp_store` on the
+  writer, on a read connection and on the writer after it reopens (two test accessors, `temporaryStoreForTesting()`):
+  0 (a file) on all three before the fix (build.sh pwf-1504-redgreen, 2026-10-31 17:12). Two behavioral tests stay as guards
+  (the recording exercise, and closing a 300-todo query): both wrote no temporary file before the fix either, because
+  their statement journals stay under SQLite's 64 KiB in-memory limit; which phone statement spills is not reproduced
+  at test sizes, so the phone's ledger after the build is the measure (`sqlite.temp` expected 0).
+- Claims: SQLitePersistenceStore.swift also gets one test accessor beside `releasedLiveQueryResultCountForTesting`.
+
 ## Conflict check (origin/main 2026-10-31 13:13 EDT; the first version of this line said 13:20, a typed clock time)
 
 SQLitePersistenceStore.swift is claimed by perf-send-1492 (acceptOutboxMutation, the receipt digest), perf-read-1498

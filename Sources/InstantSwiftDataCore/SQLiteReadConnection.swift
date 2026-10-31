@@ -261,6 +261,20 @@ actor SQLiteReadConnection {
     return statement
   }
 
+  /// This connection's `PRAGMA temp_store`: 0 SQLite's build default (a file here), 1 a file, 2 memory (#1504).
+  func temporaryStoreForTesting() throws -> Int64 {
+    var setting: Int64 = -1
+    try readTransaction { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(connection, "PRAGMA temp_store", -1, &statement, nil) == SQLITE_OK, let statement else {
+        throw Self.failure(operation: "prepare a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      defer { sqlite3_finalize(statement) }
+      if sqlite3_step(statement) == SQLITE_ROW { setting = sqlite3_column_int64(statement, 0) }
+    }
+    return setting
+  }
+
   // MARK: - SQLite
 
   /// Runs `body` in one read transaction. A failure closes the connection, so the next read opens the store's file
