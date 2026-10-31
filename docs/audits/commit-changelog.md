@@ -1,3 +1,9 @@
+## 2026-10-31 07:42:26 EDT — scribe `b1e262b4dcd420a5fbea2fa8b8463101819a6934`
+Merge (#1459): the Playground's harness references, default and AX5, after the restack.
+
+## 2026-10-31 07:42:26 EDT — scribe `4fc707fdffd92e4d9f0388df8a63774d203fbc92`
+Test (#1459): the Playground's harness references on the iPhone 17 Pro simulator, default and AX5.
+
 ## 2026-10-31 07:29:29 EDT — scribe `9b7514db679ec272c645313c1a782efe4dcfe7c6`
 Presence (#1468): landed; progress entry; claims released.
 
