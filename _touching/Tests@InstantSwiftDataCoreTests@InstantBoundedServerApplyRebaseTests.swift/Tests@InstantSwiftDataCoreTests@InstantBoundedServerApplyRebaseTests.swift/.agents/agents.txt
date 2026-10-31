@@ -7,3 +7,4 @@ claude-opus-5.5-fast-drain 2026-09-30T10:53:07-04:00 mower plan=2026-09-30-fast-
 claude-opus-5.5-fast-drain 2026-10-01T05:00:01-04:00 mower plan=2026-10-01-apply-fallback #303 exclusive server-apply fallback
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
 claude-code/server-apply-932@halfjew22 2026-10-23T14:52:59-0400 grower plan=2026-10-23-server-apply-932 #932 #998 #590
+claude-code/perf-observe-1493@strangelearning 2026-10-31T16:35:57-0400 mower plan=2026-10-31-perf-observe-1493 amendment 1 #1494 (the plan begin's call sites only)

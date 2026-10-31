@@ -1,3 +1,55 @@
+## 2026-10-31 16:50:00 EDT — perf-gate-1491 (#1491): the write's own cost -18% in one job; the outbox tail read next
+
+- **Measured (perf-gate-1491-final, Mac mini M4, release, one job 16:11-16:37):** tight-loop transact p50 (cross-SDK
+  runtime benchmark, 300 transacts, three runs each within 0.011 ms): `13cdf499` 0.476 ms, `02b7cf8a` (one encode)
+  0.452, `aa18c4af` (the hex) 0.411, `4ff5e5c4` (no wire fingerprint for a new row) 0.389: -18%. Reconnect drain 0.88
+  -> 0.79 ms. Recording exercise steady transact hold p50, one round: alone 6.83 / 6.56 / 6.40 / 4.08 ms, beside six
+  busy loops 3.00 / 3.07 / 3.21 / 2.69. Debug suites: 125 tests in 8 suites passed (15 known issues as on main); the
+  wire red fails its count, the green passes. Evidence `~/Sync/audit/perf-gate-1491/mini/ab-1491c/`.
+- **Branch:** `agent/claude/perf-gate-1491` merged main at `94328840` (sources clean); post-merge suites queued as
+  perf-gate-1491-merged (the #1426/#1435/#1115/#1121 criteria suites, the write-path suites, #1510's recorder and
+  #1498's cache tests). Change log recorded for `cd3faf28`, `d564a099`, `aa18c4af`, `4ff5e5c4`, `221573c6`.
+- **Criteria:** the 2.5 ms steady hold target came from the confounded 1.58 ms (F0); alone, every commit holds 4-7 ms,
+  beside load 2.7-3.4 ms; no commit moved it 4.6x (the ab2 table in `docs/audits/2026-10-31-transact-hold-1491.md`).
+- **Amendment 3 (branch `agent/claude/perf-gate-1491-tail`, worktree `~/Sync/worktrees/perf-gate-1491-tail`):** every
+  write's creation-cursor read, and the server apply plan's begin and extend, sort the whole outbox (no index in
+  delivery order): red `e10668ae`, green `e712d3e3` (a creation-order index at open), a guard that no other plan of a
+  live write's statements changes. Queued as perf-gate-1491-tail: the outbox and server-apply suites, red/green, pages
+  per step of a live write at both commits, a two-round A/B and the tight loop.
+- **Next:** when perf-gate-1491-merged passes, `~/Scribe/tools/land` this branch, the ledger with `land --prepend`,
+  READY FOR BUILD on #1482; then the tail slice the same way, merging main first.
+
+## 2026-10-31 17:31:11 EDT — perf-read-1498 (#1498, #1495): both after numbers, measured on the Mac mini
+
+- **#1498 after (M6: the recording exercise, Mac mini M4, release, `sample` 60 s at 1 ms,
+  `scripts/contention-exercises/profile-recording-1482.sh`; before main `7f0595b8` at 12:52, after `3cce5ca1` at 14:44,
+  which is #1498's green plus #1495's red, a counter only):** `queryOnce` CPU 802 -> 299 ms a minute (-63%); the
+  query-cache write 553 -> 43 ms (`saveQueryCache` before; `InstantQueryAnswerDigest` 37 + `confirmQueryCacheAnswer` 6
+  after); the persistence actor's JSON encode (`SQLitePersistenceStore.encode`) 541 -> 44 ms; `sqlite3_step`
+  1,260 -> 1,273 (unchanged); `read.queryOnce` wall p50 101 -> 90 ms. Evidence: `~/Sync/audit/perf-read-1498/m6-before`
+  and `m6-after`.
+- **#1495 after (the 48-observer fan-out exercise, Mac mini M4, release, one job 17:13-17:27: red `3cce5ca1` with the
+  landed exercise laid over it against `9051d75e` + `ff8fb803`, both built in the job, 4 rounds alternating which side
+  runs first, 2,000 writes a run; the order-balanced mean of the 4 paired differences):** the app's write shape (interims
+  as unlinked live rows): a duration write's publication p50 840 -> 721 us (-14%, lower in 4 of 4 rounds); a final's
+  18.76 -> 18.73 ms (unchanged); an interim's 52.9 -> 53.4 us (+0.5 us, higher in 3 of 4 rounds, equal in 1); all 2,000
+  publications 6,820.6 -> 6,823.7 ms (+0.04%). The linked-interim stress shape: interims -5.9%, durations -15.7%, all
+  publications 11,460 -> 11,090 ms (-3.2%), each lower in 4 of 4 rounds. Id sets per 2,000 writes 6,350 -> 5,150
+  (stress 11,600 -> 4,800); materialized snapshots identical, so the same hand-overs. Evidence:
+  `~/Sync/audit/perf-read-1498/fanout-ab.txt` and `fanout-ab-summary.txt`; the script is `bin/fanout-ab-1495.sh` there.
+- **Found:** the finals' +2% between the separate before and after jobs (14:47 and 15:36) was the machine's state: in
+  one job the second run of a round is 1.6-1.8% faster on finals on average (up to 3% in one pair of rounds),
+  whichever side it is. Finals are 96% of the app shape's publication time, and their cost is re-materialization
+  (#1513). The interims' +0.5 us is small and consistent; its
+  cause is not measured (a likely one: each observer copied out of the store's dictionary per publication now carries
+  two more references).
+- **Merged tree:** `perf-read-1498-main-check` (laptop, debug, `e6e71913`, which holds #1491, #1492, #1498 and #1495):
+  20 tests in 5 suites pass.
+- **State:** #1498 and #1495 are VerificationNeeded with every criterion satisfied; READY FOR BUILD is on #1482 for both
+  (#1498 shipped in v1.9.57 and Scribe 209, #1495 in v1.9.58 and Scribe 210). This lane cut, tagged and installed
+  nothing.
+- **Next:** nothing in this lane; the publication's remaining cost is #1513.
+
 ## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
 
 - **Release:** `docs/releases/v1.9.59.md`, tag `v1.9.59` on this release branch's tip, cut from `main` at `81c07e43`.
