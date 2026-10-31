@@ -1,36 +1,35 @@
+// History:
+// - 2026-10-31: the registry writes each query's error into its observations' outputs, the streams their consumers read,
+//   instead of a stream of errors that three tasks per observation merged into the emissions (#1493).
+
 import Foundation
 
 /// The latest server error of each live query, by registration key, for that query's observers (#360).
 ///
 /// Upstream `Reactor.js` `notifyQueryError` calls every subscriber of a query with `{ error }`, and the subscription
 /// stays registered. Swift adds the error to the query's emissions instead: an observer keeps its stream and its
-/// last values, sees the error, and sees it clear once the server answers the query again.
+/// last values, sees the error, and sees it clear once the server answers the query again. Each observation's output
+/// takes the error under the lock it writes emissions under (#1493), so an error never lands on an older emission.
 actor InstantLiveQueryErrors {
   private var errors: [String: InstantError] = [:]
-  private var subscribers: [String: [UUID: AsyncStream<InstantError?>.Continuation]] = [:]
+  private var outputs: [String: [UUID: InstantObservationOutput]] = [:]
 
-  /// The error updates for `key`, starting with its current error when it has one.
-  func updates(for key: String) -> AsyncStream<InstantError?> {
-    let (stream, continuation) = AsyncStream<InstantError?>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
+  /// Reports `key`'s errors to `output` from now on, starting with its current error when it has one.
+  func register(_ output: InstantObservationOutput, for key: String) -> UUID {
     let id = UUID()
-    subscribers[key, default: [:]][id] = continuation
+    outputs[key, default: [:]][id] = output
     if let error = errors[key] {
-      continuation.yield(error)
+      output.reportServerError(error)
     }
-    continuation.onTermination = { @Sendable [weak self] _ in
-      Task { await self?.removeSubscriber(id, for: key) }
-    }
-    return stream
+    return id
   }
 
   /// Records `error` as the query's latest server error (`nil` once the server answers it) and tells its observers.
   func publish(_ error: InstantError?, for key: String) {
     guard errors[key] != error else { return }
     errors[key] = error
-    for continuation in subscribers[key, default: [:]].values {
-      continuation.yield(error)
+    for output in outputs[key, default: [:]].values {
+      output.reportServerError(error)
     }
   }
 
@@ -39,14 +38,15 @@ actor InstantLiveQueryErrors {
   }
 
   func observerCountForTesting(for key: String) -> Int {
-    subscribers[key]?.count ?? 0
+    outputs[key]?.count ?? 0
   }
 
-  private func removeSubscriber(_ id: UUID, for key: String) {
-    subscribers[key]?[id] = nil
-    guard subscribers[key]?.isEmpty == true else { return }
+  /// Stops reporting to the output `register(_:for:)` returned `id` for.
+  func remove(_ id: UUID, for key: String) {
+    outputs[key]?[id] = nil
+    guard outputs[key]?.isEmpty == true else { return }
     // Nobody observes the query any more; a later observation starts from the server's next answer.
-    subscribers[key] = nil
+    outputs[key] = nil
     errors[key] = nil
   }
 }
@@ -58,11 +58,4 @@ extension InstantQueryEmission {
     emission.error = error
     return emission
   }
-}
-
-/// One input of the stage that adds a live query's server error to its emissions.
-enum InstantLiveQueryErrorReportingEvent: Sendable {
-  case emission(InstantQueryEmission)
-  case serverError(InstantError?)
-  case sourceFinished
 }

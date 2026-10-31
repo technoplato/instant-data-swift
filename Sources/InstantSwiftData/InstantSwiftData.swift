@@ -1,3 +1,8 @@
+// History:
+// - 2026-10-31: a typed subscription of a runtime observation decodes in its consumer's own pull, `map` composes its
+//   transform onto that pull, and a fetch wrapper tells Observation only of the members an emission changed; a live
+//   typed subscription added a decoding task and a mapped one another on top of the runtime's own (#1493).
+
 @_exported public import InstantSwiftDataCore
 import Dependencies
 import Foundation
@@ -2244,28 +2249,32 @@ public struct InstantSwiftDataClient: Sendable {
     transform: @escaping @Sendable (InstantQueryEmission) throws -> Value
   ) async -> FetchSubscription<Value> {
     await cancellationAwareFetchSubscriptionSetup { cancellation in
-      let observation: InstantQueryObservationLease
+      let liveQueryError = FetchSubscriptionLiveQueryError()
+      let reportingTransform: @Sendable (InstantQueryEmission) throws -> Value = { emission in
+        liveQueryError.value = emission.error
+        return try transform(emission)
+      }
+      var subscription: FetchSubscription<Value>
       if let observeQueryLeaseOperation {
-        observation = await observeQueryLeaseOperation(plan)
+        // #1493: the runtime's stream, read and decoded in the consumer's own pull.
+        let observation = await observeQueryLeaseOperation(plan)
+        subscription = pulledFetchSubscription(
+          observation,
+          transform: reportingTransform,
+          cancellationOwner: cancellation,
+          cleanup: observation.cancel
+        )
       } else {
-        // Compatibility clients can only provide a bare AsyncStream. The forwarding
-        // task is still awaited exactly, but a custom producer's private asynchronous
-        // teardown cannot be awaited without adopting the runtime lease operation.
-        observation = InstantQueryObservationLease(
-          stream: await observeOperation(plan),
-          cancel: {}
+        // Compatibility clients can only provide a bare AsyncStream. A cancel must end a read of a stream the library
+        // does not own, so a forwarding task reads it; it is still awaited exactly, but a custom producer's private
+        // asynchronous teardown cannot be awaited without adopting the runtime lease operation.
+        subscription = fetchSubscription(
+          from: await observeOperation(plan),
+          cancelSource: {},
+          transform: reportingTransform,
+          cancellationOwner: cancellation
         )
       }
-      let liveQueryError = FetchSubscriptionLiveQueryError()
-      var subscription = fetchSubscription(
-        from: observation.stream,
-        cancelSource: observation.cancel,
-        transform: { emission in
-          liveQueryError.value = emission.error
-          return try transform(emission)
-        },
-        cancellationOwner: cancellation
-      )
       subscription.liveQueryErrorStorage = liveQueryError
       return subscription
     }
@@ -2311,6 +2320,9 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
   fileprivate let streamStorage: FetchSubscriptionStreamStorage<Element>
   fileprivate let cancellation: FetchSubscriptionCancellation
   fileprivate var liveQueryErrorStorage: FetchSubscriptionLiveQueryError?
+  /// The runtime observation this subscription reads in its consumer's own pull, so `map` reads it through both
+  /// transforms instead of adding a stage (#1493).
+  fileprivate var pull: FetchSubscriptionPull<Element>?
 
   /// The server's latest error for this subscription's live query, or `nil` while the server answers it.
   ///
@@ -2422,6 +2434,25 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
     _ transform: @escaping @Sendable (Element) throws -> Mapped,
     cancellationOwner: FetchSubscriptionCancellation?
   ) -> FetchSubscription<Mapped> {
+    if let pull {
+      // #1493: the same observation through both transforms, in the consumer's pull; ending it ends this one, as when
+      // a task read this subscription for it.
+      let source = self
+      let composed: @Sendable (InstantQueryEmission) throws -> Mapped = { emission in
+        try transform(pull.transform(emission))
+      }
+      var subscription = pulledFetchSubscription(
+        pull.observation,
+        transform: composed,
+        cancellationOwner: cancellationOwner,
+        cleanup: {
+          source.cancel()
+          try? await source.task
+        }
+      )
+      subscription.liveQueryErrorStorage = liveQueryErrorStorage
+      return subscription
+    }
     let mapped = AsyncThrowingStream<Mapped, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
@@ -2430,7 +2461,10 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
       continuation: mapped.continuation,
       cancellationOwner: cancellationOwner,
       start: {
-        Task {
+        let census = InstantObservationTaskCensus.current
+        census?.taskStarted()
+        return Task {
+          defer { census?.taskFinished() }
           do {
             for try await value in self {
               try Task.checkCancellation()
@@ -2606,6 +2640,86 @@ public struct InfiniteQuerySubscription<Element: Sendable>: AsyncSequence, Senda
   }
 }
 
+/// A runtime observation a ``FetchSubscription`` reads in its consumer's own pull, and its transform (#1493).
+fileprivate struct FetchSubscriptionPull<Element: Sendable>: Sendable {
+  var observation: InstantQueryObservationLease
+  var transform: @Sendable (InstantQueryEmission) throws -> Element
+}
+
+/// A subscription that reads `observation` in its consumer's own pull (#1493): `transform` runs in the consumer's
+/// `next()`, on the cooperative pool, and no task stands between the runtime's stream and the consumer. The task this
+/// replaces decoded each emission ahead of the consumer, one more resume per emission.
+///
+/// `cleanup` runs once, when the subscription is cancelled, its consumer's task is cancelled while it waits, or the
+/// observation ends.
+private func pulledFetchSubscription<Output: Sendable>(
+  _ observation: InstantQueryObservationLease,
+  transform: @escaping @Sendable (InstantQueryEmission) throws -> Output,
+  cancellationOwner: FetchSubscriptionCancellation?,
+  cleanup: @escaping @Sendable () async -> Void
+) -> FetchSubscription<Output> {
+  let cancellation = cancellationOwner ?? FetchSubscriptionCancellation()
+  let reader = FetchSubscriptionPullReader(
+    observation.stream.makeAsyncIterator(),
+    transform: transform,
+    cancellation: cancellation
+  )
+  let streamStorage = FetchSubscriptionStreamStorage(
+    AsyncThrowingStream<Output, Error>(unfolding: { try await reader.next() })
+  )
+  reader.streamStorage = streamStorage
+  var subscription = FetchSubscription(streamStorage: streamStorage, cancellation: cancellation)
+  subscription.pull = FetchSubscriptionPull(observation: observation, transform: transform)
+  cancellation.install(cancelAndWait: cleanup)
+  return subscription
+}
+
+// SAFETY: one consuming task calls `next()` at a time: the observation's stream admits one awaiting consumer under its
+// lock and traps a second, so `iterator` is never accessed concurrently; `streamStorage` is set once, before the stream
+// is handed out.
+private final class FetchSubscriptionPullReader<Output: Sendable>: @unchecked Sendable {
+  private var iterator: AsyncStream<InstantQueryEmission>.Iterator
+  private let transform: @Sendable (InstantQueryEmission) throws -> Output
+  private weak var cancellation: FetchSubscriptionCancellation?
+  weak var streamStorage: FetchSubscriptionStreamStorage<Output>?
+
+  init(
+    _ iterator: AsyncStream<InstantQueryEmission>.Iterator,
+    transform: @escaping @Sendable (InstantQueryEmission) throws -> Output,
+    cancellation: FetchSubscriptionCancellation
+  ) {
+    self.iterator = iterator
+    self.transform = transform
+    self.cancellation = cancellation
+  }
+
+  @concurrent
+  func next() async throws -> Output? {
+    guard let emission = await iterator.next() else {
+      // The observation ended: the subscription was cancelled, or its consumer's task was while it waited.
+      end(cancelled: Task.isCancelled)
+      return nil
+    }
+    do {
+      try Task.checkCancellation()
+      return try transform(emission)
+    } catch {
+      end(cancelled: error is CancellationError)
+      throw error
+    }
+  }
+
+  /// As the subscription's stream ends: a cancelled consumer lets go of what the subscription still holds.
+  private func end(cancelled: Bool) {
+    if cancelled {
+      streamStorage?.releaseBufferedStream()
+      cancellation?.cancel()
+    } else {
+      cancellation?.finish()
+    }
+  }
+}
+
 private func fetchSubscription<Element: Sendable>(
   from values: AsyncStream<Element>
 ) -> FetchSubscription<Element> {
@@ -2630,7 +2744,10 @@ private func fetchSubscription<Input: Sendable, Output: Sendable>(
     continuation: stream.continuation,
     cancellationOwner: cancellationOwner,
     start: {
-      Task {
+      let census = InstantObservationTaskCensus.current
+      census?.taskStarted()
+      return Task {
+        defer { census?.taskFinished() }
         do {
           for await value in values {
             try Task.checkCancellation()
@@ -2757,6 +2874,17 @@ private func validateNonNegativeByteOffset(
     message: "Stream byte offset must be greater than or equal to 0.",
     recovery: "Pass a non-negative byte offset, or omit it to start at the beginning."
   )
+}
+
+/// The observable members of a ``FetchStorage`` a change touched.
+private struct FetchStorageMembers: OptionSet, Sendable {
+  let rawValue: UInt8
+
+  static let initialValue = Self(rawValue: 1 << 0)
+  static let wrappedValue = Self(rawValue: 1 << 1)
+  static let loadError = Self(rawValue: 1 << 2)
+  static let isLoading = Self(rawValue: 1 << 3)
+  static let all: Self = [.initialValue, .wrappedValue, .loadError, .isLoading]
 }
 
 // SAFETY: all mutable fetch state is protected by `lock`.
@@ -3004,15 +3132,19 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     loadError: InstantError? = nil,
     id: Int
   ) -> Bool {
-    let didUpdate = withLock {
-      guard _activeSubscription?.id == id else { return false }
+    let changed = withLock { () -> FetchStorageMembers? in
+      guard _activeSubscription?.id == id else { return nil }
+      var changed: FetchStorageMembers = .wrappedValue
+      if _loadError != loadError { changed.insert(.loadError) }
+      if _isLoading { changed.insert(.isLoading) }
       _wrappedValue = value
       _loadError = loadError
       _isLoading = false
-      return true
+      return changed
     }
-    if didUpdate { publishChange() }
-    return didUpdate
+    guard let changed else { return false }
+    publishChange(changed)
+    return true
   }
 
   func finishActiveOrPendingSubscriptionTask(
@@ -3035,13 +3167,15 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     return didFinish
   }
 
-  private func publishChange() {
+  /// - Parameter changed: The members Observation hears of; an emission names only those it changed (#1493), as the
+  ///   Sharing library's references do, so a view that reads only `isLoading` is not invalidated by every new value.
+  private func publishChange(_ changed: FetchStorageMembers = .all) {
     #if canImport(Observation)
       if #available(iOS 17, macOS 14, tvOS 17, watchOS 10, *),
         let observationRegistrar =
           observationRegistrar as? FetchObservationRegistrar<Value>
       {
-        observationRegistrar.publishChange(of: self)
+        observationRegistrar.publishChange(of: self, changed)
       }
     #endif
     #if canImport(SwiftUI)
@@ -3086,11 +3220,11 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       registrar.access(storage, keyPath: keyPath)
     }
 
-    func publishChange(of storage: FetchStorage<Value>) {
-      registrar.withMutation(of: storage, keyPath: \.initialValue) {}
-      registrar.withMutation(of: storage, keyPath: \.wrappedValue) {}
-      registrar.withMutation(of: storage, keyPath: \.loadError) {}
-      registrar.withMutation(of: storage, keyPath: \.isLoading) {}
+    func publishChange(of storage: FetchStorage<Value>, _ changed: FetchStorageMembers) {
+      if changed.contains(.initialValue) { registrar.withMutation(of: storage, keyPath: \.initialValue) {} }
+      if changed.contains(.wrappedValue) { registrar.withMutation(of: storage, keyPath: \.wrappedValue) {} }
+      if changed.contains(.loadError) { registrar.withMutation(of: storage, keyPath: \.loadError) {} }
+      if changed.contains(.isLoading) { registrar.withMutation(of: storage, keyPath: \.isLoading) {} }
     }
   }
 #endif
@@ -3102,6 +3236,27 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
 #if canImport(Observation)
   extension FetchStorage: Observable {}
 #endif
+
+/// The metadata of a fetch task's trace entry for one emission.
+private func fetchTaskEmissionMetadata<Value>(
+  _ value: Value,
+  operation: String,
+  emissionCount: Int,
+  subscriptionID: Int
+) -> [String: String] {
+  var metadata = [
+    "operation": operation,
+    "emissionCount": String(emissionCount),
+    "subscriptionID": String(subscriptionID),
+  ]
+  let mirror = Mirror(reflecting: value)
+  if mirror.displayStyle == .collection || mirror.displayStyle == .set
+    || mirror.displayStyle == .dictionary
+  {
+    metadata["resultCount"] = String(mirror.children.count)
+  }
+  return metadata
+}
 
 private func runFetchStorageSubscriptionTask<Value: Sendable>(
   storage: FetchStorage<Value>,
@@ -3157,24 +3312,19 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
           throw CancellationError()
         }
         emissionCount += 1
-        var emissionMetadata = [
-          "operation": operation,
-          "emissionCount": String(emissionCount),
-          "subscriptionID": String(subscriptionID),
-        ]
-        let mirror = Mirror(reflecting: value)
-        if mirror.displayStyle == .collection || mirror.displayStyle == .set
-          || mirror.displayStyle == .dictionary
-        {
-          emissionMetadata["resultCount"] = String(mirror.children.count)
-        }
+        // #1493: the trace entry's metadata, a Mirror of the value among it, is built only when the entry is recorded.
         InstantDiagnostics.shared.record(
           .trace,
           subsystem: "instant-swift-data",
           category: "fetch-wrapper",
           event: "fetch-task.emitted",
           message: "Property wrapper applied a subscription emission.",
-          metadata: emissionMetadata
+          metadata: fetchTaskEmissionMetadata(
+            value,
+            operation: operation,
+            emissionCount: emissionCount,
+            subscriptionID: subscriptionID
+          )
         )
       }
       try Task.checkCancellation()
@@ -3845,7 +3995,10 @@ private func startAutomaticFetchObservation<Value: Sendable>(
     message: "Started automatic observation for a static fetch declaration.",
     metadata: ["valueType": String(reflecting: Value.self)]
   )
+  let census = InstantObservationTaskCensus.current
+  census?.taskStarted()
   let task = Task {
+    defer { census?.taskFinished() }
     var subscriptionID: Int?
     var emissionCount = 0
     do {
@@ -3876,17 +4029,17 @@ private func startAutomaticFetchObservation<Value: Sendable>(
             throw CancellationError()
           }
           emissionCount += 1
-          let mirror = Mirror(reflecting: value)
           if emissionCount == 1 {
             startupTrace.completed(
               "fetch.first-emission",
               since: startupStopwatch,
               metadata: [
-                "resultCount": String(mirror.children.count),
+                "resultCount": String(Mirror(reflecting: value).children.count),
                 "valueType": String(reflecting: Value.self),
               ]
             )
           }
+          // #1493: a Mirror of the value and its type's name, per emission, only when the entry is recorded.
           InstantDiagnostics.shared.record(
             .trace,
             subsystem: "instant-swift-data",
@@ -3895,7 +4048,7 @@ private func startAutomaticFetchObservation<Value: Sendable>(
             message: "Applied an automatic fetch observation emission.",
             metadata: [
               "emissionCount": String(emissionCount),
-              "resultCount": String(mirror.children.count),
+              "resultCount": String(Mirror(reflecting: value).children.count),
               "valueType": String(reflecting: Value.self),
             ]
           )

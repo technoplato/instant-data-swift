@@ -1,0 +1,1 @@
+claude-code/perf-observe-1493@ld 2026-10-31T13:14:20-0400 mower plan=2026-10-31-perf-observe-1493 #1493 amendment 1 (the exercise lives in the wrapper bundle, beside its runner)
