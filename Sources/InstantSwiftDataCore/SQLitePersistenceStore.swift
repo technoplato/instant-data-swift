@@ -86,10 +86,9 @@
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
 // - 2026-10-31: a query-cache row holds its answer's digest and, in columns, the last read's time, revisions and
 //   sequence, which readers lay over its JSON; a read whose answer the row holds updates those columns only (#1498).
-// - 2026-10-31: the store keeps the receipt fingerprint it computed for each outbox body, keyed by the SHA-256 of the
-//   stored text, so the delivery claim and the acknowledgement no longer encode a body the save just wrote (#1497).
+// - 2026-10-31: the store keeps the receipt fingerprint it computed for each write, keyed by a hash of the fingerprint's
+//   inputs, so the delivery claim and the acknowledgement no longer encode a write the save just fingerprinted (#1497).
 
-import Crypto
 import Foundation
 import IssueReporting
 import os
@@ -599,9 +598,9 @@ struct InstantMutationLifecycleResolution: Sendable {
   var event: InstantMutationLifecycleEvent
 }
 
-/// The receipt fingerprint of one stored outbox body and the SHA-256 of the text it was computed from (#1497).
-private struct InstantStoredBodyReceiptFingerprint {
-  var bodyDigest: SHA256.Digest
+/// A write's receipt fingerprint and the hash of the inputs it was computed from (#1497).
+private struct InstantKeptReceiptFingerprint {
+  var inputsHash: Int
   var fingerprint: String
 }
 
@@ -1332,12 +1331,12 @@ public actor SQLitePersistenceStore {
   /// Query-cache answers encoded as JSON (#1498), on this actor or off it: for tests and the release's measurements.
   private let queryCacheAnswerEncodes = OSAllocatedUnfairLock(initialState: 0)
   private var optimisticEffectFingerprintCount = 0
-  /// The receipt fingerprint this store computed for each outbox body, by mutation id, with the SHA-256 of the stored
-  /// text it was computed from (#1497). The delivery claim and the acknowledgement check a body against the receipt its
-  /// save minted, and each computed the fingerprint again from the body: a sorted-keys JSON encoding of the transaction
-  /// and its rollback, about 1.3 ms for a transcript line on a Mac mini, on this actor. Text that hashes the same
-  /// decodes to the same body, so the kept fingerprint stands for it; other text is fingerprinted as before.
-  private var bodyReceiptFingerprints: [String: InstantStoredBodyReceiptFingerprint] = [:]
+  /// The receipt fingerprint this store last computed for each write, by mutation id, with the hash of its inputs
+  /// (#1497). The delivery claim and the acknowledgement check a write's body against the receipt its save minted, and
+  /// each computed the fingerprint again: a sorted-keys JSON encoding of the transaction and its rollback and a SHA-256,
+  /// about 1.3 ms for a transcript line on a Mac mini, on this actor. The fingerprint is a function of its inputs, so
+  /// equal inputs reuse it, and any other inputs (an earlier process's body, a changed one) are fingerprinted as before.
+  private var keptReceiptFingerprints: [String: InstantKeptReceiptFingerprint] = [:]
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1454,55 +1453,38 @@ public actor SQLitePersistenceStore {
     optimisticEffectFingerprintCount
   }
 
-  /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one encodes the mutation's transaction and
-  /// rollback with `JSONEncoder` and hashes the text.
+  /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one computed encodes the mutation's
+  /// transaction and rollback with `JSONEncoder` and hashes the text; one whose inputs equal the kept one's is reused,
+  /// and not counted (#1497).
   private func optimisticEffectFingerprint(of mutation: PendingMutation) throws -> String? {
-    optimisticEffectFingerprintCount += 1
-    return try mutation.optimisticEffectReceiptFingerprint()
-  }
-
-  /// The receipt fingerprint of `mutation`, decoded from `row`'s body (#1497): the one this store computed for the same
-  /// stored text, or a new one, kept for the next check of that text.
-  private func optimisticEffectFingerprint(
-    of mutation: PendingMutation,
-    storedIn row: InstantOutboxBodyRow
-  ) throws -> String? {
-    let bodyDigest = Self.storedBodyDigest(row.json)
-    if let kept = bodyReceiptFingerprints[row.mutationID], kept.bodyDigest == bodyDigest {
+    guard mutation.hasOptimisticEffectReceiptFingerprint else {
+      optimisticEffectFingerprintCount += 1
+      return nil
+    }
+    let inputsHash = mutation.optimisticEffectReceiptFingerprintInputsHash
+    if let kept = keptReceiptFingerprints[mutation.id], kept.inputsHash == inputsHash {
       return kept.fingerprint
     }
-    let fingerprint = try optimisticEffectFingerprint(of: mutation)
-    keepBodyReceiptFingerprint(fingerprint, mutationID: row.mutationID, bodyDigest: bodyDigest)
+    optimisticEffectFingerprintCount += 1
+    guard let fingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+      keptReceiptFingerprints[mutation.id] = nil
+      return nil
+    }
+    // An entry lives from the save to the acknowledgement, so a connected recording keeps a few. Past the bound
+    // (offline, unacknowledged writes) they are all dropped, and each write is fingerprinted again when next checked.
+    if keptReceiptFingerprints.count >= Self.maximumKeptReceiptFingerprints,
+      keptReceiptFingerprints[mutation.id] == nil
+    {
+      keptReceiptFingerprints.removeAll(keepingCapacity: true)
+    }
+    keptReceiptFingerprints[mutation.id] = InstantKeptReceiptFingerprint(
+      inputsHash: inputsHash,
+      fingerprint: fingerprint
+    )
     return fingerprint
   }
 
-  /// Keeps `fingerprint` as the receipt fingerprint of `mutationID`'s body stored as the text that hashes to
-  /// `bodyDigest`, or forgets the body's entry when it has none (#1497). An entry lives from the save to the
-  /// acknowledgement, so a connected recording keeps a few; past ``maximumKeptBodyReceiptFingerprints`` unacknowledged
-  /// writes (offline) the kept ones are dropped, and each body is fingerprinted again when next checked.
-  private func keepBodyReceiptFingerprint(_ fingerprint: String?, mutationID: String, bodyDigest: SHA256.Digest) {
-    guard let fingerprint else {
-      bodyReceiptFingerprints[mutationID] = nil
-      return
-    }
-    if bodyReceiptFingerprints.count >= Self.maximumKeptBodyReceiptFingerprints,
-      bodyReceiptFingerprints[mutationID] == nil
-    {
-      bodyReceiptFingerprints.removeAll(keepingCapacity: true)
-    }
-    bodyReceiptFingerprints[mutationID] = InstantStoredBodyReceiptFingerprint(
-      bodyDigest: bodyDigest,
-      fingerprint: fingerprint
-    )
-  }
-
-  static let maximumKeptBodyReceiptFingerprints = 512
-
-  /// The SHA-256 of a body's stored text, as SQLite stores and returns it (#1497).
-  private static func storedBodyDigest(_ json: String) -> SHA256.Digest {
-    var json = json
-    return json.withUTF8 { SHA256.hash(data: UnsafeRawBufferPointer($0)) }
-  }
+  static let maximumKeptReceiptFingerprints = 512
 
   package func resetTerminalFailureMetadataMetricsForTesting() {
     terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
@@ -11013,8 +10995,8 @@ public actor SQLitePersistenceStore {
       }
 
       // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007), and the
-      // one the save computed for this stored text needs none (#1497).
-      let effectFingerprint = try optimisticEffectFingerprint(of: mutation, storedIn: row)
+      // save's, kept, needs none (#1497).
+      let effectFingerprint = try optimisticEffectFingerprint(of: mutation)
       let hasPreparedMaterializedEffect = hasStoredPreparedOptimisticEffectReceipt(
         mutation,
         in: row,
@@ -11128,8 +11110,8 @@ public actor SQLitePersistenceStore {
         // Its lifecycle record checks the receipt once more, with the kept fingerprint.
         try saveMutationLifecycleWithoutTransaction(mutation)
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-        // Accepted: no claim or acknowledgement checks this body again (#1497).
-        bodyReceiptFingerprints[mutation.id] = nil
+        // Accepted: no claim or acknowledgement checks this write again (#1497).
+        keptReceiptFingerprints[mutation.id] = nil
       }
       return InstantOutboxRowAcceptance(
         mutation: mutation,
@@ -17916,7 +17898,7 @@ public actor SQLitePersistenceStore {
     return hasStoredPreparedOptimisticEffectReceipt(
       mutation,
       in: row,
-      fingerprint: try optimisticEffectFingerprint(of: mutation, storedIn: row)
+      fingerprint: try optimisticEffectFingerprint(of: mutation)
     )
   }
 
@@ -19836,12 +19818,6 @@ public actor SQLitePersistenceStore {
       mutationID: durableMutation.id,
       body: encoded.body,
       lifecycle: encoded.lifecycle
-    )
-    // The claim's and the acknowledgement's checks of this text need no new fingerprint (#1497).
-    keepBodyReceiptFingerprint(
-      candidateFingerprint,
-      mutationID: durableMutation.id,
-      bodyDigest: Self.storedBodyDigest(encoded.body)
     )
     try replaceOutboxEffectEntitiesWithoutTransaction(
       mutationID: durableMutation.id,

@@ -2,8 +2,8 @@
 // 2026-10-31  #1497  Created. The delivery claim and the acknowledgement each fingerprinted a write's optimistic effect
 //                    again from the body the save had just written: a sorted-keys JSON encoding of the transaction and
 //                    its rollback and a SHA-256, about 1.3 ms an acknowledgement on a Mac mini for a transcript line. The
-//                    store now keeps the fingerprint it computed for each body, keyed by the SHA-256 of the body's stored
-//                    text, and computes it again only for bytes it has not fingerprinted.
+//                    store now keeps the fingerprint it computed for each write, keyed by a hash of the fingerprint's
+//                    inputs, and computes it again only for inputs it has not fingerprinted.
 
 import CustomDump
 import Foundation
@@ -55,19 +55,45 @@ struct InstantAcknowledgementDigestTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
-  /// A body whose stored bytes changed after its save is fingerprinted again from them (#1497): the kept fingerprint
-  /// names the bytes it was computed from, not the mutation id. The same write, encoded differently, is still claimed
-  /// and accepted.
+  /// A body whose content changed behind the store after its save is fingerprinted again, and the claim refuses it as
+  /// before (#1497): the kept fingerprint stands for the inputs it was computed from, not for the mutation id.
   @Test
-  func aBodyChangedAfterItsSaveIsFingerprintedFromItsStoredBytes() async throws {
+  func aBodyWhoseContentChangedIsFingerprintedAgainAndRefused() async throws {
     var fixture = try await FastDrainFixture.make(
-      suffix: "receipt-changed-body",
+      suffix: "receipt-changed-content",
       serverSegmentCount: 2,
       pendingSegmentCount: 0
     )
     _ = try await fixture.writeSegments(1)
-    let cacheURL = fixture.configuration.persistenceURL
-    let changedID = try Self.reencodeFirstStoredBody(cacheURL: cacheURL)
+    let changedID = try Self.rewriteFirstStoredBody(cacheURL: fixture.configuration.persistenceURL) { body in
+      var transaction = try #require(body["transaction"] as? [String: Any])
+      transaction["id"] = "changed-behind-the-store"
+      body["transaction"] = transaction
+    }
+    let beforeClaim = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
+
+    var claimed: [PendingMutation] = []
+    await withKnownIssue("A body whose receipt does not match its content is quarantined at the claim.") {
+      claimed = try await fixture.claimWindow().mutations
+    }
+    let afterClaim = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
+
+    #expect(!claimed.map(\.id).contains(changedID))
+    #expect(afterClaim - beforeClaim >= 1, "the claim reused a fingerprint for changed content")
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A body stored again in another encoding, with the same content, reuses the kept fingerprint (#1497): its inputs are
+  /// the same, so its fingerprint is; its write is claimed and accepted.
+  @Test
+  func aBodyStoredInAnotherEncodingReusesTheKeptFingerprint() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "receipt-same-content",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0
+    )
+    _ = try await fixture.writeSegments(1)
+    let reencodedID = try Self.rewriteFirstStoredBody(cacheURL: fixture.configuration.persistenceURL) { _ in }
     let beforeClaim = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
 
     let window = try await fixture.claimWindow()
@@ -83,16 +109,19 @@ struct InstantAcknowledgementDigestTests {
     let afterAcknowledgements = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
 
     let pending = try await fixture.pendingCount()
-    #expect(window.mutations.map(\.id).contains(changedID))
-    #expect(afterClaim - beforeClaim == 1, "the claim fingerprinted \(afterClaim - beforeClaim) bodies")
+    #expect(window.mutations.map(\.id).contains(reencodedID))
+    #expect(afterClaim - beforeClaim == 0, "the claim fingerprinted \(afterClaim - beforeClaim) bodies")
     #expect(afterAcknowledgements - afterClaim == 0, "\(afterAcknowledgements - afterClaim) acknowledgement fingerprints")
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
   }
 
-  /// Rewrites the oldest stored body with the same JSON in another encoding (sorted keys), through a second SQLite
-  /// connection, and returns its mutation id.
-  static func reencodeFirstStoredBody(cacheURL: URL) throws -> String {
+  /// Rewrites the oldest stored body through a second SQLite connection, as `change` edits its JSON object, in another
+  /// encoding (sorted keys, unescaped slashes), and returns its mutation id.
+  static func rewriteFirstStoredBody(
+    cacheURL: URL,
+    _ change: (inout [String: Any]) throws -> Void
+  ) throws -> String {
     var database: OpaquePointer?
     try #require(sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK)
     defer { sqlite3_close(database) }
@@ -114,7 +143,8 @@ struct InstantAcknowledgementDigestTests {
     try #require(sqlite3_step(select) == SQLITE_ROW)
     let id = String(cString: sqlite3_column_text(select, 0))
     let json = String(cString: sqlite3_column_text(select, 1))
-    let object = try JSONSerialization.jsonObject(with: Data(json.utf8))
+    var object = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    try change(&object)
     let reencoded = String(
       decoding: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]),
       as: UTF8.self
