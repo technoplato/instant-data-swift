@@ -1,7 +1,7 @@
-## 2026-10-31 15:14:30  — scribe `cef2d9a7d9269aede44ca8f4c22d3b144d835906`
+## 2026-10-31 15:14:30 EDT — scribe `cef2d9a7d9269aede44ca8f4c22d3b144d835906`
 Release (#1482): Scribe 0.1 (210): instant-data-swift pinned exactly at 1.9.58 (pin 000210f5f, cut 83dec0324, change log 6813cf9e7), carrying #1495; with #1510's app half and #1499's heads-up wording since 209.
 
-## 2026-10-31 15:12:35  — instant-data-swift `97241036e8284525b9ac05957cd9af12f72c2622`
+## 2026-10-31 15:12:35 EDT — instant-data-swift `97241036e8284525b9ac05957cd9af12f72c2622`
 Release (#1482): v1.9.58 tagged on this merge (release document 02566ad4, change log 3431e78b): #1495, an observer keeps the ids its result shows, collected once per result. No API, storage or conversion change.
 
 ## 2026-10-31 15:06:17 EDT — scribe `b87c51f61a34bf590b9a185e78b5076dfe6585fd`
