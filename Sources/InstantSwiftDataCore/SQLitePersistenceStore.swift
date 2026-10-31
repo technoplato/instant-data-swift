@@ -1520,6 +1520,12 @@ public actor SQLitePersistenceStore {
     liveQueryResultJSON.deferred.count
   }
 
+  /// The stored result of `key` as the store's own readers read it (the retraction diff, the prune, the unload), for
+  /// tests (#1426).
+  func storedLiveQueryResultForTesting(key: String) throws -> InstantPersistedLiveQueryResult? {
+    try readTransaction { try liveQueryResultWithoutTransaction(key: key) }
+  }
+
   /// Writes, within one interval, the results whose JSON waited, if any are left and an interval is set (#566).
   private func scheduleDeferredLiveQueryResultFlushIfNeeded() {
     guard let intervalMilliseconds = liveQueryResultJSONWriteIntervalMilliseconds,

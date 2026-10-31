@@ -2,6 +2,7 @@
 // - 2026-10-30: added (#1426): what a server refresh that restates a result writes to SQLite, by b-tree, when one of
 //   its rows changed: a 50-row result against a 1-row one, in todo rows and in rows shaped like a phone's recordings;
 //   and what a relaunch's answers write when the stored result did not change, or changed in one row.
+// - 2026-10-31: each call's line prints the pages its statements read (#1440).
 
 import CustomDump
 import Foundation
@@ -403,6 +404,10 @@ struct RefreshWrites {
       callLine.add("call", String(call.prefix(while: { $0 != "(" })))
       callLine.add("transactions", Double(measure.transactions) / Double(max(1, refreshes)), digits: 2)
       callLine.add("pages", Double(measure.pagesWritten) / Double(max(1, refreshes)), digits: 2)
+      // The pages its statements read, from the page cache or the file (#1440: an update of a result row's count and
+      // time read the whole row, its JSON included).
+      let pagesRead = measure.sqlite.cacheHits + measure.sqlite.cacheMisses
+      callLine.add("pagesRead", Double(pagesRead) / Double(max(1, refreshes)), digits: 2)
       callLine.print()
     }
   }
