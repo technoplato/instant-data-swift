@@ -1,3 +1,6 @@
+## 2026-10-31 13:45:14 EDT — instant-data-swift `c9dc143dd60615479083b7a24522c0c5844ba86d`
+Perf (#1498): a one-shot read writes its answer to the query cache only when it changed, and never encodes it on the persistence actor: the row keeps its answer's digest and, in columns, the last read's time, revisions and sequence, which readers lay over its JSON (red 38c426f6, green 2c1c003d; change log f07f53fc). A fresh store's first answer takes one more persistence turn (relaunch pins 14 to 15). Before on the Mac mini (release, the recording exercise sampled 60 s at 1 ms): queryOnce 802 ms of CPU, saveQueryCache 553 of it.
+
 ## 2026-10-31 13:32:48 EDT — scribe `20b7467ed46e247ffbca5f918e9b4856f08d42d2`
 Audit (#1509): the whole system, not one cause: the phone's cost mapped by state and subsystem from the 10-30 powerlog, MetricKit and the 10-30 and 10-31 energy ledgers; the floating bar's breathing symbol behind the lock with the screen on (#1502, +8.5 points of a core for 85 of 122 background minutes); 1.9.56's write fixes verified on the phone per event (claim -67%, ack -47%, apply -56%) while the save stays at 103 KB; #1491's 4.6x was the mini's clock state; filed #1511 #1512, queued six fixes. Landed as merge e5fe2a29051aec4ee41098ba14ef43f6337f36f3.
 
