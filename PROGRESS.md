@@ -1,3 +1,33 @@
+## 2026-10-31 17:31:11 EDT — perf-read-1498 (#1498, #1495): both after numbers, measured on the Mac mini
+
+- **#1498 after (M6: the recording exercise, Mac mini M4, release, `sample` 60 s at 1 ms,
+  `scripts/contention-exercises/profile-recording-1482.sh`; before main `7f0595b8` at 12:52, after `3cce5ca1` at 14:44,
+  which is #1498's green plus #1495's red, a counter only):** `queryOnce` CPU 802 -> 299 ms a minute (-63%); the
+  query-cache write 553 -> 43 ms (`saveQueryCache` before; `InstantQueryAnswerDigest` 37 + `confirmQueryCacheAnswer` 6
+  after); the persistence actor's JSON encode (`SQLitePersistenceStore.encode`) 541 -> 44 ms; `sqlite3_step`
+  1,260 -> 1,273 (unchanged); `read.queryOnce` wall p50 101 -> 90 ms. Evidence: `~/Sync/audit/perf-read-1498/m6-before`
+  and `m6-after`.
+- **#1495 after (the 48-observer fan-out exercise, Mac mini M4, release, one job 17:13-17:27: red `3cce5ca1` with the
+  landed exercise laid over it against `9051d75e` + `ff8fb803`, both built in the job, 4 rounds alternating which side
+  runs first, 2,000 writes a run; the order-balanced mean of the 4 paired differences):** the app's write shape (interims
+  as unlinked live rows): a duration write's publication p50 840 -> 721 us (-14%, lower in 4 of 4 rounds); a final's
+  18.76 -> 18.73 ms (unchanged); an interim's 52.9 -> 53.4 us (+0.5 us, higher in 3 of 4 rounds, equal in 1); all 2,000
+  publications 6,820.6 -> 6,823.7 ms (+0.04%). The linked-interim stress shape: interims -5.9%, durations -15.7%, all
+  publications 11,460 -> 11,090 ms (-3.2%), each lower in 4 of 4 rounds. Id sets per 2,000 writes 6,350 -> 5,150
+  (stress 11,600 -> 4,800); materialized snapshots identical, so the same hand-overs. Evidence:
+  `~/Sync/audit/perf-read-1498/fanout-ab.txt` and `fanout-ab-summary.txt`; the script is `bin/fanout-ab-1495.sh` there.
+- **Found:** the finals' +2% between the separate before and after jobs (14:47 and 15:36) was the machine's state: in
+  one job the second run of a round is about 3% faster whichever side it is. Finals are 96% of the app shape's
+  publication time, and their cost is re-materialization (#1513). The interims' +0.5 us is small and consistent; its
+  cause is not measured (a likely one: each observer copied out of the store's dictionary per publication now carries
+  two more references).
+- **Merged tree:** `perf-read-1498-main-check` (laptop, debug, `e6e71913`, which holds #1491, #1492, #1498 and #1495):
+  20 tests in 5 suites pass.
+- **State:** #1498 and #1495 are VerificationNeeded with every criterion satisfied; READY FOR BUILD is on #1482 for both
+  (#1498 shipped in v1.9.57 and Scribe 209, #1495 in v1.9.58 and Scribe 210). This lane cut, tagged and installed
+  nothing.
+- **Next:** nothing in this lane; the publication's remaining cost is #1513.
+
 ## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
 
 - **Release:** `docs/releases/v1.9.59.md`, tag `v1.9.59` on this release branch's tip, cut from `main` at `81c07e43`.
