@@ -1,3 +1,6 @@
+## 2026-10-31 17:58:36 EDT — scribe `334c150a2256dff65a8d82e71d3d1d9a4350c4ef`
+Perf (#1503, #1506): landing 1 of perf-waste-fixes. Each audio chunk sent and each server message on the live transcription socket is counted in the energy ledger (speech.stream-send, speech.stream-receive) instead of a device-log line: 82% and 8.4% of the phone's 10-31 log, 63-70 MB an hour of recording (red 682941c7d, green 10fa5b026). The chapters query filters retiredAtMs null on the server, 225 KB -> 25 KB a restated frame for the recording chaptered live, and a held audio-keeper pass reads no audio rows (red c21743187, green b5e8b37bd). #1507 (e) documented (dcb21c180).
+
 ## 2026-10-31 17:48:43 EDT — scribe `046ce3d54fc28b6875c485e70f2bf81131241649`
 Release (#1482): Scribe 0.1 (212): instant-data-swift pinned exactly at 1.9.60 (pin 8a137eb52, cut 1489bdecd, change log 4c18f316a), carrying #1491; What's New 210 gets #1495's interleaved A/B.
 
