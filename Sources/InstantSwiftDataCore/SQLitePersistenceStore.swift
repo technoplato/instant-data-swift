@@ -84,6 +84,9 @@
 //   JSON is written or waits, so nothing is kept in memory, marked or repaired after a kill, and a header's update reads
 //   no JSON (#1440). A store 1.9.54 left converts once at open (0034). The retraction diff reads the stored result's
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
+// - 2026-10-31: the writer keeps SQLite's temporary structures in memory from the end of its bootstrap, after the one-time
+//   migrations and before the server apply's staging tables: a phone wrote 34-37K temporary-file writes an hour of
+//   recording and 470K across one evening's launches (#1504).
 
 import Foundation
 import IssueReporting
@@ -2874,6 +2877,14 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try ensureRareStateIndexes()
     }
+    // #1504: SQLite's temporary structures in memory from here on: a statement's journal, a sort's or a DISTINCT's
+    // spill, the server apply's staging tables. With SQLite's default, a file, a phone wrote them 34,124-36,677 times an
+    // hour of recording (19-49 MB/h) and 470,007 times across one evening's eight launches, bytes SQLite deletes when the
+    // statement ends. What one holds is bounded by the library's own batches (a prune batch of 1,000 facts, a released or
+    // reloaded chunk, a server apply's page of 51 rows). The one-time migrations above keep the file: one copies every
+    // fact's key into a temporary table. Set before the staging tables, because a change of the setting drops every
+    // temporary table that exists.
+    try execute("PRAGMA temp_store = MEMORY")
     try ensureServerApplyStagingSchema()
     try withSQLiteBusyRetry {
       try ensureLookupIndexes()
@@ -20603,6 +20614,8 @@ public actor SQLitePersistenceStore {
   private func reopenConnection() throws {
     connection.close()
     connection.raw = try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS)
+    // #1504: a reopened writer keeps its temporary structures in memory, as its bootstrap left them.
+    try execute("PRAGMA temp_store = MEMORY")
   }
 
   private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) throws {

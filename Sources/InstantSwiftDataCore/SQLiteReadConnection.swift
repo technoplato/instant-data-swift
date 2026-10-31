@@ -314,6 +314,9 @@ actor SQLiteReadConnection {
       try Self.execute("PRAGMA query_only = ON", on: opened)
       // A small page cache: reads here are pages of rows, and the writer keeps its own cache.
       try Self.execute("PRAGMA cache_size = -2048", on: opened)
+      // #1504: a read's sort or DISTINCT past the cache stays in memory, no larger than the rows the read returns,
+      // which its caller decodes anyway; with SQLite's default it went to a file the system writes.
+      try Self.execute("PRAGMA temp_store = MEMORY", on: opened)
     } catch {
       sqlite3_close_v2(opened)
       throw error
