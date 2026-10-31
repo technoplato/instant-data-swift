@@ -1,3 +1,30 @@
+## 2026-10-30 23:37:30 EDT — scribe `3bc5bed1b4ad7b8ef12d2cee21f440444f89278f`
+Chore (#1435): change-log for the export's red and green.
+
+## 2026-10-30 23:14:14 EDT — instant-data-swift `da140b69ab85dcb77a912575096c2cc6eb9e5258`
+Fix (#1435): an outbox write's body lives in instant_outbox_bodies and the row is narrow (WITHOUT ROWID), so a claim and an acknowledgement write the row alone: 4.17 and 6.17 -> 2.00 and 4.00 log frames a write; a store converts once at open.
+
+## 2026-10-30 22:19:47 EDT — instant-data-swift `5ae13a7f0c95957c1c20428bd3f3b2e63e4c8573`
+Plan (#1435): amendments 2 and 3, FOOTGUNS F59 and #1436's per-index reads test.
+
+## 2026-10-30 22:19:23 EDT — scribe `1dc25af2317a030b34249b3a1daab5599e15964e`
+Fix (#1435): Reset Local Cache's export of unsent writes, the recovery script and query-plans read the library's outbox in either layout.
+
+## 2026-10-30 22:19:22 EDT — scribe `108c9d595b541a6b6db2fca4eca1804c07a0e78a`
+Test (#1435): red: the export and the recovery script read a store whose bodies have their own table.
+
+## 2026-10-30 22:18:58 EDT — scribe `936fdd6a08a485dc9300402477841ddee9189180`
+Chore (#1435): plan and claims for the narrow outbox's readers, the instant-data-swift 1.9.55 pin and the cut.
+
+## 2026-10-30 21:36:56 EDT — instant-data-swift `ba2c901b89067a6ee42b99b318dab7357aa5584d`
+Plan (#1435): amendment 1, the retained-mutation quarantine test's raw outbox SQL.
+
+## 2026-10-30 21:22:21 EDT — instant-data-swift `7730fb220c23ffbfc2bd351db192fc02debec781`
+Test (#1435): red: a claim and an acknowledgement rewrite the write's body, and the outbox has no narrow layout to convert to.
+
+## 2026-10-30 21:11:52 EDT — instant-data-swift `47891a5fb0c8261199e15bf7d967e57d6e8a03ff`
+Plan (#1435): 2026-10-30-outbox-1435 and its claims.
+
 ## 2026-10-30 23:33:14 EDT — scribe `29063405ed03e4d758d04bfd42ed6a6f20289779`
 Docs (#1442): the streams report, corrected against the source.
 

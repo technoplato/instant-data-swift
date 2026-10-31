@@ -1,3 +1,20 @@
+## 2026-10-30 23:49:14 EDT — v1.9.55 (outbox-1435, #1435): a claim and an acknowledgement write the outbox row alone
+
+- **Release:** `docs/releases/v1.9.55.md`, cut at `da140b69` (plan `47891a5f`, red `7730fb22`, green `da140b69`),
+  carrying 1.9.54. A one-time conversion at the first open (the outbox's body moves to `instant_outbox_bodies`), one
+  way only: 1.9.54 and older cannot open a converted store. No public API change.
+- **Why:** the consuming app's phone wrote 108 MB an hour of claims and 154 of acknowledgements while recording: each
+  changed the size of a row that held the write's body, so SQLite rewrote the cell with every overflow page, and the
+  acknowledgement re-encoded the body, which carried the status, server transaction id and confirmation source too.
+- **Checks:** red failed both new tests on the old layout (claim 4.17, acknowledgement 6.17 log frames a write); green:
+  claim 2.00, acknowledgement 4.00, one write at a time and overlapping; the conversion keeps refused 19 KB bodies and
+  writes acknowledged, claimed and pending, then delivers them. Bundle (1,608 tests): 8 failures of mine fixed in the
+  green, 1 known timing flake; the fixed suites and the new tests on the tagged green pass (64 in 9 suites).
+- **Next:** the consuming app pins 1.9.55 (its Reset Local Cache export, recovery script and query-plans already read
+  either layout, Scribe `1dc25af23`) and the phone's ledger measures claim and acknowledgement MB an hour before and
+  after; the conversion's time on a phone-store copy; #1436 (the save's and echo's writes: effect entities only where
+  they change, red/green on the mini).
+
 ## 2026-10-30 21:45:00 EDT — v1.9.54 (sqlite-writes-1426, #1426): a server refresh writes what changed, not the whole result
 
 - **Release:** `docs/releases/v1.9.54.md`, cut at `86f89b02` (plan `3d5bdada`, red `a3d25480`, green `86f89b02`),

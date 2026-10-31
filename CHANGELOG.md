@@ -10,6 +10,39 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 30th, 2026 at 11:48:47 p.m. EDT — `da140b69ab85` fix(#1435): green: an outbox write's body lives in its own table, and a claim and an acknowledgement write the narrow row alone
+
+- **Implementation commit:** `da140b69ab85dcb77a912575096c2cc6eb9e5258`
+- **Change:** fix(#1435): green: an outbox write's body lives in its own table, and a claim and an acknowledgement write the narrow row alone
+- **Details:**
+  - See docs/releases/v1.9.55.md.
+  - instant_outbox becomes a narrow WITHOUT ROWID row; the body moves to instant_outbox_bodies (WITHOUT ROWID, keyed by the mutation id, deleted with its row) without its status, server transaction id and confirmation source, which every reader takes from the row; the conversion runs once at open by SQLite's twelve-step rebuild with a census check.
+  - Measured (Mac mini, debug): claim 4.17 -> 2.00, acknowledgement 6.17 -> 4.00 log frames a write; save 15.33 -> 16.17, echo 18.50 -> 19.17. Bundle 1,608 tests: 8 failures from a retry-window SQL fragment and the startup trace's phase list, fixed; 64 tests in 9 suites pass on the tagged green.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1435 the narrow row, the body table, the conversion, the overlay decode, the 58 statements on the body columns
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — #1435 the schema rollbacks fold the bodies back first; raw body SQL reads the body table
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBodyConversionTests.swift` — #1435 the fold helper carries the store's indexes; the claim stays in flight across the conversion
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxNarrowRowTests.swift` — #1435 the overlapping variant; the conversion on a phone-store copy (OUTBOX_PHONE_STORE, laptop only)
+  - `docs/FOOTGUNS.md` — #1435 F59 names its guard
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, outbox-1435@strangelearning); no SpecStory capture
+
+## October 30th, 2026 at 11:48:47 p.m. EDT — `7730fb220c23` test(#1435): red: a claim and an acknowledgement rewrite the write's body, and the outbox has no narrow layout to convert to
+
+- **Implementation commit:** `7730fb220c23ffbfc2bd351db192fc02debec781`
+- **Change:** test(#1435): red: a claim and an acknowledgement rewrite the write's body, and the outbox has no narrow layout to convert to
+- **Details:**
+  - Each step's log frames named by the b-tree and kind of page they land on (StorageIOWriteCycle): a claim may write only the row's leaf and the delivery index, an acknowledgement those, the watermark index and the outbox revision.
+  - A store with refused 19 KB bodies and a recording's writes acknowledged, claimed and pending converts at open to a narrow WITHOUT ROWID row and a body table, keeps every column, body, key row and effect entity, then delivers and echoes the writes in flight.
+  - Mac mini 21:59 on the old layout: claim 4.17, acknowledgement 6.17 frames a write (freed pages and page 1 among them); both tests fail.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxNarrowRowTests.swift` — #1435 frames by b-tree and page kind for the claim and the acknowledgement
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBodyConversionTests.swift` — #1435 the conversion with writes in flight
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, outbox-1435@strangelearning); no SpecStory capture
+
 ## October 30th, 2026 at 9:39:42 p.m. EDT — `86f89b021051` fix(#1426): green: a changed result's JSON waits for the app's flush, and a relaunch's unchanged answer writes its row only
 
 - **Implementation commit:** `86f89b02105152727be975b5ff3999b001bbf246`
