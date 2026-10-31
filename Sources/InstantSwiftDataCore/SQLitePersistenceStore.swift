@@ -19400,8 +19400,6 @@ public actor SQLitePersistenceStore {
     encodedBody: (body: String, lifecycle: String)? = nil
   ) throws {
     let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
-    savedWireIntentFingerprintCount += 1
-    let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
     let durableMutation = mutation
     var statement: OpaquePointer?
     try prepare(
@@ -19438,6 +19436,15 @@ public actor SQLitePersistenceStore {
       ? sqlite3_column_int64(statement, 5) != 0
       : false
     finishStatement(statement)
+    // The forward wire intent decides only a row that already holds a server acceptance or was offered to delivery
+    // (#1491): a new write's row holds neither, so it is not fingerprinted (a sorted-key encode and a SHA-256 a write).
+    let candidateWireFingerprint: String?
+    if existingAcceptanceFingerprint != nil || existingDeliveryStarted {
+      savedWireIntentFingerprintCount += 1
+      candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
+    } else {
+      candidateWireFingerprint = nil
+    }
     if case .publicPersistence = receiptWriteAuthority,
       existingReceiptFingerprint != nil,
       candidateFingerprint != existingReceiptFingerprint
