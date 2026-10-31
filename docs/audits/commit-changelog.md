@@ -1,3 +1,6 @@
+## 2026-10-31 06:32:41 EDT — scribe `60906ef873c02c1f4022628899dd17d7e69c2e6f`
+Fix (#1466): every drag sits inside its row's menu, so a press that moves lifts it; a drag applied after the menu never lifted on iOS.
+
 ## 2026-10-31 05:27:40 EDT — instant-data-swift `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
 Fix (#1426, #1440): a stored live-query result is its ownership rows, its facts and a narrow header; every refresh writes exactly its diff, no result's JSON waits, and the header's update reads no JSON. Ships as 1.9.56.
 
