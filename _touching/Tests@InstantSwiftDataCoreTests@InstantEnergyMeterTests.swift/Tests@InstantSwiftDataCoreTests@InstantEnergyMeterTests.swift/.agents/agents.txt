@@ -1,1 +1,2 @@
 claude-opus-5.5-energy-98-sync 2026-10-11T00:16:00-04:00 mower plan=2026-10-10-energy-98-sync #669
+claude-code/perf-observe-1493@strangelearning 2026-10-31T16:35:57-0400 mower plan=2026-10-31-perf-observe-1493 amendment 1 #1494 (the plan begin's call site only)
