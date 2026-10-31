@@ -320,6 +320,15 @@ let package = Package(
       ],
       swiftSettings: strictConcurrencySettings
     ),
+    // #1493: the observation exercise (48 live fetch wrappers), an executable so it builds and runs in release; the
+    // wrapper test bundle does not link in release on the macOS 27 SDK.
+    .executableTarget(
+      name: "InstantObservationExercise",
+      dependencies: [
+        "InstantSwiftData",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
     .executableTarget(
       name: "ScribeShaped20sWriteBench",
       dependencies: [

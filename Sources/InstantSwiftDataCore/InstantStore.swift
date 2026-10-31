@@ -17,6 +17,8 @@ import Foundation
 //   indexing the store again (#654).
 // - 2026-10-28: `pruneResidency(of:)` says which released facts the store holds and materializes only entities the
 //   whole-entity rule can drop (#1319).
+// - 2026-10-31: an observer yields into its observation's output, the stream its consumer reads, which a runtime
+//   observation hands the store; the runtime forwarded every emission through two tasks of its own (#1493).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -497,7 +499,8 @@ private struct StoreObserver: Sendable {
   var liveQueryKey: String?
   var lastValues: [InstantEntitySnapshot]
   var lastPageInfo: InstantQueryPageInfo?
-  var continuation: AsyncStream<InstantQueryEmission>.Continuation
+  /// Where this observer's emissions go: the stream its consumer reads (#1493).
+  var output: InstantObservationOutput
   /// The result this observer was last handed (#653). A refresh that does not publish moves `lastValues` without
   /// handing anything over, so the two can differ.
   var lastHandedValues: [InstantEntitySnapshot]
@@ -568,6 +571,9 @@ public actor InstantStore {
   /// goes when its last observer does.
   private var yieldCountByQueryID: [String: Int] = [:]
   package private(set) var lastPublishMetrics = InstantStorePublishMetrics()
+  /// When the last publication began refreshing its observers: where the observation exercise times a write's way to
+  /// each fetch wrapper from (#1493).
+  package private(set) var lastPublicationStartedAt: ContinuousClock.Instant?
   /// Changes committed with ``commitDeferringPublication(_:installingLiveQueryPageInfo:)`` and not yet published.
   private var pendingPublication: PendingPublication?
   private var nextPublicationID: Int64 = 1
@@ -823,27 +829,34 @@ public actor InstantStore {
     ).stream
   }
 
+  /// - Parameter output: The stream the observation's consumer reads, which the observer yields into (#1493). The
+  ///   runtime passes its own, so the store's emissions reach the consumer with no task between them, and ends the
+  ///   observation itself when that stream ends; without one the store makes the stream and ends the observer with it.
   func observeQueryLease(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,
+    output: InstantObservationOutput? = nil,
     onCancellationStarted: (@Sendable () async -> Void)? = nil
   ) -> InstantStoreQueryObservationLease {
     observeLease(
       plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: nil,
+      output: output,
       onCancellationStarted: onCancellationStarted
     )
   }
 
   func observeInfiniteQueryLease(
     _ plan: InstantQueryPlan,
+    output: InstantObservationOutput? = nil,
     onCancellationStarted: (@Sendable () async -> Void)? = nil
   ) -> InstantStoreQueryObservationLease {
     observeLease(
       plan,
       remotePageInfo: nil,
       liveQueryKey: nil,
+      output: output,
       onCancellationStarted: onCancellationStarted
     )
   }
@@ -852,12 +865,14 @@ public actor InstantStore {
     _ plan: InstantQueryPlan,
     registrationKey: String,
     remotePageInfo: InstantQueryRemotePageInfo?,
+    output: InstantObservationOutput? = nil,
     onCancellationStarted: (@Sendable () async -> Void)? = nil
   ) -> InstantStoreQueryObservationLease {
     observeLease(
       plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: registrationKey,
+      output: output,
       onCancellationStarted: onCancellationStarted
     )
   }
@@ -866,33 +881,34 @@ public actor InstantStore {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo?,
     liveQueryKey: String?,
+    output givenOutput: InstantObservationOutput?,
     onCancellationStarted: (@Sendable () async -> Void)? = nil
   ) -> InstantStoreQueryObservationLease {
     let observerID = UUID()
-    let stream = AsyncStream<InstantQueryEmission>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
+    let output = givenOutput ?? InstantObservationOutput()
     registerObserver(
       id: observerID,
       plan: plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: liveQueryKey,
-      continuation: stream.continuation
+      output: output
     )
     let termination = InstantStoreObservationTermination { [weak self] in
       await onCancellationStarted?()
       guard let self else { return }
       await self.cancelObservation(id: observerID)
     }
-    stream.continuation.onTermination = { @Sendable _ in
-      Task {
-        await termination.run()
+    if givenOutput == nil {
+      output.onTermination {
+        Task {
+          await termination.run()
+        }
       }
     }
     return InstantStoreQueryObservationLease(
-      stream: stream.stream,
+      stream: output.stream,
       cancel: {
-        stream.continuation.finish()
+        output.finish()
         await termination.run()
       }
     )
@@ -1876,6 +1892,7 @@ public actor InstantStore {
       }
       return
     }
+    lastPublicationStartedAt = .now
     let refreshed = refreshObservers(
       changedEntityIDs: pending.changedEntityIDs,
       deferredValueChangedEntityIDs: pending.deferredValueChangedEntityIDs,
@@ -2208,7 +2225,7 @@ public actor InstantStore {
       }
       lastRefreshSequenceByQueryID[handOver.planID] = sequence
       yieldCountByQueryID[handOver.planID, default: 0] += 1
-      observer.continuation.yield(handOver.emission)
+      observer.output.yield(handOver.emission)
       observer.recordHanded(handOver.emission)
       observers[handOver.observerID] = observer
     }
@@ -3255,7 +3272,7 @@ public actor InstantStore {
     plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,
     liveQueryKey: String? = nil,
-    continuation: AsyncStream<InstantQueryEmission>.Continuation
+    output: InstantObservationOutput
   ) {
     // Existing observers see committed changes before a new one starts from the current store (#473).
     publishPendingChanges()
@@ -3266,13 +3283,13 @@ public actor InstantStore {
       liveQueryKey: liveQueryKey,
       lastValues: initialEmission.values,
       lastPageInfo: initialEmission.pageInfo,
-      continuation: continuation,
+      output: output,
       lastHandedValues: initialEmission.values,
       lastHandedPageInfo: initialEmission.pageInfo,
       verifiedEpoch: observerEpoch
     )
     yieldCountByQueryID[plan.id, default: 0] += 1
-    continuation.yield(initialEmission)
+    output.yield(initialEmission)
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
