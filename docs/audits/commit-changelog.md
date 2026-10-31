@@ -1,5 +1,11 @@
 - 2026-10-31 10:13:50 EDT · realtime-voice · `0b3fac6fd7f2` · #1487: any speech to text runs the full pipeline; Point-Free gets chapters
 
+## 2026-10-31 10:13:56 EDT — scribe `74679e9a9f4e7a500c80fef04fc151aa569b41d0`
+Merge (#1465): the chapters zoom level proven on the simulator, live and in playback, 8 of 8 UI tests; no app code changed.
+
+## 2026-10-31 10:12:53 EDT — scribe `3daf96f0c8504fcbda68485fc6b45c911afdbb62`
+Test (#1465): ChaptersZoomUITests pinch playback on its words, read the store's state on failure, and see the share sheet list the recording's own lines.
+
 ## 2026-10-31 09:51:16 EDT — scribe `cf3193a0fcf344582d7d844dc15b655cc18d5897`
 Merge (#1486): land-1486's presence: ~/Scribe/tools/land installed, 13 hand landing copies forward to it, claims released.
 
