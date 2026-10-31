@@ -1,3 +1,9 @@
+## 2026-10-30 22:41:55 EDT — scribe `0f09365a24948d26c68a9ff34452252a97bb0d97`
+Cut (#1393, #954, #1437, #1438): Scribe 0.1 (196): Today holds what it counts, one speaker name sideways, the notice's timer.
+
+## 2026-10-30 22:41:19 EDT — scribe `5fdd553ef3bc148700a2cb40ed39e0b29fda2202`
+Landing (#954, #1437, #1438, #1395): Today's list and count ask one question, one speaker name in the split, a notice on a timer, kept stamp pictures.
+
 ## 2026-10-30 22:39:53 EDT — scribe `299890798a2e5df3842b18095ea13c5834d4b2eb`
 Land (#1428): a recording's frames save together in the app's durability lane, and a media pass links its uploads in one transaction.
 
