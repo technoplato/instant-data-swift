@@ -1,3 +1,6 @@
+## 2026-10-31 14:54:08 EDT — instant-data-swift `e6e719134d2a754bf08489781ed5052d46642fc9`
+Perf (#1495): an observer keeps the set of ids its result shows, collected once per result and kept while it holds that result, so a publication no longer rebuilds it for every change it judges and again for the splice (red 3cce5ca1, green 9051d75e; a phone-shaped publication fan-out exercise ff8fb803; change log 8ccd5d57). Measured before on the Mac mini (release): a final's publication p50 18.4 ms, of which re-materialization 92%, the id sets about 1%, wasLastHanded's equality about 0.1% (so no fingerprint was added).
+
 ## 2026-10-31 13:51:10 EDT — instant-data-swift `4ba76de7f91ae84b30b7a2ccd72bd27b3701d12c`
 Perf (#1492): the live session keeps one attribute resolver per server schema instead of indexing all 2,283 attributes for every mutation it sends (red 8b5a4584, green 14ee7622); mutationEncode CPU per send 2,650.1 -> 14.5 us on the Mac mini (release, recording exercise, 90 sends).
 
