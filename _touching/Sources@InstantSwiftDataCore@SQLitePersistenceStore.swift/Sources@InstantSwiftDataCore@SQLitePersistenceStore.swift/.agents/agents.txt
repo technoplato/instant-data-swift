@@ -78,3 +78,4 @@ claude-code/sqlite-writes-1426@strangelearning 2026-10-30T20:24:16-0400 mower pl
 claude-code/outbox-1435@strangelearning 2026-10-30T21:12:00-0400 mower plan=2026-10-30-outbox-1435 #1435 #1436 (outbox regions only)
 claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)
 claude-code/perf-send-1492@ld 2026-10-31T12:26:11-0400 mower plan=2026-10-31-perf-send-1492 #1497 (acceptOutboxMutation and the receipt digest only)
+claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-perf-read-1498 #1498 (the query cache's table, save, readers, prune and counter only)

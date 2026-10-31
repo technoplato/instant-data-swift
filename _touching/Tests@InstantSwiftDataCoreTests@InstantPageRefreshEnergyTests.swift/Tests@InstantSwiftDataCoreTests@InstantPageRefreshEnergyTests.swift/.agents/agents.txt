@@ -1,1 +1,2 @@
 claude-opus-5.5-energy-99-lib 2026-10-11T10:56:53-04:00 mower plan=2026-10-11-energy-99-pages #654 #669
+claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-perf-read-1498 #1495
