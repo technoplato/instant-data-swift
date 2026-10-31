@@ -39,7 +39,11 @@ receipt fingerprint).
 5. Amendment 1 (measured at 12:44: 287f77d1 alone holds 5.02 ms, so F0 is mostly machine state): the two digests a
    save writes format their 32 bytes with `String(format:)` each, about 0.11 ms a write on the M4 (M6 sample); red pins
    the digest of a known input, green writes the same lowercase hex from a byte table.
-6. After each green: land, ledger with land --prepend, "READY FOR BUILD" on #1482. No build cut, tagged or installed.
+6. Amendment 2: in `saveOutboxMutationWithoutTransaction`, the wire-intent fingerprints (the candidate's sorted-key
+   encode and SHA-256, the stored body's decode and its own) decide only a row that already holds a server acceptance
+   or was offered to delivery; a new write computes them and reads neither. Red pins the count of wire fingerprints a
+   new write computes (0); green computes them only for such a row; same checks, same errors.
+7. After each green: land, ledger with land --prepend, "READY FOR BUILD" on #1482. No build cut, tagged or installed.
 
 Write contract unchanged: transact/save is local materialize and durable outbox only. Nothing is batched, delayed,
 throttled, sampled, dropped or limited.
@@ -49,7 +53,8 @@ throttled, sampled, dropped or limited.
 - scripts/contention-exercises/ab-commits.sh (new)
 - Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift (`InstantAutomaticOutboxAdmission.validateNewMutation`)
 - Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift (`saveLocalMutation`, and in
-  `saveOutboxMutationWithoutTransaction` only the admission's byte bound beside `encodeOutboxBody`; not
+  `saveOutboxMutationWithoutTransaction` the admission's byte bound beside `encodeOutboxBody` and, amendment 2, its
+  wire-intent fingerprints; not
   `acceptOutboxMutation` or the receipt digest, which perf-send-1492 owns, nor the query cache or the server apply)
 - Sources/InstantSwiftDataCore/InstantRuntime.swift (`transact`, `performTransact`, `loadLocalWriteReads`,
   `saveLocalMutationReadingConnectionStatus` only)

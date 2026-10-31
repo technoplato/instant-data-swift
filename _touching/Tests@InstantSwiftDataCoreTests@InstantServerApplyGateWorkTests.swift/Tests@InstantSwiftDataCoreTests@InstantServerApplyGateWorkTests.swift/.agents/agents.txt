@@ -1,1 +1,2 @@
 claude-code/server-apply-932@halfjew22 2026-10-23T14:52:59-0400 grower plan=2026-10-23-server-apply-932 #932 #998 #590
+claude-code/perf-observe-1493@strangelearning 2026-10-31T16:35:57-0400 mower plan=2026-10-31-perf-observe-1493 amendment 1 #1494 (one test: the stale stage)
