@@ -17,3 +17,4 @@ claude-code/server-apply-932@halfjew22 2026-10-23T14:52:59-0400 grower plan=2026
 claude-code/fix-gate-1074@ld 2026-10-24T21:11:36-0400 mower plan=2026-10-24-fix-gate-1074 #1131 (registerQuery and a send-after-record entry beside it; amended per issue)
 claude-code/fix-gate-1074@ld 2026-10-24T23:01:44-0400 mower plan=2026-10-24-fix-gate-1074 #1131 amendment 2 (unregisterQuery, reconcileQueryMembership, RegisteredQuery)
 claude-code/perf-send-1492@ld 2026-10-31T12:26:11-0400 mower plan=2026-10-31-perf-send-1492 #1492 #1496 (sendMutations, send(_:through:), serverAttributes; not startReceiving/record/canDeliverReceiverEvent)
+claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494
