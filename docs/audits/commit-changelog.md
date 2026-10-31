@@ -1,3 +1,18 @@
+## 2026-10-30 22:39:53 EDT — scribe `299890798a2e5df3842b18095ea13c5834d4b2eb`
+Land (#1428): a recording's frames save together in the app's durability lane, and a media pass links its uploads in one transaction.
+
+## 2026-10-30 22:39:53 EDT — scribe `29f07ebfc588d87e0c0faa5fa1704fd1296c7d3b`
+Change log (#1428): entries for the test, fix and docs commits.
+
+## 2026-10-30 22:39:53 EDT — scribe `d7d2f48347fc4b6a5ee435e5b9659ec68fd0094b`
+Docs (#1428): an app ADR amendment on media uploads, an audit of per-frame writes, and the release notes.
+
+## 2026-10-30 22:39:53 EDT — scribe `2ede142c235b66b90cca6b266060a0add348bf68`
+Fix (#1428): an app writes a recording's images as one transaction per few seconds, and links each pass's stored files at once.
+
+## 2026-10-30 22:39:53 EDT — scribe `6bac038f465f4164722f9a7154075d155ba27652`
+Test (#1428): red tests for batching image metadata and file links.
+
 ## 2026-10-30 21:44:30 EDT — scribe `4d4c134c42965d7b619e85904befdc01a0cb6908`
 Cut (#1426): Scribe 0.1 (195): instant-data-swift 1.9.54, a server refresh writes what changed; carries #1427's landing A and #1197's mirror fixes.
 
