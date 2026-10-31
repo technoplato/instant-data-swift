@@ -7,7 +7,8 @@
 - **Measured before:** a device's energy ledger counted 34,124-36,677 temporary-file writes an hour of recording
   (19-49 MB/h) and 470,007 (166 MB/h) across eight launches. **Expected after:** 0; the device's ledger after the next
   release measures it, and its memory footprint (the app's #1507 minute field) is the check on the other side.
-- **Tests:** 17 tests in 5 suites pass on the branch (pwf-1504-redgreen); re-run on the merged branch: MERGED.
+- **Tests:** 17 tests in 5 suites pass on the branch (pwf-1504-redgreen); re-run on the merged branch (31569b58): 40 tests in 8 suites pass, the write
+  recorder's, the registration gate's and the prune's among them (pwf-1504-merged, 19:01).
 - **#1500:** waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test
   confirmed), plan amendment 3.
 
