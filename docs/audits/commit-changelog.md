@@ -1,3 +1,9 @@
+## 2026-10-31 09:31:46 EDT — scribe `3cee0837c549b8c78ec3c4113dbce168011b9629`
+Cut (#1393, #1465, #1457, #1449, #1469): Scribe 0.1 (207): the Mac View menu moves between lines and chapters, the image viewer title fits, a map applies its first frame at once.
+
+## 2026-10-31 08:57:11 EDT — scribe `02880730351739bbc13e9e12a89987a2a5f91ed9`
+Test (#1453, #1437): the row checks press a line on screen, and the first-line check starts with the layout harness notice closed.
+
 ## 2026-10-31 08:23:40 EDT — scribe `fe49cd6ea74b05467180ab637881d8c37732deca`
 Merge (#1469): each broadcast frame's JPEG is written once on the phone; the spool takes the extension's file by rename and the recording's copy is a synced hard link.
 
