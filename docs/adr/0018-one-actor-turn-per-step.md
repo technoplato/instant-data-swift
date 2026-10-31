@@ -211,6 +211,11 @@ every count (2,487 to 0, 119 frames, 17 rebases, 26,288 bodies, 2,384 accepted, 
 - 2026-10-25 (#1134): the relaunch still makes 14 calls, now gate 4, persistence 6, store 4: its one-shot query takes no
   gate while the store holds what SQLite does, and answers through a local observation, which registers with the store
   and ends there. A one-shot read of `query-materialization.todos` is 5 calls: persistence 2, store 3.
+- 2026-10-31 (#1498): a one-shot read whose answer the query cache's row already holds saves in one turn that encodes
+  nothing; a first or changed answer saves in two, with the answer encoded on the reader's task between them, so the
+  persistence actor no longer encodes JSON while every other caller waits behind it (431 ms of CPU a minute for 60
+  unchanged reads in the #1482 audit's sample). The relaunch, whose query is a fresh store's first, makes 15 calls
+  (persistence 7); `query-materialization.todos` makes 6 (persistence 3).
 
 ## Decisions and open questions
 

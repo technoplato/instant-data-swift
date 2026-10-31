@@ -3,3 +3,4 @@ claude-code/fix-gate-1074@ld 2026-10-24T21:53:34-0400 mower plan=2026-10-24-fix-
 claude-code/fix-memory-1075@ld 2026-10-25T01:48:20-0400 mower plan=2026-10-24-fix-memory-1075 #1150 amendment 11 (facts(of:attributeIDs:), loadDeferredValues, selectTexts, decodeTriples only)
 claude-code/sqlite-1245@halfjew22 2026-10-27T11:38:08-0400 grower plan=2026-10-27-sqlite-1245 #1245
 claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)
+claude-code/perf-waste-fixes@ld 2026-10-31T13:14:54-0400 mower plan=2026-10-31-perf-waste-fixes-instant #1504 (its open settings only)

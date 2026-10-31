@@ -15,6 +15,54 @@
   `scripts/contention-exercises/ab-commits.sh`; then #1496 (one writer task per socket). READY FOR BUILD on #1482 per
   landing.
 
+## 2026-10-31 13:56:58 EDT — perf-ship-1 (#1482): v1.9.57, the three landed performance fixes for Scribe 209
+
+- **Release:** `docs/releases/v1.9.57.md`, tagged on this landing's merge. Carries #1491 (a new write encodes its body
+  once), #1492 (one attribute resolver per server schema, kept across sends) and #1498 (a one-shot read writes its
+  answer to the query cache only when it changed). No conversion; `instant_query_cache` gains four nullable columns.
+- **Numbers (Mac mini M4, release, from each fix's log):** `mutationEncode` 2,650.1 -> 14.5 us per send, live session
+  actor 238.5 -> 1.3 ms a minute (#1492); `transact` p50 0.457 -> 0.434 ms (#1491); #1498's after is still queued.
+- **Not in (not landed):** #1493, #1494, #1495, #1496, #1497, #1500, #1504, #1505.
+- **Next:** Scribe pins 1.9.57 and cuts build 209 (#1482).
+
+## 2026-10-31 13:46:00 EDT — perf-read-1498 (#1498): a one-shot read writes its answer to the query cache only when it changed
+
+- **Landed:** red `38c426f6`, green `2c1c003d` (plan `d5fd5466`, amendment `92fe6a34`), branch
+  `agent/claude/perf-read-1498`. No release cut, no build; a later ship agent tags and installs.
+- **What changed:** a query-cache row holds its answer's SHA-256 digest (computed on the reader's task) and, in
+  columns, the last read's time, revisions and sequence, which readers lay over the row's JSON. An unchanged answer is
+  one statement and no encode; a first or changed one is encoded on the reader's task, never on the persistence actor.
+  A fresh store's first answer takes one more persistence turn (relaunch pins 14 -> 15, ADR 0018's log).
+- **Found:** no read answers from `instant_query_cache` (the issue's premise); its readers are the closed connection's
+  error and the public `cachedQuery(_:)` / `cachedQueries()`, unchanged.
+- **Checks:** Mac mini, debug: `InstantQueryCacheAnswerWriteTests` 5/5 (red 2/5), the query-cache and closed-connection
+  tests, the #1131 and #300 suites. `LocalTodoValidationTests`' three TypeScript verifiers fail on the mini for a
+  missing `validation/ts-runner/node_modules/.bin/tsx` (environment).
+- **Before (M6, mini, release, 60 s sample at 1 ms, main `7f0595b8`, 12:52):** `queryOnce` 802 ms of CPU, of which
+  `saveQueryCache` 553 (69%); `SQLitePersistenceStore.encode` 541; `sqlite3_step` 1,260. **After:** queued as
+  `perf-read-1498-m6-after` at `3cce5ca1`; recorded on #1498 and here when it lands.
+- **Next:** #1495 (red `3cce5ca1`; green in the worktree, tests queued); the fan-out exercise before and after.
+  Continue from `~/Sync/worktrees/perf-read-1498`; evidence in `~/Sync/audit/perf-read-1498/`.
+
+## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
+
+- **Measured:** the 10-24 baseline `287f77d1`, run alone on the Mac mini (release, the recording exercise, 12:44, nothing
+  else in a slot), holds the gate 5.02 ms per transact at steady p50 (write.line 8.45, read.local 23.30). The #1482
+  audit's 1.58 ms for the same commit ran beside a cold build. Its bisect's fast runs all shared the mini with another
+  job and its slow ones ran alone; none of 10-26's code runs in the exercise. Mini jobs run under `taskpolicy -c
+  utility`, nice 10, on 4P+6E cores, and the exercise writes one burst every 667 ms.
+- **Landed with this entry:** runner `a79caca2` + `02944ced` (`scripts/contention-exercises/ab-commits.sh`: several
+  commits in one job, alone and beside N busy loops, plus the tight-loop benchmark); red `efc0656f`; green `02b7cf8a`
+  (a new write's 8 MiB bound reads the stored body's bytes; one sorted-key encode a write instead of two).
+- **Checks:** red fails as expected (10 writes, 20 body encodes); green: 95 tests in 6 suites and 518 tests in 25 suites
+  (#1426, #1435, #1115, #1121 suites) pass on the laptop (debug, Xcode beta), known issues as on main.
+- **Running:** perf-gate-1491-ab2 on the mini: 287f77d1, 4accbf45, main 13cdf499 and green 02b7cf8a, two rounds alone and
+  beside six busy loops, then the cross-SDK benchmark three times each; its lines go on #1491 and in
+  `docs/audits/2026-10-31-transact-hold-1491.md`.
+- **Next:** amendment 1 (`instantSHA256HexDigest`'s 32 `String(format:)` calls a digest, two digests a save): red pins
+  the digest of known inputs and its allocations, green writes the same hex from a byte table. Then READY FOR BUILD on
+  #1482 with the A/B's before and after.
+
 ## 2026-10-31 08:55:00 EDT — sqlite-writes-1426 (#1426): v1.9.56 shipped in Scribe 0.1 (206); the phone's after-numbers wait for a recording
 
 - **Shipped:** Scribe 206 (18ba5013b, the 1.9.56 pin) installed by build.sh's main lane 08:21-08:47: the iPhone at 08:32

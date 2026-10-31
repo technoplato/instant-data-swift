@@ -1,3 +1,15 @@
+## 2026-10-31 13:51:10 EDT — instant-data-swift `4ba76de7f91ae84b30b7a2ccd72bd27b3701d12c`
+Perf (#1492): the live session keeps one attribute resolver per server schema instead of indexing all 2,283 attributes for every mutation it sends (red 8b5a4584, green 14ee7622); mutationEncode CPU per send 2,650.1 -> 14.5 us on the Mac mini (release, recording exercise, 90 sends).
+
+## 2026-10-31 13:45:14 EDT — instant-data-swift `c9dc143dd60615479083b7a24522c0c5844ba86d`
+Perf (#1498): a one-shot read writes its answer to the query cache only when it changed, and never encodes it on the persistence actor: the row keeps its answer's digest and, in columns, the last read's time, revisions and sequence, which readers lay over its JSON (red 38c426f6, green 2c1c003d; change log f07f53fc). A fresh store's first answer takes one more persistence turn (relaunch pins 14 to 15). Before on the Mac mini (release, the recording exercise sampled 60 s at 1 ms): queryOnce 802 ms of CPU, saveQueryCache 553 of it.
+
+## 2026-10-31 13:32:48 EDT — scribe `20b7467ed46e247ffbca5f918e9b4856f08d42d2`
+Audit (#1509): the whole system, not one cause: the phone's cost mapped by state and subsystem from the 10-30 powerlog, MetricKit and the 10-30 and 10-31 energy ledgers; the floating bar's breathing symbol behind the lock with the screen on (#1502, +8.5 points of a core for 85 of 122 background minutes); 1.9.56's write fixes verified on the phone per event (claim -67%, ack -47%, apply -56%) while the save stays at 103 KB; #1491's 4.6x was the mini's clock state; filed #1511 #1512, queued six fixes. Landed as merge e5fe2a29051aec4ee41098ba14ef43f6337f36f3.
+
+## 2026-10-31 13:01:39 EDT — instant-data-swift `1e1ba548d0b25b1c5ae439a894ba9a94dbc07474`
+Perf (#1491): a new local write encodes its body once, its 8 MiB bound read from the bytes the save writes (red efc0656f, green 02b7cf8a); scripts/contention-exercises/ab-commits.sh compares commits in one job on one machine, alone and beside a CPU load (the 10-24 baseline run alone on the Mac mini holds 5.02 ms, so the #1482 audit's 4.6x is mostly machine state).
+
 ## 2026-10-31 12:46:23 EDT — scribe `e00f51ba8d5738403a09e59a7ac714ba8e0ca8d9`
 Audit (#1481): wasted work in instant-data-swift and Scribe after the night's fixes, nine findings filed and queued (#1500-#1508): closed results kept as 207 MB of duplicate, dead value copies; list pages carrying each row's build provenance; the floating bar's per-frame breathe on every screen; the device log at 22 lines a second; a never-analyzed store; the Codable wrapper on stored values; whole-library screen windows; the ledger's unattributed writes and missing footprint; the Live Activity keep-alive as a proposal.
 
