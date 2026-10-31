@@ -57,3 +57,13 @@ throttled, sampled, dropped or limited; every frame goes out as soon as it did, 
 Main at 5d772e41: no open claim on these regions. Shares InstantRuntimeLiveSession.swift with perf-observe-1493 (#1494,
 the applier's hops) and SQLitePersistenceStore.swift with perf-gate-1491 (#1491, the transact path) and perf-read-1498
 (#1498, the query cache): disjoint regions; channel 2026-10-31-perf-send-1492. Rebase onto each landing before a land.
+
+## Amendment 1 (#1497)
+
+The audit's interim fix cannot be byte-equal to today's digest: the receipt fingerprint is SHA-256 over a sorted-keys
+encoding of a payload (id, createdAt, transaction, rollback, overlay state, receipt version), not over the stored body.
+The fix at the source: the store keeps, for each body it writes, the receipt it computed from it, keyed by the SHA-256
+of the stored text. The claim and the acknowledgement reuse it when the stored bytes still hash the same, and compute
+it as before when they do not (a body written by an earlier process or changed since). Touching adds
+Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift (`eachStepOfALiveWriteFingerprintsItsEffectOnce`'s
+pin only).

@@ -1,1 +1,2 @@
 claude-opus-5.5-energy-98-write 2026-10-10T23:40:00-04:00 mower plan=2026-10-10-energy-98-write #653 #669
+claude-code/perf-send-1492@ld 2026-10-31T12:50:21-0400 mower plan=2026-10-31-perf-send-1492 amendment 1 #1497 (eachStepOfALiveWriteFingerprintsItsEffectOnce's pin only)
