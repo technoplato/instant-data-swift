@@ -1,3 +1,15 @@
+## 2026-10-31 07:29:29 EDT — scribe `9b7514db679ec272c645313c1a782efe4dcfe7c6`
+Presence (#1468): landed; progress entry; claims released.
+
+## 2026-10-31 07:29:29 EDT — scribe `49a3cb311a3edb78301a22b851ba64aa5e00f6fd`
+Docs (#1468): What's New 205, the camera feed opens and closes without freezing.
+
+## 2026-10-31 07:29:29 EDT — scribe `c264803acf438158ce288dd4d4204069d295912b`
+Fix (#1468): the camera panel's preview joins and leaves the capture session on the session's queue, never the main thread.
+
+## 2026-10-31 07:29:29 EDT — scribe `8aa78abc6d41d05f314eba7a3801f9a1d08c451a`
+Test (#1468): red, the preview links the capture session on the main thread.
+
 ## 2026-10-31 07:20:53 EDT — scribe `dbd6f05a5d41d51736e17a56b215cb75fff94da0`
 Server (#1460): re-applies the read fix a concurrent landing dropped (#1486).
 
