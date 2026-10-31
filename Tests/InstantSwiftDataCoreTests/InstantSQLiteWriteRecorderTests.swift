@@ -1,5 +1,4 @@
 import CustomDump
-import Darwin
 import Foundation
 import SQLite3
 import Testing
@@ -216,12 +215,38 @@ struct InstantSQLiteWriteRecorderTests {
     #expect((recorded.statements[InstantSQLiteWriteRecord.otherStatements]?.rows ?? 0) >= 1_000 - 256)
   }
 
+  /// The store reads `sqlite3_changes()` after a statement to check what it changed (a claim, an acknowledgement): the
+  /// recorder's first sight of a write statement, which explains it, must leave that count as the statement set it.
+  /// On the writer itself an `EXPLAIN` reset it, and the outbox quarantined the first claim of each shape.
+  @Test
+  func recordingAStatementLeavesTheConnectionsChangeCount() throws {
+    let database = try RecordedDatabase()
+    defer { database.remove() }
+    try database.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, x INTEGER)")
+    try database.execute("INSERT INTO t (x) VALUES (1), (2), (3)")
+    database.recorder.reloadSchema(from: database.connection)
+    var cache = SQLiteStatementCache()
+    cache.recorder = database.recorder
+    defer { cache.finalizeAll() }
+
+    let statement = cache.checkOut("UPDATE t SET x = x + 1 WHERE x >= ?", on: database.connection).statement
+    sqlite3_bind_int64(statement, 1, 2)
+    #expect(sqlite3_step(statement) == SQLITE_DONE)
+    cache.checkIn(statement)
+
+    #expect(sqlite3_changes(database.connection) == 2)
+    let recorded = database.recorder.record()
+    let update = try #require(recorded.statements.first { $0.key.hasPrefix("UPDATE t") }?.value, "\(recorded)")
+    #expect(update.rows == 2)
+    #expect(update.btrees == ["t"])
+  }
+
   /// #1285 rule 5: a million log frames, each a page the recorder parses, on a 256 KB stack: constant stack depth (it
-  /// returns), bounded time a frame, and at most 32 MB more memory.
+  /// returns), bounded time a frame, and the recorder's own collections under 1 MB. Its own: the process's footprint
+  /// moves with the suites that run beside it (it grew 110 MB here while the outbox suites' 10,000-row tests ran).
   @Test
   func aMillionFramesAtAConstantStackAndBoundedMemory() throws {
     let recorder = InstantSQLiteDatabaseWriteRecorder(databaseName: "/stress/\(UUID().uuidString).sqlite")
-    let footprintBefore = Self.physicalFootprint()
     let elapsed = LockedValue<Double?>(nil)
     let thread = Thread {
       let started = ContinuousClock.now
@@ -234,10 +259,9 @@ struct InstantSQLiteWriteRecorderTests {
     let deadline = Date().addingTimeInterval(120)
     while elapsed.get() == nil, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
     let seconds = try #require(elapsed.get(), "the million frames did not finish in 120 s")
-    let grown = Self.physicalFootprint() - footprintBefore
 
     #expect(seconds / 1_000_000 < 20e-6, "seconds a frame: \(seconds / 1_000_000)")
-    #expect(grown < 32 * 1_024 * 1_024, "footprint grew \(grown) bytes")
+    #expect(recorder.retainedBytesForTesting() < 1_024 * 1_024, "retained: \(recorder.retainedBytesForTesting())")
     #expect(recorder.record().logPages == 1_000_000)
   }
 
@@ -248,16 +272,6 @@ struct InstantSQLiteWriteRecorderTests {
     return directory
   }
 
-  private static func physicalFootprint() -> Int64 {
-    var info = task_vm_info_data_t()
-    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
-    let result = withUnsafeMutablePointer(to: &info) {
-      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-        task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
-      }
-    }
-    return result == KERN_SUCCESS ? Int64(info.phys_footprint) : 0
-  }
 }
 
 /// A database opened through the file meter's VFS, with a write recorder attached before it opened.

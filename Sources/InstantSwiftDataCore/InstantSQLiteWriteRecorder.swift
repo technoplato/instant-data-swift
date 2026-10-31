@@ -250,6 +250,11 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     state.withLock { $0.record() }
   }
 
+  /// The bytes the recorder's own collections hold (#1285): its bound, checked by its stress test.
+  func retainedBytesForTesting() -> Int {
+    state.withLock { $0.retainedBytes }
+  }
+
   /// Stops counting this database's new connections; what it counted stays in ``InstantSQLiteWriteRecorder/snapshot()``.
   func detach() {
     InstantSQLiteWriteRecorder.detach(self)
@@ -514,6 +519,16 @@ extension InstantSQLiteDatabaseWriteRecorder {
     var commits = 0
 
     var hasRoomForShape: Bool { shapes.count < InstantSQLiteWriteRecord.statementLimit + 2 }
+
+    /// The bytes the collections hold, their capacity counted (strings and dictionary entries roughly).
+    var retainedBytes: Int {
+      owners.capacity + framePages.capacity * 4 + pending.capacity * MemoryLayout<PendingPage>.stride
+        + links.capacity * 4 + resolved.capacity + pagesByID.capacity * 8 + unclaimedPages.capacity * 8
+        + otherCallPages.capacity * 8 + callPages.reduce(0) { $0 + $1.capacity * 8 }
+        + (pendingIndex.capacity + previousOf.capacity + parentOf.capacity + rootIDs.capacity) * 24
+        + shapes.reduce(0) { $0 + 96 + $1.sql.utf8.count + $1.btreeIDs.capacity + ($1.unexplainedSQL?.utf8.count ?? 0) }
+        + shapeIDs.reduce(0) { $0 + 40 + $1.key.utf8.count } + btrees.count * 96 + callNames.count * 64
+    }
 
     // MARK: Schema
 
