@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-24: a query's registration is recorded and sent in two steps, so the runtime records it under its
 //   operation gate and sends after leaving; one registration held the gate 5.0-7.8 s across its send (#1131).
+// - 2026-10-31: the attribute index the wire encoder resolves with is kept until the server's attributes change, not
+//   rebuilt for every mutation sent (#1492).
 
 import Foundation
 import IssueReporting
@@ -361,7 +363,13 @@ package actor InstantRuntimeLiveSession {
   /// add-query-exists), cleared by a server error for it (library-78, item 7). While a query is answered on the open
   /// socket, the store holds the server's result for it and every refresh since.
   private var answeredQueryGenerations: [String: Int] = [:]
-  private var serverAttributes: [InstantLiveJSONValue] = []
+  private var serverAttributes: [InstantLiveJSONValue] = [] {
+    didSet { attributeIDResolver = nil }
+  }
+  /// `serverAttributes` indexed for the wire encoder, built by the first send after they change and kept for every
+  /// send until they change again (#1492): rebuilt per send, the index cost about 1.2 ms of CPU a send with 2,283
+  /// attributes, while init-ok sets them once per connection and a refresh-ok only when they changed (#303).
+  private var attributeIDResolver: InstantLiveMutationEncoder.AttributeIDResolver?
   /// How many attribute resolvers this session's sends built (#1492).
   private var attributeResolverBuildCount = 0
   private var inFlightMutationIDs: Set<String> = []
@@ -1680,12 +1688,7 @@ package actor InstantRuntimeLiveSession {
       }
       let txSteps: [InstantTransportStep]
       do {
-        // Each call indexes every server attribute (#1492).
-        if !serverAttributes.isEmpty { attributeResolverBuildCount += 1 }
-        txSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
-          in: mutation.txSteps,
-          attrs: serverAttributes
-        )
+        txSteps = try resolveAttributeIDs(in: mutation.txSteps)
       } catch {
         inFlightMutationIDs.remove(mutation.mutationID)
         inFlightMutationStepCounts[mutation.mutationID] = nil
@@ -1806,6 +1809,20 @@ package actor InstantRuntimeLiveSession {
       ]
     )
     return encodingFailures
+  }
+
+  /// `steps` with every attribute named by the server's id, through the resolver of the current `serverAttributes`
+  /// (#1492).
+  private func resolveAttributeIDs(in steps: [InstantTransportStep]) throws -> [InstantTransportStep] {
+    let energy = InstantEnergyMeter.begin(.mutationEncode); defer { energy.end() }
+    guard !serverAttributes.isEmpty else { return steps }
+    if let attributeIDResolver {
+      return try InstantLiveMutationEncoder.resolveAttributeIDs(in: steps, resolver: attributeIDResolver)
+    }
+    let resolver = InstantLiveMutationEncoder.AttributeIDResolver(attrs: serverAttributes)
+    attributeIDResolver = resolver
+    attributeResolverBuildCount += 1
+    return try InstantLiveMutationEncoder.resolveAttributeIDs(in: steps, resolver: resolver)
   }
 
   private func reportDeepOutboxIfNeeded(pendingCount: Int) {

@@ -45,6 +45,64 @@ struct InstantLiveSendPathTests {
     await live.close()
   }
 
+  /// A refresh-ok that carries attributes changes the schema the next send resolves against (#1492): the kept resolver
+  /// is dropped with the old attributes and the next send builds one from the new ones.
+  @Test
+  func aRefreshThatCarriesAttributesRebuildsTheResolverForTheNextSend() async throws {
+    let wire = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: Self.attributes)])
+    let live = InstantRuntimeLiveSession()
+    try await live.open(
+      request: InstantLiveSessionRequest(appID: "live-send-path-new-attributes"),
+      transport: wire.transport,
+      makeID: { UUID().uuidString.lowercased() }
+    )
+    let first = Self.lineWrite(0)
+    try await live.sendMutations([first], claimToken: nil)
+    await live.releaseMutationReservations([first.mutationID], timedOut: false)
+
+    let (refreshes, refreshed) = AsyncStream.makeStream(of: Void.self)
+    try await live.startReceiving(
+      onEvent: { event, _, _ in
+        if case .refreshOK = event { refreshed.yield() }
+      },
+      onFailure: { _ in }
+    )
+    let added = liveReactorServerAttr(id: "server-attr-added", name: "speaker", namespace: "namespace0")
+    await wire.enqueue(
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: [
+          "attrs": .array(Self.attributes + [added]),
+          "computations": .array([]),
+          "processed-tx-id": .string("1"),
+        ]
+      )
+    )
+    var iterator = refreshes.makeAsyncIterator()
+    _ = await iterator.next()
+
+    let second = InstantTransportMutation(
+      mutationID: "mutation-speaker",
+      transactionID: "transaction-speaker",
+      createdAt: InstantTimestamp(milliseconds: 1_793_400_001_000),
+      status: .pending,
+      preconditions: [],
+      txSteps: [.addTriple(entity: .id("line-1"), attributeID: "namespace0/speaker", value: .string("A"))]
+    )
+    let failures = try await live.sendMutations([second], claimToken: nil)
+
+    #expect(failures.isEmpty)
+    let transacts = await wire.sentMessages().filter { $0.op == "transact" }
+    expectNoDifference(
+      transacts.last?.fields["tx-steps"],
+      .array([.array([.string("add-triple"), .string("line-1"), .string("server-attr-added"), .string("A")])])
+    )
+    let resolverBuilds = await live.attributeResolverBuildCountForTesting()
+    #expect(resolverBuilds == 2)
+    await live.close()
+  }
+
   /// A real-size schema: 2,283 attributes, as a phone's init-ok carries (`RealSizeFixture`), across 41 namespaces.
   static let attributes: [InstantLiveJSONValue] = (0..<2_283).map { index in
     liveReactorServerAttr(
