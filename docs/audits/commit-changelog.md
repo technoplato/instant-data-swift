@@ -1,3 +1,6 @@
+## 2026-10-31 12:43:05 EDT — scribe `5bf97955c537`
+Audit (#1482): what this pass did not measure, and the one-job recipe for the task and actor counts (change log fbeca0780).
+
 ## 2026-10-31 12:40:54 EDT — scribe `cfe947808dabe72e837ccca7250d57709de1caaa`
 Audit (#1482): Swift concurrency, scheduling and isolation in instant-data-swift first, Scribe second, measured (landed bd29efea2 with its change log 65b24b771; issues #1491-#1498).
 
