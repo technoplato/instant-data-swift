@@ -1,3 +1,16 @@
+## 2026-10-31 19:33:02 EDT — perf-send-1492 (#1492, #1497, #1496): landed
+
+- **Landed:** #1492 `4ba76de7` (ledger `0dae49b9`); #1497 and #1496 merge `b60a2c09` (change log `848d72e9`, ledger
+  `d42734df`). READY FOR BUILD posted on #1482 for both landings. All three issues VerificationNeeded, every success
+  criterion satisfied with its evidence on the issue.
+- **Last checks:** core bundle at the merge `2d47e165` (Mac mini, debug, 1,644 tests, nothing new on these paths); the
+  four focused suites at `a6418534` after main's #1491 (laptop, 29 tests pass); `7d023177` added only #1504, whose one
+  conflict was the persistence store's history block.
+- **Open, not this lane's:** #1523 (the receipt key's hash, about 180 us at each of save, claim and acknowledgement;
+  numbers and design on the issue; coordinate with perf-writes-1510's compressed body).
+- **Ownership:** none; the plan's claims are finished (channel `2026-10-31-perf-send-1492`). Worktrees removed after
+  this landing; evidence stays in `~/Sync/audit/perf-send-1492/`.
+
 ## 2026-10-31 18:20:12 EDT — perf-send-1492 (#1497, #1496): the receipt memo and one task per frame, measured; landing
 
 - **Branch:** `agent/claude/perf-send-1492` at the merge of main `2d47e165` (#1493, #1495, #1510 in). #1497: red
