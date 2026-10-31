@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 1:57:12 p.m. EDT — `5d349b259d14` release(#1482): v1.9.57: a write encodes its body once, one attribute resolver per schema, a one-shot read writes only a changed answer
+
+- **Implementation commit:** `5d349b259d141422338b8357579b4a74c2575c65`
+- **Change:** release(#1482): v1.9.57: a write encodes its body once, one attribute resolver per schema, a one-shot read writes only a changed answer
+- **Details:**
+  - The release document for v1.9.57, cut from main for Scribe build 209: #1491 (1e1ba548), #1492 (4ba76de7), #1498 (c9dc143d).
+  - No conversion; instant_query_cache's four new columns are nullable, so 1.9.56 still opens a store 1.9.57 opened.
+- **Files:**
+  - `docs/releases/v1.9.57.md` — #1482 the release: what each fix changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-ship-1@ld); no SpecStory capture
+
 ## October 31st, 2026 at 1:44:34 p.m. EDT — `2c1c003dadbe` fix(#1498): green: a one-shot read writes its answer to the query cache only when it changed, and never on the persistence actor
 
 - **Implementation commit:** `2c1c003dadbed4e9e3d67b7864371c164bbdc0bc`
