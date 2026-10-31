@@ -86,6 +86,8 @@
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
 // - 2026-10-31: a query-cache row holds its answer's digest and, in columns, the last read's time, revisions and
 //   sequence, which readers lay over its JSON; a read whose answer the row holds updates those columns only (#1498).
+// - 2026-10-31: the outbox's tail, which every local write and every server apply's plan reads, is the last entry of a
+//   creation-order index, where each read sorted every row (#1491).
 
 import Foundation
 import IssueReporting
@@ -2893,6 +2895,8 @@ public actor SQLitePersistenceStore {
     }
     // A restore that rebuilt `instant_outbox` after 0031 ran keeps the claim off a scan too (#1108, #1115).
     try execute(Self.deliveryIndexSQL)
+    // Every store, whatever built its outbox, reads the tail from an index instead of sorting every row (#1491).
+    try execute(Self.creationOrderIndexSQL)
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -16336,6 +16340,18 @@ public actor SQLitePersistenceStore {
     CREATE INDEX IF NOT EXISTS instant_outbox_delivery_idx
     ON instant_outbox
       (delivery_claim_state, delivery_state, delivery_claim_deadline_ms, created_at_ms, mutation_id)
+    """
+
+  /// Every outbox row in delivery order, so the tail (``outboxTailPositionSQL``, ``outboxTailIDSQL``) is its last entry
+  /// (#1491). Every local write reads the tail inside the operation gate and a server apply's plan reads it twice; with
+  /// no index in this order SQLite scanned the global-effect index whole and kept the newest row in a temporary b-tree,
+  /// 291 us a read on the phone-shaped store's 700 rows against 29 us here (laptop), and 2.25 ms at 5,400 rows, an hour
+  /// of lines written offline. A claim and an acknowledgement never set its columns, so they write none of it; a statement
+  /// that inserts, re-saves or deletes a row writes a page of it.
+  static let creationOrderIndexSQL =
+    """
+    CREATE INDEX IF NOT EXISTS instant_outbox_creation_order_idx
+    ON instant_outbox (created_at_ms, mutation_id)
     """
 
   /// Puts each of ``rareStateIndexes`` in place as it is defined (#1115): built when a store has none, or has the full
