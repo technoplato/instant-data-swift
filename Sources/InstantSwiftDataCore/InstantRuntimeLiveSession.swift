@@ -460,6 +460,8 @@ package actor InstantRuntimeLiveSession {
   private var generation = 0
   private var receiverFailure: ReceiverFailure?
   private var inFlightSendCounts: [SendGeneration: Int] = [:]
+  /// Unstructured tasks the send path started (#1496), for tests.
+  private var sendTaskStartCount = 0
   private var sendCompletionWaiters:
     [SendGeneration: [CheckedContinuation<Void, Never>]] = [:]
 
@@ -1379,6 +1381,15 @@ package actor InstantRuntimeLiveSession {
     attributeResolverBuildCount
   }
 
+  func sendTaskStartCountForTesting() -> Int {
+    sendTaskStartCount
+  }
+
+  /// Sends that have begun on the current socket and not returned.
+  func inFlightSendCountForTesting() -> Int {
+    inFlightSendCounts.values.reduce(0, +)
+  }
+
   func mutationReservationCountsForTesting() -> (
     ids: Int,
     stepCounts: Int,
@@ -2231,6 +2242,8 @@ package actor InstantRuntimeLiveSession {
       // an observation while its add-query was being written closed a healthy socket and re-added every query
       // (library-78). Upstream `Reactor.js` writes with a synchronous `ws.send`, which no caller can interrupt. The
       // unstructured task does not inherit the caller's cancellation, and awaiting its value does not propagate it.
+      // This send's task, and instantLiveWithTimeout's work and deadline tasks (#1496).
+      sendTaskStartCount += 3
       try await Task {
         try await instantLiveWithTimeout(
           operation: "send Instant live session message",
