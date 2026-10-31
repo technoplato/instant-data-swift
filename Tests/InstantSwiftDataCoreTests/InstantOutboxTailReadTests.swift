@@ -61,6 +61,14 @@ struct InstantOutboxTailReadTests {
     var plansWithIndex: [String: [String]] = [:]
     for sql in traced { plansWithIndex[sql] = try? await persistence.queryPlanForTesting(sql) }
     try OutboxTailIndex.drop(from: cycle.configuration.persistenceURL)
+    // `EXPLAIN QUERY PLAN` plans on the connection's cached schema, which still holds the index; the store's next read
+    // checks the schema and loads it again.
+    _ = try await persistence.latestOutboxCreationTimestamp(expectedOutboxRevision: 0)
+    let tailPlanWithoutIndex = try await persistence.queryPlanForTesting(SQLitePersistenceStore.outboxTailPositionSQL)
+    try #require(
+      tailPlanWithoutIndex.contains { $0.contains("TEMP B-TREE") },
+      "the store's connection still plans with the dropped index: \(tailPlanWithoutIndex)"
+    )
     var changed: [String] = []
     for sql in traced {
       let planWithoutIndex = try? await persistence.queryPlanForTesting(sql)
