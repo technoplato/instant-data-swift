@@ -1,3 +1,15 @@
+## 2026-10-30 21:44:30 EDT — scribe `4d4c134c42965d7b619e85904befdc01a0cb6908`
+Cut (#1426): Scribe 0.1 (195): instant-data-swift 1.9.54, a server refresh writes what changed; carries #1427's landing A and #1197's mirror fixes.
+
+## 2026-10-30 21:43:44 EDT — scribe `afbef8e7c35057350102e4c50397c02cd1fc43b0`
+Fix (#1426): pin instant-data-swift 1.9.54 in Scribe, Scribe Playback and the quota package; the installer's expected version follows.
+
+## 2026-10-30 21:42:56 EDT — scribe `ed9021197bf4eacadc35aeeefcba229f10222581`
+Chore (#1426): plan and claims for the 1.9.54 pin and the build 195 cut.
+
+## 2026-10-30 21:40:39 EDT — instant-data-swift `dad50753b24bef25d0ab118f3e27b970256319d2`
+Ledger (#1426): v1.9.54's release document, PROGRESS, the changelog and the audit ledger; tagged v1.9.54.
+
 ## 2026-10-30 21:39:42 EDT — instant-data-swift `86f89b02105152727be975b5ff3999b001bbf246`
 Fix (#1426): a changed live-query result's JSON waits for the app's flush instead of being rewritten whole every five minutes, and a relaunch's unchanged answer writes its row only.
 
