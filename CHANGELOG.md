@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 3:12:28 p.m. EDT — `02566ad49376` release(#1482): v1.9.58: an observer keeps the ids its result shows
+
+- **Implementation commit:** `02566ad49376a94c9cbc3a4993b99f7980b2d25f`
+- **Change:** release(#1482): v1.9.58: an observer keeps the ids its result shows
+- **Details:**
+  - The release document for v1.9.58, cut from main for Scribe build 210: #1495 (e6e71913).
+  - No API, storage or conversion change; 1.9.57 opens a store 1.9.58 opened.
+- **Files:**
+  - `docs/releases/v1.9.58.md` — #1482 the release: what #1495 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-2@ld); no SpecStory capture
+
 ## October 31st, 2026 at 2:53:41 p.m. EDT — `ff8fb80358bf` test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
 
 - **Implementation commit:** `ff8fb80358bf29f5ae4e5282c04133708b1407fb`
