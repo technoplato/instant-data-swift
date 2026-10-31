@@ -1,3 +1,12 @@
+## 2026-10-30 21:39:42 EDT — instant-data-swift `86f89b02105152727be975b5ff3999b001bbf246`
+Fix (#1426): a changed live-query result's JSON waits for the app's flush instead of being rewritten whole every five minutes, and a relaunch's unchanged answer writes its row only.
+
+## 2026-10-30 21:39:41 EDT — instant-data-swift `a3d254803edf6385e188fb0b89a2adffee79a157`
+Test (#1426): red: what a server refresh writes by b-tree; a changed result's JSON every five minutes and a relaunch's unchanged answers follow the result, not the change.
+
+## 2026-10-30 20:24:38 EDT — instant-data-swift `3d5bdada429e157e4c8e3ded215452a548c74917`
+Plan (#1426): 2026-10-30-sqlite-writes-1426 and its claims.
+
 ## 2026-10-30 21:22:20 EDT — scribe `6af4f1e6e972d0920875ff88cb96dfad6822e720`
 Docs (#1427): landing A's What's New story and PROGRESS entry.
 

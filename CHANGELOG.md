@@ -10,6 +10,37 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 30th, 2026 at 9:39:42 p.m. EDT — `86f89b021051` fix(#1426): green: a changed result's JSON waits for the app's flush, and a relaunch's unchanged answer writes its row only
+
+- **Implementation commit:** `86f89b02105152727be975b5ff3999b001bbf246`
+- **Change:** fix(#1426): green: a changed result's JSON waits for the app's flush, and a relaunch's unchanged answer writes its row only
+- **Details:**
+  - See docs/releases/v1.9.54.md.
+  - A deferring save leaves a changed result's JSON for the app's flush, an unsubscribe or the close (the interval is nil unless a test sets one); a waiting result's marker holds its page info for the rebuild after a kill; a relaunch learns a stored JSON's page info inside SQLite.
+  - Measured (laptop, debug): five minutes of list refreshes 93.4 -> 57.7 KB a refresh for 50 rows, no JSON written; a relaunch's unchanged answers 1,248 -> 24.7 KB for three 50-row lists; 220 tests in 16 suites pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1426 the result JSON's write decision, the waiting marker's page info, the relaunch's learned page info
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1426 the result JSON interval is optional and nil by default
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — #1426 the interval tests now expect the wait; the page-info rebuild after a kill
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sqlite-writes-1426@strangelearning); no SpecStory capture
+
+## October 30th, 2026 at 9:39:41 p.m. EDT — `a3d254803edf` test(#1426): red: a changed result's whole JSON is rewritten every five minutes, and a relaunch rewrites unchanged ones
+
+- **Implementation commit:** `a3d254803edf6385e188fb0b89a2adffee79a157`
+- **Change:** test(#1426): red: a changed result's whole JSON is rewritten every five minutes, and a relaunch rewrites unchanged ones
+- **Details:**
+  - Refresh exercises by b-tree through the StorageIO shim: 50 rows with one changed against 1 of 1 (todos; phone-shaped recordings held by three results), five minutes of list refreshes 6 s apart, a relaunch's unchanged and one-changed answers; the bound is twice the one-row refresh plus two log frames (page 1 and the metadata page).
+  - On main the 50-of-1 refresh already passes (9.0 vs 10.0 frames; 12.0 vs 8.0): the brief's premise is ruled out. Red: the five-minute window 93.4 vs 33.7 KB a refresh with three whole-JSON writes; a relaunch's unchanged 50-row answers 1,248 KB vs 37 KB.
+  - Also a live write's save, claim, acknowledgement and echo by b-tree, and a replay on a copy of a phone's store (INSTANT_REFRESH_REPLAY_STORE, laptop only, counts only).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantServerRefreshWritesTests.swift` — #1426 refresh, five-minute, relaunch and live-write exercises
+  - `Tests/InstantSwiftDataCoreTests/InstantServerRefreshReplayTests.swift` — #1426 the phone-store replay
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sqlite-writes-1426@strangelearning); no SpecStory capture
+
 ## October 30th, 2026 at 11:07:59 a.m. EDT — `1c5fc76d9aa1` fix(#396): the package declares visionOS 2
 
 - **Implementation commit:** `1c5fc76d9aa1329f90612ee158aa7c36d7950bfb`

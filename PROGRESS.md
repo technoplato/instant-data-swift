@@ -1,3 +1,17 @@
+## 2026-10-30 21:45:00 EDT — v1.9.54 (sqlite-writes-1426, #1426): a server refresh writes what changed, not the whole result
+
+- **Release:** `docs/releases/v1.9.54.md`, cut at `86f89b02` (plan `3d5bdada`, red `a3d25480`, green `86f89b02`),
+  carrying 1.9.53. No migration, no public API change; a waiting result's marker holds its page info.
+- **Why:** the phone's server applies wrote 334 MB/h while recording (131 KB a commit). The brief's premise, that a
+  refresh rewrites the rows it restates, is ruled out on the store copy and in the harness; what followed the result
+  was each changed result's whole JSON every five minutes and a relaunch's rewrite of unchanged results' JSON.
+- **Checks:** red failed only the five-minute and relaunch exercises; green: 220 tests in 16 suites. Five minutes of
+  three 50-row list refreshes 93.4 -> 57.7 KB a refresh; a relaunch's unchanged answers 1,248 -> 24.7 KB.
+- **Filed:** #1434 (ownership rows, identity index), #1435 (claim and ack rewrite the outbox row; outbox-1435 has it),
+  #1436 (outbox b-trees per save and echo).
+- **Next:** the whole core bundle after the tag; the consuming app pins 1.9.54, cuts and installs; the phone's ledger
+  before and after (commitServerApplyPlan bytes per event, SQLite writes an hour while recording).
+
 ## 2026-10-30 11:07:58 EDT — v1.9.53 (vision-opus, #396): the package declares visionOS 2
 
 - **Release:** `docs/releases/v1.9.53.md`, cut at `1c5fc76d`, carrying 1.9.52. No migration, no public API change.
