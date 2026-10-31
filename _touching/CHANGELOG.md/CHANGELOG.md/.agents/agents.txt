@@ -40,3 +40,4 @@ claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-per
 claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494
 claude-code/perf-gate-1491@ld 2026-10-31T12:34:11-0400 mower plan=2026-10-31-perf-gate-1491 #1491
 claude-code/perf-waste-fixes@ld 2026-10-31T13:14:54-0400 mower plan=2026-10-31-perf-waste-fixes-instant #1504 #1500
+claude-code/perf-writes-1510@ld 2026-10-31T13:45:27-0400 grower plan=2026-10-31-perf-writes-1510 #1510 
