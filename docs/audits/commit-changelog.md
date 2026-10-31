@@ -1,3 +1,12 @@
+## 2026-10-31 00:15:35 EDT — scribe `77b905e7a38c44b465f3ac80476e1db8f8c3879a`
+Landing (#1432): two tests now fail on the old shared file key, and the install result of the build that carries the fix.
+
+## 2026-10-30 22:02:21 EDT — scribe `dea8e177e35549bc77f44faf90a9e21f9789f13b`
+Docs (#1432): progress entry for the build that carries the fix, on every device.
+
+## 2026-10-30 22:01:46 EDT — scribe `145d568d9c60f711a3fa3eb6e46663c33ca65c67`
+Tests (#1432): an empty read writes nothing at once, and a failed read after a write keeps the value; both fail on the old key.
+
 ## 2026-10-31 00:14:03 EDT — scribe `dc0a6e157b328d1ffd11312b75fdd3d4592b002e`
 Docs (#1427): the interims audit, its ADR and its plan record the second landing as parked, a proposal only, and the first as adding no delay.
 
