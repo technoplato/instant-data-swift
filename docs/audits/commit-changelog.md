@@ -1,3 +1,21 @@
+## 2026-10-31 04:16:38 EDT — scribe `d97fb51087f29dce6c2b80701f86174210f90535`
+Test (#1465): the live pass of a recording's chapters, running: a new final line asks at once, nothing asks without one.
+
+## 2026-10-31 03:47:13 EDT — scribe `4ae5cc569f9ac373cd994b1bf5ac8e755b312439`
+Fix (#1465): the chapters' delegate and helper no longer read as a share entry to the audience guard.
+
+## 2026-10-31 03:33:14 EDT — scribe `7d7dd6f4ba479e92dd2552b1cb749f9e18116b55`
+Cut (#1465): Scribe 0.1 (202).
+
+## 2026-10-31 03:18:03 EDT — scribe `af4f04a8525a78326e274eb89cae7c9794da3548`
+Feature (#1465): a recording's chapters as the next zoom level out from its lines, on the live screen and in playback, and one share of them.
+
+## 2026-10-31 00:54:58 EDT — scribe `b7a3c85d03368ae6c2cf37213cd727bd6900ad9c`
+Feature (#1465): a service keeps a recording's chapters live as it grows and makes them whole when it ends.
+
+## 2026-10-31 00:42:12 EDT — scribe `bad744e6899147731894300d7ee22a035288405b`
+Feature (#1465): recordingChapters in the one schema.
+
 ## 2026-10-31 03:08:24 EDT — scribe `40ec3dd0fb0863054ca108d3d4d8a773e14ce1f9`
 Docs (#1427): the measured before and after: recognizer to another device p50 454 to 62 ms, p95 1,060 to 154 ms.
 
