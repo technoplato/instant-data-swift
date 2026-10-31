@@ -1,3 +1,72 @@
+## 2026-10-31 02:49:30 EDT — scribe `d59867e2dcf466b9e231f9037842526c89c9d093`
+Docs (#1419): the pictures' final counts.
+
+## 2026-10-31 02:48:03 EDT — scribe `44241b6f6dc547301ca69b991e46cd20d2a44586`
+Fix (#1419): wrongly attributed change-log entries removed.
+
+## 2026-10-31 02:47:09 EDT — scribe `a5a8fc1ca15e4decdbb7cba2bf8eaaaf8d8ba030`
+Docs (#1419): the ADR's final numbers.
+
+## 2026-10-31 02:45:02 EDT — scribe `f1d33d619c78a5d4c1345b54351c5b7922e1f842`
+Feat (#1419): green: a stricter evaluation, and more of the app's own frames left out.
+
+## 2026-10-31 01:56:02 EDT — scribe `4c211a16f3ce8661b4320c09bdabb7f117524def`
+Fix (#1419): the picture reader's errors never echo their input.
+
+## 2026-10-31 01:44:52 EDT — scribe `c99c5d7f6a9325db3f51432dee39b45f454cea22`
+Docs (#1419): the lag measured with the live recording always read.
+
+## 2026-10-31 01:34:05 EDT — scribe `0533b8eb8a8d91530489aa38aa2dd96c1aeff1f6`
+Fix (#1419): a hit's picture is its whole path.
+
+## 2026-10-31 01:32:48 EDT — scribe `44ae6f236326df7822117b9a5cee5badb0bc8a72`
+Docs (#1419): ADR 0106: local search in one SQLite file.
+
+## 2026-10-31 01:32:10 EDT — scribe `550f414344107615a3368bfb27d4d152054dcc5a`
+Refactor (#1419): pseudo-relevance feedback and a trigram index removed: measured no gain.
+
+## 2026-10-31 01:29:06 EDT — scribe `c4721d072475fe09284a4f3e51330ca6e23475f1`
+Feat (#1419): green: results named for the question fold into one.
+
+## 2026-10-31 01:17:21 EDT — scribe `f972b8aff4f26f7ede73c50d209063d602fa6e19`
+Chore (#1419): plain type names, and two empty tests removed.
+
+## 2026-10-31 00:51:25 EDT — scribe `435a62a5849027bc63fa96d2c08dfaf597c641dd`
+Fix (#1419): a picture whose file is gone never reaches the reader.
+
+## 2026-10-31 00:40:16 EDT — scribe `817a58bb5a45eee6271a32c4ae51697468d7f9ab`
+Feat (#1419): green: the model and picture reader run on a second machine, with fallback.
+
+## 2026-10-31 00:38:08 EDT — scribe `eb2837074490fb49f97e1ed40dd8f8e2ebd4fa28`
+Perf (#1419): green: an idle pass scans no documents, through a partial index.
+
+## 2026-10-31 00:34:05 EDT — scribe `1d80c61d7b368dc9e2e8d8198b7c92359bb796dc`
+Feat (#1419): green: the live recording is read on every pass.
+
+## 2026-10-31 00:30:49 EDT — scribe `9a337b90bc1b08ab3db2ae4c3530b060a7798593`
+Feat (#1419): green: frames of the app's own screen stay out of the index.
+
+## 2026-10-31 00:28:39 EDT — scribe `5aeb1e8fd7a0b4ef2bf6f379648e803c318d5e2a`
+Fix (#1419): the service runs at nice 20: background QoS did not start under load.
+
+## 2026-10-31 00:26:06 EDT — scribe `12af35ef90ac5efc6cf1cc515076b191b7fe22cf`
+Chore (#1419): a test script, and the installer uses the node that runs the service.
+
+## 2026-10-31 00:25:16 EDT — scribe `9dab2993d20786dfe4d505a3f07d1015f0602c7f`
+Feat (#1419): green: a stuck helper is stopped, and the real service process survives SIGKILL.
+
+## 2026-10-31 00:25:16 EDT — scribe `4c0e42a9953ea3cc77d1702f3113d6659b845667`
+Feat (#1419): green: CPU per line measured, no writes when idle, a backfill on a second machine.
+
+## 2026-10-31 00:25:15 EDT — scribe `feb554cbcb6bf8f4f343d4f4ab439bf856a1cb98`
+Feat (#1419): green: a local embedding model, a picture reader, per-kind lists and labeled queries.
+
+## 2026-10-31 00:25:15 EDT — scribe `d98b07e9ce9552d4db3ab03580ea171dfaf7742f`
+Feat (#1419): green: a search index, its service loop and its ranking, on a fixture.
+
+## 2026-10-31 00:25:15 EDT — scribe `b3ddeec2f8291fbd4cb6482cc1ec284cd979db55`
+Test (#1419): red: a search over a fixture recording.
+
 ## 2026-10-31 01:43:20 EDT — scribe `d2820ba1adf6e9152df2cb9fd2fb8fbb5bd23971`
 Feature (#1466): a line or a picture dragged out of a recording and let go on it again adds nothing; another recording's moment becomes a link.
 
