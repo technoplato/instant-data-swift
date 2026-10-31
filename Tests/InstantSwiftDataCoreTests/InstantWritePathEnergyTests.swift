@@ -118,9 +118,11 @@ struct InstantWritePathEnergyTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
-  /// Each step of a live write fingerprints its optimistic effect once (#1007). A fingerprint encodes the write's
+  /// A live write fingerprints its optimistic effect once, at its save (#1007, #1497). A fingerprint encodes the write's
   /// transaction and rollback with `JSONEncoder` and hashes the text, and the save computed it twice and the
-  /// acknowledgement three times for the same write: 5.9% of a write replay's CPU went to fingerprints.
+  /// acknowledgement three times for the same write: 5.9% of a write replay's CPU went to fingerprints. Then the claim
+  /// and the acknowledgement each computed it again from the body the save had just written, about 1.3 ms each on a
+  /// Mac mini for a transcript line (#1497); they reuse the save's while the stored body's bytes are the same.
   @Test
   func eachStepOfALiveWriteFingerprintsItsEffectOnce() async throws {
     var fixture = try await FastDrainFixture.make(
@@ -151,7 +153,7 @@ struct InstantWritePathEnergyTests {
 
     expectNoDifference(
       ["save": beforeClaim - beforeSave, "claim": beforeAcknowledgement - beforeClaim, "acknowledgement": after - beforeAcknowledgement],
-      ["save": 1, "claim": 1, "acknowledgement": 1]
+      ["save": 1, "claim": 0, "acknowledgement": 0]
     )
     _ = try? await fixture.runtime.closeConnection()
   }
