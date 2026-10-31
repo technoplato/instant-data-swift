@@ -120,3 +120,9 @@ Touching (amendment 1):
 - Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift: one test, the stale stage
 - Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift and InstantEnergyMeterTests.swift: call
   sites of the plan's begin only, if its result's shape changes
+
+## Amendment 2 (2026-10-31, claude-code/perf-observe-1493@strangelearning): #1494's docs
+
+12. docs/swift-concurrency-guidance.md, Performance Rules: one paragraph, a step's reads share one persistence turn
+   and a paged read says when it held its last row (#1494). docs/adr/0018-one-actor-turn-per-step.md: one consequence
+   line with #1494's measured turns.
