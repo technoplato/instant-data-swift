@@ -1,3 +1,15 @@
+## 2026-10-31 08:23:40 EDT — scribe `fe49cd6ea74b05467180ab637881d8c37732deca`
+Merge (#1469): each broadcast frame's JPEG is written once on the phone; the spool takes the extension's file by rename and the recording's copy is a synced hard link.
+
+## 2026-10-31 07:47:40 EDT — scribe `81a5fc58dec386b538d7f5119cd421a828e01458`
+Docs (#1469): the audit's section 7 and ADR 0108 amendment A.
+
+## 2026-10-31 07:47:40 EDT — scribe `db5e5e9da6e80bf98d785599b79d25cbf2a9536f`
+Fix (#1469): the frame spool renames the extension's file in and the drain's sink links the recording's copy, forced to flash once.
+
+## 2026-10-31 07:47:40 EDT — scribe `18d5f4a7c7e14b11e6b3b6979d009e6a42b47a2c`
+Test (#1469): red: a frame's JPEG written once; FileWrites gains move and link; a vanished frame file is skipped by name.
+
 ## 2026-10-31 08:05:24 EDT — scribe `ef70f3c978e5cb4b54fa6f97d80bca3ec8e6b4cf`
 Feature (#1465): the Mac View menu moves a recording between its lines and its chapters, with one value shared by both menus.
 
