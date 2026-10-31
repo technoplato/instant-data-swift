@@ -1,3 +1,4 @@
 claude-code/toolbox-1244@strangelearning 2026-10-27T11:04:46-0400 grower plan=2026-10-27-toolbox-1244-footguns #1244
 claude-code/sync-jam-1270@al 2026-10-27T19:14:47-0400 mower plan=2026-10-27-sync-jam-1270 #1270
 claude-code/sync-jam-1378@halfjew22 2026-10-29T20:27:27-0400 mower plan=2026-10-29-sync-jam-1378 #1378 (F65 only)
+claude-code/outbox-1435@strangelearning 2026-10-30T22:19:47-0400 mower plan=2026-10-30-outbox-1435 #1435 amendment 2 (F59 only)
