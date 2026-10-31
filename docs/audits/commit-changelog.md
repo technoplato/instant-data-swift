@@ -1,3 +1,6 @@
+## 2026-10-31 12:46:23 EDT — scribe `e00f51ba8d5738403a09e59a7ac714ba8e0ca8d9`
+Audit (#1481): wasted work in instant-data-swift and Scribe after the night's fixes, nine findings filed and queued (#1500-#1508): closed results kept as 207 MB of duplicate, dead value copies; list pages carrying each row's build provenance; the floating bar's per-frame breathe on every screen; the device log at 22 lines a second; a never-analyzed store; the Codable wrapper on stored values; whole-library screen windows; the ledger's unattributed writes and missing footprint; the Live Activity keep-alive as a proposal.
+
 ## 2026-10-31 12:43:05 EDT — scribe `5bf97955c537`
 Audit (#1482): what this pass did not measure, and the one-job recipe for the task and actor counts (change log fbeca0780).
 
