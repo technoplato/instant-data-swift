@@ -85,3 +85,5 @@ claude-code/perf-waste-fixes@ld 2026-10-31T13:14:54-0400 mower plan=2026-10-31-p
 claude-code/perf-writes-1510@ld 2026-10-31T13:45:27-0400 grower plan=2026-10-31-perf-writes-1510 #1510 (SQLiteStatementCache checkOut/checkIn, transaction(operation:_:), one line after the writer opens only)
 claude-code/perf-gate-1491@ld 2026-10-31T13:40:44-0400 mower plan=2026-10-31-perf-gate-1491 amendment 2 #1491 (saveOutboxMutationWithoutTransaction's wire-intent fingerprints only)
 claude-code/perf-writes-1510@ld 2026-10-31T16:10:58-0400 mower plan=2026-10-31-perf-writes-1510 amendment 1 #1510 (encodeOutboxBody, decodeOutboxBody, storedOutboxBody only)
+claude-code/perf-observe-1493@strangelearning 2026-10-31T16:35:57-0400 mower plan=2026-10-31-perf-observe-1493 amendment 1 #1494 (beginServerApplyPlan's first page, the body and resident-patch page loaders and their last-page flag only)
+claude-code/perf-gate-1491@strangelearning 2026-10-31T16:40:00-0400 mower plan=2026-10-31-perf-gate-1491 amendment 3 #1491 (the outbox tail reads' SQL as constants, unchanged; a creation-order index put in place in bootstrap beside deliveryIndexSQL)

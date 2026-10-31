@@ -3,6 +3,8 @@
 //   operation gate and sends after leaving; one registration held the gate 5.0-7.8 s across its send (#1131).
 // - 2026-10-31: the attribute index the wire encoder resolves with is kept until the server's attributes change, not
 //   rebuilt for every mutation sent (#1492).
+// - 2026-10-31: a frame is written by one task, and one watcher per socket bounds every write at 5 s; a send started
+//   three tasks and armed a timer (#1496).
 // - 2026-10-31: the applier admits, records and checks each frame in one turn on this actor and finishes it in a second;
 //   it hopped here four times a frame (#1494).
 
@@ -355,7 +357,12 @@ package actor InstantRuntimeLiveSession {
     var sessionIdentity: UUID
   }
 
-  private var session: InstantLiveWebSocketSession?
+  private var session: InstantLiveWebSocketSession? {
+    didSet { replaceSocketWriterIfNeeded() }
+  }
+  /// The current socket's writer (#1496): each frame this actor sends on the socket is written by one task, and one
+  /// watcher bounds every write at 5 s. Made with the socket and finished when this actor lets go of it.
+  private var socketWriter: InstantLiveSocketWriter?
   private let receiverTaskOwner = InstantRuntimeExactTaskOwner()
   private var registeredQueries: [String: RegisteredQuery] = [:]
   /// Consecutive transient server errors of each live query, and its pending re-send on this socket (#360).
@@ -462,11 +469,24 @@ package actor InstantRuntimeLiveSession {
   private var generation = 0
   private var receiverFailure: ReceiverFailure?
   private var inFlightSendCounts: [SendGeneration: Int] = [:]
+  /// Unstructured tasks the send path started on sockets this actor let go of (#1496), for tests.
+  private var retiredSendTaskStartCount = 0
   private var sendCompletionWaiters:
     [SendGeneration: [CheckedContinuation<Void, Never>]] = [:]
 
   var isOpen: Bool {
     isOpened
+  }
+
+  deinit {
+    socketWriter?.finish()
+  }
+
+  private func replaceSocketWriterIfNeeded() {
+    guard socketWriter?.sessionIdentity != session?.identity else { return }
+    socketWriter?.finish()
+    retiredSendTaskStartCount += socketWriter?.startedTaskCount ?? 0
+    socketWriter = session.map { InstantLiveSocketWriter(session: $0) }
   }
 
   /// ``isOpen`` without a hop onto this actor, for ``InstantRuntime/connectionHealth()`` (#482). Like `await isOpen`,
@@ -1367,6 +1387,10 @@ package actor InstantRuntimeLiveSession {
     attributeResolverBuildCount
   }
 
+  func sendTaskStartCountForTesting() -> Int {
+    retiredSendTaskStartCount + (socketWriter?.startedTaskCount ?? 0)
+  }
+
   func mutationReservationCountsForTesting() -> (
     ids: Int,
     stepCounts: Int,
@@ -2237,15 +2261,14 @@ package actor InstantRuntimeLiveSession {
       // timeout used to end on the caller's cancellation too, and a failed write ends the socket below, so cancelling
       // an observation while its add-query was being written closed a healthy socket and re-added every query
       // (library-78). Upstream `Reactor.js` writes with a synchronous `ws.send`, which no caller can interrupt. The
-      // unstructured task does not inherit the caller's cancellation, and awaiting its value does not propagate it.
-      try await Task {
-        try await instantLiveWithTimeout(
-          operation: "send Instant live session message",
-          timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
-        ) {
-          try await session.send(message)
-        }
-      }.value
+      // socket's writer writes each frame from a task of its own, which the caller's cancellation does not reach, and
+      // its one watcher fails a write's caller at its deadline (#1496): a send starts one task and arms no timer, where
+      // it started three and armed a timer. A socket this actor no longer holds (replaced, invalidated or closing) has
+      // no writer, so a send through it fails as superseded instead of writing to it.
+      guard let socketWriter, socketWriter.sessionIdentity == session.identity else {
+        throw InstantSupersededLiveSessionSend()
+      }
+      try await socketWriter.write(message)
       // Routine send chatter is debug; failures remain error-level.
       InstantDiagnostics.shared.record(
         .debug,
@@ -2259,6 +2282,19 @@ package actor InstantRuntimeLiveSession {
         ],
         correlationID: message.clientEventID
       )
+    } catch is InstantSupersededLiveSessionSend {
+      // The frame never reached the socket: this actor had let go of it, and whatever let go closes it (#1496), so
+      // aborting it here could cut short a graceful close.
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.message-send-superseded",
+        message: "Did not send on an Instant WebSocket session this actor no longer holds.",
+        metadata: ["op": message.op],
+        correlationID: message.clientEventID
+      )
+      throw InstantSupersededLiveSessionSend()
     } catch {
       let currentSessionOwnsFailure = retainFailureForCurrentSession(error, from: session)
       session.abort()

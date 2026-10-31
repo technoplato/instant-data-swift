@@ -86,6 +86,11 @@
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
 // - 2026-10-31: a query-cache row holds its answer's digest and, in columns, the last read's time, revisions and
 //   sequence, which readers lay over its JSON; a read whose answer the row holds updates those columns only (#1498).
+// - 2026-10-31: the store keeps the receipt fingerprint it computed for each write, keyed by a hash of the fingerprint's
+//   inputs, so the delivery claim and the acknowledgement no longer encode a write the save just fingerprinted (#1497).
+// - 2026-10-31: the writer keeps SQLite's temporary structures in memory from the end of its bootstrap, after the one-time
+//   migrations and before the server apply's staging tables: a phone wrote 34-37K temporary-file writes an hour of
+//   recording and 470K across one evening's launches (#1504).
 // - 2026-10-31: a server apply's planning reads (its restated results' retractions and saves, the retractions'
 //   protection) are one read transaction in one turn; they were three turns, between which a local write made the
 //   attempt stale (#1494).
@@ -609,6 +614,12 @@ struct InstantOutboxAliasReplayLoad: Sendable {
 struct InstantMutationLifecycleResolution: Sendable {
   var observationID: String
   var event: InstantMutationLifecycleEvent
+}
+
+/// A write's receipt fingerprint and the hash of the inputs it was computed from (#1497).
+private struct InstantKeptReceiptFingerprint {
+  var inputsHash: Int
+  var fingerprint: String
 }
 
 struct InstantOutboxBodyRow: Sendable {
@@ -1351,6 +1362,14 @@ public actor SQLitePersistenceStore {
   /// Query-cache answers encoded as JSON (#1498), on this actor or off it: for tests and the release's measurements.
   private let queryCacheAnswerEncodes = OSAllocatedUnfairLock(initialState: 0)
   private var optimisticEffectFingerprintCount = 0
+  /// The receipt fingerprint this store last computed for each write, by mutation id, with the hash of its inputs
+  /// (#1497). The delivery claim and the acknowledgement check a write's body against the receipt its save minted, and
+  /// each computed the fingerprint again: a sorted-keys JSON encoding of the transaction and its rollback and a SHA-256,
+  /// about 1.3 ms for a transcript line on a Mac mini, on this actor. The fingerprint is a function of its inputs, so
+  /// equal inputs reuse it, and any other inputs (an earlier process's body, a changed one) are fingerprinted as before.
+  private var keptReceiptFingerprints: [String: InstantKeptReceiptFingerprint] = [:]
+  /// How many forward wire-intent fingerprints the outbox row write computed for the mutation it saves (#1491).
+  private var savedWireIntentFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1467,12 +1486,43 @@ public actor SQLitePersistenceStore {
     optimisticEffectFingerprintCount
   }
 
-  /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one encodes the mutation's transaction and
-  /// rollback with `JSONEncoder` and hashes the text.
-  private func optimisticEffectFingerprint(of mutation: PendingMutation) throws -> String? {
-    optimisticEffectFingerprintCount += 1
-    return try mutation.optimisticEffectReceiptFingerprint()
+  /// How many forward wire-intent fingerprints the outbox row write computed for the mutations it saved (#1491).
+  package func savedWireIntentFingerprintCountForTesting() -> Int {
+    savedWireIntentFingerprintCount
   }
+
+  /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one computed encodes the mutation's
+  /// transaction and rollback with `JSONEncoder` and hashes the text; one whose inputs equal the kept one's is reused,
+  /// and not counted (#1497).
+  private func optimisticEffectFingerprint(of mutation: PendingMutation) throws -> String? {
+    guard mutation.hasOptimisticEffectReceiptFingerprint else {
+      optimisticEffectFingerprintCount += 1
+      return nil
+    }
+    let inputsHash = mutation.optimisticEffectReceiptFingerprintInputsHash
+    if let kept = keptReceiptFingerprints[mutation.id], kept.inputsHash == inputsHash {
+      return kept.fingerprint
+    }
+    optimisticEffectFingerprintCount += 1
+    guard let fingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+      keptReceiptFingerprints[mutation.id] = nil
+      return nil
+    }
+    // An entry lives from the save to the acknowledgement, so a connected recording keeps a few. Past the bound
+    // (offline, unacknowledged writes) they are all dropped, and each write is fingerprinted again when next checked.
+    if keptReceiptFingerprints.count >= Self.maximumKeptReceiptFingerprints,
+      keptReceiptFingerprints[mutation.id] == nil
+    {
+      keptReceiptFingerprints.removeAll(keepingCapacity: true)
+    }
+    keptReceiptFingerprints[mutation.id] = InstantKeptReceiptFingerprint(
+      inputsHash: inputsHash,
+      fingerprint: fingerprint
+    )
+    return fingerprint
+  }
+
+  static let maximumKeptReceiptFingerprints = 512
 
   package func resetTerminalFailureMetadataMetricsForTesting() {
     terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
@@ -2922,6 +2972,14 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try ensureRareStateIndexes()
     }
+    // #1504: SQLite's temporary structures in memory from here on: a statement's journal, a sort's or a DISTINCT's
+    // spill, the server apply's staging tables. With SQLite's default, a file, a phone wrote them 34,124-36,677 times an
+    // hour of recording (19-49 MB/h) and 470,007 times across one evening's eight launches, bytes SQLite deletes when the
+    // statement ends. What one holds is bounded by the library's own batches (a prune batch of 1,000 facts, a released or
+    // reloaded chunk, a server apply's page of 51 rows). The one-time migrations above keep the file: one copies every
+    // fact's key into a temporary table. Set before the staging tables, because a change of the setting drops every
+    // temporary table that exists.
+    try execute("PRAGMA temp_store = MEMORY")
     try ensureServerApplyStagingSchema()
     try withSQLiteBusyRetry {
       try ensureLookupIndexes()
@@ -11056,7 +11114,8 @@ public actor SQLitePersistenceStore {
         )
       }
 
-      // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007).
+      // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007), and the
+      // save's, kept, needs none (#1497).
       let effectFingerprint = try optimisticEffectFingerprint(of: mutation)
       let hasPreparedMaterializedEffect = hasStoredPreparedOptimisticEffectReceipt(
         mutation,
@@ -11168,8 +11227,11 @@ public actor SQLitePersistenceStore {
         }
         try setOptimisticOverlayActiveIfChangedWithoutTransaction(mutation)
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
+        // Its lifecycle record checks the receipt once more, with the kept fingerprint.
         try saveMutationLifecycleWithoutTransaction(mutation)
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        // Accepted: no claim or acknowledgement checks this write again (#1497).
+        keptReceiptFingerprints[mutation.id] = nil
       }
       return InstantOutboxRowAcceptance(
         mutation: mutation,
@@ -14160,6 +14222,11 @@ public actor SQLitePersistenceStore {
         )
       )
     }
+  }
+
+  /// The writer's `PRAGMA temp_store`: 0 SQLite's build default (a file here), 1 a file, 2 memory (#1504).
+  func temporaryStoreForTesting() throws -> Int64 {
+    try selectInt64("PRAGMA temp_store")
   }
 
   /// Finishes a prune's release of facts that a crash or a failure cut short (#1129), before anything reads the store.
@@ -19730,7 +19797,6 @@ public actor SQLitePersistenceStore {
     encodedBody: (body: String, lifecycle: String)? = nil
   ) throws {
     let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
-    let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
     let durableMutation = mutation
     var statement: OpaquePointer?
     try prepare(
@@ -19767,6 +19833,15 @@ public actor SQLitePersistenceStore {
       ? sqlite3_column_int64(statement, 5) != 0
       : false
     finishStatement(statement)
+    // The forward wire intent decides only a row that already holds a server acceptance or was offered to delivery
+    // (#1491): a new write's row holds neither, so it is not fingerprinted (a sorted-key encode and a SHA-256 a write).
+    let candidateWireFingerprint: String?
+    if existingAcceptanceFingerprint != nil || existingDeliveryStarted {
+      savedWireIntentFingerprintCount += 1
+      candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
+    } else {
+      candidateWireFingerprint = nil
+    }
     if case .publicPersistence = receiptWriteAuthority,
       existingReceiptFingerprint != nil,
       candidateFingerprint != existingReceiptFingerprint
@@ -20948,6 +21023,8 @@ public actor SQLitePersistenceStore {
   private func reopenConnection() throws {
     connection.close()
     connection.raw = try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS)
+    // #1504: a reopened writer keeps its temporary structures in memory, as its bootstrap left them.
+    try execute("PRAGMA temp_store = MEMORY")
   }
 
   private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) throws {

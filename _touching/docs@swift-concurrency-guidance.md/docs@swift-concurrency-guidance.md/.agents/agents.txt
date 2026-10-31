@@ -1,1 +1,2 @@
 claude-code/perf-observe-1493@ld 2026-10-31T14:06:39-0400 mower plan=2026-10-31-perf-observe-1493 #1493 amendment 2 (the Query Observation section's one-stream rule only)
+claude-code/perf-observe-1493@strangelearning 2026-10-31T17:27:15-0400 mower plan=2026-10-31-perf-observe-1493 amendment 2 #1494 (the Performance Rules section's one-turn-per-step paragraph only)

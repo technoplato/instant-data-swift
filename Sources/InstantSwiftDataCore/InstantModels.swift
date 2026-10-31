@@ -1030,10 +1030,21 @@ private struct InstantOptimisticEffectReceiptFingerprintPayload: Encodable {
   var optimisticEffectReceiptVersion: Int
 }
 
+/// `data`'s SHA-256 as 64 lowercase hex digits, written straight into the string's storage (#1491): formatting each of
+/// its 32 bytes with `String(format:)` and joining them made 33 strings a digest, and a save writes two digests.
 package func instantSHA256HexDigest(_ data: Data) -> String {
-  SHA256.hash(data: data)
-    .map { String(format: "%02x", $0) }
-    .joined()
+  // The digest's own bytes: iterating a digest copies them into an array first.
+  SHA256.hash(data: data).withUnsafeBytes { bytes in
+    String(unsafeUninitializedCapacity: bytes.count * 2) { buffer in
+      // "0"..."9" are 0x30..., "a"..."f" are 0x61...: 0x57 + 10 is 0x61.
+      func digit(_ nibble: UInt8) -> UInt8 { nibble < 10 ? 0x30 + nibble : 0x57 + nibble }
+      for (index, byte) in bytes.enumerated() {
+        buffer[2 * index] = digit(byte >> 4)
+        buffer[2 * index + 1] = digit(byte & 0x0F)
+      }
+      return bytes.count * 2
+    }
+  }
 }
 
 public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
@@ -1144,6 +1155,19 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
       // Public Codable bytes alone are not authority for this state.
       return rollbackTransaction == nil
     }
+  }
+
+  /// A hash of every input of ``optimisticEffectReceiptFingerprint()`` (#1497): equal inputs give the same
+  /// fingerprint, so a store may reuse the one it computed while this hash is the same. Change it with the payload.
+  package var optimisticEffectReceiptFingerprintInputsHash: Int {
+    var hasher = Hasher()
+    hasher.combine(id)
+    hasher.combine(createdAt)
+    hasher.combine(transaction)
+    hasher.combine(rollbackTransaction)
+    hasher.combine(optimisticOverlayState)
+    hasher.combine(optimisticEffectReceiptVersion)
+    return hasher.finalize()
   }
 
   /// A canonical SHA-256 digest of the admission payload whose transaction,
