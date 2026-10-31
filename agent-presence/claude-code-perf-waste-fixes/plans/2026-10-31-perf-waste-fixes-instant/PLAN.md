@@ -94,6 +94,32 @@ after their landings, on this plan, by one agent in this worktree.
   at test sizes, so the phone's ledger after the build is the measure (`sqlite.temp` expected 0).
 - Claims: SQLitePersistenceStore.swift also gets one test accessor beside `releasedLiveQueryResultCountForTesting`.
 
+## Amendment 3 (2026-10-31, perf-waste-fixes): #1500 waits for #1165; the write path first
+
+The code map of library main 1b256d1a (`~/Sync/audit/perf-waste-fixes-1481/1500-code-map.md`, read only) corrects
+amendment 1's premises and finds its blocker.
+
+- Closing writes nothing today. The unload happens in the cadence prune (every 64th refresh frame that restates
+  results): every stored result no open or registering query holds gets its JSON copy built inside SQLite, its header
+  deleted (or renamed `released-result:` past a batch), its ownership rows released and the facts no other result owns
+  deleted from `instant_triples` and from memory. Reopening is not a read: it rewrites the header, the ownership rows,
+  and any facts SQLite lost.
+- The blocker. A local write to an entity that is on disk but not in memory is handled whole, as a new entity
+  (`InstantStore` `usesWholeEntityScope`: no slots in memory), and the save's diff reads every row of the entity from
+  SQLite and deletes each row the write did not restate (`saveChangedEntityFactsWithoutTransaction`,
+  `saveTripleDiffWithoutTransaction`). Amendment 1's closed results would keep facts on disk only, so the next local
+  write to one of their entities would erase the rest of it on this device. The same gap exists today for the
+  disk-only entities a relaunch leaves (#1165: strict writes throw there; non-strict ones erase).
+- Order of work: (1) #1165: a write loads a non-resident entity's facts from SQLite before it prepares, as it hydrates
+  deferred values, so its before-image is the entity's own and strict checks see it; red test ready
+  (`InstantNonResidentWriteTests.aWriteToALineKeptOnDiskKeepsItsOtherFacts`: three lines, one owned, a one-attribute
+  write to a disk-only line keeps its id, recording and text). (2) Then amendment 1's design, with its red tests and one
+  more: a local write to a closed result's entity keeps that entity's disk-only facts.
+
+Touching when built: Tests/InstantSwiftDataCoreTests/InstantNonResidentWriteTests.swift (new); InstantRuntime.swift's
+write preparation and InstantStore.swift's scope decision for #1165, claimed in that issue's own plan; the #1500 files
+as amendment 1 lists.
+
 ## Conflict check (origin/main 2026-10-31 13:13 EDT; the first version of this line said 13:20, a typed clock time)
 
 SQLitePersistenceStore.swift is claimed by perf-send-1492 (acceptOutboxMutation, the receipt digest), perf-read-1498
