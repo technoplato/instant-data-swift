@@ -1,3 +1,21 @@
+## 2026-10-31 07:20:53 EDT — scribe `dbd6f05a5d41d51736e17a56b215cb75fff94da0`
+Server (#1460): re-applies the read fix a concurrent landing dropped (#1486).
+
+## 2026-10-31 07:18:45 EDT — scribe `a2bd09ec1515b0e595dce6164144ef83cd585649`
+Server (#1460): lands the WebSocket read fix, its tests and docs.
+
+## 2026-10-31 05:52:37 EDT — scribe `20bdf30cbf133e3771dd29c5ae0352979566c5ef`
+Server (#1460): past 120 s of audio not yet decoded the read paces the client instead of refusing it.
+
+## 2026-10-31 05:51:53 EDT — scribe `470625127bc6a2e21afba5f4cc5f373e358d9a6a`
+Server (#1460): the WebSocket listen route reads its socket in a task of its own, so its 5 s ping never waits for the decode.
+
+## 2026-10-31 05:51:53 EDT — scribe `362f02b44a68b704b914fa730965fd064d20c3d9`
+Test (#1460): a listen stream slower than its audio keeps its socket (live server, URLSession WebSocket).
+
+## 2026-10-31 02:29:46 EDT — scribe `62c6382abf6af2ef2e93e70dc3c6b1face29b57b`
+Server (#1460): the transcription server's LaunchAgent leaves launchd's utility clamp (ProcessType Interactive).
+
 ## 2026-10-31 07:19:26 EDT — scribe `f401bc9bfe507b2f6b43ed080391d8566aa9020d`
 Merge (#1459): scribe design post reads its attempt beside the render and uploads beside the chat's write.
 
