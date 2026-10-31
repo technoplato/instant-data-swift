@@ -10,6 +10,70 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 7:46:47 p.m. EDT — `d8185dde610b` test(#1491): ab-commits.sh resolves each tree's packages one at a time and stops when a tree does not build
+
+- **Implementation commit:** `d8185dde610b0e3a0b70ba74b0f901b3b5cdcb69`
+- **Change:** test(#1491): ab-commits.sh resolves each tree's packages one at a time and stops when a tree does not build
+- **Details:**
+  - Two cold trees built side by side cloned into the mini's shared SwiftPM cache at once; HEAD's build failed and the job ran the red tree alone. Simulated with a stub swift; the next A/B resolved and built both trees.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 serial package resolution, a dropped clone retried, a failed build stops the job
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:46 p.m. EDT — `7a67778d8ffb` test(#1491): the plan guard fails a plan that reads more of the outbox; #1115's frame budget is 25 with the index
+
+- **Implementation commit:** `7a67778d8ffbc0f6a82536126fe350df34c86232`
+- **Change:** test(#1491): the plan guard fails a plan that reads more of the outbox; #1115's frame budget is 25 with the index
+- **Details:**
+  - The first debug run (perf-gate-1491-tail, Mac mini, 1,079 tests in 74 suites) found the guard too strict (two server-apply catch-up counts changed plan for the better) and #1115's budget of 24 outbox frames a write at 25.0 (23.0 without the index).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard's rule
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` — #1491 the frames-per-write budget, 24 -> 25
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:46 p.m. EDT — `bf8748e05552` test(#1491): the plan guard reloads the store connection's schema after dropping the index
+
+- **Implementation commit:** `bf8748e05552206d1d1d5948fcaad2eb2ba87161`
+- **Change:** test(#1491): the plan guard reloads the store connection's schema after dropping the index
+- **Details:**
+  - EXPLAIN QUERY PLAN plans on a connection's cached schema; the guard runs one store read after the drop and requires the tail to plan without the index before comparing.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard's schema reload
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:45 p.m. EDT — `e712d3e331ad` perf(#1491): green: the outbox tail is the last entry of a creation-order index, not a sort of every row
+
+- **Implementation commit:** `e712d3e331adebd90a7e44d219972ea2ede9060c`
+- **Change:** perf(#1491): green: the outbox tail is the last entry of a creation-order index, not a sort of every row
+- **Details:**
+  - A full index on (created_at_ms, mutation_id), put in place at every open beside deliveryIndexSQL; the SQL is unchanged. Before: 291 us a tail read at the phone-shaped store's 700 rows, 2.25 ms at 5,400 (laptop, Python sqlite3); M6 put 39 samples a minute in it, 18 inside the transact's hold. Cost: WAL frames a step on the outbox's schema (700 rows, 50 cycles) save 4 -> 5, acknowledgement 5 -> 5, the confirm's delete 4 -> 5.
+  - Verified on the Mac mini: in release the red e10668ae fails all three tail reads (a sort, no index) and d8185dde passes (perf-gate-1491-tail-ab, 19:25-19:43); the fixed suites pass in debug, 26 tests in 3 suites (perf-gate-1491-tail-tests). One job, the recording exercise on the real-size store, steady p50 beside six busy loops: transact hold 2.70 -> 2.60 ms, write.line 3.38 -> 3.08 ms, plan server apply hold 1.35 -> 1.04 ms (means of two rounds); serverApplyPlan CPU a call alone 852 -> 807 us. Pages a step (120 writes): save 16.79 -> 17.79, claim 2.00 and acknowledgement 4.00 unchanged, echo 19.97 -> 20.97.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 creationOrderIndexSQL and its line in bootstrap
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard: no other plan of a live write's statements changes
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:45 p.m. EDT — `e10668ae84dc` test(#1491): red: the outbox tail a write reads is one entry of an index in delivery order (today a sort of every row)
+
+- **Implementation commit:** `e10668ae84dcdcd843678286e35386231088052d`
+- **Change:** test(#1491): red: the outbox tail a write reads is one entry of an index in delivery order (today a sort of every row)
+- **Details:**
+  - Plans the three tail reads (the creation cursor, the supersession tail's id, the supersession tail) as the library runs them on a bootstrapped store: each scanned the global-effect index whole and kept the newest row in a temporary b-tree. The two inline queries became package constants with the same text.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 outboxTailPositionSQL and outboxTailIDSQL, the same SQL
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the tail reads' plans
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 4:42:37 p.m. EDT — `221573c63b06` test(#1491): ab-commits.sh builds its trees side by side and runs a test filter at each commit (--test-filter)
 
 - **Implementation commit:** `221573c63b06dc6f098d6700577611ddaf9ecc0d`
