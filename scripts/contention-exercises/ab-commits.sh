@@ -9,12 +9,13 @@
 # round, and each run records what else used the CPU while it ran.
 #
 # usage: ab-commits.sh [--commits "287f77d1 4accbf45 HEAD"] [--rounds 2] [--load 6] [--only recording]
-#                      [--seconds 60] [--out-dir ab-out] [--jobs 8] [--bench-runs 0]
+#                      [--seconds 60] [--out-dir ab-out] [--jobs 8] [--bench-runs 0] [--test-filter <regex>]
 # Each commit other than HEAD is exported (git archive) under .build/ab-trees/<sha> and built there once; HEAD builds
 # in .build/contention-release. The load is <load> busy shell loops for the length of a run. Output: one file per run,
 # <out-dir>/<commit>-<condition>-r<round>.txt, and <out-dir>/summary.txt. --bench-runs N then runs the cross-SDK runtime
 # benchmark (one todo, 300 transacts back to back: the CPU stays busy, unlike the exercise's one write every 667 ms) N
-# times per commit, alternating, into <out-dir>/bench-<commit>-r<run>.json and the summary.
+# times per commit, alternating, into <out-dir>/bench-<commit>-r<run>.json and the summary. --test-filter runs the core
+# bundle's matching tests at each commit first (<out-dir>/tests-<commit>.txt).
 #
 # History:
 # - 2026-10-31: #1491: created.
@@ -28,6 +29,7 @@ seconds=60
 out_dir=ab-out
 jobs=8
 bench_runs=0
+test_filter=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --commits) commits=$2; shift 2 ;;
@@ -38,6 +40,7 @@ while [ $# -gt 0 ]; do
     --out-dir) out_dir=$2; shift 2 ;;
     --jobs) jobs=$2; shift 2 ;;
     --bench-runs) bench_runs=$2; shift 2 ;;
+    --test-filter) test_filter=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 64 ;;
   esac
 done
@@ -56,23 +59,51 @@ name_for() {   # <commit>: the short sha the CONTENTION lines carry
   git rev-parse --short=8 "$1"
 }
 
-# Export and build every tree first, so no run overlaps a build of this job.
+# Export and build every tree first, so no run overlaps a build of this job. The builds run side by side: a release
+# build of the core module is one whole-module compile, one core each.
+build_pids=()
 for commit in $commits; do
   tree=$(tree_for "$commit")
   if [ "$commit" != HEAD ] && [ ! -f "$tree/Package.swift" ]; then
     rm -rf "$tree" && mkdir -p "$tree"
     git archive "$commit" | tar -x -C "$tree" || { echo "ab-commits: cannot export $commit" >&2; exit 1; }
   fi
-  started=$(date +%s)
-  (cd "$tree" && swift build -j "$jobs" -c release -Xswiftc -enable-testing --product InstantSwiftDataCoreTests \
-    --scratch-path "$tree/.build/contention-release" 2>&1 | grep -E "error:|Build complete")
-  status=${PIPESTATUS[0]}
-  echo "ab-commits: build $(name_for "$commit") exit $status in $(( $(date +%s) - started )) s"
+  name=$(name_for "$commit")
+  (
+    started=$(date +%s)
+    cd "$tree" && swift build -j "$jobs" -c release -Xswiftc -enable-testing --product InstantSwiftDataCoreTests \
+      --scratch-path "$tree/.build/contention-release" > "$out_dir/build-$name.log" 2>&1
+    status=$?
+    echo "ab-commits: build $name exit $status in $(( $(date +%s) - started )) s"
+    grep -E "error:" "$out_dir/build-$name.log" | head -5
+  ) &
+  build_pids+=($!)
 done
+wait "${build_pids[@]}"
+
+# --test-filter: the core bundle's tests matching it, at each commit, from the release build (#expect judges there;
+# CustomDump's expectNoDifference records nothing in a release build).
+if [ -n "$test_filter" ]; then
+  developer=$(xcode-select -p)
+  platform="$developer/Platforms/MacOSX.platform/Developer"
+  helper="$developer/Toolchains/XcodeDefault.xctoolchain/usr/libexec/swift/pm/swiftpm-testing-helper"
+  for commit in $commits; do
+    tree=$(tree_for "$commit")
+    name=$(name_for "$commit")
+    products="$tree/.build/contention-release/out/Products/Release"
+    [ -d "$products" ] || products="$tree/.build/contention-release/arm64-apple-macosx/release"
+    (cd "$tree" && DYLD_LIBRARY_PATH="$products:$platform/usr/lib" \
+      DYLD_FRAMEWORK_PATH="$products/PackageFrameworks:$products:$platform/Library/Frameworks:$platform/Library/PrivateFrameworks" \
+      "$helper" --test-bundle-path "$products/InstantSwiftDataCoreTests.xctest/Contents/MacOS/InstantSwiftDataCoreTests" \
+      --testing-library swift-testing --filter "$test_filter" > "$out_dir/tests-$name.txt" 2>&1)
+    echo "ab-commits: tests $name: $(grep -E "Test run with" "$out_dir/tests-$name.txt" | tail -1)"
+    grep -E "recorded an issue|Expectation failed|􀄵" "$out_dir/tests-$name.txt" | grep -v "known issue" | head -6
+  done
+fi
 
 spin_pids=()
 start_load() {
-  for _ in $(seq 1 "$1"); do (while :; do :; done) & spin_pids+=($!); done
+  for (( spin = 0; spin < $1; spin++ )); do (while :; do :; done) & spin_pids+=($!); done
 }
 stop_load() {
   # macOS's bash 3.2 calls an empty array unbound under `set -u`.
@@ -112,7 +143,7 @@ run_one() {   # <commit> <condition> <round>
 
 set -- $commits
 count=$#
-for round in $(seq 1 "$rounds"); do
+for (( round = 1; round <= rounds; round++ )); do
   for condition in alone load; do
     # Rotate the order each round and condition, so no commit always runs first or last.
     offset=0
@@ -129,7 +160,7 @@ if [ "$bench_runs" -gt 0 ]; then
     (cd "$tree" && swift build -j "$jobs" -c release -Xswiftc -enable-testing --product instant-swift-data-benchmarks \
       --scratch-path "$tree/.build/contention-release" 2>&1 | grep -E "error:|Build complete")
   done
-  for run in $(seq 1 "$bench_runs"); do
+  for (( run = 1; run <= bench_runs; run++ )); do
     for commit in $commits; do
       tree=$(tree_for "$commit")
       name=$(name_for "$commit")
@@ -145,6 +176,7 @@ fi
 {
   echo "== summary (recording.steady): commit condition round | transact hold p50 | write.line p50 | read.local p50 | claim hold p50"
   for file in "$out_dir"/*-r*.txt; do
+    [ -f "$file" ] || continue
     label=$(basename "$file" .txt)
     pick() { grep -E "^CONTENTION $only\.steady $1" "$file" | head -1 | sed -E 's/.* p50_ms=([0-9.]+).*/\1/'; }
     echo "$label | $(pick 'gate.hold holder=transact') | $(pick 'call caller=write.line') | $(pick 'call caller=read.local') | $(pick 'gate.hold holder="claim')"

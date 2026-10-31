@@ -1,2 +1,3 @@
 claude-opus-5.5-library-79 2026-10-02T09:11:29-04:00 mower plan=2026-10-02-library-79-hops #403
 claude-code/perf-read-1498@ld 2026-10-31T12:45:57-0400 mower plan=2026-10-31-perf-read-1498 #1498 amendment 1 (one consequence line)
+claude-code/perf-observe-1493@strangelearning 2026-10-31T17:27:15-0400 mower plan=2026-10-31-perf-observe-1493 amendment 2 #1494 (one consequence line)
