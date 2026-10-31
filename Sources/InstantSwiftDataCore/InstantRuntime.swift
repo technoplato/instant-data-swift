@@ -2,6 +2,9 @@
 // - 2026-10-31: a query observation is one stream: the store yields into it, a live query's server error writes into it
 //   under the same lock, and its consumer reads it in its own pull, deferred values included; a live observation ran
 //   five forwarding tasks, each resumed by every emission, and a local one two (#1493).
+// - 2026-10-31: a one-shot read leaves its answer in the query cache by its digest: an answer the row holds updates the
+//   row's time, revisions and sequence and encodes nothing; a first or changed one is encoded on the reader's task, not
+//   the persistence actor (#1498).
 // - 2026-10-31: no live-query result's write waits: every refresh stores its result as its rows (#1426), so an
 //   unsubscribe and the close write nothing more, the interval and its timer are gone, and
 //   `flushPendingLiveQueryResults()` writes nothing.
@@ -2722,6 +2725,8 @@ public final class InstantRuntime: Sendable {
           changedFactScope: changedFactScope,
           pendingMutation: pendingMutation,
           supersedingImmediateTail: supersededTail,
+          // The admission's byte bound, on the body the save encodes for the row (#1491).
+          admittingNewWrite: true,
           expectedStoreRevision: storeRevision,
           expectedAttributeRevision: attributeRevision,
           expectedOutboxRevision: outboxRevision
@@ -7236,8 +7241,7 @@ public final class InstantRuntime: Sendable {
       )
     }
     let emission = try await firstLocalAnswer(plan, remotePageInfo: remotePageInfo)
-    recordActorHop(.persistence)
-    let didSave = try await persistence.saveQueryCache(
+    let didSave = try await saveQueryCacheAnswer(
       InstantCachedQuery(
         queryID: plan.id,
         plan: plan,
@@ -7335,8 +7339,7 @@ public final class InstantRuntime: Sendable {
           plan: plan,
           attributes: state.snapshot.store.attributes
         )
-        recordActorHop(.persistence)
-        let didSave = try await persistence.saveQueryCache(
+        let didSave = try await saveQueryCacheAnswer(
           InstantCachedQuery(
             queryID: plan.id,
             plan: plan,
@@ -7363,6 +7366,44 @@ public final class InstantRuntime: Sendable {
     } catch {
       await leaveOperationGate()
       throw error
+    }
+  }
+
+  /// Leaves a one-shot read's answer as its query's cached row while the store's revisions are still the expected
+  /// ones, and returns whether it did (#1498).
+  ///
+  /// The answer's digest is computed here, on the reader's task. When the row already holds the answer, one persistence
+  /// turn updates the row's time, revisions and sequence, and nothing is encoded; otherwise the answer is encoded here
+  /// too and written whole in a second turn. Every read used to encode its whole answer on the persistence actor, where
+  /// each write's turn waited behind it: 431 of queryOnce's 795 ms of CPU a minute in the #1482 audit's sample of the
+  /// recording exercise, for 60 reads of one unchanged page.
+  private func saveQueryCacheAnswer(
+    _ entry: InstantCachedQuery,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64
+  ) async throws -> Bool {
+    let digest = InstantQueryAnswerDigest(entry.emission)
+    recordActorHop(.persistence)
+    switch try await persistence.confirmQueryCacheAnswer(
+      entry,
+      digest: digest,
+      expectedStoreRevision: expectedStoreRevision,
+      expectedAttributeRevision: expectedAttributeRevision
+    ) {
+    case .confirmed:
+      return true
+    case .stale:
+      return false
+    case .absent:
+      let json = try persistence.encodedQueryCacheAnswer(entry)
+      recordActorHop(.persistence)
+      return try await persistence.saveQueryCache(
+        entry,
+        encodedJSON: json,
+        digest: digest,
+        expectedStoreRevision: expectedStoreRevision,
+        expectedAttributeRevision: expectedAttributeRevision
+      )
     }
   }
 

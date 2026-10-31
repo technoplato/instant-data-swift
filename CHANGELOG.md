@@ -10,6 +10,149 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 3:12:28 p.m. EDT — `02566ad49376` release(#1482): v1.9.58: an observer keeps the ids its result shows
+
+- **Implementation commit:** `02566ad49376a94c9cbc3a4993b99f7980b2d25f`
+- **Change:** release(#1482): v1.9.58: an observer keeps the ids its result shows
+- **Details:**
+  - The release document for v1.9.58, cut from main for Scribe build 210: #1495 (e6e71913).
+  - No API, storage or conversion change; 1.9.57 opens a store 1.9.58 opened.
+- **Files:**
+  - `docs/releases/v1.9.58.md` — #1482 the release: what #1495 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-2@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `ff8fb80358bf` test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
+
+- **Implementation commit:** `ff8fb80358bf29f5ae4e5282c04133708b1407fb`
+- **Change:** test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
+- **Details:**
+  - The app writes a line in progress as its liveLines row, which links to nothing (ADR 0069), and a final as a transcript line linked to the recording and put in its preview slot; the linked shape stays as INSTANT_PUBLISH_FANOUT_INTERIMS=segments.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1495 interims as the app writes them; the linked shape as a stress run
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `9051d75eb1a9` perf(#1495): green: an observer keeps the ids its result shows, collected once per result
+
+- **Implementation commit:** `9051d75eb1a98b21e2a8e40da9b38abab2a40d1e`
+- **Change:** perf(#1495): green: an observer keeps the ids its result shows, collected once per result
+- **Details:**
+  - The set lives on the observer, keyed to the storage of the result it was collected from, kept while the observer holds that result as its own or as the one it was last handed, dropped once it holds neither; the decision's shown-entity check, its includes branch, the absent-entity check and the splice read it. Hand-overs are unchanged.
+  - Laptop (debug): 516 tests in 16 suites pass with their 11 listed known issues, the random-write suites that check every observer against a fresh materialization among them.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1495 the kept ids on the observer and their readers
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `3cce5ca1140d` test(#1495): red: an observer a publication leaves unchanged collects the ids it shows again; a phone-shaped publish exercise
+
+- **Implementation commit:** `3cce5ca1140d4814ac5c3391d58fb48be2f1a324`
+- **Change:** test(#1495): red: an observer a publication leaves unchanged collects the ids it shows again; a phone-shaped publish exercise
+- **Details:**
+  - InstantStorePublishMetrics.allEntityIDsBuildCount counts the sets of every entity id an observer's result shows that a publication collects; the pin in InstantPageRefreshEnergyTests: three recordings pages with includes judge a change none can reach, then a heartbeat one shows.
+  - Red on the laptop (debug, 13:07): 3 sets collected for skipped changes, 3 for results already collected.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1495 the build count, at the decision's includes branch and the splice
+  - `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift` — #1495 an unchanged observer collects no id set
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1495 the publication fan-out on the phone's shape, timed, with its metrics
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:57:12 p.m. EDT — `5d349b259d14` release(#1482): v1.9.57: a write encodes its body once, one attribute resolver per schema, a one-shot read writes only a changed answer
+
+- **Implementation commit:** `5d349b259d141422338b8357579b4a74c2575c65`
+- **Change:** release(#1482): v1.9.57: a write encodes its body once, one attribute resolver per schema, a one-shot read writes only a changed answer
+- **Details:**
+  - The release document for v1.9.57, cut from main for Scribe build 209: #1491 (1e1ba548), #1492 (4ba76de7), #1498 (c9dc143d).
+  - No conversion; instant_query_cache's four new columns are nullable, so 1.9.56 still opens a store 1.9.57 opened.
+- **Files:**
+  - `docs/releases/v1.9.57.md` — #1482 the release: what each fix changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-ship-1@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:44:34 p.m. EDT — `2c1c003dadbe` fix(#1498): green: a one-shot read writes its answer to the query cache only when it changed, and never on the persistence actor
+
+- **Implementation commit:** `2c1c003dadbed4e9e3d67b7864371c164bbdc0bc`
+- **Change:** fix(#1498): green: a one-shot read writes its answer to the query cache only when it changed, and never encodes it on the persistence actor
+- **Details:**
+  - A row holds its answer's SHA-256 digest (rows, values, included rows, page info, error; computed on the reader's task) and, in columns, the last read's time, revisions and sequence, laid over its JSON by every reader. An unchanged answer updates those columns in one statement conditioned on the digest and encodes nothing; a first or changed one is encoded on the reader's task and written whole in a second turn.
+  - No read answers from instant_query_cache: its readers are the closed connection's error and the public cachedQuery(_:)/cachedQueries(), whose results are unchanged. A fresh store's first answer saves in two persistence turns: the relaunch pins 14 -> 15 calls (persistence 6 -> 7), query-materialization.todos 5 -> 6 (ADR 0018's log).
+  - Mac mini (debug): the new suite 5 of 5; InstantOneShotReadGateTests, InstantStoreTests' query-cache and closed-connection tests, the #1131 and #300 suites pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantQueryAnswerDigest.swift` — #1498 the answer's digest, written with tags, lengths and sorted keys, through one buffered SHA-256
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1498 the confirm, the whole write, the readers' overlay, the columns added at open
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1498 both one-shot read paths save through the digest; the encode runs on the reader's task
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — #1498 the relaunch and query-materialization hop pins
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — #1498 the relaunch hop pin
+  - `docs/adr/0018-one-actor-turn-per-step.md` — #1498 why a first or changed answer takes one more persistence call
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:44:34 p.m. EDT — `38c426f68ca4` test(#1498): red: a one-shot read encodes its unchanged answer into the query cache again on every read
+
+- **Implementation commit:** `38c426f68ca43875a028a2c73c7e1e802b726084`
+- **Change:** test(#1498): red: a repeated one-shot read whose answer did not change encodes it into the query cache again
+- **Details:**
+  - InstantQueryCacheAnswerWriteTests pins what a reader of a query's cached row sees (the last read's answer, time, revisions and sequence, in this process and after a relaunch), a changed answer written whole, a row another connection replaced, the gated read that adopts another connection's write, the closed connection's error, and 0 answers encoded for an unchanged repeated read.
+  - Red on the laptop (debug, 12:41): 2 of 5 fail, each 'an unchanged answer was encoded again (1)'.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantQueryCacheAnswerWriteTests.swift` — #1498 the query cache's row as readers see it, and the answers encoded per read
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1498 a package counter of query-cache answers encoded, beside decodedOutboxBodyCount
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:00:52 p.m. EDT — `02b7cf8abb6a` perf(#1491): green: a new local write encodes its body once; the size bound reads the bytes the save writes
+
+- **Implementation commit:** `02b7cf8abb6a5524cd047ea3b2ffa10ca3290b9c`
+- **Change:** perf(#1491): green: a new local write encodes its body once; the size bound reads the bytes the save writes
+- **Details:**
+  - The admission no longer encodes the whole mutation to sorted-key JSON to count its bytes; the save of a new write encodes the stored body once before its transaction, checks the 8 MiB limit on it (same error), and writes that text. About 0.37 ms of a write's ~3 ms of CPU on an M4 in the #1482 sample.
+  - Verified (laptop, debug, Xcode beta): 95 tests in 6 suites (the outbox, oversized body, supersession, body conversion, narrow row, hop pin) and 518 tests in 25 suites (#1426, #1435, #1115, #1121 suites) pass, known issues as on main.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1491 validateNewMutation keeps the receipt and step checks; validateEncodedBodyByteCount checks the stored body's bytes
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 saveLocalMutation(admittingNewWrite:) encodes once and passes the text to the row write
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1491 the transact's save admits a new write
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:00:52 p.m. EDT — `efc0656f06c6` test(#1491): red: a new local write encodes its body once (today twice: the admission's size check encodes it again)
+
+- **Implementation commit:** `efc0656f06c6a7ce1d712c4eec797e927d2149fb`
+- **Change:** test(#1491): red: a new local write encodes its body once (today twice: the admission's size check encodes it again)
+- **Details:**
+  - Red on the laptop (debug, Xcode beta): 10 writes encoded their bodies 20 times; the oversized write's guard passes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1491 a task-local counter of body encodes, nil outside a test
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 the stored body's encode counted
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 one encode per write; the oversized write fails before it commits
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:00:51 p.m. EDT — `a79caca2fce3` test(#1491): ab-commits.sh runs the recording exercise at several commits in one job, alone and beside a CPU load
+
+- **Implementation commit:** `a79caca2fce3232431e670328708b615726826fc`
+- **Change:** test(#1491): ab-commits.sh runs the recording exercise at several commits in one job, alone and beside a CPU load
+- **Details:**
+  - The #1482 day bisect compared runs from different jobs; every run beside another job on the Mac mini measured a fast hold, every run alone a slow one. This runner builds each commit once and runs every commit in every condition, rotated, round after round, recording the CPU's other users per run.
+  - 02944ced: survives macOS's bash 3.2 (an empty array is unbound under set -u) and adds --bench-runs, the tight-loop cross-SDK benchmark per commit.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 the one-job A/B of commits, alone and beside N busy loops, and the tight-loop benchmark
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491@ld); no SpecStory capture
+
 ## October 31st, 2026 at 5:51:52 a.m. EDT — `da073db4dc6e` fix(#1426): green: a stored live-query result is its ownership rows, its facts and a narrow header; nothing waits
 
 - **Implementation commit:** `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
