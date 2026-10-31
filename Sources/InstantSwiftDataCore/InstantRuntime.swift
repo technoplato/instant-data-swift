@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-31: a server frame plans in two persistence turns after its seed, the reduction's context in the planning
+//   reads' turn and the first reverse body page in the plan's; no pass reads the empty page after its last row, and the
+//   plan's end and the status read share a turn (#1494).
 // - 2026-10-31: a retried server apply's gate-held event names where each earlier attempt went stale (#1494).
 // - 2026-10-31: a server frame plans in fewer persistence turns: its restated results' retractions, saves and protection
 //   in one read transaction, and no body page read when its plan holds no body (#1494).
@@ -1427,6 +1430,60 @@ enum InstantServerApplyStaleStage: String, Sendable {
   case commit
 }
 
+/// What the reduction reads for one apply's facts, worked out from the facts and the seed's store alone (#1494), so
+/// the read can share the persistence turn of the planning reads.
+private enum InstantServerApplyReductionRequest: Sendable {
+  /// A fact the reduction cannot classify; it reads nothing.
+  case unsupported
+  /// The facts name no slot, so they apply as they are.
+  case noSlots
+  case context(InstantServerApplyReductionContextRequest)
+}
+
+/// The arguments of `SQLitePersistenceStore.loadServerApplyReductionContext` for one apply's facts.
+private struct InstantServerApplyReductionContextRequest: Sendable {
+  var slots: [String: Set<String>]
+  var writeKeyNames: [String: [String]]
+  var reverseLinkSlots: Set<InstantVisibleWriteKey>
+  var absentEntityIDs: Set<String>
+  var emptySlots: [String: Set<String>]
+
+  /// The context, at the revisions `state` was read at.
+  func load(
+    in persistence: isolated SQLitePersistenceStore,
+    state: InstantPersistenceState,
+    processedTransactionID: String
+  ) throws -> InstantServerApplyReductionLoad {
+    try persistence.loadServerApplyReductionContext(
+      slots: slots,
+      writeKeyNames: writeKeyNames,
+      reverseLinkSlots: reverseLinkSlots,
+      absentEntityIDs: absentEntityIDs,
+      emptySlots: emptySlots,
+      processedTransactionID: processedTransactionID,
+      expectedStoreRevision: state.storeRevision,
+      expectedAttributeRevision: state.attributeRevision,
+      expectedOutboxRevision: state.outboxRevision,
+      expectedQueryResultRevision: state.queryResultRevision
+    )
+  }
+}
+
+/// A server apply's planning turn on the persistence actor (#1494): its reads, and, when they were current, the frame's
+/// operations with the retractions protected ahead of them, their footprint and the reduction's read.
+private struct InstantServerApplyPlanningTurn: Sendable {
+  struct Planned: Sendable {
+    var operations: [InstantTripleOperation]
+    var footprint: InstantServerApplyFootprint
+    /// Nil when the reduction does not run for this footprint.
+    var reductionRequest: InstantServerApplyReductionRequest?
+    var reductionContext: InstantServerApplyReductionLoad?
+  }
+
+  var reads: InstantServerApplyPlanningReads
+  var planned: Planned?
+}
+
 /// What one server-apply attempt planned, carried out of the part that may hold the operation gate (#932).
 private struct InstantServerApplyAttemptPlan: Sendable {
   var seed: InstantServerApplySeed
@@ -1441,6 +1498,8 @@ private struct InstantServerApplyAttemptPlan: Sendable {
   /// The attribute of the fact that declined the reduction, when one fact decided it (#1270).
   var reductionDeclinedAttributeID: String?
   var plan: InstantServerApplyPlan
+  /// The plan's first reverse body page, read in the plan's own turn (#1494).
+  var firstReversePage: InstantServerApplyBodyPage?
 }
 
 /// The outcome of one attempt to record a server refusal of a claimed write.
@@ -3179,6 +3238,13 @@ public final class InstantRuntime: Sendable {
         // local write's outbox revision makes stale, so a first attempt that goes stale there has worked them out for its
         // retry.
         var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
+        // Whether the reduction may run follows from the frame; a global footprint, which the protected retractions can
+        // make, still turns it off.
+        let reductionMayRun = configuration.reducesServerApplyToAffectedOverlays && mergedAttributeCount == 0
+          && confirmingMutationID == nil
+        var footprint: InstantServerApplyFootprint
+        var reductionRequest: InstantServerApplyReductionRequest?
+        var reductionContext: InstantServerApplyReductionLoad?
         // The saves, like the retractions, come from the restated results; a frame that restates none reads nothing.
         if !liveQueryResultReplacements.isEmpty {
           let savesResults = !persistedLiveQueryResults.isEmpty && mergedAttributeCount == 0
@@ -3186,8 +3252,13 @@ public final class InstantRuntime: Sendable {
           let reusedSaves = savesResults
             ? workedOutSaves.flatMap { $0.revisions == restatedRevisions ? $0.value : nil } : nil
           let resultsToSave = savesResults && reusedSaves == nil ? persistedLiveQueryResults : nil
-          let reads = try await withPersistence { persistence in
-            try persistence.serverApplyPlanningReads(
+          // #1494: the reduction's context is read in the same turn, after the protection. It is a read at the seed's
+          // revisions worked out from the frame and the seed alone, like the other three, and its turn of its own was one
+          // more place for a local write to land and make the attempt stale.
+          let frameOperations = authoritativeTransaction.operations
+          let preparedStore = seed.preparedStore
+          let turn: InstantServerApplyPlanningTurn = try await withPersistence { persistence in
+            let reads = try persistence.serverApplyPlanningReads(
               replacements: liveQueryResultReplacements,
               retractions: reusedRetractions,
               savingResults: resultsToSave,
@@ -3195,26 +3266,48 @@ public final class InstantRuntime: Sendable {
               expectedOutboxRevision: compactState.outboxRevision,
               processedTransactionID: processedTransactionID
             )
+            guard !reads.isStale, let protectedRetractions = reads.protectedRetractions else {
+              return InstantServerApplyPlanningTurn(reads: reads)
+            }
+            let operations = protectedRetractions + frameOperations
+            var current = InstantServerApplyPlanningTurn.Planned(
+              operations: operations,
+              footprint: Self.serverApplyFootprint(operations: operations)
+            )
+            if reductionMayRun, !current.footprint.isGlobal {
+              let request = Self.serverApplyReductionRequest(operations, preparedStore: preparedStore)
+              current.reductionRequest = request
+              if case let .context(contextRequest) = request {
+                current.reductionContext = try contextRequest.load(
+                  in: persistence,
+                  state: compactState,
+                  processedTransactionID: processedTransactionID
+                )
+              }
+            }
+            return InstantServerApplyPlanningTurn(reads: reads, planned: current)
           }
           let gateHeld = operationGateAlreadyHeld || holdsGateWhilePlanning
-          if let computed = reads.retractions {
+          if let computed = turn.reads.retractions {
             await configuration.onServerApplyRestatedResultsWorkedOutForTesting?("retractions", gateHeld)
             workedOutRetractions = (restatedRevisions, computed)
           }
-          if let prepared = reads.saves {
+          if let prepared = turn.reads.saves {
             await configuration.onServerApplyRestatedResultsWorkedOutForTesting?("saves", gateHeld)
             workedOutSaves = (restatedRevisions, prepared)
           }
-          preparedQueryResults = reads.saves ?? reusedSaves
-          guard !reads.isStale, let protectedRetractions = reads.protectedRetractions else {
+          preparedQueryResults = turn.reads.saves ?? reusedSaves
+          guard let current = turn.planned else {
             staleStages.append(.planningReads)
             break planning
           }
-          authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
+          authoritativeTransaction.operations = current.operations
+          footprint = current.footprint
+          reductionRequest = current.reductionRequest
+          reductionContext = current.reductionContext
+        } else {
+          footprint = Self.serverApplyFootprint(operations: authoritativeTransaction.operations)
         }
-        var footprint = Self.serverApplyFootprint(
-          operations: authoritativeTransaction.operations
-        )
         // Attribute shape changes can alter every optimistic operation on that attribute, even when
         // refresh-ok carries no triple operation. Treat the schema transition as a global server
         // apply so every active overlay is peeled before canonicalization and replayed afterward.
@@ -3248,6 +3341,8 @@ public final class InstantRuntime: Sendable {
           authoritativeTransaction.operations,
           processedTransactionID: processedTransactionID,
           seed: seed,
+          request: reductionRequest,
+          context: reductionContext,
           declineReason: &reductionDecline,
           declinedAttributeID: &reductionDeclinedAttributeID
         ) {
@@ -3272,10 +3367,20 @@ public final class InstantRuntime: Sendable {
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
         let planID = "server-apply-\(configuration.makeID())"
         let plan: InstantServerApplyPlan
+        var firstReversePage: InstantServerApplyBodyPage?
         var didChangeOptimisticEffectMetadataDuringPlanning = false
+        // #1494: the plan's begin reads its first reverse body page, in its own transaction, when the plan holds a body
+        // and stands on the seed's revisions. Not while a retry holds the gate to plan: that page is read after the
+        // gate is left, as before, so no write waits for it.
+        let seedRevisions = InstantServerApplyRevisions(
+          store: compactState.storeRevision,
+          attribute: compactState.attributeRevision,
+          outbox: compactState.outboxRevision,
+          queryResult: compactState.queryResultRevision
+        )
         normalization: while true {
           recordActorHop(.persistence)
-          let load = try await persistence.beginServerApplyPlan(
+          let begun = try await persistence.beginServerApplyPlan(
             id: planID,
             footprint: footprint,
             hasServerOperations: hasAuthoritativeStoreChanges,
@@ -3285,9 +3390,10 @@ public final class InstantRuntime: Sendable {
               ? nil
               : automaticDeliveryClaimantID,
             excludesWatermarkRoots: excludesWatermarkRoots,
-            receiptPatchMutationIDs: Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
+            receiptPatchMutationIDs: Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs),
+            readingFirstReversePageAt: holdsGateWhilePlanning ? nil : seedRevisions
           )
-          switch load {
+          switch begun.load {
           case let .ready(readyPlan):
             if didChangeOptimisticEffectMetadataDuringPlanning {
               // Live-query retractions were protected before normalization. A
@@ -3301,6 +3407,7 @@ public final class InstantRuntime: Sendable {
               break planning
             }
             plan = readyPlan
+            firstReversePage = begun.firstReversePage
             break normalization
 
           case let .normalizationRequired(firstMutationID):
@@ -3353,7 +3460,8 @@ public final class InstantRuntime: Sendable {
           failureSplice: failureSplice,
           reductionPath: reductionPath,
           reductionDeclinedAttributeID: reductionPath == "reduced" ? nil : reductionDeclinedAttributeID,
-          plan: plan
+          plan: plan,
+          firstReversePage: firstReversePage
         )
       } catch {
         if holdsGateWhilePlanning {
@@ -3379,6 +3487,7 @@ public final class InstantRuntime: Sendable {
       let reductionPath = planned.reductionPath
       let reductionDeclinedAttributeID = planned.reductionDeclinedAttributeID
       let plan = planned.plan
+      var firstReversePage = planned.firstReversePage
 
       var enteredOperationGateForCommit = false
       // Observers refresh after this apply leaves the operation gate (#473); a publication still owed when the apply
@@ -3396,15 +3505,23 @@ public final class InstantRuntime: Sendable {
         var changedFactScope = prepared.factScope.completed(over: prepared.result.changedEntityIDs)
         var reversePosition: InstantOutboxDeliveryPosition?
         var stalePlan = false
-        // #1494: a plan that holds no body reads no page, in either pass. A page checks only its own rows, so both
-        // would read empty and current whenever they ran; the catch-up and the commit check every row of the plan.
+        // #1494: a plan that holds no body reads no page, in either pass, and a pass ends at the page that held its last
+        // row. A page checks only its own rows, so an empty one reads current whenever it runs; the catch-up and the
+        // commit check every row of the plan. The first reverse page may come from the plan's own turn.
         while plan.plannedBodyCount > 0 {
-          recordActorHop(.persistence)
-          let page = try await persistence.loadServerApplyBodyPage(
-            planID: plan.id,
-            direction: .reverse,
-            after: reversePosition
-          )
+          let page: InstantServerApplyBodyPage
+          if let first = firstReversePage {
+            firstReversePage = nil
+            if let blocker = first.synchronizationBlocker { throw blocker.error(operation: "apply server transaction") }
+            page = first
+          } else {
+            recordActorHop(.persistence)
+            page = try await persistence.loadServerApplyBodyPage(
+              planID: plan.id,
+              direction: .reverse,
+              after: reversePosition
+            )
+          }
           noteServerApplyProgress()
           if page.isStale {
             stalePlan = true
@@ -3451,6 +3568,7 @@ public final class InstantRuntime: Sendable {
             prepared = peeled
           }
           reversePosition = page.nextPosition
+          if page.isLast { break }
         }
         if stalePlan {
           recordActorHop(.persistence)
@@ -3660,6 +3778,7 @@ public final class InstantRuntime: Sendable {
             dispositions: dispositions
           )
           forwardPosition = page.nextPosition
+          if page.isLast { break }
         }
         // Every receipt patch must have reached its row; a target that left the plan means the outbox moved.
         if stalePlan
@@ -3989,14 +4108,28 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.outbox)
           await outbox.patch(removing: patch.removedMutationIDs, replacingPresent: patch.replacementMutations)
           patchPosition = patch.nextPosition
+          // #1494: the page that held the last staged resident row ends the pass; the gate is held here.
+          if patch.isLast { break }
         }
         gateTimeline.patchEndedAt = ContinuousClock.now
         operationGate.markHolderPhase("finish plan")
-        recordActorHop(.persistence)
-        try await persistence.finishServerApplyPlan(id: plan.id)
-        _ = try? await publishConnectionStatusWithGateHeld(
-          pendingMutationCount: commit.pendingMutationCount
-        )
+        // #1494: the plan's end and the connection status read in one turn, as a transact reads the status its save
+        // changed (#403); they were two turns, both holding the gate. A status that cannot be read is not published.
+        let statusKeys = connectionStatusKeys
+        let committedPendingMutationCount = commit.pendingMutationCount
+        let statusInputs: InstantConnectionStatusInputs? = try await withPersistence { persistence in
+          try persistence.finishServerApplyPlan(id: plan.id)
+          return try? Self.connectionStatusInputs(
+            in: persistence,
+            keys: statusKeys,
+            knownPendingMutationCount: committedPendingMutationCount
+          )
+        }
+        if let statusInputs {
+          await publishConnectionStatus(from: statusInputs)
+        } else {
+          forgetConnectionStatusInputs()
+        }
         if !publishesAfterLeavingGate, let confirmedMutation {
           await publishMutationLifecycle(confirmedMutation)
         }
@@ -4185,10 +4318,15 @@ public final class InstantRuntime: Sendable {
   ///   applied a write whose answer is still in flight, a replay, or another device's write) becomes that receipt's
   ///   new before-image: the one change the full rebase would make there.
   /// Anything else, and any outbox state the full rebase treats specially, returns nil.
+  ///
+  /// `request` and `context` are what the planning turn already worked out and read for these operations (#1494); nil
+  /// works them out here, and reads the context in a turn of its own.
   private func reducedServerApplyOperations(
     _ operations: [InstantTripleOperation],
     processedTransactionID: String,
     seed: InstantServerApplySeed,
+    request: InstantServerApplyReductionRequest? = nil,
+    context preloadedContext: InstantServerApplyReductionLoad? = nil,
     declineReason: inout InstantServerApplyReductionIneligibility?,
     declinedAttributeID: inout String?
   ) async throws -> (
@@ -4224,59 +4362,24 @@ public final class InstantRuntime: Sendable {
       )
       return nil
     }
-    var slots: [String: Set<String>] = [:]
-    for operation in operations {
-      switch operation {
-      case let .insert(triple), let .retract(triple):
-        slots[triple.entityID, default: []].insert(triple.attributeID)
-        switch triple.value {
-        case let .ref(targetEntityID):
-          slots[targetEntityID, default: []] = slots[targetEntityID, default: []]
-        case .lookupRef:
-          return declined(.unsupportedOperation)
-        case .null, .string, .number, .bool, .date, .json:
-          break
-        }
-      default:
-        return declined(.unsupportedOperation)
+    let contextRequest: InstantServerApplyReductionContextRequest
+    switch request ?? Self.serverApplyReductionRequest(operations, preparedStore: seed.preparedStore) {
+    case .unsupported:
+      return declined(.unsupportedOperation)
+    case .noSlots:
+      return (operations, [:], [], InstantServerApplyFailureSplice())
+    case let .context(named):
+      contextRequest = named
+    }
+    let load: InstantServerApplyReductionLoad
+    if let preloadedContext {
+      load = preloadedContext
+    } else {
+      let state = seed.state
+      load = try await withPersistence { persistence in
+        try contextRequest.load(in: persistence, state: state, processedTransactionID: processedTransactionID)
       }
     }
-    guard !slots.isEmpty else { return (operations, [:], [], InstantServerApplyFailureSplice()) }
-    let reverseLinkSlots = Self.reverseLinkSlots(of: operations, attributes: seed.preparedStore.attributes)
-    // #932: entities the store does not show, so the context can name a pending write that deletes one.
-    let absentEntityIDs = Set(
-      slots.keys.filter { seed.preparedStore.indexes.copiedAttributeSlots(entityID: $0)?.isEmpty ?? true }
-    )
-    // #1378: the frame's scalar facts in cardinality-one slots the store leaves empty, on entities it shows, so the
-    // context can prove that no surviving write removes one. Only where no delete can cascade into the entity's
-    // namespace: a write deleting another entity could then remove the slot on the full rebase's replay.
-    let emptySlots = Self.emptyServerApplySlots(
-      of: operations,
-      absentEntityIDs: absentEntityIDs,
-      attributes: seed.preparedStore.attributes,
-      indexes: seed.preparedStore.indexes
-    )
-    // #1270: a link the server issued an id for is written under its forward identity, and the outbox keeps that name;
-    // this frame names the slot by the id. Its writers are looked up under both.
-    var writeKeyNames: [String: [String]] = [:]
-    for attributeID in Set(slots.values.joined()) {
-      let names = seed.preparedStore.attributes.forwardWriteNames(of: attributeID)
-      if names.count > 1 { writeKeyNames[attributeID] = names }
-    }
-    let state = seed.state
-    recordActorHop(.persistence)
-    let load = try await persistence.loadServerApplyReductionContext(
-      slots: slots,
-      writeKeyNames: writeKeyNames,
-      reverseLinkSlots: reverseLinkSlots,
-      absentEntityIDs: absentEntityIDs,
-      emptySlots: emptySlots,
-      processedTransactionID: processedTransactionID,
-      expectedStoreRevision: state.storeRevision,
-      expectedAttributeRevision: state.attributeRevision,
-      expectedOutboxRevision: state.outboxRevision,
-      expectedQueryResultRevision: state.queryResultRevision
-    )
     guard case var .ready(context) = load else {
       if case let .ineligible(reason) = load { return declined(reason) }
       return nil
@@ -4354,6 +4457,62 @@ public final class InstantRuntime: Sendable {
     case let .declined(reason, fact):
       return declined(reason, fact: fact)
     }
+  }
+
+  /// What the reduction reads for `operations`, from the operations and the seed's store alone (#1494): it runs inside
+  /// the planning turn on the persistence actor, which then reads the context it names.
+  private static func serverApplyReductionRequest(
+    _ operations: [InstantTripleOperation],
+    preparedStore: PreparedStoreMutation
+  ) -> InstantServerApplyReductionRequest {
+    var slots: [String: Set<String>] = [:]
+    for operation in operations {
+      switch operation {
+      case let .insert(triple), let .retract(triple):
+        slots[triple.entityID, default: []].insert(triple.attributeID)
+        switch triple.value {
+        case let .ref(targetEntityID):
+          slots[targetEntityID, default: []] = slots[targetEntityID, default: []]
+        case .lookupRef:
+          return .unsupported
+        case .null, .string, .number, .bool, .date, .json:
+          break
+        }
+      default:
+        return .unsupported
+      }
+    }
+    guard !slots.isEmpty else { return .noSlots }
+    let reverseLinkSlots = Self.reverseLinkSlots(of: operations, attributes: preparedStore.attributes)
+    // #932: entities the store does not show, so the context can name a pending write that deletes one.
+    let absentEntityIDs = Set(
+      slots.keys.filter { preparedStore.indexes.copiedAttributeSlots(entityID: $0)?.isEmpty ?? true }
+    )
+    // #1378: the frame's scalar facts in cardinality-one slots the store leaves empty, on entities it shows, so the
+    // context can prove that no surviving write removes one. Only where no delete can cascade into the entity's
+    // namespace: a write deleting another entity could then remove the slot on the full rebase's replay.
+    let emptySlots = Self.emptyServerApplySlots(
+      of: operations,
+      absentEntityIDs: absentEntityIDs,
+      attributes: preparedStore.attributes,
+      indexes: preparedStore.indexes
+    )
+    // #1270: a link the server issued an id for is written under its forward identity, and the outbox keeps that name;
+    // this frame names the slot by the id. Its writers are looked up under both.
+    var writeKeyNames: [String: [String]] = [:]
+    for attributeID in Set(slots.values.joined()) {
+      let names = preparedStore.attributes.forwardWriteNames(of: attributeID)
+      if names.count > 1 { writeKeyNames[attributeID] = names }
+    }
+    return .context(
+      InstantServerApplyReductionContextRequest(
+        slots: slots,
+        writeKeyNames: writeKeyNames,
+        reverseLinkSlots: reverseLinkSlots,
+        absentEntityIDs: absentEntityIDs,
+        emptySlots: emptySlots
+      )
+    )
   }
 
   static func reducedServerApplyOperations(
