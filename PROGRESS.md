@@ -1,3 +1,22 @@
+## 2026-10-31 14:58:00 EDT — perf-read-1498 (#1495): an observer keeps the ids its result shows
+
+- **Landing:** red `3cce5ca1`, green `9051d75e`, exercise `ff8fb803` (plan `d5fd5466`), branch
+  `agent/claude/perf-read-1498`. No release cut, no build.
+- **What changed:** the set of every entity id an observer's result shows is collected once per result and kept on the
+  observer while it holds that result (as its own or as the one it was last handed); the decision, the splice and the
+  absent-entity check read it. Same observers refresh, same hand-overs.
+- **Checks:** laptop, debug: 516 tests in 16 suites pass (11 listed known issues), the new pin among them (red 3 and 3
+  sets, now 0 and 0) and the random-write suites that check every observer against a fresh materialization.
+- **Before (fan-out exercise, Mac mini, release, `3cce5ca1` + the exercise of `ff8fb803`, 14:47):** the app's write
+  shape (interims as unlinked live rows): a final's publication p50 18.4 ms, an interim's 52 us, a duration's 817 us;
+  6,350 id sets collected per 2,000 writes. Sampled: re-materialization (`materializePage`) is 92% of a publication's
+  time, the id sets about 1%, `wasLastHanded`'s equality about 0.1%. **After:** queued as
+  `perf-read-1495-fanout-after` at `9051d75e`; recorded on #1495 and here.
+- **Found:** `wasLastHanded`'s equality measured at about 0.1% of a publication, and a fingerprint would still need the
+  full equality on every match (the unchanged case), so it is not added. The publication's cost is the
+  re-materialization of the pages a final shifts and of the list whose preview changes: a lever of its own.
+- **Next:** the after run; READY FOR BUILD on #1482; a follow-up issue for the re-materialization with these numbers.
+
 ## 2026-10-31 08:55:00 EDT — sqlite-writes-1426 (#1426): v1.9.56 shipped in Scribe 0.1 (206); the phone's after-numbers wait for a recording
 
 - **Shipped:** Scribe 206 (18ba5013b, the 1.9.56 pin) installed by build.sh's main lane 08:21-08:47: the iPhone at 08:32
