@@ -1,3 +1,15 @@
+## 2026-10-31 08:05:24 EDT — scribe `ef70f3c978e5cb4b54fa6f97d80bca3ec8e6b4cf`
+Feature (#1465): the Mac View menu moves a recording between its lines and its chapters, with one value shared by both menus.
+
+## 2026-10-31 08:05:23 EDT — scribe `c7d50eedf3b11d23ff4457174c6c5791177d9c30`
+Test (#1393): the layout harness scrolls to the first line itself, and each UI check starts where it claims to.
+
+## 2026-10-31 08:05:23 EDT — scribe `203eb2b1dd86809474da39bde53976f28b553afc`
+Fix (#1457, #1449): the image viewer title fits beside its buttons, and a map applies its first frame without an animation.
+
+## 2026-10-31 06:25:06 EDT — scribe `9dfdf4580f85bd26da9981414b5cb18359998210`
+Merge (#1393, #1209): one clock, one chapter type and the seek track shared between the two apps.
+
 ## 2026-10-31 07:48:20 EDT — scribe `18ba5013b28c1bf836725ea18727c09d56dd6bb3`
 Cut (#1426): Scribe 0.1 (206): instant-data-swift 1.9.56, a stored live result is its rows and nothing waits to be written.
 
