@@ -888,7 +888,15 @@ struct AttributeStoreIdentityUpgradeTests {
       key: ownershipOnlyResult.key
     )
     let upgradedOwnershipOnlyResult = try #require(persistedOwnershipOnlyResult)
-    expectNoDifference(upgradedOwnershipOnlyResult, ownershipOnlyResult)
+    // A stored result is its rows since #1426: a fact two results own reads with the one stamp the store holds for it,
+    // here the hot result's newer link, so this result is compared by its facts' identities, page info and time.
+    expectNoDifference(upgradedOwnershipOnlyResult.key, ownershipOnlyResult.key)
+    expectNoDifference(upgradedOwnershipOnlyResult.pageInfo, ownershipOnlyResult.pageInfo)
+    expectNoDifference(upgradedOwnershipOnlyResult.updatedAt, ownershipOnlyResult.updatedAt)
+    expectNoDifference(
+      upgradedOwnershipOnlyResult.triples.map(InstantLiveTripleIdentity.init),
+      ownershipOnlyResult.triples.map(InstantLiveTripleIdentity.init)
+    )
     let ownershipOnlyAttributeIDs = try readSQLiteStrings(
       at: databaseURL,
       sql:

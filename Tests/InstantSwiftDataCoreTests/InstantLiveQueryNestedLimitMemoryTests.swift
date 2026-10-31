@@ -262,6 +262,21 @@ struct InstantLiveQueryNestedLimitMemoryTests {
       )
     }
 
+    // The result as the store reads it from its rows since #1426: these facts are never stored (`storeChanged: false`),
+    // so each reads the value its ownership row holds, stamped as a fact the store does not hold, and the time is the
+    // header's, the last save's.
+    func stored(_ triples: [InstantTriple], milliseconds: Int64) -> InstantPersistedLiveQueryResult {
+      result(
+        triples.map { triple in
+          var triple = triple
+          triple.txID = InstantStoredLiveQueryResultRows.unstoredFactTransactionID
+          triple.txTime = InstantTimestamp(milliseconds: 0)
+          return triple
+        },
+        milliseconds: milliseconds
+      )
+    }
+
     var state = try await persistence.loadCompactState()
     let initialTriples = triples(
       range: 0..<772,
@@ -308,10 +323,9 @@ struct InstantLiveQueryNestedLimitMemoryTests {
     )
     let replayPersistedValue = try await persistence.liveQueryResult(key: queryKey)
     let replayPersisted = try #require(replayPersistedValue)
-    // From #566 a result whose facts and page info match the stored JSON writes only its row's count and time: the
-    // stored JSON keeps the triples and the time it was written with, and the row's time, which #441's refusal
-    // resolution reads, is the replay's.
-    expectNoDifference(replayPersisted, result(initialTriples, milliseconds: 1))
+    // A replay of the same facts changes no ownership row; the header's time, which #441's refusal resolution reads, is
+    // the replay's (#1426: the stored JSON kept the time it was written with, 1, until then).
+    expectNoDifference(replayPersisted, stored(initialTriples, milliseconds: 2))
     let replayRowTime = try liveQueryResultRowTime(at: cacheURL, queryKey: queryKey)
     expectNoDifference(replayRowTime, 2)
 
@@ -342,7 +356,7 @@ struct InstantLiveQueryNestedLimitMemoryTests {
     )
     let persistedValue = try await persistence.liveQueryResult(key: queryKey)
     let persisted = try #require(persistedValue)
-    expectNoDifference(persisted, result(changedTriples, milliseconds: 3))
+    expectNoDifference(persisted, stored(changedTriples, milliseconds: 3))
     let ownershipEncoder = JSONEncoder()
     let expectedOwnership = try Set(
       changedTriples.map { triple in

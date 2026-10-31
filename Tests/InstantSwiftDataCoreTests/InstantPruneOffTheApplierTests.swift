@@ -308,13 +308,18 @@ struct InstantPruneOffTheApplierTests {
   func aMarkAnEarlierBuildLeftIsFinishedWhenTheStoreOpensAgain() async throws {
     let url = try InstantPruneGateHoldTests.temporaryCacheURL()
     try await InstantPruneGateHoldTests.seed(at: url)
-    // That build's first batch: the copy unloaded, the row and its ownership rows deleted, the mark written.
+    // That build's first batch: the copy unloaded, the row and its ownership rows deleted, the mark written. The copy
+    // is the result as JSON, which the store reads from its rows since #1426.
+    let unloaded = try #require(try InstantStoredLiveQueryResultTests.storedResult(url, key: "inactive-result-0"))
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let json = String(decoding: try encoder.encode(unloaded), as: UTF8.self).replacingOccurrences(of: "'", with: "''")
     let marked = Self.execute(
       [
         "PRAGMA foreign_keys = ON",
         """
         INSERT INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
-        SELECT query_key, triple_count, updated_at_ms, json FROM instant_live_query_results
+        SELECT query_key, triple_count, updated_at_ms, '\(json)' FROM instant_live_query_results
         WHERE query_key = 'inactive-result-0'
         """,
         "DELETE FROM instant_live_query_results WHERE query_key = 'inactive-result-0'",

@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-30: a changed result's JSON waits for the app's flush instead of being written every five minutes, and a
 //   waiting result's marker holds its page info for the rebuild after a kill (#1426).
+// - 2026-10-31: no result's JSON is written or waits: a stored result is its rows, read here from the header, the
+//   ownership rows and the facts, so the flush, an unsubscribe and the close write nothing (#1426).
 
 import CustomDump
 import Foundation
@@ -10,16 +12,19 @@ import Testing
 
 /// Persisting a live query's result after every server refresh rewrote the whole result as one JSON blob.
 ///
-/// On build 90 (library 1.9.7) iOS filed a disk-writes report for Michael's iPhone: 1,073.74 MB of file-backed memory
-/// dirtied in 185 s right after launch (14:14-14:17, 2026-10-04), 92 of 99 samples under
-/// `SQLitePersistenceStore.commitServerApplyPlan` and `saveLiveQueryResultWithoutTransaction`, which upserts
+/// On build 90 (library 1.9.7) iOS filed a disk-writes report for a phone: 1,073.74 MB of file-backed memory dirtied
+/// in 185 s right after launch (14:14-14:17, 2026-10-04), 92 of 99 samples under
+/// `SQLitePersistenceStore.commitServerApplyPlan` and `saveLiveQueryResultWithoutTransaction`, which upserted
 /// `json = excluded.json` for every refresh of every subscribed query. The live recording's queries hold about 1,100
 /// segments with their words, so each refresh rewrote megabytes, and the WAL again. Upstream `Reactor.js` persists
 /// `querySubs` through a `PersistedObject` that writes only the keys that changed, throttled (100 ms, then an idle
 /// callback up to 1 s), and flushes before unload.
 ///
-/// The stored JSON is also the previous result a later server result is compared with to retract what left it, so a
-/// write that waits must not let a crash keep a fact the server deleted.
+/// The JSON then waited, first for an interval (#566, #1123) and then for the app's flush (1.9.54), with the newest
+/// result in memory and a kill repaired at the next launch. Since #1426 a stored result is its ownership rows, its facts
+/// and a narrow header, which every save writes exactly: no result's JSON is written, and nothing waits. The stored
+/// result is also the previous result a later server result is compared with to retract what left it, so a kill must
+/// not let a fact the server deleted stay.
 @Suite(.serialized)
 struct InstantLiveQueryResultWriteTests {
   /// A clock the test moves: every refresh is stamped with it.
@@ -122,8 +127,6 @@ struct InstantLiveQueryResultWriteTests {
       liveTransport: session.transport
     )
     configuration.liveReconnectSleep = { _ in }
-    // A crash test must not have a timer write the JSON behind its back.
-    configuration.liveQueryResultJSONFlushSleep = { _ in try await Task.sleep(for: .seconds(3_600)) }
     return try await InstantRuntime.bootstrap(configuration: configuration)
   }
 
@@ -224,7 +227,8 @@ struct InstantLiveQueryResultWriteTests {
     let texts = (0..<20).map { Self.longText($0, revision: 0) }
     let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-unchanged")
     let afterAnswer = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-    #expect(afterAnswer.writes >= 1, "the server's answer is stored: \(afterAnswer)")
+    #expect(afterAnswer.writes == 0, "the server's answer is stored as its rows: \(afterAnswer)")
+    #expect(try Self.storedTodoTexts(fixture.url) == texts, "the stored result holds the answer")
 
     for _ in 0..<5 {
       fixture.clock.advance(by: 60_000)
@@ -240,22 +244,23 @@ struct InstantLiveQueryResultWriteTests {
     _ = try await fixture.runtime.closeConnection()
   }
 
-  // MARK: - Waiting writes
+  // MARK: - Nothing waits
 
-  /// A changed result's JSON waits for the app's flush however long its refreshes run (#1426): ten refreshes a second
-  /// apart and one five minutes later write none of it, and the flush writes the newest result once. Until #1426 the
-  /// refresh five minutes later wrote the whole JSON again (#1123's interval), the one write a refresh made that
-  /// followed the result instead of the change.
+  /// A changed result's whole JSON is never written (#1426): eleven changed refreshes over five minutes write none of
+  /// it, each refresh's result is stored as it is applied, and the app's flush writes nothing. Until #1426 the refresh
+  /// five minutes later wrote the whole JSON again (#1123's interval), the one write a refresh made that followed the
+  /// result instead of the change, and then the JSON waited for the app's flush.
   @Test
-  func changedRefreshesWriteNoResultJSONUntilTheAppsFlush() async throws {
+  func changedRefreshesWriteNoResultJSONAndEachIsStored() async throws {
     var texts = (0..<20).map { Self.longText($0, revision: 0) }
-    let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-waiting")
+    let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-changed")
     let afterAnswer = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
 
     for revision in 1...10 {
       fixture.clock.advance(by: 1_000)
       texts[revision % texts.count] = Self.longText(revision % texts.count, revision: revision)
       try await Self.refresh(texts, in: fixture)
+      #expect(try Self.storedTodoTexts(fixture.url) == texts, "refresh \(revision)'s result is stored")
     }
     fixture.clock.advance(by: 291_000)
     texts[0] = Self.longText(0, revision: 99)
@@ -265,19 +270,18 @@ struct InstantLiveQueryResultWriteTests {
       beforeFlush.writes == afterAnswer.writes,
       "eleven changed refreshes over five minutes wrote the result JSON \(beforeFlush.writes - afterAnswer.writes) times"
     )
+    #expect(try Self.storedTodoTexts(fixture.url) == texts, "the stored result is the newest")
 
     try await fixture.runtime.flushPendingLiveQueryResults()
     let afterFlush = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-    #expect(afterFlush.writes - beforeFlush.writes == 1, "the flush wrote the newest result once")
-    #expect(try Self.storedTodoTexts(fixture.url) == texts, "the stored JSON holds the newest result")
+    expectNoDifference(afterFlush.writes, beforeFlush.writes, "the flush writes nothing")
     await fixture.observation.cancel()
     _ = try await fixture.runtime.closeConnection()
   }
 
   /// Ten minutes of a foreground session's refreshes, ten seconds apart, each changing the result: none writes its whole
   /// JSON (#1426). Every 30 s it was twenty whole-result writes in ten minutes, and on #1076's exercise 3.90 of a live
-  /// write's 54.9 log frames; every five minutes (#1123), two. The app's flush on background, an unsubscribe and the
-  /// close write what waited, and a kill is repaired from the ownership rows at the next launch (#566).
+  /// write's 54.9 log frames; every five minutes (#1123), two.
   @Test
   func tenMinutesOfRefreshesWriteNoResultJSON() async throws {
     var texts = (0..<20).map { Self.longText($0, revision: 0) }
@@ -292,54 +296,34 @@ struct InstantLiveQueryResultWriteTests {
 
     let writes = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting().writes - afterAnswer.writes
     #expect(writes == 0, "sixty changed refreshes over ten minutes wrote the result JSON \(writes) times")
+    #expect(try Self.storedTodoTexts(fixture.url) == texts, "the stored result is the newest")
     await fixture.observation.cancel()
     _ = try await fixture.runtime.closeConnection()
   }
 
-  // MARK: - Writing what waited
-
-  /// The app's flush on background or terminate writes every result whose write waited, and a new process opens the
-  /// newest result without rebuilding it.
+  /// A query that unsubscribes leaves its stored result as its last refresh stored it: nothing waited to be written.
   @Test
-  func theAppsFlushWritesTheResultsWhoseWriteWaited() async throws {
-    let url = try Self.temporaryCacheURL()
-    var texts = (0..<5).map { Self.longText($0, revision: 0) }
-    let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-flush", url: url)
-    fixture.clock.advance(by: 1_000)
-    texts[2] = Self.longText(2, revision: 1)
-    try await Self.refresh(texts, in: fixture)
-    let waited = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-
-    try await fixture.runtime.flushPendingLiveQueryResults()
-    let flushed = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-    expectNoDifference(flushed.writes - waited.writes, 1, "the flush wrote the result whose write waited")
-    try await fixture.runtime.flushPendingLiveQueryResults()
-    let again = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-    expectNoDifference(again.writes, flushed.writes, "nothing waits after a flush")
-    await fixture.observation.cancel()
-    _ = try await fixture.runtime.closeConnection()
-  }
-
-  /// A query that unsubscribes is not refreshed again, so its result is written when it leaves.
-  @Test
-  func unsubscribingWritesTheQuerysResultIfItsWriteWaited() async throws {
+  func anUnsubscribeWritesNoResultJSON() async throws {
     var texts = (0..<5).map { Self.longText($0, revision: 0) }
     let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-unsubscribe")
     fixture.clock.advance(by: 1_000)
     texts[1] = Self.longText(1, revision: 1)
     try await Self.refresh(texts, in: fixture)
-    let waited = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    let refreshed = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
     await fixture.observation.cancel()
-    try await Self.waitFor("the unsubscribed query's result to be written") {
-      await fixture.runtime.liveQueryResultJSONWriteStatsForTesting().writes > waited.writes
+    try await Self.waitFor("the query's remove-query") {
+      await fixture.session.sentMessages().contains { $0.op == "remove-query" }
     }
+    let unsubscribed = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    expectNoDifference(unsubscribed.writes, refreshed.writes, "the unsubscribe wrote no result JSON")
+    #expect(try Self.storedTodoTexts(fixture.url) == texts, "the stored result is the last refresh's")
     _ = try await fixture.runtime.closeConnection()
   }
 
-  /// While a result's JSON write waits, the next server result is still compared with the newest result: a row that
-  /// arrived and then left within 30 s is retracted, not kept because the stored JSON never held it.
+  /// The next server result is compared with the stored result: a row that arrived and then left within seconds is
+  /// retracted.
   @Test
-  func aRowThatArrivesAndLeavesWhileTheWriteWaitsIsRetracted() async throws {
+  func aRowThatArrivesAndLeavesIsRetracted() async throws {
     let first = (0..<3).map { Self.longText($0, revision: 0) }
     let fixture = try await Self.answeredTodos(first, appID: "live-result-writes-in-session")
     fixture.clock.advance(by: 1_000)
@@ -348,24 +332,25 @@ struct InstantLiveQueryResultWriteTests {
     fixture.clock.advance(by: 1_000)
     try await Self.refresh(first, in: fixture)
     try await Self.waitForStoredTexts(first, in: fixture)
-    let waiting = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
-    #expect(waiting.writes == 1, "both refreshes came within 30 s of the stored answer: \(waiting)")
+    let stats = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    #expect(stats.writes == 0, "no refresh wrote the result JSON: \(stats)")
+    expectNoDifference(try Self.storedFactCount(fixture.url, entityID: Self.todoID(3)), 0, "the row's facts are retracted")
     await fixture.observation.cancel()
     _ = try await fixture.runtime.closeConnection()
   }
 
-  // MARK: - A crash between throttled writes
+  // MARK: - A kill
 
-  /// A refresh whose JSON write waits leaves the stored JSON older than the facts. If the app is killed before the
-  /// write, the next server result must still retract what left the result: the reopened store compares it with the
-  /// newest result, not the older JSON.
+  /// If the app is killed after a refresh, the next server result must still retract what left the result: the
+  /// reopened store compares it with the result the killed process last stored. Until #1426 that refresh's JSON waited,
+  /// and bootstrap rebuilt the result from its ownership rows; now the rows are the result.
   @Test
-  func afterAKillBetweenThrottledWritesTheNextServerResultRetractsWhatLeftTheResult() async throws {
+  func afterAKillTheNextServerResultRetractsWhatLeftTheResult() async throws {
     let url = try Self.temporaryCacheURL()
     let clock = TestClock(1_791_150_000_000)
     let first = (0..<3).map { Self.longText($0, revision: 0) }
     let fixture = try await Self.answeredTodos(first, appID: "live-result-writes-crash", url: url, clock: clock)
-    // A fourth todo arrives within 30 s of the stored answer, so its result's JSON write waits.
+    // A fourth todo arrives.
     clock.advance(by: 2_000)
     let withFourth = first + [Self.longText(3, revision: 0)]
     try await Self.refresh(withFourth, in: fixture)
@@ -394,11 +379,11 @@ struct InstantLiveQueryResultWriteTests {
     expectNoDifference(
       rows.map(\.id),
       (0..<3).map(Self.todoID),
-      "the todo the server deleted is retracted, not kept from the older stored JSON"
+      "the todo the server deleted is retracted"
     )
     // The reopened store shows only the entities its stored results name, so the deleted todo can be missing from it
     // and still left in SQLite, where a later read of the entity would find it. The server's answer is compared with
-    // the result the killed process last saw, rebuilt at bootstrap, so the deleted todo's facts leave SQLite too.
+    // the result the killed process last stored, so the deleted todo's facts leave SQLite too.
     let storedFourth = try Self.storedFactCount(url, entityID: Self.todoID(3))
     expectNoDifference(storedFourth, 0, "the deleted todo's facts are retracted from SQLite")
     await observation.cancel()
@@ -406,11 +391,10 @@ struct InstantLiveQueryResultWriteTests {
     _ = fixture
   }
 
-  /// A result whose JSON waits keeps the page info it holds now in its marker (#1426): after a kill, the next launch
-  /// rebuilds the stored result with that page info and the newest facts, not with what its JSON was last written with.
-  /// A window over a growing list moves its cursors with every new row, and its JSON now waits for the app's flush.
+  /// After a kill, the stored result holds the newest refresh's page info and facts (#1426): its header holds the page
+  /// info, written with each save. A window over a growing list moves its cursors with every new row.
   @Test
-  func afterAKillTheRebuiltResultHoldsTheNewestPageInfo() async throws {
+  func afterAKillTheStoredResultHoldsTheNewestPageInfo() async throws {
     let url = try Self.temporaryCacheURL()
     let clock = TestClock(1_791_150_000_000)
     let texts = (0..<3).map { Self.longText($0, revision: 0) }
@@ -429,34 +413,23 @@ struct InstantLiveQueryResultWriteTests {
       clock: clock,
       appID: "live-result-writes-page-info"
     )
-    #expect(try Self.storedPageInfo(url)?.hasNextPage == true, "the rebuilt result holds the page info its marker kept")
-    #expect(try Self.storedTodoTexts(url) == changed, "the rebuilt result holds the newest facts")
+    #expect(try Self.storedPageInfo(url)?.hasNextPage == true, "the stored result holds the newest page info")
+    #expect(try Self.storedTodoTexts(url) == changed, "the stored result holds the newest facts")
     _ = try await reopened.closeConnection()
     _ = fixture
   }
 
-  /// The result the SQLite store at `url` holds for the todo query, decoded from its stored JSON.
+  /// The result the SQLite store at `url` holds for the todo query, read from its rows (#1426).
   static func storedTodoResult(_ url: URL) throws -> InstantPersistedLiveQueryResult? {
-    var database: OpaquePointer?
-    guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
-      sqlite3_close(database)
-      throw StoredFactCountFailure(message: "could not open \(url.path)")
-    }
-    defer { sqlite3_close(database) }
-    var statement: OpaquePointer?
-    guard
-      sqlite3_prepare_v2(database, "SELECT json FROM instant_live_query_results LIMIT 1", -1, &statement, nil)
-        == SQLITE_OK
-    else {
-      throw StoredFactCountFailure(message: String(cString: sqlite3_errmsg(database)))
-    }
-    defer { sqlite3_finalize(statement) }
-    guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-    let json = Data(bytes: sqlite3_column_blob(statement, 0), count: Int(sqlite3_column_bytes(statement, 0)))
-    return try JSONDecoder().decode(InstantPersistedLiveQueryResult.self, from: json)
+    let keys = try InstantStoredLiveQueryResultTests.rows(
+      url,
+      "SELECT query_key FROM instant_live_query_results WHERE substr(query_key, 1, 16) <> 'released-result:' LIMIT 1"
+    )
+    guard let key = keys.first?.first ?? nil else { return nil }
+    return try InstantStoredLiveQueryResultTests.storedResult(url, key: key)
   }
 
-  /// The todo texts the stored result JSON at `url` holds, in row order.
+  /// The todo texts the stored result at `url` holds, in row order.
   static func storedTodoTexts(_ url: URL) throws -> [String] {
     (try storedTodoResult(url)?.triples ?? [])
       .filter { $0.attributeID == TodoExample.attributes[1].id }
@@ -467,7 +440,7 @@ struct InstantLiveQueryResultWriteTests {
       }
   }
 
-  /// The page info the stored result JSON at `url` holds.
+  /// The page info the stored result at `url` holds.
   static func storedPageInfo(_ url: URL) throws -> InstantQueryPageInfo? {
     try storedTodoResult(url)?.pageInfo
   }
@@ -503,7 +476,7 @@ struct InstantLiveQueryResultWriteTests {
   // MARK: - Measurement
 
   /// A 1,100-row live query refreshed 100 times, each refresh changing one row, about 1 s apart: the bytes of result JSON
-  /// written and the SQLite pages written per refresh. The numbers go in the release notes.
+  /// written (none since #1426) and the SQLite pages written per refresh. The numbers go in the release notes.
   @Test
   func aLongRecordingsRefreshesWriteLittleResultJSON() async throws {
     var texts = (0..<1_100).map { Self.longText($0, revision: 0) }
@@ -526,8 +499,8 @@ struct InstantLiveQueryResultWriteTests {
         + "bytes per refresh \(bytesPerRefresh), SQLite pages per refresh \(pagesPerRefresh) "
         + "(\(pagesAfter.pageSize) B each, \(Int(pagesPerRefresh * Double(pagesAfter.pageSize))) B)"
     )
-    // 100 s of refreshes: within one 5-minute interval (#1123; four 30 s windows before), so at most four writes.
-    #expect(after.writes - before.writes <= 4, "result JSON writes over 100 s: \(after.writes - before.writes)")
+    // A stored result is its rows (#1426): no refresh writes its JSON (at most four in 100 s before, #1123).
+    #expect(after.writes - before.writes == 0, "result JSON writes over 100 s: \(after.writes - before.writes)")
     await fixture.observation.cancel()
     _ = try await fixture.runtime.closeConnection()
   }

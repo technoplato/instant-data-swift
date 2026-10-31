@@ -4,6 +4,8 @@
 // - 2026-10-24: the prune reads and decodes its next batch's stored results here, before it takes the gate (#1129).
 // - 2026-10-25: fact rows are read by `InstantFactRowReader` (#1150).
 // - 2026-10-27: the lookup's statement is `entityIDsSQL(lookupAttributeIDs:)`, which a guard plans (#1244).
+// - 2026-10-31: the prune's stored results are read from their header and ownership rows, as the writer reads them
+//   (`InstantStoredLiveQueryResultRows`); no result's write waits, so none is left out for it (#1426).
 
 import Foundation
 import SQLite3
@@ -201,55 +203,62 @@ actor SQLiteReadConnection {
     return read
   }
 
-  /// The stored results of `keys`, decoded, each with what names its row, for the prune's next batch (#1129): it decodes
-  /// them here before it takes the operation gate, which it held 265 ms to decode the `$files` list. A key whose newer
-  /// result still waits for its JSON write (#566) is left out, as is one with no stored result.
+  /// The stored results of `keys`, read from their rows, each with what names its row, for the prune's next batch
+  /// (#1129): it reads them here before it takes the operation gate, which it held 265 ms to decode the `$files` list.
+  /// A key with no stored result is left out, as is one whose rows cannot be read: the batch reads it under the gate.
   func storedLiveQueryResults(keys: [String]) throws -> [String: InstantUnloadedLiveQueryResultRead] {
     var reads: [String: InstantUnloadedLiveQueryResultRead] = [:]
     try readTransaction { connection in
+      let header = try Self.prepared(InstantStoredLiveQueryResultRows.headerSQL, on: connection)
+      defer { sqlite3_finalize(header) }
+      let facts = try Self.prepared(InstantStoredLiveQueryResultRows.factsSQL, on: connection)
+      defer { sqlite3_finalize(facts) }
+      let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
       for key in keys {
-        let waiting = try Self.selectTexts(
-          "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
-          bindings: [SQLitePersistenceStore.deferredLiveQueryResultJSONMarkerPrefix + key],
-          on: connection
-        )
-        guard waiting.isEmpty else { continue }
-        var statement: OpaquePointer?
-        guard
-          sqlite3_prepare_v2(
-            connection,
-            "SELECT triple_count, updated_at_ms, json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-            -1,
-            &statement,
-            nil
-          ) == SQLITE_OK, let statement
-        else {
-          throw Self.failure(operation: "prepare a local read", message: Self.errorMessage(connection), path: nil)
-        }
-        defer { sqlite3_finalize(statement) }
-        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        guard sqlite3_bind_text(statement, 1, key, -1, transient) == SQLITE_OK else {
+        sqlite3_reset(header)
+        guard sqlite3_bind_text(header, 1, key, -1, transient) == SQLITE_OK else {
           throw Self.failure(operation: "bind a local read", message: Self.errorMessage(connection), path: nil)
         }
-        let step = sqlite3_step(statement)
+        let step = sqlite3_step(header)
         if step == SQLITE_DONE { continue }
-        guard step == SQLITE_ROW, let json = sqlite3_column_text(statement, 2) else {
+        guard step == SQLITE_ROW else {
           throw Self.failure(operation: "step a local read", message: Self.errorMessage(connection), path: nil)
         }
-        let tripleCount = Int(sqlite3_column_int64(statement, 0))
-        let updatedAtMilliseconds = sqlite3_column_int64(statement, 1)
-        // A result that does not decode is left for the batch, which reads it under the gate and keeps its row.
+        guard let row = try? InstantStoredLiveQueryResultRows.Header(row: header, decoder: decoder) else { continue }
+        sqlite3_reset(facts)
         guard
-          let result = try? decoder.decode(InstantPersistedLiveQueryResult.self, from: Data(String(cString: json).utf8))
+          sqlite3_bind_int64(facts, 1, row.queryID) == SQLITE_OK,
+          sqlite3_bind_text(facts, 2, InstantStoredLiveQueryResultRows.unstoredFactTransactionID, -1, transient)
+            == SQLITE_OK
+        else {
+          throw Self.failure(operation: "bind a local read", message: Self.errorMessage(connection), path: nil)
+        }
+        guard
+          let result = try? InstantStoredLiveQueryResultRows.result(
+            key: key,
+            header: row,
+            facts: facts,
+            decoder: decoder
+          )
         else { continue }
         reads[key] = InstantUnloadedLiveQueryResultRead(
           result: result,
-          rowTripleCount: tripleCount,
-          rowUpdatedAtMilliseconds: updatedAtMilliseconds
+          rowTripleCount: row.tripleCount,
+          rowUpdatedAtMilliseconds: row.updatedAtMilliseconds
         )
       }
     }
     return reads
+  }
+
+  /// `sql`, prepared on `connection`.
+  private static func prepared(_ sql: String, on connection: OpaquePointer) throws -> OpaquePointer {
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+      sqlite3_finalize(statement)
+      throw failure(operation: "prepare a local read", message: errorMessage(connection), path: nil)
+    }
+    return statement
   }
 
   // MARK: - SQLite

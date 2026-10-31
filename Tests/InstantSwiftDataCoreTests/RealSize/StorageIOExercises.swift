@@ -12,6 +12,7 @@
 // - 2026-10-25: `STORAGEIO_RESULT_JSON_INTERVAL_MS` sets how often a changing result's JSON is written, for #1123.
 // - 2026-10-25: a write cycle can save each write before the previous one's echo, as a phone saves its next interim
 //   while the server's answer to the last is on its way, so the echo's apply rebases a pending write (#1119).
+// - 2026-10-31: `STORAGEIO_RESULT_JSON_INTERVAL_MS` is gone with the interval: no result's JSON is written (#1426).
 
 import Compression
 import Foundation
@@ -872,12 +873,6 @@ struct StorageIOWriteCycle {
     configuration.localLookup = InstantLocalLookupPolicy(attributeIDs: StorageIOSchema.lookupAttributeIDs)
     // The exercise prunes once a minute itself, where the runtime prunes every 64 result writes on its own.
     configuration.liveQueryResultPruningWriteInterval = Int.max
-    // A result's JSON waits its interval (5 minutes since #1123) of the recording's time, not of the exercise's.
-    configuration.liveQueryResultJSONFlushSleep = { milliseconds in try await clock.sleep(milliseconds: milliseconds) }
-    // A what-if for #1123: how often a changing result's whole JSON is written.
-    if let interval = ProcessInfo.processInfo.environment["STORAGEIO_RESULT_JSON_INTERVAL_MS"].flatMap(Int64.init) {
-      configuration.liveQueryResultJSONWriteIntervalMilliseconds = interval
-    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     let seedStarted = ContinuousClock.now

@@ -236,6 +236,49 @@ struct InstantStoredLiveQueryResultTests {
     return rows
   }
 
+  /// The result the SQLite store at `url` holds under `key`, read from its rows as a reader outside the store would: its
+  /// header's time and page info, and each ownership row's fact with the stamp the store holds for it.
+  static func storedResult(_ url: URL, key: String) throws -> InstantPersistedLiveQueryResult? {
+    let headers = try rows(
+      url,
+      "SELECT query_id, updated_at_ms, page_info_json FROM instant_live_query_results WHERE query_key = ?",
+      [key]
+    )
+    guard let header = headers.first, let queryID = header[0], let updatedAt = header[1].flatMap(Int64.init) else {
+      return nil
+    }
+    let decoder = JSONDecoder()
+    let facts = try rows(
+      url,
+      """
+      SELECT owned.entity_id, owned.attribute_id, owned.value_json, fact.tx_id, fact.tx_time_ms
+      FROM instant_live_query_triples AS owned
+      LEFT JOIN instant_triples AS fact
+        ON fact.entity_id = owned.entity_id AND fact.attribute_id = owned.attribute_id
+        AND fact.value_json = owned.value_json
+      WHERE owned.query_id = ?
+      """,
+      [queryID]
+    )
+    let triples = try facts.map { row in
+      InstantTriple(
+        entityID: row[0] ?? "",
+        attributeID: row[1] ?? "",
+        value: try decoder.decode(InstantValue.self, from: Data((row[2] ?? "null").utf8)),
+        txID: row[3] ?? "",
+        txTime: InstantTimestamp(milliseconds: row[4].flatMap(Int64.init) ?? 0)
+      )
+    }
+    return InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: key,
+        triples: triples,
+        pageInfo: try header[2].map { try decoder.decode(InstantQueryPageInfo.self, from: Data($0.utf8)) }
+      ),
+      updatedAt: InstantTimestamp(milliseconds: updatedAt)
+    )
+  }
+
   /// The facts the store holds for `entityID`, decoded from their stored form.
   static func storedFacts(_ url: URL, entityID: String) throws -> [InstantTriple] {
     try rows(url, "SELECT json FROM instant_triples WHERE entity_id = ?", [entityID]).compactMap { row in

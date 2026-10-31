@@ -1618,9 +1618,9 @@ public struct InstantSwiftDataClient: Sendable {
     runtime?.connectionHealth() ?? InstantConnectionHealth(isOpen: false)
   }
 
-  /// Writes the stored results of the live queries whose result write waited (#566); see
-  /// ``InstantRuntime/flushPendingLiveQueryResults()``. Call it when the app moves to the background or is about to
-  /// terminate. A client without a runtime has nothing to write.
+  /// Writes nothing: no live query's stored result waits to be written since #1426, as every refresh stores its result
+  /// before it is applied; see ``InstantRuntime/flushPendingLiveQueryResults()``. An app that calls it on background and
+  /// termination needs no change.
   public func flushPendingLiveQueryResults() async throws {
     try await runtime?.flushPendingLiveQueryResults()
   }

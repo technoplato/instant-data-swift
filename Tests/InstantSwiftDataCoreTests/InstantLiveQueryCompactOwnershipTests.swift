@@ -125,7 +125,10 @@ struct InstantLiveQueryCompactOwnershipTests {
     let crashed = try fixture.copyTakenDuringAnUncommittedConversion()
     defer { try? FileManager.default.removeItem(at: crashed.deletingLastPathComponent()) }
     let walBytes = try FileManager.default.attributesOfItem(atPath: crashed.path + "-wal")[.size] as? Int ?? 0
-    try #require(walBytes > 64 * 1_024, "The copy's WAL should hold the uncommitted conversion's pages.")
+    try #require(
+      walBytes > 64 * 1_024,
+      "The copy's WAL should hold the uncommitted conversion's pages; it holds \(walBytes) bytes."
+    )
     let crashedFixture = CompactOwnershipFixture(directory: crashed.deletingLastPathComponent(), url: crashed)
 
     let store = try SQLitePersistenceStore(fileURL: crashed)
@@ -578,17 +581,29 @@ struct CompactOwnershipFixture {
   }
 
   /// Puts the live-query tables back in migration 0011's layout, every row kept, and removes the conversion's ledger
-  /// row, as a store an earlier version wrote has them. A store already in that layout is left alone.
+  /// row, as a store an earlier version wrote has them. A store already in that layout is left alone. Each result's
+  /// JSON is its whole result again, built from its rows, as such a store held it (#1426 empties it).
   func rewriteIn0011Layout() throws {
     let columns = try SQLiteFile.strings(url, "SELECT name FROM pragma_table_info('instant_live_query_triples')")
     guard columns.contains("query_id") else { return }
+    let wholeResult = """
+      json_object(
+        'key', result.query_key,
+        'pageInfo', json(result.page_info_json),
+        'triples', (
+          SELECT json_group_array(json(\(InstantStoredLiveQueryResultRows.factJSON(unstoredTransactionID: "''"))))
+          \(InstantStoredLiveQueryResultRows.ownedFacts(ofQueryID: "result.query_id"))
+        ),
+        'updatedAt', json_object('milliseconds', result.updated_at_ms)
+      )
+      """
     try SQLiteFile.execute(
       url,
       """
       PRAGMA foreign_keys = OFF;
       BEGIN IMMEDIATE;
       CREATE TEMP TABLE results_704 AS
-        SELECT query_key, triple_count, updated_at_ms, json FROM instant_live_query_results;
+        SELECT query_key, triple_count, updated_at_ms, \(wholeResult) AS json FROM instant_live_query_results AS result;
       CREATE TEMP TABLE ownership_704 AS
         SELECT result.query_key, owned.entity_id, owned.attribute_id, owned.value_json
         FROM instant_live_query_triples AS owned
@@ -719,8 +734,9 @@ struct CompactOwnershipFixture {
         """
   }
 
+  // A result's `json` is empty once the store opens with #1426, which converts it, so it is left out.
   static let resultRowsSQL = """
-    SELECT query_key || char(31) || triple_count || char(31) || updated_at_ms || char(31) || json
+    SELECT query_key || char(31) || triple_count || char(31) || updated_at_ms
     FROM instant_live_query_results
     ORDER BY query_key
     """
@@ -790,9 +806,10 @@ struct OwnershipLayout: Equatable {
   var identityIndexColumns: [String]
 
   static let compact = Self(
+    // A result's page info has its own column since #1426, and its `json` is empty.
     resultColumns: [
       "query_id INTEGER 0 1", "query_key TEXT 1 0", "triple_count INTEGER 1 0", "updated_at_ms INTEGER 1 0",
-      "json TEXT 1 0",
+      "json TEXT 1 0", "page_info_json TEXT 0 0",
     ],
     ownershipColumns: ["query_id INTEGER 1 1", "entity_id TEXT 1 2", "attribute_id TEXT 1 3", "value_json TEXT 1 4"],
     ownershipIsWithoutRowID: true,

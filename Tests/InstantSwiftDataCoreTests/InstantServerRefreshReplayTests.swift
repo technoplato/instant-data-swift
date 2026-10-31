@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-30: added (#1426): a recordings list refresh replayed on a copy of a phone's own store, by b-tree; the store
 //   is copied as a file (a read-only open of a WAL store without its -shm fails), and an interval can be set.
+// - 2026-10-31: a stored result is read from its rows once the store converted, and from its JSON before; the interval
+//   is gone with the JSON (#1426).
 
 import Foundation
 import SQLite3
@@ -19,8 +21,6 @@ extension StorageIOExercises {
     let environment = ProcessInfo.processInfo.environment
     guard let source = environment["INSTANT_REFRESH_REPLAY_STORE"], !source.isEmpty else { return }
     let refreshes = max(1, environment["STORAGEIO_REPLAY_REFRESHES"].flatMap(Int.init) ?? 50)
-    // `STORAGEIO_REPLAY_INTERVAL_MS` writes a changed result's JSON once per interval, as before #1426 (300000).
-    let interval = environment["STORAGEIO_REPLAY_INTERVAL_MS"].flatMap(Int64.init)
     StorageIOCounters.install(asDefault: false)
     let directory = try InstantTestScratch.directory("refresh-replay")
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -56,8 +56,6 @@ extension StorageIOExercises {
         "recordingAttachments/recordingID", "recordings/id", "transcriptionSegments/recordingID",
         "transcriptionWords/recordingID", "transcriptions/recordingID",
       ])
-      configuration.liveQueryResultJSONFlushSleep = { _ in try await Task.sleep(for: .seconds(36_000)) }
-      if let interval { configuration.liveQueryResultJSONWriteIntervalMilliseconds = interval }
       configuration.liveQueryResultPruningWriteInterval = Int.max
       return try await InstantRuntime.bootstrap(configuration: configuration)
     }
@@ -66,7 +64,6 @@ extension StorageIOExercises {
     summary.add("lists", lists.count)
     summary.add("listFacts", lists.map(\.triples.count).reduce(0, +))
     summary.add("refreshes", refreshes)
-    summary.add("resultJSONIntervalMs", interval.map(String.init) ?? "none")
     summary.print()
 
     // A relaunch's first answers: each stored result restated as it is.
@@ -142,37 +139,68 @@ struct ReplayedList {
   var pageInfo: InstantQueryPageInfo?
   var updatedAt: InstantTimestamp
 
-  /// The store's recordings list results, or the results whose keys are like `pattern`, decoded from their stored JSON.
+  /// The store's recordings list results, or the results whose keys are like `pattern`: read from their rows once the
+  /// store converted to them (#1426), and decoded from their stored JSON before.
   static func read(
     _ store: URL,
     keysLike pattern: String = #"%"recordings"%deletedAtMs%"#
   ) throws -> [ReplayedList] {
     var connection: OpaquePointer?
-    guard sqlite3_open_v2(store.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    guard sqlite3_open_v2(store.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let connection else {
       defer { sqlite3_close_v2(connection) }
       throw StorageIOError("open \(store.lastPathComponent)")
     }
     defer { sqlite3_close_v2(connection) }
-    var statement: OpaquePointer?
-    let sql = """
-      SELECT json FROM instant_live_query_results
-      WHERE query_key LIKE ? AND substr(query_key, 1, 16) <> 'released-result:'
-      ORDER BY query_key
-      """
-    guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
-      throw StorageIOError(String(cString: sqlite3_errmsg(connection)))
+    func prepared(_ sql: String) throws -> OpaquePointer {
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+        throw StorageIOError(String(cString: sqlite3_errmsg(connection)))
+      }
+      return statement
     }
-    defer { sqlite3_finalize(statement) }
-    sqlite3_bind_text(statement, 1, pattern, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    var lists: [ReplayedList] = []
-    while sqlite3_step(statement) == SQLITE_ROW {
-      let bytes = Data(bytes: sqlite3_column_blob(statement, 0), count: Int(sqlite3_column_bytes(statement, 0)))
-      let result = try JSONDecoder().decode(InstantPersistedLiveQueryResult.self, from: bytes)
-      lists.append(
-        ReplayedList(key: result.key, triples: result.triples, pageInfo: result.pageInfo, updatedAt: result.updatedAt)
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    let columns = try prepared(
+      "SELECT COUNT(*) FROM pragma_table_info('instant_live_query_results') WHERE name = 'page_info_json'"
+    )
+    defer { sqlite3_finalize(columns) }
+    let isRows = sqlite3_step(columns) == SQLITE_ROW && sqlite3_column_int64(columns, 0) > 0
+    let decoder = JSONDecoder()
+    let filter = "WHERE query_key LIKE ? AND substr(query_key, 1, 16) <> 'released-result:' ORDER BY query_key"
+    var results: [InstantPersistedLiveQueryResult] = []
+    if isRows {
+      let headers = try prepared(
+        "SELECT query_id, triple_count, updated_at_ms, page_info_json, query_key FROM instant_live_query_results \(filter)"
       )
+      defer { sqlite3_finalize(headers) }
+      let facts = try prepared(InstantStoredLiveQueryResultRows.factsSQL)
+      defer { sqlite3_finalize(facts) }
+      sqlite3_bind_text(headers, 1, pattern, -1, transient)
+      while sqlite3_step(headers) == SQLITE_ROW {
+        let header = try InstantStoredLiveQueryResultRows.Header(row: headers, decoder: decoder)
+        sqlite3_reset(facts)
+        sqlite3_bind_int64(facts, 1, header.queryID)
+        sqlite3_bind_text(facts, 2, InstantStoredLiveQueryResultRows.unstoredFactTransactionID, -1, transient)
+        results.append(
+          try InstantStoredLiveQueryResultRows.result(
+            key: String(cString: sqlite3_column_text(headers, 4)),
+            header: header,
+            facts: facts,
+            decoder: decoder
+          )
+        )
+      }
+    } else {
+      let statement = try prepared("SELECT json FROM instant_live_query_results \(filter)")
+      defer { sqlite3_finalize(statement) }
+      sqlite3_bind_text(statement, 1, pattern, -1, transient)
+      while sqlite3_step(statement) == SQLITE_ROW {
+        let bytes = Data(bytes: sqlite3_column_blob(statement, 0), count: Int(sqlite3_column_bytes(statement, 0)))
+        results.append(try decoder.decode(InstantPersistedLiveQueryResult.self, from: bytes))
+      }
     }
-    return lists
+    return results.map {
+      ReplayedList(key: $0.key, triples: $0.triples, pageInfo: $0.pageInfo, updatedAt: $0.updatedAt)
+    }
   }
 
   /// The recording updated last, by `recordings/updatedAtMs`.

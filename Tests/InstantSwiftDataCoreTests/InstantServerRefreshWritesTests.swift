@@ -2,7 +2,8 @@
 // - 2026-10-30: added (#1426): what a server refresh that restates a result writes to SQLite, by b-tree, when one of
 //   its rows changed: a 50-row result against a 1-row one, in todo rows and in rows shaped like a phone's recordings;
 //   and what a relaunch's answers write when the stored result did not change, or changed in one row.
-// - 2026-10-31: each call's line prints the pages its statements read (#1440).
+// - 2026-10-31: each call's line prints the pages its statements read (#1440); no flush or timer is set, as no result's
+//   write waits (#1426).
 
 import CustomDump
 import Foundation
@@ -108,7 +109,6 @@ struct RelaunchWrites {
     let first = try await SQLitePersistenceStore.$connectionVFSForTesting.withValue(StorageIOCounters.vfsName) {
       try await RefreshFixture.open(shape, rows: rows, url: url, appID: label)
     }
-    try await first.runtime.flushPendingLiveQueryResults()
     await first.close()
     let second = try await SQLitePersistenceStore.$connectionVFSForTesting.withValue(StorageIOCounters.vfsName) {
       try await RefreshFixture.start(
@@ -287,8 +287,6 @@ struct RefreshFixture: Sendable {
       liveTransport: session.transport
     )
     configuration.liveReconnectSleep = { _ in }
-    // A refresh's result JSON is written by the refreshes themselves, not by a timer behind the measurement's back.
-    configuration.liveQueryResultJSONFlushSleep = { _ in try await Task.sleep(for: .seconds(3_600)) }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     var leases: [InstantQueryObservationLease] = []
     for plan in shape.plans { leases.append(await runtime.observeQueryLease(plan)) }

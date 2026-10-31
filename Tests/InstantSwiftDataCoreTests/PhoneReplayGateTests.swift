@@ -288,19 +288,20 @@ extension PhoneReplayGateTests {
     return try await InstantRuntime.bootstrap(configuration: configuration)
   }
 
+  /// The stored results of the opened copy at `url`, largest first, read from their rows: the store converted them at
+  /// its open (#1426).
   static func storedResults(_ url: URL) throws -> [InstantPersistedLiveQueryResult] {
-    var database: OpaquePointer?
-    guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return [] }
-    defer { sqlite3_close(database) }
-    var statement: OpaquePointer?
-    sqlite3_prepare_v2(database, "SELECT json FROM instant_live_query_results ORDER BY triple_count DESC", -1, &statement, nil)
-    defer { sqlite3_finalize(statement) }
-    var results: [InstantPersistedLiveQueryResult] = []
-    while sqlite3_step(statement) == SQLITE_ROW {
-      let json = String(cString: sqlite3_column_text(statement, 0))
-      results.append(try JSONDecoder().decode(InstantPersistedLiveQueryResult.self, from: Data(json.utf8)))
+    let keys = try InstantStoredLiveQueryResultTests.rows(
+      url,
+      """
+      SELECT query_key FROM instant_live_query_results
+      WHERE substr(query_key, 1, 16) <> 'released-result:'
+      ORDER BY triple_count DESC
+      """
+    )
+    return try keys.compactMap { row in
+      try row.first.flatMap { $0 }.flatMap { try InstantStoredLiveQueryResultTests.storedResult(url, key: $0) }
     }
-    return results
   }
 
   /// The attributes the store's stored live-query results select, by namespace. A link the server issued an id for is

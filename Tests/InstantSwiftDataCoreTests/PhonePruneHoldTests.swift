@@ -138,11 +138,12 @@ struct PhonePruneHoldTests {
     throw PhoneReplayInputError(description: "INSTANT_PHONE_PRUNE_OPEN is none or newest:N, not \(spec)")
   }
 
-  /// How many results the store holds, stored and unloaded, with their facts and JSON.
+  /// How many results the store holds, stored and unloaded, with their facts and bytes: a stored result's are its
+  /// ownership rows' values since #1426, an unloaded one's its JSON.
   static func composition(_ url: URL) throws -> String {
     let stored = try strings(
       url,
-      "SELECT count(*) || ' stored (' || ifnull(sum(triple_count), 0) || ' facts, ' || ifnull(sum(length(CAST(json AS BLOB))), 0) || ' bytes)' FROM instant_live_query_results"
+      "SELECT count(*) || ' stored (' || ifnull(sum(triple_count), 0) || ' facts, ' || (SELECT ifnull(sum(length(CAST(value_json AS BLOB))), 0) FROM instant_live_query_triples) || ' bytes)' FROM instant_live_query_results"
     )
     let unloaded = try strings(
       url,

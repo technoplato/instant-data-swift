@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-31: no live-query result's write waits: every refresh stores its result as its rows (#1426), so an
+//   unsubscribe and the close write nothing more, the interval and its timer are gone, and
+//   `flushPendingLiveQueryResults()` writes nothing.
 // - 2026-10-30: a changed live-query result's JSON waits for the app's flush, an unsubscribe or the close instead of
 //   being written whole every five minutes; the interval is nil unless a test sets one (#1426).
 // - 2026-10-29: the acknowledgement deferral times a frame from its last server-apply progress, so a slow rebase keeps
@@ -493,16 +496,6 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// of the `$files` list's 75,640 facts held the gate about 1.3 s in one hold on the Mac mini after its read moved out
   /// of the gate; 2,048 facts are about 30 ms there.
   var liveQueryResultReloadChunkTripleCount = 2_048
-  /// How long a live query's stored result JSON may lag its newest result while the runtime runs (#566), or nil for
-  /// as long as the runtime runs. Nil since #1426: the app's flush on background and termination, an unsubscribe and
-  /// the close write what waited, and a kill is repaired from the ownership rows, which every save keeps exact, at the
-  /// next launch. Every five minutes (#1123) each changed result's whole JSON was written again: on a recording's
-  /// list, 9.7 of a 50-row refresh's 20.7 log frames over five minutes of refreshes.
-  var liveQueryResultJSONWriteIntervalMilliseconds: Int64? = nil
-  /// How the runtime waits before writing the results whose JSON waited; tests make it wait longer than they run.
-  var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
-    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
-  }
   /// Runs after each prune batch, with the number of results it removed.
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   /// Runs as each prune batch starts, holding the operation gate.
@@ -1844,10 +1837,6 @@ public final class InstantRuntime: Sendable {
         deferredValueResidency: configuration.deferredValueResidency,
         localLookup: configuration.localLookup,
         declaredAttributes: configuration.initialAttributes
-      )
-      await persistence.configureLiveQueryResultJSONWrites(
-        intervalMilliseconds: configuration.liveQueryResultJSONWriteIntervalMilliseconds,
-        flushSleep: configuration.liveQueryResultJSONFlushSleep
       )
       let bootstrapPruningResult: InstantQueryCachePruningResult?
       let bootstrapSynchronizationBlocker: InstantSynchronizationBlocker?
@@ -5779,8 +5768,6 @@ public final class InstantRuntime: Sendable {
       await storeObservation.cancel()
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
-      // Its result is not refreshed again: write it if its write waited (#566).
-      _ = try? await self.persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
       do {
         _ = try await self.liveSession.unregisterQuery(
           key: registrationKey,
@@ -6014,8 +6001,6 @@ public final class InstantRuntime: Sendable {
       await storeObservation.cancel()
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
-      // Its result is not refreshed again: write it if its write waited (#566).
-      _ = try? await self.persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
       do {
         _ = try await self.liveSession.unregisterQuery(
           key: registrationKey,
@@ -6615,7 +6600,6 @@ public final class InstantRuntime: Sendable {
     let cleanupOwner = InstantAsyncCancellationOwner(
       cancelAndWait: { [self] in
         await liveQueryResultState.release(key: registrationKey)
-        _ = try? await persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
         let ended = try? await liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: configuration.makeID()
@@ -8209,15 +8193,13 @@ public final class InstantRuntime: Sendable {
     )
   }
 
-  /// Writes the stored results of the live queries whose result write waited (#566). The runtime writes a refreshed
-  /// query's result to SQLite at most once every 5 minutes and keeps the newest in memory meanwhile; it writes the rest when
-  /// a query unsubscribes and when the connection closes. Call this when the app moves to the background or is about
-  /// to terminate, so the next launch starts from the newest results. A launch after a kill without it rebuilds the
-  /// waiting results from their facts, so nothing the server deleted comes back.
-  public func flushPendingLiveQueryResults() async throws {
-    recordActorHop(.persistence)
-    try await persistence.flushDeferredLiveQueryResults()
-  }
+  /// Writes nothing: no live query's stored result waits to be written.
+  ///
+  /// Every refresh stores its result before it is applied, as its ownership rows and a header (#1426), so the next
+  /// launch, after a background, a termination or a kill, starts from the newest results. Until #1426 a refreshed
+  /// result's whole JSON waited in memory for this call, an unsubscribe or the close; an app that calls it on background
+  /// and termination needs no change.
+  public func flushPendingLiveQueryResults() async throws {}
 
   /// What holds the operation gate now, with no hop onto the gate (freeze-185 item 7): the holder, the phase it named
   /// last, since when, and the queue behind it. Like any snapshot, it can change right after it is read.
@@ -8591,9 +8573,6 @@ public final class InstantRuntime: Sendable {
     recordActorHop(.operationGate)
     await operationGate.enter()
     var enteredOperationGate = true
-    // No refresh can be applied now: write the results whose write waited (#566).
-    recordActorHop(.persistence)
-    _ = try? await persistence.flushDeferredLiveQueryResults()
     // Invalidate the receiver generation and close its wire now, but retain
     // the exact task handle. Receiver event/failure callbacks can be waiting on
     // the operation gate, so their join belongs strictly after this gate.

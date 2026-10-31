@@ -79,6 +79,11 @@
 //   confirmation source its row holds, and the row is narrow and WITHOUT ROWID: a claim and an acknowledgement write
 //   the row and their indexes alone (4.17 and 6.17 -> 2.00 and 4.00 log frames). A store converts once at open, by
 //   SQLite's twelve-step rebuild (#1435).
+// - 2026-10-31: a stored live-query result is its ownership rows, its facts and a narrow header (page info, count,
+//   time): every save writes exactly its diff, and every reader builds the result from those rows. No result's whole
+//   JSON is written or waits, so nothing is kept in memory, marked or repaired after a kill, and a header's update reads
+//   no JSON (#1440). A store 1.9.54 left converts once at open (0034). The retraction diff reads the stored result's
+//   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
 
 import Foundation
 import IssueReporting
@@ -1056,15 +1061,14 @@ struct InstantServerApplyCommitTiming: Sendable, Equatable {
 }
 
 /// One restated live-query result's save, worked out before the server apply takes the operation gate (#932): the
-/// result as stored (nested limits applied), the ownership rows that leave and join, and its JSON when the save writes
-/// it now. The commit applies it without reading the result's ownership rows or encoding its values under the gate,
-/// which cost 87-140 ms a frame for 7,287 restated facts on a Mac mini and 1-4 s on the phone with nothing pending.
+/// result as stored (nested limits applied) and the ownership rows that leave and join. The commit applies it without
+/// reading the result's ownership rows or encoding its values under the gate, which cost 87-140 ms a frame for 7,287
+/// restated facts on a Mac mini and 1-4 s on the phone with nothing pending.
 struct InstantPreparedLiveQueryResultSave: Sendable {
   var result: InstantPersistedLiveQueryResult
   fileprivate var attributeIDs: Set<String>
   fileprivate var removedOwnership: [LiveQueryOwnershipIdentity]
   fileprivate var insertedOwnership: [LiveQueryOwnershipIdentity]
-  fileprivate var json: String?
 }
 
 /// Times a commit's consecutive sections into an ``InstantServerApplyCommitTiming`` (#932).
@@ -1348,42 +1352,13 @@ public actor SQLitePersistenceStore {
   private var liveResultAttributeLoads = 0
   /// Releases SQLite's memory when the system warns of memory pressure (#653).
   private let memoryPressureMonitor: SQLiteMemoryPressureMonitor
-  /// Live-query result saves, and the result JSON they wrote (#566): for tests and the release's measurements.
+  /// Live-query result saves, and the whole-result JSON this store wrote (#566): for tests and the release's
+  /// measurements. A save writes none since #1426 (a stored result is its rows); only an unload writes one, the copy a
+  /// closed query keeps for its next subscription, built inside SQLite, so its bytes are not counted.
   private var liveQueryResultJSONWriteStats = (saves: 0, writes: 0, bytes: 0)
-  /// What this process knows about each live query's stored result JSON (#566). A server apply used to rewrite a
-  /// refreshed query's whole result as one JSON blob, every time: Michael's iPhone dirtied 1,074 MB in 185 s after
-  /// launch on build 90. Now a result that did not change writes no JSON, and a changed result's JSON waits for the
-  /// app's flush, an unsubscribe or the close (#1426; at most once per `liveQueryResultJSONWriteIntervalMilliseconds`
-  /// when a test sets one); meanwhile the newest result is here, and every reader in this process reads it from here.
-  /// The ownership rows stay exact on every refresh. A result whose JSON waits is marked in `instant_sync_metadata`,
-  /// with the page info it holds now, so if the process ends before the write, the next bootstrap rebuilds it from its
-  /// ownership rows and that page info (`repairDeferredLiveQueryResultJSON()`). Restored when a write transaction rolls
-  /// back.
-  private struct LiveQueryResultJSONState {
-    /// The newest result of each query whose stored JSON is older.
-    var deferred: [String: InstantPersistedLiveQueryResult] = [:]
-    /// When this process last wrote each query's JSON, or first found it stored: that result's `updatedAt`, in
-    /// milliseconds.
-    var writtenAt: [String: Int64] = [:]
-    /// The page info each query's stored JSON holds, for the queries this process wrote or found stored (#1426).
-    var writtenPageInfo: [String: InstantQueryPageInfo?] = [:]
-    /// The queries whose waiting marker this process wrote and has not deleted, with the page info the marker holds.
-    var marked: [String: InstantQueryPageInfo?] = [:]
-  }
-  /// What a waiting result's marker in `instant_sync_metadata` holds (#1426): the page info the result holds now.
-  private struct DeferredLiveQueryResultJSONMarker: Codable {
-    var pageInfo: InstantQueryPageInfo?
-  }
-  private var liveQueryResultJSON = LiveQueryResultJSONState()
-  private var liveQueryResultJSONWriteIntervalMilliseconds: Int64?
   /// Ownership rows read and result values encoded to save live-query results, for the commit's metrics (#932).
   private var liveQueryOwnershipRowReadCount = 0
   private var liveQueryResultValueEncodeCount = 0
-  private var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
-    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
-  }
-  private var liveQueryResultJSONFlushTask: Task<Void, Never>?
-  static let deferredLiveQueryResultJSONMarkerPrefix = "live-query-result-json-waiting:"
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
@@ -1493,249 +1468,10 @@ public actor SQLitePersistenceStore {
     liveQueryResultJSONWriteStats
   }
 
-  /// Sets how often a live query's result JSON may be written while it changes, and how the scheduled write waits
-  /// (#566). An interval of 0 writes every changed result at once; nil leaves it to the app's flush, an unsubscribe and
-  /// the close (#1426).
-  package func configureLiveQueryResultJSONWrites(
-    intervalMilliseconds: Int64?,
-    flushSleep: @escaping @Sendable (_ milliseconds: UInt64) async throws -> Void
-  ) {
-    liveQueryResultJSONWriteIntervalMilliseconds = intervalMilliseconds.map { max(0, $0) }
-    liveQueryResultJSONFlushSleep = flushSleep
-  }
-
-  /// Writes the stored JSON of every live-query result whose write waited, or of the ones in `keys` (#566). The app
-  /// calls this when it goes to the background or terminates; the runtime calls it when a query unsubscribes and when
-  /// the connection closes. Returns how many results it wrote.
-  @discardableResult
-  package func flushDeferredLiveQueryResults(keys: Set<String>? = nil) throws -> Int {
-    let waiting = keys.map { !Set(liveQueryResultJSON.deferred.keys).isDisjoint(with: $0) }
-      ?? !liveQueryResultJSON.deferred.isEmpty
-    guard waiting else { return 0 }
-    return try transaction { try flushDeferredLiveQueryResultsWithoutTransaction(keys: keys) }
-  }
-
-  /// How many live-query results wait for their JSON write (#566), for tests.
-  package func deferredLiveQueryResultCountForTesting() -> Int {
-    liveQueryResultJSON.deferred.count
-  }
-
-  /// The stored result of `key` as the store's own readers read it (the retraction diff, the prune, the unload), for
+  /// The stored result of `key` as the store's own readers read it (the prune, the unload, the open-time passes), for
   /// tests (#1426).
   func storedLiveQueryResultForTesting(key: String) throws -> InstantPersistedLiveQueryResult? {
     try readTransaction { try liveQueryResultWithoutTransaction(key: key) }
-  }
-
-  /// Writes, within one interval, the results whose JSON waited, if any are left and an interval is set (#566).
-  private func scheduleDeferredLiveQueryResultFlushIfNeeded() {
-    guard let intervalMilliseconds = liveQueryResultJSONWriteIntervalMilliseconds,
-      !liveQueryResultJSON.deferred.isEmpty, liveQueryResultJSONFlushTask == nil
-    else { return }
-    let sleep = liveQueryResultJSONFlushSleep
-    let interval = UInt64(intervalMilliseconds)
-    liveQueryResultJSONFlushTask = Task { [weak self] in
-      try? await sleep(interval)
-      await self?.runScheduledDeferredLiveQueryResultFlush()
-    }
-  }
-
-  private func runScheduledDeferredLiveQueryResultFlush() {
-    liveQueryResultJSONFlushTask = nil
-    do {
-      try flushDeferredLiveQueryResults()
-    } catch {
-      InstantDiagnostics.shared.record(
-        error: error,
-        subsystem: "instant-swift-data-core",
-        category: "persistence",
-        event: "live-query-results.deferred-json-flush-failed",
-        message: "Could not write the live-query results whose JSON waited; the next flush or bootstrap writes them."
-      )
-    }
-    scheduleDeferredLiveQueryResultFlushIfNeeded()
-  }
-
-  /// Writes the stored JSON of the results whose write waited (#566): all of them, the ones in `keys`, or, with
-  /// `dueAt`, the ones whose last write is at least one interval older than it (none without an interval, #1426).
-  @discardableResult
-  private func flushDeferredLiveQueryResultsWithoutTransaction(
-    keys: Set<String>? = nil,
-    dueAt now: Int64? = nil
-  ) throws -> Int {
-    var written = 0
-    for (key, result) in liveQueryResultJSON.deferred.sorted(by: { $0.key < $1.key }) {
-      if let keys, !keys.contains(key) { continue }
-      if let now {
-        guard let interval = liveQueryResultJSONWriteIntervalMilliseconds else { continue }
-        if let writtenAt = liveQueryResultJSON.writtenAt[key], now - writtenAt < interval { continue }
-      }
-      let json = try encode(result)
-      try execute(
-        """
-        UPDATE instant_live_query_results
-        SET triple_count = ?, updated_at_ms = MAX(updated_at_ms, ?), json = ?
-        WHERE query_key = ?
-        """,
-        [
-          .int(Int64(result.triples.count)),
-          .int(result.updatedAt.milliseconds),
-          .text(json),
-          .text(key),
-        ]
-      )
-      if sqlite3_changes(connection.raw) == 1 {
-        liveQueryResultJSONWriteStats.writes += 1
-        liveQueryResultJSONWriteStats.bytes += json.utf8.count
-        written += 1
-      }
-      liveQueryResultJSON.deferred[key] = nil
-      liveQueryResultJSON.writtenAt[key] = result.updatedAt.milliseconds
-      liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
-      try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
-    }
-    return written
-  }
-
-  /// Marks `key`'s result as waiting for its JSON write, with the page info it holds now (#566, #1426). A waiting
-  /// result's page info is the one part of it the ownership rows do not hold: a window over a growing list moves its
-  /// cursors with every new row. The marker is written again only when that changes, a small row beside the sync
-  /// metadata a refresh writes anyway; the result's whole JSON, which every five minutes was most of a list refresh's
-  /// writes, waits for the app's flush.
-  private func markDeferredLiveQueryResultJSONWithoutTransaction(
-    _ key: String,
-    pageInfo: InstantQueryPageInfo?,
-    at milliseconds: Int64
-  ) throws {
-    if let marked = liveQueryResultJSON.marked[key], marked == pageInfo { return }
-    try execute(
-      Self.upsertMetadataSQL,
-      [
-        .text(Self.deferredLiveQueryResultJSONMarkerPrefix + key),
-        .text(try encode(DeferredLiveQueryResultJSONMarker(pageInfo: pageInfo))),
-        .int(milliseconds),
-      ]
-    )
-    liveQueryResultJSON.marked[key] = pageInfo
-  }
-
-  private func clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(_ key: String) throws {
-    guard liveQueryResultJSON.marked.removeValue(forKey: key) != nil else { return }
-    try execute(
-      "DELETE FROM instant_sync_metadata WHERE key = ?",
-      [.text(Self.deferredLiveQueryResultJSONMarkerPrefix + key)]
-    )
-  }
-
-  /// Forgets a dropped or pruned result's deferred JSON and marker (#566).
-  private func forgetLiveQueryResultJSONStateWithoutTransaction(_ key: String) throws {
-    liveQueryResultJSON.deferred[key] = nil
-    liveQueryResultJSON.writtenAt[key] = nil
-    liveQueryResultJSON.writtenPageInfo[key] = nil
-    liveQueryResultJSON.marked[key] = nil
-    try execute(
-      "DELETE FROM instant_sync_metadata WHERE key = ?",
-      [.text(Self.deferredLiveQueryResultJSONMarkerPrefix + key)]
-    )
-  }
-
-  /// Rebuilds the stored JSON of each live-query result whose JSON write waited when the last process ended (#566),
-  /// before anything reads it: its facts are its ownership rows (exact on every refresh), each with the stamp the stale
-  /// JSON or the store holds for it, and its page info is the one its marker holds (#1426), or the stale JSON's for a
-  /// marker an older version wrote. A later server result is diffed against this one to retract what left it, so a
-  /// crash while a write waits cannot keep a fact the server deleted.
-  private func repairDeferredLiveQueryResultJSON() throws {
-    let prefix = Self.deferredLiveQueryResultJSONMarkerPrefix
-    var markerKeys: [String] = []
-    var markerValues: [String: String] = [:]
-    var statement: OpaquePointer?
-    try prepare(
-      "SELECT key, value FROM instant_sync_metadata WHERE key >= ? AND key < ? ORDER BY key",
-      statement: &statement
-    )
-    defer { finishStatement(statement) }
-    try bind([.text(prefix), .text(prefix + "\u{10FFFF}")], to: statement)
-    while sqlite3_step(statement) == SQLITE_ROW {
-      if let key = sqlite3_column_text(statement, 0) {
-        let marker = String(cString: key)
-        markerKeys.append(marker)
-        markerValues[marker] = sqlite3_column_text(statement, 1).map { String(cString: $0) }
-      }
-    }
-    guard !markerKeys.isEmpty else { return }
-    var repaired = 0
-    try transaction {
-      for marker in markerKeys {
-        let queryKey = String(marker.dropFirst(prefix.count))
-        defer { _ = try? execute("DELETE FROM instant_sync_metadata WHERE key = ?", [.text(marker)]) }
-        guard
-          let updatedAtText: String = try selectScalar(
-            "SELECT updated_at_ms FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-            [.text(queryKey)]
-          ),
-          let updatedAt = Int64(updatedAtText),
-          var result = try liveQueryResultWithoutTransaction(key: queryKey)
-        else { continue }
-        var staleByIdentity: [LiveQueryOwnershipIdentity: InstantTriple] = [:]
-        for triple in result.triples {
-          staleByIdentity[
-            LiveQueryOwnershipIdentity(
-              entityID: triple.entityID,
-              attributeID: triple.attributeID,
-              valueJSON: try encode(triple.value)
-            )
-          ] = triple
-        }
-        var triples: [InstantTriple] = []
-        for identity in try liveQueryOwnershipWithoutTransaction(queryKey: queryKey) {
-          if let triple = staleByIdentity[identity] {
-            triples.append(triple)
-            continue
-          }
-          let stored: [InstantTriple] = try selectJSON(
-            """
-            SELECT json FROM instant_triples
-            WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
-            LIMIT 1
-            """,
-            [.text(identity.entityID), .text(identity.attributeID), .text(identity.valueJSON)]
-          )
-          if let stored = stored.first {
-            triples.append(stored)
-          } else {
-            triples.append(
-              InstantTriple(
-                entityID: identity.entityID,
-                attributeID: identity.attributeID,
-                value: try decoder.decode(InstantValue.self, from: Data(identity.valueJSON.utf8)),
-                txID: "live-query-result-repair",
-                txTime: InstantTimestamp(milliseconds: updatedAt)
-              )
-            )
-          }
-        }
-        result.triples = triples.sorted(by: InstantPersistedLiveQueryResult.storedOrder)
-        result.updatedAt = InstantTimestamp(milliseconds: updatedAt)
-        // An older version's marker holds "1": its result keeps the stale JSON's page info, at most one interval old.
-        if let value = markerValues[marker],
-          let waiting = try? decoder.decode(DeferredLiveQueryResultJSONMarker.self, from: Data(value.utf8))
-        {
-          result.pageInfo = waiting.pageInfo
-        }
-        try execute(
-          "UPDATE instant_live_query_results SET triple_count = ?, json = ? WHERE query_key = ?",
-          [.int(Int64(result.triples.count)), .text(try encode(result)), .text(queryKey)]
-        )
-        repaired += 1
-      }
-    }
-    InstantDiagnostics.shared.record(
-      .info,
-      subsystem: "instant-swift-data-core",
-      category: "persistence",
-      event: "live-query-results.deferred-json-repaired",
-      message: "Rebuilt the stored JSON of live-query results whose write waited when the last process ended.",
-      metadata: ["markerCount": String(markerKeys.count), "repairedCount": String(repaired)]
-    )
   }
 
   /// How many pages this connection has written to the database or its WAL since it opened, and the page size (#566).
@@ -3117,6 +2853,10 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try migrateFactsToOneCopyIfNeeded()
     }
+    // Before the ownership compaction, which copies the results table's columns as they are.
+    try withSQLiteBusyRetry {
+      try convertLiveQueryResultsToTheirRowsIfNeeded()
+    }
     try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
@@ -3271,7 +3011,6 @@ public actor SQLitePersistenceStore {
     now: InstantTimestamp
   ) throws -> InstantQueryCachePruningResult? {
     try bootstrap()
-    try repairDeferredLiveQueryResultJSON()
     try finishInterruptedLiveQueryResultRelease()
     try reconcileDeclaredRelationStorageIfNeeded()
     do {
@@ -3292,6 +3031,9 @@ public actor SQLitePersistenceStore {
   private static let compactLiveQueryOwnershipMigrationName = "0026_live_query_compact_ownership"
 
   /// A stored live-query result, named by an integer id (its rowid) as well as by its key (#704, ADR 0020).
+  /// A stored live-query result's header (#1426): its key, the count of its ownership rows, when the server last stated
+  /// it and its page info. Its facts are its ownership rows. `json` held the whole result until #1426 and is empty
+  /// since; it stays so a store converts without rebuilding the table, and an older version's statements still parse.
   private static func liveQueryResultsTableSQL(named name: String) -> String {
     """
     CREATE TABLE IF NOT EXISTS \(name) (
@@ -3299,7 +3041,8 @@ public actor SQLitePersistenceStore {
       query_key TEXT NOT NULL UNIQUE,
       triple_count INTEGER NOT NULL,
       updated_at_ms INTEGER NOT NULL,
-      json TEXT NOT NULL
+      json TEXT NOT NULL,
+      page_info_json TEXT
     )
     """
   }
@@ -3364,8 +3107,8 @@ public actor SQLitePersistenceStore {
         try execute(Self.liveQueryResultsTableSQL(named: "instant_live_query_results_0026"))
         try execute(
           """
-          INSERT INTO instant_live_query_results_0026 (query_key, triple_count, updated_at_ms, json)
-          SELECT query_key, triple_count, updated_at_ms, json
+          INSERT INTO instant_live_query_results_0026 (query_key, triple_count, updated_at_ms, json, page_info_json)
+          SELECT query_key, triple_count, updated_at_ms, json, page_info_json
           FROM instant_live_query_results
           ORDER BY query_key
           """
@@ -3680,6 +3423,98 @@ public actor SQLitePersistenceStore {
     try selectInt64("SELECT COUNT(*) FROM pragma_table_info('instant_outbox') WHERE name = 'json'") > 0
   }
 
+  /// The ledger name of the step that leaves each stored live-query result as its rows (#1426).
+  static let liveQueryResultsAreTheirRowsMigrationName = "0034_live_query_results_are_their_rows"
+  /// The key prefix of the marker 1.9.54 wrote in `instant_sync_metadata` for a result whose JSON write waited (#566).
+  private static let waitingLiveQueryResultMarkerPrefix = "live-query-result-json-waiting:"
+  /// What a 1.9.54 marker holds: the page info the result held at its last save (#1426). An older marker holds `1`.
+  private struct WaitingLiveQueryResultMarker: Decodable {
+    var pageInfo: InstantQueryPageInfo?
+  }
+
+  /// Leaves each stored live-query result as its rows, the first time a store opens with whole results in its JSON
+  /// (#1426).
+  ///
+  /// A result's facts need nothing: every save kept its ownership rows exact, and a result is its ownership rows now,
+  /// so a result whose JSON write waited when 1.9.54's last process ended reads as its newest, which its JSON was not.
+  /// Its header takes the page info that result's marker holds, the one part of a result its rows do not hold, and any
+  /// other header takes its JSON's. Then the JSON goes, and so do the markers. One transaction; the JSON's overflow
+  /// pages become free pages, given back by `compactLocalCache`'s `VACUUM` (#1015). A store opened by this version is
+  /// not readable by 1.9.54 or older, which read the JSON.
+  private func convertLiveQueryResultsToTheirRowsIfNeeded() throws {
+    guard try !liveQueryResultsHavePageInfoColumn() else { return }
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    let counts = try transaction { () -> (results: Int64, markers: Int)? in
+      // Another connection may have converted the store while this one waited for the write lock.
+      guard try !liveQueryResultsHavePageInfoColumn() else { return nil }
+      try execute("ALTER TABLE instant_live_query_results ADD COLUMN page_info_json TEXT")
+      try execute(
+        """
+        UPDATE instant_live_query_results
+        SET page_info_json = json_extract(json, '$.pageInfo')
+        WHERE json <> '' AND json_valid(json)
+        """
+      )
+      let prefix = Self.waitingLiveQueryResultMarkerPrefix
+      var markers: [(queryKey: String, value: String)] = []
+      var statement: OpaquePointer?
+      try prepare(
+        "SELECT key, value FROM instant_sync_metadata WHERE key >= ? AND key < ? ORDER BY key",
+        statement: &statement
+      )
+      defer { finishStatement(statement) }
+      try bind([.text(prefix), .text(prefix + "\u{10FFFF}")], to: statement)
+      while sqlite3_step(statement) == SQLITE_ROW {
+        if let key = sqlite3_column_text(statement, 0), let value = sqlite3_column_text(statement, 1) {
+          markers.append((String(String(cString: key).dropFirst(prefix.count)), String(cString: value)))
+        }
+      }
+      for marker in markers {
+        // An older marker's `1` names no page info: its result keeps its JSON's, as its rebuild did (#566).
+        guard
+          let waiting = try? decoder.decode(WaitingLiveQueryResultMarker.self, from: Data(marker.value.utf8))
+        else { continue }
+        let pageInfo = try waiting.pageInfo.map { SQLiteBinding.text(try encode($0)) } ?? .null
+        try execute(
+          "UPDATE instant_live_query_results SET page_info_json = ? WHERE query_key = ?",
+          [pageInfo, .text(marker.queryKey)]
+        )
+      }
+      try execute("UPDATE instant_live_query_results SET json = '' WHERE json <> ''")
+      let results = Int64(sqlite3_changes(connection.raw))
+      try execute(
+        "DELETE FROM instant_sync_metadata WHERE key >= ? AND key < ?",
+        [.text(prefix), .text(prefix + "\u{10FFFF}")]
+      )
+      try execute(
+        "INSERT OR IGNORE INTO instant_schema_migrations (name, applied_at_ms) VALUES (?, ?)",
+        [.text(Self.liveQueryResultsAreTheirRowsMigrationName), .int(Self.nowMilliseconds())]
+      )
+      return (results, markers.count)
+    }
+    guard let counts else { return }
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.live-query-results.converted-to-rows",
+      message: "Stored live-query results are their ownership rows and a header now; their JSON is gone.",
+      metadata: [
+        "markers": String(counts.markers),
+        "milliseconds": String((DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000),
+        "path": fileURL.path,
+        "results": String(counts.results),
+      ]
+    )
+  }
+
+  /// Whether the results table has #1426's `page_info_json` column.
+  private func liveQueryResultsHavePageInfoColumn() throws -> Bool {
+    try selectInt64(
+      "SELECT COUNT(*) FROM pragma_table_info('instant_live_query_results') WHERE name = 'page_info_json'"
+    ) > 0
+  }
+
   /// Whether the ownership table still has 0011's `query_key` column (#704).
   private func liveQueryOwnershipRowsCarryTheirQueryKey() throws -> Bool {
     try selectInt64(
@@ -3903,7 +3738,6 @@ public actor SQLitePersistenceStore {
       [.text(queryKey)]
     )
     try execute("DELETE FROM instant_live_query_results WHERE query_key = ?", [.text(queryKey)])
-    try forgetLiveQueryResultJSONStateWithoutTransaction(queryKey)
   }
 
   /// Logs each cached result an open-time pass dropped, once the pass has committed.
@@ -3931,10 +3765,8 @@ public actor SQLitePersistenceStore {
 
   /// Reads every persisted result through a one-row keyset cursor.
   ///
-  /// Ownership is an index of the encoded result, but an interrupted older build or imported
-  /// fixture can drift on either side. Scanning all bounded result bodies lets reconciliation heal
-  /// both an obsolete triple that exists only in JSON and obsolete ownership whose JSON is already
-  /// canonical. A result over the row bound comes back unread (`.oversized`), for the pass to drop (#436).
+  /// A result is its ownership rows (#1426), so the pass canonicalizes the facts those rows name. A result over the row
+  /// bound comes back unread (`.oversized`), for the pass to drop (#436); its size is its rows' bytes.
   private func nextDeclaredRelationLiveQueryResultWithoutTransaction(
     after queryKey: String?
   ) throws -> InstantBoundedLiveQueryResultRow? {
@@ -3943,11 +3775,11 @@ public actor SQLitePersistenceStore {
     let bindings: [SQLiteBinding]
     if let queryKey {
       sql =
-        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results WHERE query_key > ? AND \(Self.notReleasedLiveQueryResultSQL) ORDER BY query_key LIMIT 1"
+        "SELECT query_key, query_id FROM instant_live_query_results WHERE query_key > ? AND \(Self.notReleasedLiveQueryResultSQL) ORDER BY query_key LIMIT 1"
       bindings = [.text(queryKey)]
     } else {
       sql =
-        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results WHERE \(Self.notReleasedLiveQueryResultSQL) ORDER BY query_key LIMIT 1"
+        "SELECT query_key, query_id FROM instant_live_query_results WHERE \(Self.notReleasedLiveQueryResultSQL) ORDER BY query_key LIMIT 1"
       bindings = []
     }
     try prepare(sql, statement: &statement)
@@ -3964,32 +3796,27 @@ public actor SQLitePersistenceStore {
       )
     }
     let rowQueryKey = String(cString: queryKeyBytes)
-    let bodyByteCount = sqlite3_column_int64(statement, 1)
-    guard bodyByteCount >= 0,
-      bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
-    else {
-      return .oversized(queryKey: rowQueryKey, byteCount: bodyByteCount)
+    let queryID = sqlite3_column_int64(statement, 1)
+    let byteCount = try liveQueryResultByteCountWithoutTransaction(queryID: queryID)
+    guard byteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes) else {
+      return .oversized(queryKey: rowQueryKey, byteCount: byteCount)
     }
-    guard let json: String = try selectScalar(
-      "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-      [.text(rowQueryKey)]
-    ),
-      let data = json.data(using: .utf8)
-    else {
+    guard let result = try liveQueryResultWithoutTransaction(key: rowQueryKey) else {
       throw persistenceError(
         operation: "read declared relation live-query result",
-        message: "Live-query result '\(rowQueryKey)' disappeared before it could be decoded."
-      )
-    }
-    let result = try decoder.decode(InstantPersistedLiveQueryResult.self, from: data)
-    guard result.key == rowQueryKey else {
-      throw persistenceError(
-        operation: "read declared relation live-query result",
-        message: "The decoded live-query result did not match its SQLite identity."
+        message: "Live-query result '\(rowQueryKey)' disappeared before it could be read."
       )
     }
     declaredRelationReconciliationLiveResultScanCount += 1
     return .decoded(result)
+  }
+
+  /// The bytes of the stored result `queryID` names, as ``InstantStoredLiveQueryResultRows/byteCountSQL`` counts them.
+  private func liveQueryResultByteCountWithoutTransaction(queryID: Int64) throws -> Int64 {
+    try selectInt64(
+      InstantStoredLiveQueryResultRows.byteCountSQL,
+      [.int(queryID), .text(InstantStoredLiveQueryResultRows.unstoredFactTransactionID)]
+    )
   }
 
   private func upsertCanonicalRelationTripleWithoutTransaction(
@@ -4022,15 +3849,15 @@ public actor SQLitePersistenceStore {
     _ result: InstantPersistedLiveQueryResult,
     ownership: Set<LiveQueryOwnershipIdentity>
   ) throws {
+    // The result is its rows (#1426): its header's count, and its ownership rows below.
     try execute(
       """
       UPDATE instant_live_query_results
-      SET triple_count = ?, json = ?
+      SET triple_count = ?, json = ''
       WHERE query_key = ?
       """,
       [
         .int(Int64(result.triples.count)),
-        .text(try encode(result)),
         .text(result.key),
       ]
     )
@@ -4402,13 +4229,11 @@ public actor SQLitePersistenceStore {
             < ($1.entityID, $1.attributeID, $1.value.comparableKey)
         }
         guard migrated != result else { continue }
-        let encodedMigratedResult = try encode(migrated)
-        guard encodedMigratedResult.utf8.count
-          <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
-        else {
+        let migratedByteCount = try InstantStoredLiveQueryResultRows.byteCount(of: migrated.triples, encoder: encoder)
+        guard migratedByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes else {
           // The migration grew the cached result past the bound: refetch it rather than fail the open (#436).
           try dropLiveQueryResultWithoutTransaction(queryKey: result.key)
-          droppedResults.append((result.key, Int64(encodedMigratedResult.utf8.count)))
+          droppedResults.append((result.key, Int64(migratedByteCount)))
           liveQueryResultsDropped = true
           continue
         }
@@ -4663,7 +4488,8 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  /// A result over the row bound comes back unread (`.oversized`), for the migration to drop (#436).
+  /// A result over the row bound comes back unread (`.oversized`), for the migration to drop (#436); its size is its
+  /// rows' bytes (#1426).
   private func nextApplicationMigrationLiveQueryResultWithoutTransaction(
     after queryKey: String?,
     affectedAttributeIDs: Set<String>
@@ -4680,7 +4506,7 @@ public actor SQLitePersistenceStore {
     }
     let sql =
       """
-      SELECT result.query_key, length(CAST(result.json AS BLOB))
+      SELECT result.query_key, result.query_id
       FROM instant_live_query_results AS result
       WHERE substr(result.query_key, 1, 16) <> 'released-result:' AND EXISTS (
         SELECT 1 FROM instant_live_query_triples AS owned
@@ -4705,28 +4531,14 @@ public actor SQLitePersistenceStore {
       )
     }
     let rowQueryKey = String(cString: queryKeyBytes)
-    let bodyByteCount = sqlite3_column_int64(statement, 1)
-    guard bodyByteCount >= 0,
-      bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
-    else {
-      return .oversized(queryKey: rowQueryKey, byteCount: bodyByteCount)
+    let byteCount = try liveQueryResultByteCountWithoutTransaction(queryID: sqlite3_column_int64(statement, 1))
+    guard byteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes) else {
+      return .oversized(queryKey: rowQueryKey, byteCount: byteCount)
     }
-    guard let json: String = try selectScalar(
-      "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-      [.text(rowQueryKey)]
-    ),
-      let data = json.data(using: .utf8)
-    else {
+    guard let result = try liveQueryResultWithoutTransaction(key: rowQueryKey) else {
       throw persistenceError(
         operation: "read local persistence migration live-query result",
-        message: "Live-query result '\(rowQueryKey)' disappeared before it could be decoded."
-      )
-    }
-    let result = try decoder.decode(InstantPersistedLiveQueryResult.self, from: data)
-    guard result.key == rowQueryKey else {
-      throw persistenceError(
-        operation: "read local persistence migration live-query result",
-        message: "The decoded live-query result did not match its SQLite identity."
+        message: "Live-query result '\(rowQueryKey)' disappeared before it could be read."
       )
     }
     return .decoded(result)
@@ -7070,17 +6882,15 @@ public actor SQLitePersistenceStore {
       if let preparedQueryResults {
         // #932: worked out before the gate, under the query-result revision this commit checked above.
         for save in preparedQueryResults {
-          try applyLiveQueryResultSaveWithoutTransaction(save, deferringJSON: true)
+          try applyLiveQueryResultSaveWithoutTransaction(save)
         }
       } else {
         for result in queryResults {
-          try saveLiveQueryResultWithoutTransaction(result, deferringJSON: true)
+          try saveLiveQueryResultWithoutTransaction(result)
         }
       }
       serverApplyMetrics.commitResultOwnershipRowReadCount += liveQueryOwnershipRowReadCount - ownershipRowReadsBefore
       serverApplyMetrics.commitResultValueEncodeCount += liveQueryResultValueEncodeCount - valueEncodesBefore
-      // A query that keeps refreshing writes its newest result once per interval (#566), when one is set (#1426).
-      try flushDeferredLiveQueryResultsWithoutTransaction(dueAt: metadataUpdatedAt.milliseconds)
       clock.end(\.resultsMilliseconds)
       try saveMetadataValueWithoutTransaction(
         metadataValue,
@@ -7120,8 +6930,6 @@ public actor SQLitePersistenceStore {
     var clock = body.clock
     clock.end(\.sqliteCommitMilliseconds)
     var commit = body.commit
-    // A result whose JSON write waited is written within one interval, if no later refresh writes it first (#566).
-    scheduleDeferredLiveQueryResultFlushIfNeeded()
     if commit == nil {
       serverApplyMetrics.staleCommitCount += 1
     } else if let commit {
@@ -11978,11 +11786,9 @@ public actor SQLitePersistenceStore {
     for replacements: [InstantLiveQueryResultReplacement]
   ) throws -> InstantLiveQueryReplacementRetractions {
     let replacementKeys = Set(replacements.map(\.key))
+    // The facts each key's result holds once the replacements before it in this batch are applied. A key's first
+    // replacement is compared with its stored rows instead (#1426).
     var prospective: [String: [InstantLiveTripleIdentity: InstantTriple]] = [:]
-    for key in replacementKeys {
-      let triples = try liveQueryResultWithoutTransaction(key: key)?.triples ?? []
-      prospective[key] = Self.indexLiveTriples(triples)
-    }
     let selections = try liveQuerySelectionsWithoutTransaction()
     let attributesByID = selections.attributesByID
     // The single-value attributes each replacement's query selects, by namespace, for the keys that vouch for them
@@ -12002,9 +11808,14 @@ public actor SQLitePersistenceStore {
     var removedFromVouchingResults: Set<InstantLiveTripleIdentity> = []
     for replacement in replacements {
       let next = Self.indexLiveTriples(replacement.triples)
-      let previous = prospective[replacement.key] ?? [:]
+      let leaving: [(identity: InstantLiveTripleIdentity, triple: InstantTriple)]
+      if let previous = prospective[replacement.key] {
+        leaving = previous.compactMap { identity, triple in next[identity] == nil ? (identity, triple) : nil }
+      } else {
+        leaving = try storedLiveQueryFactsLeavingWithoutTransaction(key: replacement.key, next: replacement.triples)
+      }
       let nextEntityIDs = Set(next.keys.map(\.entityID))
-      for (identity, triple) in previous where next[identity] == nil {
+      for (identity, triple) in leaving {
         removed[identity] = triple
         if !nextEntityIDs.contains(identity.entityID) {
           departed.insert(identity)
@@ -13741,10 +13552,10 @@ public actor SQLitePersistenceStore {
     }
     for row in removedRows where decodesResults && !releasingQueryKeys.contains(row.queryKey) {
       // #1129: a result read and decoded on the read connection before the gate is used while its row is the one it
-      // read and no newer result waits for its JSON write; the decode held the gate 265 ms for the `$files` list.
+      // read; the decode held the gate 265 ms for the `$files` list.
       let read = predecoded[row.queryKey].flatMap { read in
         read.rowTripleCount == row.tripleCount && read.rowUpdatedAtMilliseconds == row.updatedAtMilliseconds
-          && liveQueryResultJSON.deferred[row.queryKey] == nil ? read.result : nil
+          ? read.result : nil
       }
       guard let result = try read ?? liveQueryResultWithoutTransaction(key: row.queryKey) else {
         // As before #654: a row whose result cannot be read stays, and releases nothing.
@@ -13794,7 +13605,6 @@ public actor SQLitePersistenceStore {
           [.text(queryKey)]
         )
       }
-      try forgetLiveQueryResultJSONStateWithoutTransaction(queryKey)
     }
     try collectUnloadedLiveQueryResultsWithoutTransaction(
       policy: policy,
@@ -14286,32 +14096,18 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  /// Keeps the newest result stored under `key`, a closed query's, for its next subscription (#1006).
+  /// Keeps the newest result stored under `key`, a closed query's, for its next subscription (#1006). The copy is the
+  /// result its rows hold, as JSON built inside SQLite (``InstantStoredLiveQueryResultRows/unloadedCopySQL``): the
+  /// ownership rows go with the result's row, and the unloaded table keeps one row per closed query, written once as it
+  /// closes (#1426).
   private func unloadLiveQueryResultWithoutTransaction(key: String) throws {
-    // The stored row is the newest unless a JSON write waits (#566); copying it skips encoding the result again.
-    if liveQueryResultJSON.deferred[key] == nil {
-      try execute(
-        """
-        INSERT OR REPLACE INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
-        SELECT query_key, triple_count, updated_at_ms, json FROM instant_live_query_results WHERE query_key = ?
-        """,
-        [.text(key)]
-      )
-      if sqlite3_changes(connection.raw) == 1 { return }
-    }
-    guard let result = try liveQueryResultWithoutTransaction(key: key) else { return }
     try execute(
-      """
-      INSERT OR REPLACE INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
-      VALUES (?, ?, ?, ?)
-      """,
-      [
-        .text(result.key),
-        .int(Int64(result.triples.count)),
-        .int(result.updatedAt.milliseconds),
-        .text(try encode(result)),
-      ]
+      InstantStoredLiveQueryResultRows.unloadedCopySQL,
+      [.text(key), .text(InstantStoredLiveQueryResultRows.unstoredFactTransactionID)]
     )
+    if sqlite3_changes(connection.raw) == 1 {
+      liveQueryResultJSONWriteStats.writes += 1
+    }
   }
 
   /// Collects unloaded results by the pruning policy, oldest first, as upstream's `PersistedObject` GC collects
@@ -14453,37 +14249,27 @@ public actor SQLitePersistenceStore {
           .subtracting(limited.map(InstantLiveTripleIdentity.init))
       }
       try invalidateDeclaredRelationStorageMarkerIfNeeded(forAttributeIDs: Set(result.triples.map(\.attributeID)))
-      // A key lives in one of the two tables (#1006).
+      // A key lives in one of the two tables (#1006). The header comes back now and the facts with the chunks, so until
+      // they finish the result holds the facts reloaded so far; a server answer meanwhile replaces it whole, and its
+      // new header ends the reload (`row` names the header the chunks check).
       try execute("DELETE FROM instant_live_query_results WHERE query_key = ?", [.text(key)])
-      if unownedFacts.isEmpty {
-        // The moved row keeps its count and time, so `row` names it.
-        try execute(
-          """
-          INSERT INTO instant_live_query_results (query_key, triple_count, updated_at_ms, json)
-          SELECT query_key, triple_count, updated_at_ms, json FROM instant_unloaded_live_query_results WHERE query_key = ?
-          """,
-          [.text(key)]
-        )
-      } else {
-        var limitedResult = result
-        limitedResult.triples = limited
-        try execute(
-          "INSERT INTO instant_live_query_results (query_key, triple_count, updated_at_ms, json) VALUES (?, ?, ?, ?)",
-          [
-            .text(key),
-            .int(Int64(limited.count)),
-            .int(result.updatedAt.milliseconds),
-            .text(try encode(limitedResult)),
-          ]
-        )
+      if !unownedFacts.isEmpty {
         row = (limited.count, result.updatedAt.milliseconds)
       }
+      try execute(
+        """
+        INSERT INTO instant_live_query_results (query_key, triple_count, updated_at_ms, page_info_json, json)
+        VALUES (?, ?, ?, ?, '')
+        """,
+        [
+          .text(key),
+          .int(Int64(row.tripleCount)),
+          .int(row.updatedAtMilliseconds),
+          try result.pageInfo.map { SQLiteBinding.text(try encode($0)) } ?? .null,
+        ]
+      )
       try execute("DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?", [.text(key)])
       liveQueryResultJSONWriteStats.saves += 1
-      liveQueryResultJSON.deferred[key] = nil
-      liveQueryResultJSON.writtenAt[key] = result.updatedAt.milliseconds
-      liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
-      try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       return InstantUnloadedLiveQueryResultReloadStart(
         result: result,
@@ -16165,7 +15951,6 @@ public actor SQLitePersistenceStore {
     }
     try execute("BEGIN IMMEDIATE TRANSACTION")
     activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
-    let liveQueryResultJSONBeforeTransaction = liveQueryResultJSON
     do {
       let value = try body()
       try execute("COMMIT")
@@ -16176,7 +15961,6 @@ public actor SQLitePersistenceStore {
     } catch {
       try? execute("ROLLBACK")
       activeOutboxQuarantineIssueBatch = nil
-      liveQueryResultJSON = liveQueryResultJSONBeforeTransaction
       // Marker helpers participate in the same transaction but live on the actor. A rollback must
       // discard their speculative cache so the next writer reloads the durable marker instead of
       // trusting state that SQLite did not commit.
@@ -19143,18 +18927,89 @@ public actor SQLitePersistenceStore {
     ) != 0
   }
 
+  /// The stored result of `key`, read from its header and its ownership rows (#1426).
   private func liveQueryResultWithoutTransaction(
     key: String
   ) throws -> InstantPersistedLiveQueryResult? {
-    // A result whose JSON write waits is newer than its stored JSON (#566).
-    if let deferred = liveQueryResultJSON.deferred[key] {
-      return deferred
-    }
-    let results: [InstantPersistedLiveQueryResult] = try selectJSON(
-      "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-      [.text(key)]
+    guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return nil }
+    var statement: OpaquePointer?
+    try prepare(InstantStoredLiveQueryResultRows.factsSQL, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(
+      [.int(header.queryID), .text(InstantStoredLiveQueryResultRows.unstoredFactTransactionID)],
+      to: statement
     )
-    return results.first
+    guard let statement else {
+      throw persistenceError(operation: "read a stored live-query result", message: "SQLite prepared no statement.")
+    }
+    do {
+      return try InstantStoredLiveQueryResultRows.result(key: key, header: header, facts: statement, decoder: decoder)
+    } catch let failure as InstantFactRowReader.ReadFailure {
+      throw persistenceError(operation: failure.operation, message: failure.message)
+    }
+  }
+
+  /// The header of `key`'s stored result, or nil when none is stored (#1426).
+  private func liveQueryResultHeaderWithoutTransaction(
+    key: String
+  ) throws -> InstantStoredLiveQueryResultRows.Header? {
+    var statement: OpaquePointer?
+    try prepare(InstantStoredLiveQueryResultRows.headerSQL, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind([.text(key)], to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW, let statement else {
+      throw persistenceError(operation: "read a stored live-query result", message: lastErrorMessage())
+    }
+    return try InstantStoredLiveQueryResultRows.Header(row: statement, decoder: decoder)
+  }
+
+  /// The facts `key`'s stored result holds that `next` does not (#1426). Its ownership rows are compared with `next` by
+  /// fingerprint, as a save's ownership diff compares them, and only the rows that leave are decoded, each with the
+  /// stamp the store holds for it, as ``liveQueryResultWithoutTransaction(key:)`` reads it. Until #1426 the retraction
+  /// read the stored result whole: the newest kept in memory while its JSON waited, and otherwise its JSON, decoded.
+  private func storedLiveQueryFactsLeavingWithoutTransaction(
+    key: String,
+    next: [InstantTriple]
+  ) throws -> [(identity: InstantLiveTripleIdentity, triple: InstantTriple)] {
+    guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return [] }
+    var diff = try LiveQueryOwnershipDiff(next: next, encoder: encoder)
+    try liveQueryOwnershipRowsWithoutTransaction(queryKey: key, into: &diff)
+    try diff.finish()
+    guard !diff.removed.isEmpty else { return [] }
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT tx_id, tx_time_ms FROM instant_triples
+      WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+      LIMIT 1
+      """,
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    var leaving: [(identity: InstantLiveTripleIdentity, triple: InstantTriple)] = []
+    leaving.reserveCapacity(diff.removed.count)
+    for row in diff.removed {
+      sqlite3_reset(statement)
+      sqlite3_clear_bindings(statement)
+      try bind([.text(row.entityID), .text(row.attributeID), .text(row.valueJSON)], to: statement)
+      var txID = InstantStoredLiveQueryResultRows.unstoredFactTransactionID
+      var txTime: Int64 = 0
+      if sqlite3_step(statement) == SQLITE_ROW, let storedTxID = sqlite3_column_text(statement, 0) {
+        txID = String(cString: storedTxID)
+        txTime = sqlite3_column_int64(statement, 1)
+      }
+      let triple = InstantTriple(
+        entityID: row.entityID,
+        attributeID: row.attributeID,
+        value: try decoder.decode(InstantValue.self, from: Data(row.valueJSON.utf8)),
+        txID: txID,
+        txTime: InstantTimestamp(milliseconds: txTime)
+      )
+      leaving.append((InstantLiveTripleIdentity(triple), triple))
+    }
+    return leaving
   }
 
   private func liveQueryTripleHasOwnerWithoutTransaction(
@@ -19998,22 +19853,15 @@ public actor SQLitePersistenceStore {
     return attributes
   }
 
-  private func saveLiveQueryResultWithoutTransaction(
-    _ result: InstantPersistedLiveQueryResult,
-    deferringJSON: Bool = false
-  ) throws {
-    let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
-      result,
-      previousFacts: nil,
-      encodingJSONIfWritten: nil
-    )
-    try applyLiveQueryResultSaveWithoutTransaction(prepared.save, deferringJSON: deferringJSON)
+  private func saveLiveQueryResultWithoutTransaction(_ result: InstantPersistedLiveQueryResult) throws {
+    let prepared = try preparedLiveQueryResultSaveWithoutTransaction(result, previousFacts: nil)
+    try applyLiveQueryResultSaveWithoutTransaction(prepared.save)
   }
 
   /// Works out the saves of a server apply's restated results before the apply takes the operation gate (#932); nil
   /// when the query-result revision moved since `expectedQueryResultRevision`. The commit checks the same revision, and
   /// every writer of a result's ownership rows bumps it in the same transaction, so the rows read here are the rows
-  /// the commit replaces. Each save's JSON is encoded here too when, as things stand, the commit would write it.
+  /// the commit replaces.
   func prepareLiveQueryResultSaves(
     _ results: [InstantPersistedLiveQueryResult],
     expectedQueryResultRevision: Int64
@@ -20029,8 +19877,7 @@ public actor SQLitePersistenceStore {
       for result in results {
         let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
           result,
-          previousFacts: storedFactsByKey[result.key],
-          encodingJSONIfWritten: storedFactsByKey[result.key] == nil ? true : nil
+          previousFacts: storedFactsByKey[result.key]
         )
         storedFactsByKey[result.key] = prepared.storedFacts
         saves.append(prepared.save)
@@ -20040,12 +19887,10 @@ public actor SQLitePersistenceStore {
   }
 
   /// One result's save against the rows `previousFacts` own (an earlier save of the same key in this frame), or the
-  /// stored rows when nil, and the facts it stores. With `encodingJSONIfWritten`, the JSON too when a deferring save
-  /// would write it now.
+  /// stored rows when nil, and the facts it stores.
   private func preparedLiveQueryResultSaveWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult,
-    previousFacts knownPreviousFacts: [InstantTriple]?,
-    encodingJSONIfWritten: Bool?
+    previousFacts knownPreviousFacts: [InstantTriple]?
   ) throws -> (save: InstantPreparedLiveQueryResultSave, storedFacts: [InstantTriple]) {
     let attributeIDs = Set(result.triples.map(\.attributeID))
     let attributes = try attributesForLiveResultSaveWithoutTransaction()
@@ -20063,145 +19908,56 @@ public actor SQLitePersistenceStore {
       try liveQueryOwnershipRowsWithoutTransaction(queryKey: result.key, into: &ownership)
     }
     try ownership.finish()
-    var json: String?
-    if encodingJSONIfWritten == true,
-      try liveQueryResultJSONWriteWithoutTransaction(
-        result,
-        ownershipUnchanged: ownership.isUnchanged,
-        deferringJSON: true
-      ).writesJSON
-    {
-      json = try encode(result)
-    }
     return (
       InstantPreparedLiveQueryResultSave(
         result: result,
         attributeIDs: attributeIDs,
         removedOwnership: ownership.removed,
-        insertedOwnership: ownership.inserted,
-        json: json
+        insertedOwnership: ownership.inserted
       ),
       Array(result.triples)
     )
   }
 
-  /// Whether saving `result` writes its JSON now (#566), with what the decision read.
-  ///
-  /// A deferring save leaves a changed result's JSON to wait for the app's flush, an unsubscribe or the close (#1426),
-  /// or one interval when a test sets one. Every five minutes (#1123) each changed result's whole JSON was written
-  /// again: over five minutes of a recording's list refreshes, 9.7 of a 50-row refresh's 20.7 log frames, the one
-  /// write a refresh made that followed the result instead of the change. Nothing is lost by waiting: the ownership
-  /// rows hold the result exactly after every save, its marker holds its page info, and the next launch rebuilds a
-  /// result whose write still waits from them (`repairDeferredLiveQueryResultJSON()`).
-  private func liveQueryResultJSONWriteWithoutTransaction(
-    _ result: InstantPersistedLiveQueryResult,
-    ownershipUnchanged: Bool,
-    deferringJSON: Bool
-  ) throws -> (writesJSON: Bool, storedJSONIsCurrent: Bool) {
-    let key = result.key
-    let rowExists = try selectScalar(
-      "SELECT 1 FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-      [.text(key)]
-    ) != nil
-    // Only an unchanged result needs the stored page info: a changed one is not stored whatever it holds.
-    if rowExists, ownershipUnchanged, liveQueryResultJSON.writtenPageInfo[key] == nil,
-      liveQueryResultJSON.deferred[key] == nil
-    {
-      learnStoredLiveQueryResultJSONWithoutTransaction(key, at: result.updatedAt.milliseconds)
-    }
-    // The stored JSON already holds this result: the same facts and page info, and no newer result waits (#566).
-    let storedJSONIsCurrent = rowExists
-      && liveQueryResultJSON.deferred[key] == nil
-      && ownershipUnchanged
-      && liveQueryResultJSON.writtenPageInfo[key].map { $0 == result.pageInfo } == true
-    let writeWaits = deferringJSON && (liveQueryResultJSONWriteIntervalMilliseconds.map { interval in
-      liveQueryResultJSON.writtenAt[key].map { result.updatedAt.milliseconds - $0 < interval } ?? false
-    } ?? true)
-    return (!(rowExists && (storedJSONIsCurrent || writeWaits)), storedJSONIsCurrent)
-  }
-
-  /// Learns what the stored JSON of `key` holds when this process has not written it (#1426). Bootstrap leaves every
-  /// stored JSON current (it rebuilds the ones whose write waited), so its page info decides, with the ownership rows,
-  /// whether a save's result is already stored. A relaunch's answers restate every result, and without this each one
-  /// wrote its whole JSON again even when nothing in it had changed. The page info is read inside SQLite, as a stored
-  /// result's JSON can be megabytes; when it cannot be read, nothing is learned and the result counts as changed.
-  private func learnStoredLiveQueryResultJSONWithoutTransaction(_ key: String, at milliseconds: Int64) {
-    let pageInfo: InstantQueryPageInfo?
-    do {
-      let stored = try selectScalar(
-        "SELECT json_extract(json, '$.pageInfo') FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
-        [.text(key)]
-      )
-      pageInfo = try stored.map { try decoder.decode(InstantQueryPageInfo.self, from: Data($0.utf8)) }
-    } catch {
-      return
-    }
-    liveQueryResultJSON.writtenPageInfo[key] = pageInfo
-    liveQueryResultJSON.writtenAt[key] = liveQueryResultJSON.writtenAt[key] ?? milliseconds
-  }
-
-  private func applyLiveQueryResultSaveWithoutTransaction(
-    _ save: InstantPreparedLiveQueryResultSave,
-    deferringJSON: Bool
-  ) throws {
+  /// Writes a stored result's save (#1426): its header and the ownership rows that leave and join, in the caller's
+  /// transaction. That is the whole result: its facts are its ownership rows, as the store holds them, and the header
+  /// holds its count, its time and its page info. Until #1426 the header also held the whole result as JSON, written
+  /// every five minutes while it changed (#1123) and then at the app's flush, with the newest result kept in memory
+  /// meanwhile and a kill repaired from the ownership rows at the next launch (#566): over five minutes of a recording's
+  /// list refreshes, 9.7 of a 50-row refresh's 20.7 log frames, and every update of the header's count and time read the
+  /// whole JSON, its overflow pages included (#1440).
+  private func applyLiveQueryResultSaveWithoutTransaction(_ save: InstantPreparedLiveQueryResultSave) throws {
     let result = save.result
     try invalidateDeclaredRelationStorageMarkerIfNeeded(forAttributeIDs: save.attributeIDs)
     // A saved result supersedes the copy a prune unloaded (#1006): a key lives in one of the two tables.
     try execute("DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?", [.text(result.key)])
     liveQueryResultJSONWriteStats.saves += 1
     let key = result.key
-    let removedOwnership = save.removedOwnership
-    let insertedOwnership = save.insertedOwnership
-    let decision = try liveQueryResultJSONWriteWithoutTransaction(
-      result,
-      ownershipUnchanged: removedOwnership.isEmpty && insertedOwnership.isEmpty,
-      deferringJSON: deferringJSON
+    let pageInfo = try result.pageInfo.map { SQLiteBinding.text(try encode($0)) } ?? .null
+    // The count and time stay exact: #441's refusal resolution reads when the server last showed a fact. `json` is
+    // cleared too, for a row an older version wrote after this one converted the store.
+    try execute(
+      """
+      INSERT INTO instant_live_query_results
+        (query_key, triple_count, updated_at_ms, page_info_json, json)
+      VALUES (?, ?, ?, ?, '')
+      ON CONFLICT(query_key) DO UPDATE SET
+        triple_count = excluded.triple_count,
+        updated_at_ms = excluded.updated_at_ms,
+        page_info_json = excluded.page_info_json,
+        json = ''
+      """,
+      [
+        .text(key),
+        .int(Int64(result.triples.count)),
+        .int(result.updatedAt.milliseconds),
+        pageInfo,
+      ]
     )
-    let storedJSONIsCurrent = decision.storedJSONIsCurrent
-    if !decision.writesJSON {
-      // The row's count and time stay exact: #441's refusal resolution reads when the server last showed a fact.
-      try execute(
-        "UPDATE instant_live_query_results SET triple_count = ?, updated_at_ms = ? WHERE query_key = ?",
-        [.int(Int64(result.triples.count)), .int(result.updatedAt.milliseconds), .text(key)]
-      )
-      if !storedJSONIsCurrent {
-        liveQueryResultJSON.deferred[key] = result
-        try markDeferredLiveQueryResultJSONWithoutTransaction(
-          key,
-          pageInfo: result.pageInfo,
-          at: result.updatedAt.milliseconds
-        )
-      }
-    } else {
-      let json = try save.json ?? encode(result)
-      try execute(
-        """
-        INSERT INTO instant_live_query_results
-          (query_key, triple_count, updated_at_ms, json)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(query_key) DO UPDATE SET
-          triple_count = excluded.triple_count,
-          updated_at_ms = excluded.updated_at_ms,
-          json = excluded.json
-        """,
-        [
-          .text(key),
-          .int(Int64(result.triples.count)),
-          .int(result.updatedAt.milliseconds),
-          .text(json),
-        ]
-      )
-      liveQueryResultJSONWriteStats.writes += 1
-      liveQueryResultJSONWriteStats.bytes += json.utf8.count
-      liveQueryResultJSON.deferred[key] = nil
-      liveQueryResultJSON.writtenAt[key] = result.updatedAt.milliseconds
-      liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
-      try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
-    }
     try applyLiveQueryOwnershipChangesWithoutTransaction(
       key: key,
-      removed: removedOwnership,
-      inserted: insertedOwnership
+      removed: save.removedOwnership,
+      inserted: save.insertedOwnership
     )
   }
 
