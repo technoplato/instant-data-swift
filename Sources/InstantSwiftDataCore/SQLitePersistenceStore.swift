@@ -1330,6 +1330,8 @@ public actor SQLitePersistenceStore {
   /// Query-cache answers encoded as JSON (#1498), on this actor or off it: for tests and the release's measurements.
   private let queryCacheAnswerEncodes = OSAllocatedUnfairLock(initialState: 0)
   private var optimisticEffectFingerprintCount = 0
+  /// How many forward wire-intent fingerprints the outbox row write computed for the mutation it saves (#1491).
+  private var savedWireIntentFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1444,6 +1446,11 @@ public actor SQLitePersistenceStore {
   /// How many optimistic-effect fingerprints this store has computed (#1007).
   package func optimisticEffectFingerprintCountForTesting() -> Int {
     optimisticEffectFingerprintCount
+  }
+
+  /// How many forward wire-intent fingerprints the outbox row write computed for the mutations it saved (#1491).
+  package func savedWireIntentFingerprintCountForTesting() -> Int {
+    savedWireIntentFingerprintCount
   }
 
   /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one encodes the mutation's transaction and
@@ -19722,7 +19729,6 @@ public actor SQLitePersistenceStore {
     encodedBody: (body: String, lifecycle: String)? = nil
   ) throws {
     let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
-    let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
     let durableMutation = mutation
     var statement: OpaquePointer?
     try prepare(
@@ -19763,6 +19769,15 @@ public actor SQLitePersistenceStore {
       ? sqlite3_column_int64(statement, 5) != 0
       : false
     finishStatement(statement)
+    // The forward wire intent decides only a row that already holds a server acceptance or was offered to delivery
+    // (#1491): a new write's row holds neither, so it is not fingerprinted (a sorted-key encode and a SHA-256 a write).
+    let candidateWireFingerprint: String?
+    if existingAcceptanceFingerprint != nil || existingDeliveryStarted {
+      savedWireIntentFingerprintCount += 1
+      candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
+    } else {
+      candidateWireFingerprint = nil
+    }
     if case .publicPersistence = receiptWriteAuthority,
       existingReceiptFingerprint != nil,
       candidateFingerprint != existingReceiptFingerprint

@@ -1,3 +1,21 @@
+## 2026-10-31 16:08:46 EDT — scribe `655e5f00eb2fe4eff2ab8a0a9bb4059b43520ce2`
+Fix (#1508): the recording Live Activity drops its 60 s keep-alive and its 90 s stale date (Michael chose option 1); new words still go every 5 s behind and 30 s in front and state at once, the clock counts on the device by itself, and about 60 of the 107 updates an hour go away.
+
+## 2026-10-31 18:34:51 EDT — scribe `85839caa580e8b53eaa0b6b08984543dfbd42391`
+Telemetry (#1507 a) and recovery (#1510, #1463): a diagnostics spool's compaction counts the bytes it rewrites under diagnostics.spool in the energy ledger (red 1b9914513, green 2b5961326; on build 208 the collector lane's compactions wrote 1.29 MB a minute that no writer named), and scripts/recovery/recover-recording-from-outbox.mjs inflates a body instant-data-swift stores compressed, text bodies still read (red c070c27b4, green 6ade1b1c9). Change log e335051c6.
+
+## 2026-10-31 17:58:36 EDT — scribe `334c150a2256dff65a8d82e71d3d1d9a4350c4ef`
+Perf (#1503, #1506): landing 1 of perf-waste-fixes. Each audio chunk sent and each server message on the live transcription socket is counted in the energy ledger (speech.stream-send, speech.stream-receive) instead of a device-log line: 82% and 8.4% of the phone's 10-31 log, 63-70 MB an hour of recording (red 682941c7d, green 10fa5b026). The chapters query filters retiredAtMs null on the server, 225 KB -> 25 KB a restated frame for the recording chaptered live, and a held audio-keeper pass reads no audio rows (red c21743187, green b5e8b37bd). #1507 (e) documented (dcb21c180).
+
+## 2026-10-31 17:48:43 EDT — scribe `046ce3d54fc28b6875c485e70f2bf81131241649`
+Release (#1482): Scribe 0.1 (212): instant-data-swift pinned exactly at 1.9.60 (pin 8a137eb52, cut 1489bdecd, change log 4c18f316a), carrying #1491; What's New 210 gets #1495's interleaved A/B.
+
+## 2026-10-31 17:48:43 EDT — instant-data-swift `26c43bccc99b246b4a015f2d1b37be9b0f64b186`
+Release (#1482): v1.9.60 tagged on a00c1618 (release document cbda8b88, change log a00c1618), a release branch off v1.9.59 with #1491's four commits cherry-picked from main (99a46951), merged here: a local write does less hashing, tight-loop transact p50 0.476 -> 0.389 ms. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change.
+
+## 2026-10-31 17:39:13 EDT — instant-data-swift `99a46951afc3d9e270e679190f6a6358a5cdf889`
+Perf (#1491): a save's two SHA-256 digests write their hex into one string (red cd3faf28, green d564a099), and a new write's row write no longer computes a forward wire-intent fingerprint it never reads (red aa18c4af, green 4ff5e5c4); ab-commits.sh builds its trees side by side and runs a test filter at each commit; docs/audits/2026-10-31-transact-hold-1491.md. One job on the Mac mini (release): tight-loop transact 0.476 -> 0.389 ms (-18%); after merging main, 638 tests in 31 suites passed (laptop, debug, 20 known issues).
+
 ## 2026-10-31 16:18:36 EDT — scribe `bf0364538cb2998fb275d337b48b62bb10477475`
 Release (#1482): Scribe 0.1 (211): instant-data-swift pinned exactly at 1.9.59 (pin db21c0a90, cut d8f028b3f, change log d40dc5a42), carrying #1493; with #1501 since 210.
 

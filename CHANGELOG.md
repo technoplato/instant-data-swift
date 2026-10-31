@@ -10,6 +10,84 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 5:44:09 p.m. EDT — `cbda8b883012` release(#1482): v1.9.60: a local write does less hashing
+
+- **Implementation commit:** `cbda8b883012f115b2df6783ea6d071bc3e33de4`
+- **Change:** release(#1482): v1.9.60: a local write does less hashing
+- **Details:**
+  - The release document for v1.9.60, branched from v1.9.59 (1d9ba2ba) with #1491's four commits cherry-picked from main (99a46951), for Scribe build 212.
+  - No API, storage or conversion change. The #1510 write recorder (d3b08d41) is not in it: its owner has not marked it ready.
+- **Files:**
+  - `docs/releases/v1.9.60.md` — #1482 the release: what #1491 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-5@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:42:37 p.m. EDT — `221573c63b06` test(#1491): ab-commits.sh builds its trees side by side and runs a test filter at each commit (--test-filter)
+
+- **Implementation commit:** `221573c63b06dc6f098d6700577611ddaf9ecc0d`
+- **Change:** test(#1491): ab-commits.sh builds its trees side by side and runs a test filter at each commit (--test-filter)
+- **Details:**
+  - 1e822082 before it: arithmetic loops, since macOS's seq 1 0 prints 1 and 0.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 parallel builds, --test-filter, arithmetic loops
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:37 p.m. EDT — `4ff5e5c49161` perf(#1491): green: a row write fingerprints the forward wire intent only for a row that holds an acceptance or was offered
+
+- **Implementation commit:** `4ff5e5c49161852ad87e445a872b179d790ade3f`
+- **Change:** perf(#1491): green: a row write fingerprints the forward wire intent only for a row that holds an acceptance or was offered
+- **Details:**
+  - The candidate's wire-intent fingerprint decides only a row holding a server acceptance or offered to delivery; for any other row both checks pass as before. The stored body's decode is unchanged, so a corrupt stored body fails the save as before.
+  - Verified on the Mac mini in one job (perf-gate-1491-final, release, 16:11-16:37 EDT): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path, supersession and encode suites, 125 tests in 8 suites passed with 15 known issues as on main; the wire red aa18c4af fails its count and 4ff5e5c4 passes. Tight-loop transact p50 (cross-SDK runtime benchmark, 300 transacts, three runs): 13cdf499 0.476 ms, 02b7cf8a 0.452, aa18c4af 0.411, 4ff5e5c4 0.389 (-18%).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 saveOutboxMutationWithoutTransaction computes the candidate's wire intent lazily
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:36 p.m. EDT — `aa18c4af005c` test(#1491): red: a new local write's row write fingerprints no wire intent (today one a write, never read)
+
+- **Implementation commit:** `aa18c4af005c42d67512e18d2c1869c27c38f82d`
+- **Change:** test(#1491): red: a new local write's row write fingerprints no wire intent (today one a write, never read)
+- **Details:**
+  - A store counter beside optimisticEffectFingerprintCountForTesting; 10 new writes computed 10 wire-intent fingerprints.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 savedWireIntentFingerprintCountForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 a new write fingerprints no wire intent
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:35 p.m. EDT — `d564a099ed75` perf(#1491): green: a SHA-256 digest's hex is written into its string's storage, not formatted a byte at a time
+
+- **Implementation commit:** `d564a099ed75e2e809f7c0a2727232e81e668c10`
+- **Change:** perf(#1491): green: a SHA-256 digest's hex is written into its string's storage, not formatted a byte at a time
+- **Details:**
+  - The digest's bytes are read in place and their lowercase hex written into one string; the same text. The test counts what the hex adds to the hash's own allocations (about 70, CryptoKit's).
+  - Verified on the Mac mini in one job (perf-gate-1491-final, release, 16:11-16:37 EDT): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path, supersession and encode suites, 125 tests in 8 suites passed with 15 known issues as on main; the wire red aa18c4af fails its count and 4ff5e5c4 passes. Tight-loop transact p50 (cross-SDK runtime benchmark, 300 transacts, three runs): 13cdf499 0.476 ms, 02b7cf8a 0.452, aa18c4af 0.411, 4ff5e5c4 0.389 (-18%).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — #1491 instantSHA256HexDigest without String(format:)
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 the hex's allocations beyond the hash's
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:35 p.m. EDT — `cd3faf28030f` test(#1491): red: a SHA-256 digest is its lowercase hex written in one allocation (today 32 String(format:) strings joined)
+
+- **Implementation commit:** `cd3faf28030f1d6358f0736ad6109d4247d39677`
+- **Change:** test(#1491): red: a SHA-256 digest is its lowercase hex written in one allocation (today 32 String(format:) strings joined)
+- **Details:**
+  - Red on the laptop (debug, Xcode beta; the green's commit message says the Mac mini, which is wrong): one digest made 333 allocations; the digests of two known inputs already matched.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 the digest's text and its allocations
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 4:16:17 p.m. EDT — `0d24c6261b5f` release(#1482): v1.9.59: a query observation is one stream
 
 - **Implementation commit:** `0d24c6261b5f4cfa7f756bd2ec5e4d0e75a1f423`
