@@ -1,3 +1,9 @@
+## 2026-10-31 05:27:40 EDT — instant-data-swift `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
+Fix (#1426, #1440): a stored live-query result is its ownership rows, its facts and a narrow header; every refresh writes exactly its diff, no result's JSON waits, and the header's update reads no JSON. Ships as 1.9.56.
+
+## 2026-10-31 00:17:19 EDT — instant-data-swift `d331eb02bf592547620d593179829fa27514e1ec`
+Test (#1426): red: a stored result is what the store holds in a running process and after a kill; its header holds no JSON.
+
 ## 2026-10-31 05:25:34 EDT — scribe `764026d3b6d257925244c2da7f6f8a95e1220ffa`
 Docs (#1477): ADR 0079 section 12.1: the second path to the model, the loud stop, and the backfill: 99.89% of the missed lines labeled.
 

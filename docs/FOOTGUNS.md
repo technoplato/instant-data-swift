@@ -102,6 +102,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F63](#f63) | Write only the fields that changed, and keep partial writes collapsible | #1245, #1253, #1255 | none yet |
 | [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
 | [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #296, #932 | always |
+| [F66](#f66) | Keep one stored form of a result: a copy beside its rows must be rewritten, deferred or repaired | #566, #1123, #1426, #1440 | always |
 
 ## Read path
 
@@ -1084,13 +1085,15 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 
 - Symptom: a claim or an acceptance that changes a delivery column's size rewrites the row's whole overflow chain:
   SQLite overwrites a record in place only when its payload size is unchanged. `instant_outbox` stored its delivery
-  columns after `json` until #1435; `instant_live_query_results` keeps its count and time beside the result JSON.
+  columns after `json` until #1435; `instant_live_query_results` kept its count and time beside the result JSON until
+  #1426, so every refresh's update of the two read the whole JSON, its overflow pages included (#1440).
 - Measured cost: 55% of the claim and acceptance frames in a device store copy's write-ahead log (#1245); in the
   library's harness a claim wrote 4.17 log frames and an acknowledgement 6.17, for changes of 2 and 4 pages (#1435).
 - Rule: keep columns that change on every step in a narrow row of their own, or in fixed-size encodings before the
   blob, so a step rewrites one leaf page and never the overflow chain. Since #1435 an outbox write's body lives in
-  `instant_outbox_bodies`, without the status, server transaction id and confirmation source its row holds.
-- Issues: #1245, #1115, #1123, #1435.
+  `instant_outbox_bodies`, without the status, server transaction id and confirmation source its row holds. Since
+  #1426 a stored live-query result's header holds no JSON (F66).
+- Issues: #1245, #1115, #1123, #1435, #1426, #1440.
 - Guard: `Tests/InstantSwiftDataCoreTests/InstantOutboxNarrowRowTests.swift:
   StorageIOExercises/aClaimAndAnAcknowledgementWriteNoPageOfTheBody` (always; on `StorageIOWriteCycle`, one write at a
   time and overlapping, a claim writes only the row's leaf and the delivery index, an acknowledgement those, the
@@ -1210,6 +1213,30 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   (`_applyOptimisticUpdates`), in memory; this library keeps one materialized store and replays durable receipts under
   its operation gate, so the same queue-sized work costs disk and the gate. The reduction exists to keep it off the
   common frame.
+
+<a id="f66"></a>
+#### F66. Keep one stored form of a result: a copy beside its rows must be rewritten, deferred or repaired
+
+- Symptom: a stored live-query result held its facts twice, as ownership rows (which facts it holds) that every
+  refresh's diff kept exact, and as one JSON blob of the whole result. The blob followed the result, not the change:
+  it was written whole every five minutes while the result changed (#1123), then kept in memory until the app's flush
+  with a marker for its page info and repaired from the ownership rows after a kill (1.9.54), and every refresh's
+  update of its row's count and time read it whole (#1440). A reader in a running process and a reader after a kill
+  could get different results, and every policy for the copy (each write, an interval, a flush, a repair) either wrote
+  what did not change or delayed what did.
+- Measured cost: over five minutes of a recording's list refreshes, three 50-row lists wrote 93.4 KB a refresh with
+  the five-minute rewrite against 57.7 KB without it, and a relaunch's unchanged answers 1,248 KB against 24.7 KB
+  (harness, #1426); on a copy of a phone's store, 1.98 MB per five-minute rewrite of five lists and 5.55 MB per
+  relaunch.
+- Rule: store a derived form once, as rows each write keeps exact, and build every reader from them. A result's
+  header holds what its rows cannot (count, time, page info); its facts are its ownership rows joined to the fact
+  table. A copy that must leave the rows (a closed query's unloaded result) is built from them once, inside SQLite.
+- Issues: #566, #1123, #1426, #1440.
+- Guard: `Tests/InstantSwiftDataCoreTests/InstantStoredLiveQueryResultTests.swift` (always: the stored result is the
+  store's facts with their stamps, the page info and the time, in a running process and after a kill; the header holds
+  no JSON; a store 1.9.54 left converts once, with and without a waiting marker).
+- Upstream: `Reactor.js` keeps one form, each query's result under its key in a `PersistedObject`, written when it
+  changes.
 
 ## Guards to add first
 

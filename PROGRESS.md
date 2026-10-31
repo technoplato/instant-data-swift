@@ -1,3 +1,20 @@
+## 2026-10-31 05:55:00 EDT — v1.9.56 (sqlite-writes-1426, #1426, #1440): a stored result is its rows; nothing waits
+
+- **Release:** `docs/releases/v1.9.56.md`, cut at `da073db4` (plan amendment `5f19115a`, red `d331eb02`, green
+  `da073db4`), carrying 1.9.55. A one-time conversion at the first open (0034: the results table gains
+  `page_info_json`, its JSON and 1.9.54's waiting markers go), one way only: 1.9.55 and older cannot open a converted
+  store. No public API change; `flushPendingLiveQueryResults()` writes nothing.
+- **Why:** the maintainer ruled out 1.9.54's deferral (a changed result's whole JSON kept in memory until the app's
+  flush, a marker, a repair after a kill): a write is not batched or delayed, and its cost is fixed at the source. The
+  ownership rows were already exact after every save; now a result is its ownership rows, its facts and a narrow
+  header, every save writes exactly its diff, and every reader builds the result from the rows.
+- **Checks:** red (Mac mini 05:03) fails the three new tests on 1.9.55; green: 600 tests in 17 suites pass on the
+  rebased commit (6 known issues). Before -> after, three 50-row recordings lists: 57.7 -> 49.4 KB written a refresh,
+  3,246 KB -> none read back from the log (#1440); a relaunch's answers read 3,428 -> 1,488 KB.
+- **Next:** the whole bundle after the tag; Scribe pins 1.9.56 (its query audit sizes results by rows: red
+  `e104333cf`, then its green) in the build after the playground's; the phone's ledger before (build 202) and
+  after; #1480 (one ownership read per refresh, about half a relaunch's reads).
+
 ## 2026-10-31 00:26:23 EDT — outbox-1435 (#1436): no outbox index can go; the save's and echo's levers are structural
 
 - **Landed:** `47afdc9b` (tests and a test-only statement trace; no behavior change, no release).

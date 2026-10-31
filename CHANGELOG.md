@@ -10,6 +10,41 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 5:51:52 a.m. EDT — `da073db4dc6e` fix(#1426): green: a stored live-query result is its ownership rows, its facts and a narrow header; nothing waits
+
+- **Implementation commit:** `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
+- **Change:** fix(#1426): green: a stored live-query result is its ownership rows, its facts and a narrow header; nothing waits
+- **Details:**
+  - See docs/releases/v1.9.56.md.
+  - Every save writes the header (count, time, page_info_json) and the ownership diff; every reader builds the result from the rows; the retraction diff reads the stored rows by fingerprint; the unload's copy is built inside SQLite; 0034 converts a 1.9.54 store once; the deferral, markers, repair, interval and timer are gone; flushPendingLiveQueryResults() writes nothing.
+  - Measured (Mac mini, debug): three 50-row lists 57.7 -> 49.4 KB written a refresh, log read 3,246 -> 0 KB; one row 33.0 -> 24.7 KB; a relaunch's answers read 3,428 -> 1,488 KB. 600 tests in 17 suites pass (6 known issues).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1426 the save, the readers, the retraction diff, the unload and reload, the conversion 0034; the deferral removed
+  - `Sources/InstantSwiftDataCore/InstantStoredLiveQueryResultRows.swift` — #1426 the header, the facts join, the JSON-equivalent size and the unloaded copy, shared by both connections
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1426 the prune's results read from their rows
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1426 no flush at an unsubscribe or the close; the interval and its timer gone
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — #1426 flushPendingLiveQueryResults() documented as writing nothing
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — #1426 nothing waits; the stored result read from its rows
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryCompactOwnershipTests.swift` — #1426 the layout's page info column; the 0011 fixture holds whole-result JSON
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sqlite-writes-1426@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 5:51:51 a.m. EDT — `d331eb02bf59` test(#1426): red: a stored result is what the store holds in a running process and after a kill; its header holds no JSON
+
+- **Implementation commit:** `d331eb02bf592547620d593179829fa27514e1ec`
+- **Change:** test(#1426): red: a stored result is what the store holds in a running process and after a kill; its header holds no JSON
+- **Details:**
+  - See docs/releases/v1.9.56.md.
+  - Red on main 1.9.55 (Mac mini, 05:03): the running process's stored result carried the last frame's stamps where the store holds the writes' own; the header had no page info column; a store 1.9.54 left had no conversion.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredLiveQueryResultTests.swift` — #1426 the stored result in a running process and after a kill, the header without JSON, the conversion with and without a waiting marker
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1426 the stored result as the store's readers read it, for tests
+  - `Tests/InstantSwiftDataCoreTests/InstantServerRefreshWritesTests.swift` — #1440 the refresh exercises print each call's pages read
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, sqlite-writes-1426@strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 12:26:13 a.m. EDT — `47afdc9b8c80` test(#1436): every outbox index a live write writes is read by its own cycle, and its effect rows are written once
 
 - **Implementation commit:** `47afdc9b8c802699df8989f7985d8a38b5417bfc`
