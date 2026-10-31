@@ -1,3 +1,6 @@
+## 2026-10-31 15:22:44 EDT — scribe `e565fa39a8a0edd0adf89dbc70428a604ede5edb`
+Perf (#1501): the recordings list's page carries no build provenance: the list selects no buildInfo on recordings or on its transcriptions include, and a line's final writes its transcription's counts without buildInfo, which the create sets once (red 8e71fdad3, green d1d1d0a43); stored list pages on the 10-30 iPhone store copy 617/594/471/108 KB, buildInfo 74/80/72/96% of each.
+
 ## 2026-10-31 15:14:30 EDT — scribe `cef2d9a7d9269aede44ca8f4c22d3b144d835906`
 Release (#1482): Scribe 0.1 (210): instant-data-swift pinned exactly at 1.9.58 (pin 000210f5f, cut 83dec0324, change log 6813cf9e7), carrying #1495; with #1510's app half and #1499's heads-up wording since 209.
 
