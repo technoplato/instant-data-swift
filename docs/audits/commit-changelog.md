@@ -1,3 +1,9 @@
+## 2026-10-31 05:21:45 EDT — scribe `20e8ffbb0e47e33122f0ce4386c5f8a627390f01`
+Cut (#1393): build 204: the image viewer, thumbs on answers, a marked-up image in its original's place, comments on pictures.
+
+## 2026-10-31 05:21:45 EDT — scribe `4713db659848fd67a450bc8cb2efa43e5e70632c`
+Merge (#1393): the image viewer, thumbs on answers, a marked-up image in its original's place, comments on pictures, and layout fixes.
+
 ## 2026-10-31 05:06:05 EDT — scribe `77bc308f4cc49fbb45e36e572fa728b956d6bc24`
 Merge (#1456): small per-event files are written, never forced to flash; a broadcast minute goes from 654 syncs to 0 with the same writes.
 
