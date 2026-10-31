@@ -1,3 +1,36 @@
+## 2026-10-31 05:25:34 EDT — scribe `764026d3b6d257925244c2da7f6f8a95e1220ffa`
+Docs (#1477): ADR 0079 section 12.1: the second path to the model, the loud stop, and the backfill: 99.89% of the missed lines labeled.
+
+## 2026-10-31 05:25:34 EDT — scribe `e8d5c21b6b139ab2e0c7c5f0b682fd2b7129b43a`
+Fix (#1477): an id prefix of digits only finds its recording when no recording has that number.
+
+## 2026-10-31 05:25:33 EDT — scribe `b9efdb4d8af100a161b2d54ad05339326db4e023`
+Test (#1477): red: a digits-only id prefix was read as a recording number.
+
+## 2026-10-31 03:48:52 EDT — scribe `a7cb7937df4d33eec1a8779837e70404cb800c61`
+Feature (#1477): the agents' Now page warns when the topic tagger has stopped (10 minutes of failed looks, or 5 with none).
+
+## 2026-10-31 03:48:52 EDT — scribe `848e490c3cf3ad3b67423e9418b1e6cdd3c921cd`
+Fix (#1477): the Mac health check shows the topic tagger's line from its status; never a notice.
+
+## 2026-10-31 03:48:52 EDT — scribe `64254f00d369488f4ca12ba8506bf616ce14baa6`
+Test (#1477): red: the Mac health check has no topic tagger line.
+
+## 2026-10-31 03:48:52 EDT — scribe `4a1a25a68f45ecda73b39b86567de768e525de55`
+Fix (#1477): the tagger's follow says a repeated failure once, and leaves a status for its watchers.
+
+## 2026-10-31 03:48:52 EDT — scribe `9d8025c866976828ebccad4d9d953e5ac8685d76`
+Test (#1477): red: a failure repeated every 15 s is said once; a status is left.
+
+## 2026-10-31 03:34:02 EDT — scribe `d666a567dc6a7f7f82dd42789d167a6f45ce8c50`
+Fix (#1477): the tagger's LaunchAgent runs Interactive: as Standard its claude child ran at priority 20 (50 s a call against 3 s).
+
+## 2026-10-31 03:27:15 EDT — scribe `785c3bfb702952e4d275edb7a8bad0618dc2f1b8`
+Fix (#1477): the topic tagger reaches the model through the Max logins when every prepaid credit lane is out; same model, schema and rows.
+
+## 2026-10-31 03:27:15 EDT — scribe `52d409d0de6caee842908e89032ed123e3b36dd7`
+Test (#1477): red: with every credit lane out of credit the tagger still answers, and says the switch once.
+
 ## 2026-10-31 05:21:45 EDT — scribe `20e8ffbb0e47e33122f0ce4386c5f8a627390f01`
 Cut (#1393): build 204: the image viewer, thumbs on answers, a marked-up image in its original's place, comments on pictures.
 
