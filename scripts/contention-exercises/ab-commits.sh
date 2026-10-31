@@ -19,6 +19,8 @@
 #
 # History:
 # - 2026-10-31: #1491: created.
+# - 2026-10-31: #1491: each tree's packages resolved one tree at a time, a dropped clone tried again; a tree that does
+#   not build stops the job before any run.
 set -uo pipefail
 
 commits="287f77d1 4accbf45 HEAD"
@@ -59,15 +61,35 @@ name_for() {   # <commit>: the short sha the CONTENTION lines carry
   git rev-parse --short=8 "$1"
 }
 
-# Export and build every tree first, so no run overlaps a build of this job. The builds run side by side: a release
-# build of the core module is one whole-module compile, one core each.
-build_pids=()
+# Export every tree, then resolve its packages one tree at a time (#1491): two cold builds side by side cloned into the
+# shared SwiftPM cache at once, and one lost its pack files mid-clone (perf-gate-1491-tail, 18:23 on 2026-10-31); a
+# clone that drops is tried again.
 for commit in $commits; do
   tree=$(tree_for "$commit")
   if [ "$commit" != HEAD ] && [ ! -f "$tree/Package.swift" ]; then
     rm -rf "$tree" && mkdir -p "$tree"
     git archive "$commit" | tar -x -C "$tree" || { echo "ab-commits: cannot export $commit" >&2; exit 1; }
   fi
+  name=$(name_for "$commit")
+  resolved=0
+  for attempt in 1 2 3; do
+    if (cd "$tree" && swift package --scratch-path "$tree/.build/contention-release" resolve) \
+      > "$out_dir/resolve-$name.log" 2>&1; then
+      resolved=1
+      break
+    fi
+    echo "ab-commits: resolve $name attempt $attempt failed: $(grep -m 1 -E "error:" "$out_dir/resolve-$name.log")"
+    sleep 15
+  done
+  [ "$resolved" = 1 ] || { echo "ab-commits: cannot resolve the packages of $name" >&2; exit 1; }
+done
+
+# Build every tree, so no run overlaps a build of this job. The builds run side by side: a release build of the core
+# module is one whole-module compile, one core each. A tree that does not build stops the job before any run, where the
+# runs at the trees that built would compare nothing.
+build_pids=()
+for commit in $commits; do
+  tree=$(tree_for "$commit")
   name=$(name_for "$commit")
   (
     started=$(date +%s)
@@ -76,10 +98,13 @@ for commit in $commits; do
     status=$?
     echo "ab-commits: build $name exit $status in $(( $(date +%s) - started )) s"
     grep -E "error:" "$out_dir/build-$name.log" | head -5
+    exit $status
   ) &
   build_pids+=($!)
 done
-wait "${build_pids[@]}"
+builds_failed=0
+for pid in "${build_pids[@]}"; do wait "$pid" || builds_failed=1; done
+[ "$builds_failed" = 0 ] || { echo "ab-commits: a tree did not build; no run started" >&2; exit 1; }
 
 # --test-filter: the core bundle's tests matching it, at each commit, from the release build (#expect judges there;
 # CustomDump's expectNoDifference records nothing in a release build).
