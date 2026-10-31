@@ -1,3 +1,15 @@
+## 2026-10-30 21:03:06 EDT — scribe `c3d205fd2972ef803815b2d8a25a1bae1890a742`
+Landing (#1432): a shared file key never writes over a file it could not read, and the setup screen waits for preferences it could not read.
+
+## 2026-10-30 21:02:07 EDT — scribe `41a1c88d01cad54008479ed2d95ab6207f82c4a1`
+Docs (#1432): amendment A to the capture-isolation decision: nothing is written over a file until a read has shown what it holds.
+
+## 2026-10-30 20:27:08 EDT — scribe `b8decd3865d39e037bc5bc38e4c27c81966ba7ef`
+Fix (#1432): a failed read, an empty file and undecodable bytes are read again instead of taken for no file; changes wait; the watcher never creates an empty file.
+
+## 2026-10-30 20:27:07 EDT — scribe `db508929c2392bc3d9766a97af48072387194933`
+Tests (#1432): a file the shared key could not read is never written over, and the setup screen waits for it.
+
 ## 2026-10-30 20:23:46 EDT — scribe `1b9fcd34c24d972295aea149db159eb832a45e49`
 Cut (#1393, #1365): Scribe 0.1 (193): the home screen's dashboard and days, two corners sideways, three map proposals.
 
