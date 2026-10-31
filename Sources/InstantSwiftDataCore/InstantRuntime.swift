@@ -1,4 +1,5 @@
 // History:
+// - 2026-10-31: a retried server apply's gate-held event names where each earlier attempt went stale (#1494).
 // - 2026-10-31: a server frame plans in fewer persistence turns: its restated results' retractions, saves and protection
 //   in one read transaction, and no body page read when its plan holds no body (#1494).
 // - 2026-10-31: a query observation is one stream: the store yields into it, a live query's server error writes into it
@@ -1401,6 +1402,29 @@ struct InstantServerApplyRestatedRevisions: Equatable, Sendable {
 private struct InstantServerApplySeed: Sendable {
   var state: InstantPersistenceState
   var preparedStore: PreparedStoreMutation
+}
+
+/// Where a server-apply attempt found that something it planned against had moved, so the apply ran again (#1494).
+/// The gate-held event names each earlier attempt's stage in order; the exercises counted retried frames, not why.
+enum InstantServerApplyStaleStage: String, Sendable {
+  /// The restated results' retractions or saves, or the retractions' protection, found a revision moved.
+  case planningReads
+  /// The reduction's context found a revision moved.
+  case reductionContext
+  /// Optimistic effects were normalized while planning, so the retractions' protection is worked out again.
+  case normalization
+  /// The plan's revisions are not the seed's.
+  case planRevisions
+  /// A row of a page the reverse pass read had changed.
+  case reversePage
+  /// A row of a page the forward pass read had changed.
+  case forwardPage
+  /// A receipt patch's row left the plan.
+  case receiptPatches
+  /// The catch-up found the outbox moved in a way it does not replay, or reached its replay limit.
+  case catchUp
+  /// The commit found a planned row or a revision moved.
+  case commit
 }
 
 /// What one server-apply attempt planned, carried out of the part that may hold the operation gate (#932).
@@ -3093,6 +3117,8 @@ public final class InstantRuntime: Sendable {
     var workedOutRetractions: (revisions: InstantServerApplyRestatedRevisions, value: InstantLiveQueryReplacementRetractions)?
     var workedOutSaves: (revisions: InstantServerApplyRestatedRevisions, value: [InstantPreparedLiveQueryResultSave])?
     var initialSeed = initialSeed
+    // #1494: where each attempt before the one that commits went stale, for the gate-held event.
+    var staleStages: [InstantServerApplyStaleStage] = []
     applyAttempts: for attemptIndex in 0..<maximumAttempts {
       let attempt = attemptIndex + 1
       // #1383: each attempt, staged body page and commit is progress the acknowledgement deferral can see.
@@ -3180,7 +3206,10 @@ public final class InstantRuntime: Sendable {
             workedOutSaves = (restatedRevisions, prepared)
           }
           preparedQueryResults = reads.saves ?? reusedSaves
-          guard !reads.isStale, let protectedRetractions = reads.protectedRetractions else { break planning }
+          guard !reads.isStale, let protectedRetractions = reads.protectedRetractions else {
+            staleStages.append(.planningReads)
+            break planning
+          }
           authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
         }
         var footprint = Self.serverApplyFootprint(
@@ -3234,6 +3263,7 @@ public final class InstantRuntime: Sendable {
         } else if reductionDecline == .revisionChanged, !operationGateAlreadyHeld, !holdsGateWhilePlanning {
           // A local write landed after this attempt's seed, so the whole-component plan would be stale before it was
           // built; the next attempt plans holding the gate.
+          staleStages.append(.reductionContext)
           break planning
         } else {
           reductionPath = "full rebase: \(reductionDecline?.rawValue ?? "declined")"
@@ -3267,6 +3297,7 @@ public final class InstantRuntime: Sendable {
               // snapshot once all bounded normalization work is complete.
               recordActorHop(.persistence)
               try? await persistence.finishServerApplyPlan(id: readyPlan.id)
+              staleStages.append(.normalization)
               break planning
             }
             plan = readyPlan
@@ -3309,6 +3340,7 @@ public final class InstantRuntime: Sendable {
         else {
           recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
+          staleStages.append(.planRevisions)
           break planning
         }
         planned = InstantServerApplyAttemptPlan(
@@ -3423,6 +3455,7 @@ public final class InstantRuntime: Sendable {
         if stalePlan {
           recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
+          staleStages.append(.reversePage)
           continue applyAttempts
         }
 
@@ -3634,6 +3667,7 @@ public final class InstantRuntime: Sendable {
         {
           recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
+          staleStages.append(stalePlan ? .forwardPage : .receiptPatches)
           continue applyAttempts
         }
 
@@ -3832,6 +3866,7 @@ public final class InstantRuntime: Sendable {
           }
           recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
+          staleStages.append(.catchUp)
           continue applyAttempts
         }
 
@@ -3886,6 +3921,7 @@ public final class InstantRuntime: Sendable {
           }
           recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
+          staleStages.append(.commit)
           continue applyAttempts
         }
 
@@ -3977,6 +4013,7 @@ public final class InstantRuntime: Sendable {
           attempt: attempt,
           heldFromSeed: operationGateAlreadyHeld,
           planningHeldMilliseconds: planningHeldMilliseconds,
+          staleStages: staleStages,
           plan: plan,
           commitTiming: commit.timing
         )
@@ -4039,6 +4076,8 @@ public final class InstantRuntime: Sendable {
         metadata: [
           "processedTransactionID": processedTransactionID,
           "optimisticAttemptCount": String(maximumAttempts),
+          // #1494: where each optimistic attempt went stale.
+          "staleStages": staleStages.map(\.rawValue).joined(separator: ","),
         ]
       )
       do {
@@ -4984,6 +5023,7 @@ public final class InstantRuntime: Sendable {
     attempt: Int,
     heldFromSeed: Bool,
     planningHeldMilliseconds: Int,
+    staleStages: [InstantServerApplyStaleStage] = [],
     plan: InstantServerApplyPlan,
     commitTiming: InstantServerApplyCommitTiming
   ) async {
@@ -5023,6 +5063,8 @@ public final class InstantRuntime: Sendable {
       metadata["\(phase.name)Milliseconds"] = String(phase.milliseconds)
     }
     if let declinedAttributeID { metadata["declinedAttributeID"] = declinedAttributeID }
+    // #1494: where each earlier attempt went stale, in order.
+    if !staleStages.isEmpty { metadata["staleStages"] = staleStages.map(\.rawValue).joined(separator: ",") }
     let declinedOn = declinedAttributeID.map { " on \($0)" } ?? ""
     let summary = phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
     let commitSummary = [
