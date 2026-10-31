@@ -5,6 +5,8 @@
 //                    write's ~3 ms of CPU on an M4, inside the operation gate.
 // 2026-10-31  #1491  The two SHA-256 digests a save writes formatted their bytes with String(format:), 32 strings
 //                    joined, each time; the sample put it at about 0.11 ms a write.
+// 2026-10-31  #1491  A new write's row write fingerprinted its forward wire intent, which decides only a row that
+//                    already holds a server acceptance or was offered to delivery.
 
 import CryptoKit
 import CustomDump
@@ -69,6 +71,24 @@ struct InstantLocalWriteEncodeTests {
     try await InstantOfflineRuntimeFixture.createTodo("after", in: runtime)
     let pendingCount = await runtime.pendingMutationCount()
     #expect(pendingCount == 1)
+  }
+
+  /// A new write's row holds no server acceptance and was never offered to delivery, so its forward wire intent decides
+  /// nothing at its save (#1491): the row write fingerprinted it anyway, a sorted-key encode and a SHA-256 a write.
+  @Test
+  func aNewLocalWriteFingerprintsNoWireIntent() async throws {
+    let runtime = try await InstantOfflineRuntimeFixture.offlineRuntime("no-wire-fingerprint")
+    try await InstantOfflineRuntimeFixture.createTodo("warm", in: runtime)
+    let before = await runtime.persistence.savedWireIntentFingerprintCountForTesting()
+
+    for index in 0..<10 {
+      try await InstantOfflineRuntimeFixture.createTodo("write-\(index)", in: runtime)
+    }
+
+    let fingerprints = await runtime.persistence.savedWireIntentFingerprintCountForTesting() - before
+    #expect(fingerprints == 0, "10 new writes computed \(fingerprints) wire-intent fingerprints")
+    let pendingCount = await runtime.pendingMutationCount()
+    #expect(pendingCount == 11)
   }
 
   /// The two digests each save writes (its receipt and its wire intent) are SHA-256 as lowercase hex. Each formatted its
