@@ -2281,6 +2281,19 @@ package actor InstantRuntimeLiveSession {
         ],
         correlationID: message.clientEventID
       )
+    } catch is InstantSupersededLiveSessionSend {
+      // The frame never reached the socket: this actor had let go of it, and whatever let go closes it (#1496). Aborting
+      // it here would end a graceful close that frames were still queued behind.
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.message-send-superseded",
+        message: "Did not send on an Instant WebSocket session this actor no longer holds.",
+        metadata: ["op": message.op],
+        correlationID: message.clientEventID
+      )
+      throw InstantSupersededLiveSessionSend()
     } catch {
       let currentSessionOwnsFailure = retainFailureForCurrentSession(error, from: session)
       session.abort()
