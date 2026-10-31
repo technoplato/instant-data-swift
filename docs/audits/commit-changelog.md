@@ -1,3 +1,24 @@
+## 2026-10-31 05:06:05 EDT — scribe `77bc308f4cc49fbb45e36e572fa728b956d6bc24`
+Merge (#1456): small per-event files are written, never forced to flash; a broadcast minute goes from 654 syncs to 0 with the same writes.
+
+## 2026-10-31 03:41:16 EDT — scribe `dbbe7c8acb0637e88916bb3e0ef6584a559de890`
+Docs (#1456): the file-sync decision is ADR 0108.
+
+## 2026-10-31 03:39:24 EDT — scribe `525d3deed411834a35edb9d2f1e3dcad36c4ca61`
+Docs (#1456): the sync audit, the file-sync ADR and the budget's file-sync line.
+
+## 2026-10-31 03:39:12 EDT — scribe `6a94040f57eee3cd02de03e77d69382a02a4b184`
+Test (#1456): a broadcast minute makes about 287 audio chunks.
+
+## 2026-10-31 03:39:12 EDT — scribe `b5b95d91302b40cf890c4b2cb8af93d373c3cb85`
+Fix (#1456): the broadcast extension's chunk, frame and heartbeat files, the frame spool and the recording clock file are written without fsync; renames only where a reader may read at any time.
+
+## 2026-10-31 03:39:12 EDT — scribe `286f2d772e488aa7c4c3c0d9f87cc27aaf6ea7be`
+Test (#1456): red: a FileWrites dependency routes six per-event writes, still synced, and three tests count each event's syncs.
+
+## 2026-10-31 03:39:12 EDT — scribe `06fc4d6afc57e9a6773e7bf3eede9857a1c7122d`
+Test (#1456): a broadcast minute through the twin, the harness that measures each file path's syncs.
+
 ## 2026-10-31 04:26:19 EDT — scribe `3f93488deab9d6170e248d88161c13914d54d0fe`
 Audit (#1427): the suites at the change and at its base fail the same tests; the change adds none.
 
