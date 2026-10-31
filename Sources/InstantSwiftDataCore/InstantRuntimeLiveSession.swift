@@ -2262,7 +2262,8 @@ package actor InstantRuntimeLiveSession {
       // (library-78). Upstream `Reactor.js` writes with a synchronous `ws.send`, in call order, which no caller can
       // interrupt. The socket's writer writes from its own task, in the order this actor sent the frames, and its
       // watcher fails a write's caller at its deadline (#1496): a send starts no task and arms no timer. A socket this
-      // actor no longer holds has no writer, so its send fails as superseded, as its write would have.
+      // actor no longer holds (replaced, invalidated or closing) has no writer, so a send through it fails as
+      // superseded instead of writing to it.
       guard let socketWriter, socketWriter.sessionIdentity == session.identity else {
         throw InstantSupersededLiveSessionSend()
       }
