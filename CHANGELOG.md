@@ -10,6 +10,39 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 1:44:34 p.m. EDT — `2c1c003dadbe` fix(#1498): green: a one-shot read writes its answer to the query cache only when it changed, and never on the persistence actor
+
+- **Implementation commit:** `2c1c003dadbed4e9e3d67b7864371c164bbdc0bc`
+- **Change:** fix(#1498): green: a one-shot read writes its answer to the query cache only when it changed, and never encodes it on the persistence actor
+- **Details:**
+  - A row holds its answer's SHA-256 digest (rows, values, included rows, page info, error; computed on the reader's task) and, in columns, the last read's time, revisions and sequence, laid over its JSON by every reader. An unchanged answer updates those columns in one statement conditioned on the digest and encodes nothing; a first or changed one is encoded on the reader's task and written whole in a second turn.
+  - No read answers from instant_query_cache: its readers are the closed connection's error and the public cachedQuery(_:)/cachedQueries(), whose results are unchanged. A fresh store's first answer saves in two persistence turns: the relaunch pins 14 -> 15 calls (persistence 6 -> 7), query-materialization.todos 5 -> 6 (ADR 0018's log).
+  - Mac mini (debug): the new suite 5 of 5; InstantOneShotReadGateTests, InstantStoreTests' query-cache and closed-connection tests, the #1131 and #300 suites pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantQueryAnswerDigest.swift` — #1498 the answer's digest, written with tags, lengths and sorted keys, through one buffered SHA-256
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1498 the confirm, the whole write, the readers' overlay, the columns added at open
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1498 both one-shot read paths save through the digest; the encode runs on the reader's task
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — #1498 the relaunch and query-materialization hop pins
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — #1498 the relaunch hop pin
+  - `docs/adr/0018-one-actor-turn-per-step.md` — #1498 why a first or changed answer takes one more persistence call
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:44:34 p.m. EDT — `38c426f68ca4` test(#1498): red: a one-shot read encodes its unchanged answer into the query cache again on every read
+
+- **Implementation commit:** `38c426f68ca43875a028a2c73c7e1e802b726084`
+- **Change:** test(#1498): red: a repeated one-shot read whose answer did not change encodes it into the query cache again
+- **Details:**
+  - InstantQueryCacheAnswerWriteTests pins what a reader of a query's cached row sees (the last read's answer, time, revisions and sequence, in this process and after a relaunch), a changed answer written whole, a row another connection replaced, the gated read that adopts another connection's write, the closed connection's error, and 0 answers encoded for an unchanged repeated read.
+  - Red on the laptop (debug, 12:41): 2 of 5 fail, each 'an unchanged answer was encoded again (1)'.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantQueryCacheAnswerWriteTests.swift` — #1498 the query cache's row as readers see it, and the answers encoded per read
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1498 a package counter of query-cache answers encoded, beside decodedOutboxBodyCount
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
 ## October 31st, 2026 at 5:51:52 a.m. EDT — `da073db4dc6e` fix(#1426): green: a stored live-query result is its ownership rows, its facts and a narrow header; nothing waits
 
 - **Implementation commit:** `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
