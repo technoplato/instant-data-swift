@@ -1,3 +1,6 @@
+## 2026-10-31 00:23:31 EDT — scribe `f3c7872c505467c733a9238f356d86a6226d5f3f`
+Docs (#1442): a corrected cause for a counter that read zero.
+
 ## 2026-10-31 00:22:26 EDT — scribe `ffe9a13290483349780e0df1dc6df5dc3202158b`
 Docs (#1442): the plan's steps name their issues.
 
