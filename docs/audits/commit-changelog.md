@@ -1,3 +1,18 @@
+## 2026-10-31 07:48:20 EDT — scribe `18ba5013b28c1bf836725ea18727c09d56dd6bb3`
+Cut (#1426): Scribe 0.1 (206): instant-data-swift 1.9.56, a stored live result is its rows and nothing waits to be written.
+
+## 2026-10-31 07:27:14 EDT — scribe `e1c5f62f133a1debae4ae02443fe381af3f74398`
+Fix (#1426): pin instant-data-swift 1.9.56 in the app, both local packages, the installer and two docs.
+
+## 2026-10-31 05:54:56 EDT — scribe `bcf560de15f8c12048af9e6b6dfa647423b799b8`
+Fix (#1426): green: query-plans sizes a stored result by its ownership rows in the rows layout.
+
+## 2026-10-31 01:42:25 EDT — scribe `d19215c91f71c84773b131dd7fe3e37363a1e458`
+Test (#1426): red: query-plans sizes a stored result by its rows when the library keeps it as its rows.
+
+## 2026-10-31 07:47:28 EDT — instant-data-swift `1e2153a99449887936ac1e682b1f0c6659a4684f`
+Docs (#1426): v1.9.56's checks after the tag: the whole core bundle, 1,613 tests, 2 unlisted timing failures under load that pass alone.
+
 ## 2026-10-31 07:42:26 EDT — scribe `b1e262b4dcd420a5fbea2fa8b8463101819a6934`
 Merge (#1459): the Playground's harness references, default and AX5, after the restack.
 
