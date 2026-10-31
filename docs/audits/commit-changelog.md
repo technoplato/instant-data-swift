@@ -1,3 +1,6 @@
+## 2026-10-31 12:39:25 EDT — instant-data-swift `524bf6e1b2a0d2a9ea021bdd6cb7144d698a9e2e`
+Tools (#1482): the recording exercise profiled under sample and xctrace, and an A/B of the writer's SQLite mutex (merge of aa325f311; no difference between FULLMUTEX and NOMUTEX, 0.456 against 0.458 ms per transact).
+
 ## 2026-10-31 12:25:02 EDT — scribe `b41e6f2a80fea5a22fd01b0735397ed730c8b762`
 Fix (#1489): a library list keeps an episode with no file of its own when its page can be resolved, and an empty list says so.
 
