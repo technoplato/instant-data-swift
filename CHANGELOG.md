@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 4:16:17 p.m. EDT — `0d24c6261b5f` release(#1482): v1.9.59: a query observation is one stream
+
+- **Implementation commit:** `0d24c6261b5f4cfa7f756bd2ec5e4d0e75a1f423`
+- **Change:** release(#1482): v1.9.59: a query observation is one stream
+- **Details:**
+  - The release document for v1.9.59, cut from main at 81c07e43 for Scribe build 211: #1493 (dffd9a06).
+  - No API, storage or conversion change; 1.9.58 opens a store 1.9.59 opened. The #1510 write recorder (d3b08d41) is not in it.
+- **Files:**
+  - `docs/releases/v1.9.59.md` — #1482 the release: what #1493 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-ship-3@strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 3:55:51 p.m. EDT — `b00e2d04d74a` docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
 
 - **Implementation commit:** `b00e2d04d74a34ab7d6ddf1bd01af2046938d09e`
