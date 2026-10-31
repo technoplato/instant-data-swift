@@ -1,3 +1,42 @@
+## 2026-10-31 04:02:48 EDT — scribe `bd7b9057264cc21de7385dc84cce94ef2eaff580`
+Fix (#1467): the launch reads isProtectedDataAvailable in App.init itself, before the dependencies closure.
+
+## 2026-10-31 01:54:26 EDT — scribe `59396227471f579e5a93fa7923ba69e143c3f182`
+Fix (#1467): Scribe Videos' ledger holds its saves after a refused read and joins the file once it reads.
+
+## 2026-10-31 01:53:35 EDT — scribe `c436164d058dda11f53c5135b3562b8305a66d1a`
+Test (#1467): red: Scribe Videos' ledger file refused at launch is not written over.
+
+## 2026-10-31 01:51:49 EDT — scribe `78f09f96a4db1347ddf32b0492c22df454c19c29`
+Fix (#1467): the launch's app-storage choices wait for the first unlock instead of taking their defaults.
+
+## 2026-10-31 01:50:09 EDT — scribe `77a41d7f7bad257180200bd5164b24729d7bf6c9`
+Test (#1467): red: the launch's app-storage choices are not written over before the first unlock.
+
+## 2026-10-31 01:37:32 EDT — scribe `c3959f78cc1987c9b8c0006da8b49d10af471966`
+Feature (#1467): a stretch the file key could not use its file reaches the app's lanes when it ends.
+
+## 2026-10-31 01:36:51 EDT — scribe `87a28d041bdf1200fd99cd771ba5b6a91e15978d`
+Test (#1467): red: that stretch is reported once when it ends.
+
+## 2026-10-31 03:35:53 EDT — scribe `ae2adcded8131866095d92c25d689f8ffad65ba1`
+Fix (#1467): the locked-file test counts ten minutes as .seconds(600).
+
+## 2026-10-31 01:32:13 EDT — scribe `0f36cfada3d52ced4129d2feabc5721fb8186f42`
+Fix (#1467): ScribeSharedApplication imports UIKit for the launch's isProtectedDataAvailable.
+
+## 2026-10-31 01:15:38 EDT — scribe `9b2da1c6c26011f4e8b84a24cf0a7d3941fa0e3f`
+Fix (#1467): the first unlock reads a locked file at once, a refused read logs why, the watch starts again.
+
+## 2026-10-31 01:15:29 EDT — scribe `6553c8603d55e903d3acf3b62e7b25ab42a15c54`
+Test (#1467): red: the first unlock reads a locked file at once, and a refused read names its error.
+
+## 2026-10-31 01:05:54 EDT — scribe `5902ba9185c81fdf0176382c6ff9eaf5eb1cc2f1`
+Fix (#1467): a locked file's rereads wait on the injected clock; a key that subscribes late restarts them.
+
+## 2026-10-31 01:02:24 EDT — scribe `8bdaa1e4f6510090fa6136e7f81008a8e8f18cd3`
+Test (#1467): red: a file iOS keeps locked for ten minutes is never written over, and its values win.
+
 ## 2026-10-31 07:12:47 EDT — scribe `5adac1946a58beea9ce575ca54d44f16c95c638b`
 Merge (#1459): the Playground restacks at AX5, its reads select every required field, and its arrival line counts only new posts.
 
