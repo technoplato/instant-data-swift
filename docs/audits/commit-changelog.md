@@ -1,5 +1,8 @@
 - 2026-10-31 10:13:50 EDT · realtime-voice · `0b3fac6fd7f2` · #1487: any speech to text runs the full pipeline; Point-Free gets chapters
 
+## 2026-10-31 12:02:29 EDT — scribe `062307a97378ff95013e197a02c33bd27469d331`
+Feature (#1490): each device writes its notification settings (authorization, alerts, lock screen, Notification Center, sound, time sensitive, scheduled summary, previews) to its push row at launch and on a change seen in front; scribe notify says Apple accepted a notice, never that a device received it, and --state lists each device. Schema `e093919726c18ae193dee5bff2de3af4bbaf177d` (one optional attribute, pushed to production, drift 0); landed in merge `a4f05db2ee6c7a5045b1ed1e314e2ff63f82bdff`.
+
 ## 2026-10-31 10:30:48 EDT — scribe `d44a055efb6e9c2b5a7cbb0c9043bc85e8633b43`
 Merge (#1457): the Photos-style design playground, rounds 2 and 3, and the audit with its winners; the playground compiles at the package's iOS 18 floor.
 
