@@ -1,3 +1,6 @@
+## 2026-10-31 00:14:03 EDT — scribe `dc0a6e157b328d1ffd11312b75fdd3d4592b002e`
+Docs (#1427): the interims audit, its ADR and its plan record the second landing as parked, a proposal only, and the first as adding no delay.
+
 ## 2026-10-31 00:02:36 EDT — scribe `3831c514f657dab10ccfb92b118566c532604354`
 Fix (#1451): an agent post in a person thread names its recording.
 
