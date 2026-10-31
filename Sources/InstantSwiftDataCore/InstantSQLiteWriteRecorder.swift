@@ -335,6 +335,9 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
   /// SQLite read `count` bytes at `offset` of the database's log, through `file`.
   func logRead(_ bytes: UnsafeRawPointer, count: Int, offset: Int64, file: UnsafeMutablePointer<sqlite3_file>) {
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
+    // #1510: a leaf, an overflow page or a free page read teaches nothing the commit that writes it will not; only an
+    // interior page (its children), page 1 and the log's header are worth the lock. Checked before taking it.
+    guard Self.isWorthLearning(buffer, offset: offset) else { return }
     let frame = state.withLockUnchecked { $0.logRead(buffer, offset: Int(offset)) }
     // A frame an earlier process wrote: its header, read once, says which page this is.
     guard case let .unknownFrame(index, headerOffset) = frame else { return }
@@ -355,7 +358,23 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
   /// SQLite read `count` bytes at `offset` of the database file (from the file, or mapped).
   func databaseRead(_ bytes: UnsafeRawPointer, count: Int, offset: Int64) {
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
+    guard offset == 0 || Self.isWorthLearning(buffer, offset: offset) else { return }
     state.withLockUnchecked { $0.databaseRead(buffer, offset: Int(offset)) }
+  }
+
+  /// Whether a page SQLite read can teach the recorder anything (#1510): an interior b-tree page (it names its children),
+  /// page 1 (its header names the free list) or a log header or whole frame (they name pages). A leaf's links are learned
+  /// when a commit writes it; reading every leaf's cells cost a prune of a 40,000-fact store more than its gate allows
+  /// (InstantPruneCostTests).
+  static func isWorthLearning(_ bytes: UnsafeRawBufferPointer, offset: Int64) -> Bool {
+    guard !bytes.isEmpty else { return false }
+    if offset == 0 { return true }
+    let first = bytes[0]
+    if first == 2 || first == 5 { return true }
+    // A whole log frame (SQLite reads frames whole when it rebuilds the log's index): its 24-byte header, then the page.
+    if bytes.count > 24 + 512, (offset - 32) % Int64(bytes.count) == 0 { return true }
+    // Page 1 read from the log: "SQLite format 3\0" then its header.
+    return bytes.count >= 16 && bytes[0] == 0x53 && bytes[1] == 0x51 && bytes[2] == 0x4C && bytes[15] == 0
   }
 
   /// A checkpoint wrote `count` bytes at `offset` of the database file.
@@ -754,13 +773,10 @@ extension InstantSQLiteDatabaseWriteRecorder {
         if trunk > 1 { setOwner(trunk, Self.freeListID) }
       }
       let pageOwner = page == 1 ? Self.schemaTableID : self.owner(page)
-      guard pageOwner != Self.unnamedID else { return }
-      if pageOwner & Self.overflowBit != 0 || pageOwner == Self.freeListID {
-        // An overflow page names the next one; a trunk page the next trunk.
-        let next = Self.bigEndian32(content, 0)
-        if next > 1 { setOwner(next, pageOwner) }
-        return
-      }
+      guard pageOwner != Self.unnamedID, pageOwner & Self.overflowBit == 0, pageOwner != Self.freeListID else { return }
+      // Only an interior page's children: a leaf's overflow pages are learned when a commit writes the leaf.
+      let header = page == 1 ? 100 : 0
+      guard content.count > header, content[header] == 2 || content[header] == 5 else { return }
       let start = links.count
       Self.appendLinks(of: content, isPageOne: page == 1, pageSize: pageSize, to: &links)
       for link in links[start...] {
