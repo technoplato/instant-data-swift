@@ -1,3 +1,21 @@
+## 2026-10-31 06:53:51 EDT — scribe `fdc519631edfa91cd84891b1b74a44da0126d217`
+Docs (#1478): audit: an APFS clone of warm derived data at a new worktree path recompiles every target (probe, Xcode 27A5194q); builds 199-203 took 19.5-27 min to the iPhone.
+
+## 2026-10-31 06:53:51 EDT — scribe `83104b562067cdf4bdae3788199cbb827e4afcd3`
+Fix (#1478): a warm tree left without a branch still checks out the next cut; the installer's dated history header.
+
+## 2026-10-31 06:52:25 EDT — scribe `1682fb0e767f15600de985df37b079b81f988d5b`
+Fix (#1478): every cut builds in one warm git worktree per Xcode build at a fixed path, so Xcode recompiles only what changed; busy or refused builds cold in the cut; a failed warm build retries cold once.
+
+## 2026-10-31 06:50:24 EDT — scribe `d58f57013fb95f281dfde3e3d2ad28e349930673`
+Test (#1478): red: the warm tree's path, commit, branch, unchanged mtimes, busy lock and new-Xcode cleanup; main's warm build and cold retry.
+
+## 2026-10-31 05:44:32 EDT — scribe `85e69c6c4673f5888e999b2a0e7ee122b7313f83`
+Fix (#1478): a locked device refusing the launch after a verified install is a warning in the summary, not exit 1; a failed install still fails.
+
+## 2026-10-31 05:44:32 EDT — scribe `9f745a1ccc0d21495c863185011352b41011aed1`
+Test (#1478): red: a locked device refusing the launch after an install is a warning, not exit 1.
+
 ## 2026-10-31 06:51:09 EDT — scribe `e99a8eb59d48e3029609ff676fec553d8c5330c2`
 Fix (#1465, #1459): the voice-command coverage test's reasons for the chapter controls and the drawer's Playground; no behavior change.
 
