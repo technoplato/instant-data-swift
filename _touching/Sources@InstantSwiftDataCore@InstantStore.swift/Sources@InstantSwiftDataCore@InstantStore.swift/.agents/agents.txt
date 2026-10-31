@@ -25,3 +25,4 @@ claude-code/fix-memory-1075@ld 2026-10-25T01:33:15-0400 mower plan=2026-10-24-fi
 claude-code/fix-memory-1075@ld 2026-10-25T02:52:55-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (new releaseUnobservedEntities(_:) only)
 claude-code/gate-1319@al 2026-10-28T21:32:54-0400 mower plan=2026-10-28-gate-1319 #1319
 claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-perf-read-1498 #1495 (StoreObserver, refreshObservers, refreshDecision, splicedEmission, wasLastHanded, InstantStorePublishMetrics only)
+claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494

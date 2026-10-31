@@ -1,1 +1,2 @@
 claude-opus-5.5-library-79 2026-10-02T09:11:29-04:00 mower plan=2026-10-02-library-79-hops #403
+claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494
