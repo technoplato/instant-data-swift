@@ -57,6 +57,11 @@ receipt fingerprint).
    that deletes the row one (#1510's save is 24.4 pages). A guard test plans every statement a live write runs with the
    index and without it: only the tail reads may change. Measured with ab-commits.sh (this green against the branch
    before it, same job) and the tight-loop benchmark.
+   Its first run (perf-gate-1491-tail, 18:15): the outbox took 25.0 frames a write against 23.0 (the index's page on the
+   save and on the echo, as predicted), over #1115's budget of 24, which becomes 25 with the reason beside it; and two
+   more plans changed for the better (the catch-up's whole count scans the smaller index; its count of the writes
+   appended after the plan's tail searches it instead of scanning the outbox), so the guard fails a plan only when it
+   sorts or scans more, or trades another index's search for this one.
 
 Write contract unchanged: transact/save is local materialize and durable outbox only. Nothing is batched, delayed,
 throttled, sampled, dropped or limited.
@@ -76,6 +81,7 @@ throttled, sampled, dropped or limited.
   `try execute(Self.deliveryIndexSQL)`; not `beginServerApplyPlan` or the extend (perf-observe-1493's), whose tail read
   only changes plan
 - Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift (new, amendment 3)
+- Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift (amendment 3: the frames-per-write budget line)
 - Sources/InstantSwiftDataCore/InstantModels.swift (amendment 1: `instantSHA256HexDigest` only; not
   `optimisticEffectReceiptFingerprint`, which perf-send-1492 owns)
 - Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift (new)
