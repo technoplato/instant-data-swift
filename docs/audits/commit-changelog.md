@@ -1,3 +1,6 @@
+## 2026-10-31 16:12:31 EDT — instant-data-swift `d3b08d41fe307215643f74463b1a3b857d01c213`
+Feat (#1510): the write recorder, InstantSQLiteWriteRecorder: every page the store's log takes and every checkpoint copy, by table or index, by write statement (runs, rows, pages, the b-trees it writes) and by store call, over time, learned from the pages SQLite already reads and writes (red 6434d6e2, green cb989369, fixes 07156001 be771453). Mac mini: its tests 8/8, one checked frame by frame against the log file and dbstat; the audit docs/audits/2026-10-31-writes-1510.md (a save 24.4 pages across 17 b-trees). Its own cost is queued; READY FOR BUILD waits for it.
+
 ## 2026-10-31 15:56:21 EDT — instant-data-swift `dffd9a0629b07bf718c467f175203083fde4606e`
 Perf (#1493): a query observation is one stream, written by the store and the live query's server error under one lock and read in its consumer's own pull (red 02ef83f5, green 6256949a, exercise c5f7c882, doc b00e2d04; change log b6a3274e): library tasks per open live FetchAll 7 -> 1, the process's alive tasks with 48 live observers 290 -> 50 (xctrace), publication -> wrapper value p50 2,631 -> 681 us (Mac mini, release).
 
