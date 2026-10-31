@@ -10,6 +10,99 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 4:16:17 p.m. EDT — `0d24c6261b5f` release(#1482): v1.9.59: a query observation is one stream
+
+- **Implementation commit:** `0d24c6261b5f4cfa7f756bd2ec5e4d0e75a1f423`
+- **Change:** release(#1482): v1.9.59: a query observation is one stream
+- **Details:**
+  - The release document for v1.9.59, cut from main at 81c07e43 for Scribe build 211: #1493 (dffd9a06).
+  - No API, storage or conversion change; 1.9.58 opens a store 1.9.59 opened. The #1510 write recorder (d3b08d41) is not in it.
+- **Files:**
+  - `docs/releases/v1.9.59.md` — #1482 the release: what #1493 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-ship-3@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:12:21 p.m. EDT — `9d965199b4f8` docs(#1510): what a phone's save writes, page by page, and the recorder's progress
+
+- **Implementation commit:** `9d965199b4f8e59cf4dd6b4b38be0aa0e1ec9cbe`
+- **Change:** docs(#1510): what a phone's save writes, page by page
+- **Details:**
+  - The phone's log frame by frame, File Activity, the launch catch-up and Core ML, saves by kind, the levers for a save under 20 KB.
+- **Files:**
+  - `docs/audits/2026-10-31-writes-1510.md` — #1510 the audit
+  - `PROGRESS.md` — #1510 the recorder's progress
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `be77145336bf` perf(#1510): the recorder learns from a page SQLite reads only when it is an interior page or page 1, checked before its lock
+
+- **Implementation commit:** `be77145336bf00506be195c34f8af308778dc3a1`
+- **Change:** perf(#1510): the recorder learns from a read page only when it is an interior page or page 1, checked before its lock
+- **Details:**
+  - InstantPruneCostTests failed (40K-fact prune 2.26x the 4K one, bound 2): every leaf read was parsed; now a leaf read is one byte compare and no lock; the gate passes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 reads teach only interior pages and page 1
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the stress bound 100 us a frame in debug
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `14da2b5b68ff` test(#1510): the recorder's stress test bounds its own collections, and a recorded statement leaves the connection's change count
+
+- **Implementation commit:** `14da2b5b68ff018b4ae3cf5bf200d15d520fa00f`
+- **Change:** test(#1510): the stress test bounds the recorder's own collections; a recorded statement leaves the change count
+- **Details:**
+  - The process footprint grew 110 MB beside the outbox suites; the recorder's own collections stay under 1 MB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 retainedBytesForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the bound and the change-count test
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `071560016750` fix(#1510): green: the recorder matches the name SQLite opens a file by when its path crosses a symbolic link, and explains statements on a connection of its own
+
+- **Implementation commit:** `0715600167501ad612719e891e4dfa73b4485168`
+- **Change:** fix(#1510): green: the recorder matches the name SQLite opens a file by through a symlink, and explains on a connection of its own
+- **Details:**
+  - SQLITE_OK_SYMLINK meant no file found its recorder; EXPLAIN on the writer reset sqlite3_changes() and the outbox quarantined first claims (InstantBoundedOutboxDeliveryTests).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — #1510 the full pathname through a symlink
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 EXPLAIN on a read-only connection of its own
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:19 p.m. EDT — `cb989369cdf3` feat(#1510): green: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees, each checkpoint copy and store call
+
+- **Implementation commit:** `cb989369cdf3660430ab34b44db922f1bc9b91f1`
+- **Change:** feat(#1510): green: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees
+- **Details:**
+  - Page owners learned from the pages SQLite reads and writes; each commit's pages placed together, its own links first; statements by change count and EXPLAIN once per shape.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 page owners, commits, statements, store calls, the record
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:19 p.m. EDT — `6434d6e26dc2` test(#1510): red: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees, each checkpoint copy and store call
+
+- **Implementation commit:** `6434d6e26dc29c9afea03847af8c69e307e82a14`
+- **Change:** test(#1510): red: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees
+- **Details:**
+  - The recorder's types, registry and hooks wired (VFS, statement cache, transaction); counting stubbed, so the tests fail (Mac mini: red exit 1).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the recorder's tests against the log file and dbstat
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 the public record, the registry, the hooks
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — #1510 the VFS hands pages to a database's recorder
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1510 the statement cache, the transaction and the writer's open call the recorder
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
 ## October 31st, 2026 at 3:55:51 p.m. EDT — `b00e2d04d74a` docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
 
 - **Implementation commit:** `b00e2d04d74a34ab7d6ddf1bd01af2046938d09e`
