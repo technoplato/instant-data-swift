@@ -1,4 +1,10 @@
 // History:
+// - 2026-10-31: a query observation is one stream: the store yields into it, a live query's server error writes into it
+//   under the same lock, and its consumer reads it in its own pull, deferred values included; a live observation ran
+//   five forwarding tasks, each resumed by every emission, and a local one two (#1493).
+// - 2026-10-31: a one-shot read leaves its answer in the query cache by its digest: an answer the row holds updates the
+//   row's time, revisions and sequence and encodes nothing; a first or changed one is encoded on the reader's task, not
+//   the persistence actor (#1498).
 // - 2026-10-31: no live-query result's write waits: every refresh stores its result as its rows (#1426), so an
 //   unsubscribe and the close write nothing more, the interval and its timer are gone, and
 //   `flushPendingLiveQueryResults()` writes nothing.
@@ -310,19 +316,30 @@ private struct InstantLiveInfiniteQueryChunkObservationLease<Element: Sendable>:
   var cancel: @Sendable () async -> Void
 }
 
-/// The stream an observation's consumer iterates (#394).
+/// What an observation consumer's pull does with one element it read (#1493).
+private enum InstantObservationPullStep<Element: Sendable>: Sendable {
+  case deliver(Element)
+  /// A newer element is queued behind this one: read that instead.
+  case skip
+  /// The observation cannot go on: end it.
+  case end
+}
+
+/// The stream an observation's consumer iterates (#394, #1493).
 ///
-/// An observation's emissions reach its consumer through a forwarding task that holds the inner stream's continuation,
-/// so the inner stream's `onTermination` never runs when the consumer simply stops iterating. This stream's storage
-/// holds a release token instead: when the consumer drops the stream and its iterator, as returning out of `for await`
-/// does, the token ends the observation. A consumer that keeps the stream keeps the observation; cancelling the
-/// consuming task ends it through the inner stream, as before.
+/// The consumer reads the inner stream in its own pull, so an emission the store writes resumes the consumer and no
+/// task besides; deferred values, when the plan selects them, are read in the same pull (`step`), on the cooperative
+/// pool, never on the consumer's actor. The inner stream's continuation is held by its writer, so its `onTermination`
+/// never runs when the consumer simply stops iterating: this stream's storage holds a release token instead. When the
+/// consumer drops the stream and its iterator, as returning out of `for await` does, or its task is cancelled while it
+/// waits, the token ends the observation. A consumer that keeps the stream keeps the observation.
 private enum InstantObservationConsumerStream {
   static func make<Element: Sendable>(
     _ inner: AsyncStream<Element>,
+    step: (@concurrent @Sendable (Element) async -> InstantObservationPullStep<Element>)? = nil,
     onRelease: @escaping @Sendable () -> Void
   ) -> AsyncStream<Element> {
-    let reader = Reader(inner.makeAsyncIterator(), release: Release(onRelease))
+    let reader = Reader(inner.makeAsyncIterator(), step: step, release: Release(onRelease))
     return AsyncStream(unfolding: { await reader.next() }, onCancel: { reader.release.fire() })
   }
 
@@ -348,19 +365,38 @@ private enum InstantObservationConsumerStream {
     }
   }
 
-  // SAFETY: the stream's one consuming task calls the unfolding closure one `next()` at a time on its executor, so
-  // `iterator` is never accessed concurrently.
+  // SAFETY: one consuming task calls `next()` at a time: the inner stream's lock admits one awaiting consumer and traps
+  // a second, so `iterator` is never accessed concurrently.
   final class Reader<Element: Sendable>: @unchecked Sendable {
     private var iterator: AsyncStream<Element>.Iterator
+    private let step: (@concurrent @Sendable (Element) async -> InstantObservationPullStep<Element>)?
     let release: Release
 
-    init(_ iterator: AsyncStream<Element>.Iterator, release: Release) {
+    init(
+      _ iterator: AsyncStream<Element>.Iterator,
+      step: (@concurrent @Sendable (Element) async -> InstantObservationPullStep<Element>)?,
+      release: Release
+    ) {
       self.iterator = iterator
+      self.step = step
       self.release = release
     }
 
+    @concurrent
     func next() async -> Element? {
-      await iterator.next()
+      while let element = await iterator.next() {
+        guard let step else { return element }
+        switch await step(element) {
+        case let .deliver(delivered):
+          return delivered
+        case .skip:
+          continue
+        case .end:
+          release.fire()
+          return nil
+        }
+      }
+      return nil
     }
   }
 }
@@ -5682,11 +5718,14 @@ public final class InstantRuntime: Sendable {
         await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan, holdingOperationGate: true)
       }
     }
+    // #1493: the store yields into the stream the consumer reads, and a live query's server error writes into it too.
+    let output = InstantObservationOutput(reportsServerErrors: liveRegistration != nil)
     recordActorHop(.store)
     let localRegistrationStopwatch = configuration.startupTrace.stopwatch()
     let storeObservation = await store.observeQueryLease(
       plan,
       remotePageInfo: remotePageInfo,
+      output: output,
       onCancellationStarted:
         configuration.onStandardQueryObservationCleanupStartedForTesting
     )
@@ -5719,19 +5758,12 @@ public final class InstantRuntime: Sendable {
           correlationID: plan.id
         )
       }
-      let localObservation = Self.liveObservationLease(storeObservation.stream) {
-        await storeObservation.cancel()
-      }
-      let hydration = hydratingDeferredValues(
-        in: localObservation.stream,
+      let observation = queryObservationLease(
+        output: output,
         plan: plan,
-        attributes: attributes
+        attributes: attributes,
+        onTermination: { await storeObservation.cancel() }
       )
-      let observation = Self.liveObservationLease(hydration.stream) {
-        async let cancelHydration: Void = hydration.cancel()
-        async let cancelLocalObservation: Void = localObservation.cancel()
-        _ = await (cancelHydration, cancelLocalObservation)
-      }
       let lease = Self.queryObservationLease(observation)
       if Task.isCancelled {
         await lease.cancel()
@@ -5766,7 +5798,9 @@ public final class InstantRuntime: Sendable {
       return Self.finishedQueryObservationLease()
     }
 
-    let liveObservation = Self.liveObservationLease(storeObservation.stream) { [weak self] in
+    // The registration's end, run once when the observation ends: the store's observer, the result's retention and the
+    // server's subscription, in that order.
+    let endLiveRegistration: @Sendable () async -> Void = { [weak self] in
       await storeObservation.cancel()
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
@@ -5835,7 +5869,7 @@ public final class InstantRuntime: Sendable {
         correlationID: plan.id
       )
     } catch is CancellationError {
-      await liveObservation.cancel()
+      await endLiveRegistration()
       return Self.finishedQueryObservationLease()
     } catch {
       // The registration stays recorded, so the reconnect after this failed send sends it again.
@@ -5850,24 +5884,16 @@ public final class InstantRuntime: Sendable {
       )
     }
     if Task.isCancelled {
-      await liveObservation.cancel()
+      await endLiveRegistration()
       return Self.finishedQueryObservationLease()
     }
-    let hydration = hydratingDeferredValues(
-      in: liveObservation.stream,
+    let observation = await liveQueryObservationLease(
+      output: output,
       plan: plan,
-      attributes: attributes
+      attributes: attributes,
+      registrationKey: registrationKey,
+      endLiveRegistration: endLiveRegistration
     )
-    let reporting = await reportingLiveQueryErrors(
-      in: hydration.stream,
-      registrationKey: registrationKey
-    )
-    let observation = Self.liveObservationLease(reporting.stream) {
-      async let cancelReporting: Void = reporting.cancel()
-      async let cancelHydration: Void = hydration.cancel()
-      async let cancelLiveObservation: Void = liveObservation.cancel()
-      _ = await (cancelReporting, cancelHydration, cancelLiveObservation)
-    }
     let lease = Self.queryObservationLease(observation)
     if Task.isCancelled {
       await lease.cancel()
@@ -5890,27 +5916,11 @@ public final class InstantRuntime: Sendable {
     let attributes = await store.attributeSnapshot()
     try Task.checkCancellation()
     guard configuration.liveTransport != nil else {
-      let storeObservation = await store.observeInfiniteQueryLease(
+      return try await localInfiniteQueryChunkObservation(
         plan,
-        onCancellationStarted: onCancellationStarted
-      )
-      let observation = Self.liveObservationLease(storeObservation.stream) {
-        await storeObservation.cancel()
-      }
-      do {
-        try Task.checkCancellation()
-      } catch {
-        await observation.cancel()
-        throw error
-      }
-      return Self.liveInfiniteQueryChunkObservation(
-        hydratingDeferredValues(
-          in: observation.stream,
-          plan: plan,
-          attributes: attributes,
-          onFailure: onDeferredValueHydrationFailure
-        ),
-        cancelUnderlyingObservation: observation.cancel
+        attributes: attributes,
+        onCancellationStarted: onCancellationStarted,
+        onDeferredValueHydrationFailure: onDeferredValueHydrationFailure
       )
     }
 
@@ -5927,27 +5937,11 @@ public final class InstantRuntime: Sendable {
         event: "query-observation.encoding-failed",
         message: "Could not encode a live infinite query observation."
       )
-      let storeObservation = await store.observeInfiniteQueryLease(
+      return try await localInfiniteQueryChunkObservation(
         plan,
-        onCancellationStarted: onCancellationStarted
-      )
-      let observation = Self.liveObservationLease(storeObservation.stream) {
-        await storeObservation.cancel()
-      }
-      do {
-        try Task.checkCancellation()
-      } catch {
-        await observation.cancel()
-        throw error
-      }
-      return Self.liveInfiniteQueryChunkObservation(
-        hydratingDeferredValues(
-          in: observation.stream,
-          plan: plan,
-          attributes: attributes,
-          onFailure: onDeferredValueHydrationFailure
-        ),
-        cancelUnderlyingObservation: observation.cancel
+        attributes: attributes,
+        onCancellationStarted: onCancellationStarted,
+        onDeferredValueHydrationFailure: onDeferredValueHydrationFailure
       )
     }
 
@@ -5993,13 +5987,17 @@ public final class InstantRuntime: Sendable {
       await liveQueryResultState.release(key: registrationKey)
       throw error
     }
+    // #1493: the store yields into the stream the chunk's reader reads, and the query's server error writes into it.
+    let output = InstantObservationOutput(reportsServerErrors: true)
     let storeObservation = await store.observeLiveQueryLease(
       plan,
       registrationKey: registrationKey,
       remotePageInfo: existingPageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting,
+      output: output,
       onCancellationStarted: onCancellationStarted
     )
-    let liveObservation = Self.liveObservationLease(storeObservation.stream) { [weak self] in
+    // The registration's end, run once when the chunk's observation ends.
+    let endLiveRegistration: @Sendable () async -> Void = { [weak self] in
       await storeObservation.cancel()
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
@@ -6030,11 +6028,11 @@ public final class InstantRuntime: Sendable {
       try Task.checkCancellation()
     } catch is CancellationError {
       await leaveOperationGate()
-      await liveObservation.cancel()
+      await endLiveRegistration()
       throw CancellationError()
     } catch {
       await leaveOperationGate()
-      await liveObservation.cancel()
+      await endLiveRegistration()
       throw error
     }
     // #1131: recorded under the gate, sent after it, as a standard query's registration is.
@@ -6047,7 +6045,7 @@ public final class InstantRuntime: Sendable {
       }
       try Task.checkCancellation()
     } catch is CancellationError {
-      await liveObservation.cancel()
+      await endLiveRegistration()
       throw CancellationError()
     } catch {
       recordLiveOperationFailure(
@@ -6057,172 +6055,152 @@ public final class InstantRuntime: Sendable {
         message: "Could not register a live Instant infinite query observation."
       )
     }
-    let hydration = hydratingDeferredValues(
-      in: liveObservation.stream,
+    let observation = await liveQueryObservationLease(
+      output: output,
       plan: plan,
       attributes: attributes,
-      onFailure: onDeferredValueHydrationFailure
+      registrationKey: registrationKey,
+      onDeferredValueHydrationFailure: onDeferredValueHydrationFailure,
+      endLiveRegistration: endLiveRegistration
     )
-    let reporting = await reportingLiveQueryErrors(
-      in: hydration.stream,
-      registrationKey: registrationKey
-    )
-    return Self.liveInfiniteQueryChunkObservation(
-      InstantLiveInfiniteQueryChunkObservationLease(
-        stream: reporting.stream,
-        cancel: {
-          async let cancelReporting: Void = reporting.cancel()
-          async let cancelHydration: Void = hydration.cancel()
-          _ = await (cancelReporting, cancelHydration)
-        }
-      ),
-      cancelUnderlyingObservation: liveObservation.cancel
-    )
+    return InstantLiveInfiniteQueryChunkObservation(stream: observation.stream, cancel: observation.cancel)
   }
 
-  /// Adds the live query's latest server error to each emission of `source`, and repeats the latest emission whenever
-  /// that error changes, so an observer sees an error, and its clearing, without waiting for new data (#360).
+  /// A chunk observed from this device's store only.
+  private func localInfiniteQueryChunkObservation(
+    _ plan: InstantQueryPlan,
+    attributes: [InstantAttribute],
+    onCancellationStarted: (@Sendable () async -> Void)?,
+    onDeferredValueHydrationFailure: (@Sendable (InstantError) async -> Void)?
+  ) async throws -> InstantLiveInfiniteQueryChunkObservation {
+    let output = InstantObservationOutput()
+    let storeObservation = await store.observeInfiniteQueryLease(
+      plan,
+      output: output,
+      onCancellationStarted: onCancellationStarted
+    )
+    let observation = queryObservationLease(
+      output: output,
+      plan: plan,
+      attributes: attributes,
+      onDeferredValueHydrationFailure: onDeferredValueHydrationFailure
+    ) {
+      await storeObservation.cancel()
+    }
+    do {
+      try Task.checkCancellation()
+    } catch {
+      await observation.cancel()
+      throw error
+    }
+    return InstantLiveInfiniteQueryChunkObservation(stream: observation.stream, cancel: observation.cancel)
+  }
+
+  /// A live query observation's lease: the query's server error writes into `output` from now on (#360), and the
+  /// observation's end stops that and ends the registration (`endLiveRegistration`).
   ///
   /// Upstream `Reactor.js` `notifyQueryError` calls the query's callbacks with `{ error }`, and the next result
   /// replaces it. Swift keeps the values in the same emission, because a local-first observer must not lose what it
-  /// shows when the server stalls.
-  private func reportingLiveQueryErrors(
-    in source: AsyncStream<InstantQueryEmission>,
-    registrationKey: String
-  ) async -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
-    let errorUpdates = await liveQueryErrors.updates(for: registrationKey)
-    let events = AsyncStream<InstantLiveQueryErrorReportingEvent>.makeStream()
-    let output = AsyncStream<InstantQueryEmission>.makeStream(bufferingPolicy: .bufferingNewest(1))
-    let emissionFeed = Task {
-      for await emission in source {
-        events.continuation.yield(.emission(emission))
-      }
-      events.continuation.yield(.sourceFinished)
-    }
-    let errorFeed = Task {
-      for await error in errorUpdates {
-        events.continuation.yield(.serverError(error))
-      }
-    }
-    let consumer = Task {
-      var latest: InstantQueryEmission?
-      var serverError: InstantError?
-      events: for await event in events.stream {
-        switch event {
-        case let .emission(emission):
-          let reported = emission.reportingServerError(serverError)
-          latest = reported
-          output.continuation.yield(reported)
-        case let .serverError(error):
-          serverError = error
-          guard let current = latest, current.error != error else { continue }
-          let reported = current.reportingServerError(error)
-          latest = reported
-          output.continuation.yield(reported)
-        case .sourceFinished:
-          break events
-        }
-      }
-      errorFeed.cancel()
-      output.continuation.finish()
-    }
-    let cancel: @Sendable () async -> Void = {
-      emissionFeed.cancel()
-      errorFeed.cancel()
-      consumer.cancel()
-      events.continuation.finish()
-      output.continuation.finish()
-      await emissionFeed.value
-      await errorFeed.value
-      await consumer.value
-    }
-    output.continuation.onTermination = { @Sendable termination in
-      guard case .cancelled = termination else { return }
-      Task { await cancel() }
-    }
-    return InstantLiveInfiniteQueryChunkObservationLease(stream: output.stream, cancel: cancel)
-  }
-
-  private func hydratingDeferredValues(
-    in stream: AsyncStream<InstantQueryEmission>,
+  /// shows when the server stalls. The error was merged in by three tasks per observation, each resumed by every
+  /// emission; the output takes it under the lock it writes emissions under (#1493).
+  private func liveQueryObservationLease(
+    output: InstantObservationOutput,
     plan: InstantQueryPlan,
     attributes: [InstantAttribute],
-    onFailure: (@Sendable (InstantError) async -> Void)? = nil
+    registrationKey: String,
+    onDeferredValueHydrationFailure: (@Sendable (InstantError) async -> Void)? = nil,
+    endLiveRegistration: @escaping @Sendable () async -> Void
+  ) async -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
+    let liveQueryErrors = self.liveQueryErrors
+    let errorRegistration = await liveQueryErrors.register(output, for: registrationKey)
+    return queryObservationLease(
+      output: output,
+      plan: plan,
+      attributes: attributes,
+      onDeferredValueHydrationFailure: onDeferredValueHydrationFailure
+    ) {
+      async let endErrorReports: Void = liveQueryErrors.remove(errorRegistration, for: registrationKey)
+      async let endRegistration: Void = endLiveRegistration()
+      _ = await (endErrorReports, endRegistration)
+    }
+  }
+
+  /// A query observation's lease (#1493): its consumer reads `output` in its own pull, and `onTermination` runs once,
+  /// on whichever comes first of the lease's cancel, the consumer leaving (its task cancelled while it waits, or the
+  /// stream dropped) and its deferred values failing.
+  ///
+  /// The store's stream reached its consumer through two forwarding tasks, a task and a stream each, around a stage of
+  /// their own for deferred values; an emission resumed each of them in turn.
+  private func queryObservationLease(
+    output: InstantObservationOutput,
+    plan: InstantQueryPlan,
+    attributes: [InstantAttribute],
+    onDeferredValueHydrationFailure: (@Sendable (InstantError) async -> Void)? = nil,
+    onTermination: @escaping @Sendable () async -> Void
   ) -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
+    let termination = InstantLiveObservationTermination(onTermination)
+    let cancel: @Sendable () async -> Void = {
+      // The consumer's waiting pull returns first; the cleanup's awaits come after it.
+      output.finish()
+      await termination.run()
+    }
+    output.onTermination {
+      Task { await termination.run() }
+    }
+    return InstantLiveInfiniteQueryChunkObservationLease(
+      stream: InstantObservationConsumerStream.make(
+        output.stream,
+        step: deferredValueHydrationStep(
+          plan: plan,
+          attributes: attributes,
+          onFailure: onDeferredValueHydrationFailure
+        ),
+        onRelease: { Task { await cancel() } }
+      ),
+      cancel: cancel
+    )
+  }
+
+  /// How a consumer's pull reads the deferred values `plan` selects into an emission, or nil when it selects none
+  /// (#1493). It ran in a task of its own per observation, ahead of the consumer.
+  private func deferredValueHydrationStep(
+    plan: InstantQueryPlan,
+    attributes: [InstantAttribute],
+    onFailure: (@Sendable (InstantError) async -> Void)?
+  ) -> (@concurrent @Sendable (InstantQueryEmission) async -> InstantObservationPullStep<InstantQueryEmission>)? {
     guard configuration.deferredValueResidency.hasRequestedAttributes(
       for: plan,
       attributes: attributes
     ) else {
-      return InstantLiveInfiniteQueryChunkObservationLease(
-        stream: stream,
-        cancel: {}
-      )
+      return nil
     }
-    let pair = AsyncStream<InstantQueryEmission>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task { [weak self] in
-      guard let self else {
-        pair.continuation.finish()
-        return
-      }
+    return { [weak self] emission in
+      guard let self else { return .end }
       do {
-        for await emission in stream {
-          try Task.checkCancellation()
-          await self.configuration.onDeferredQueryEmissionHydrationStartingForTesting?(
-            emission.sequence
+        try Task.checkCancellation()
+        await self.configuration.onDeferredQueryEmissionHydrationStartingForTesting?(
+          emission.sequence
+        )
+        guard
+          let hydrated = try await self.hydrateDeferredValuesIfCurrent(
+            in: emission,
+            plan: plan,
+            attributes: attributes
           )
-          guard
-            let hydrated = try await self.hydrateDeferredValuesIfCurrent(
-              in: emission,
-              plan: plan,
-              attributes: attributes
-            )
-          else { continue }
-          await self.configuration.onLiveInfiniteQueryDeferredHydrationAcquiredForTesting?(
-            hydrated.values.count
-          )
-          try Task.checkCancellation()
-          pair.continuation.yield(hydrated)
-        }
-        pair.continuation.finish()
+        else { return .skip }
+        await self.configuration.onLiveInfiniteQueryDeferredHydrationAcquiredForTesting?(
+          hydrated.values.count
+        )
+        try Task.checkCancellation()
+        return .deliver(hydrated)
       } catch is CancellationError {
-        pair.continuation.finish()
+        return .end
       } catch {
         let failure = self.deferredValueHydrationFailure(error, plan: plan)
         await onFailure?(failure)
-        pair.continuation.finish()
+        return .end
       }
     }
-    let termination = InstantLiveObservationTermination {
-      task.cancel()
-      await task.value
-    }
-    pair.continuation.onTermination = { @Sendable _ in
-      Task { await termination.run() }
-    }
-    return InstantLiveInfiniteQueryChunkObservationLease(
-      stream: pair.stream,
-      cancel: {
-        pair.continuation.finish()
-        await termination.run()
-      }
-    )
-  }
-
-  private static func liveInfiniteQueryChunkObservation(
-    _ hydration: InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission>,
-    cancelUnderlyingObservation: @escaping @Sendable () async -> Void
-  ) -> InstantLiveInfiniteQueryChunkObservation {
-    let termination = InstantLiveObservationTermination {
-      async let cancelHydration: Void = hydration.cancel()
-      async let underlyingCancellation: Void = cancelUnderlyingObservation()
-      _ = await (cancelHydration, underlyingCancellation)
-    }
-    return InstantLiveInfiniteQueryChunkObservation(
-      stream: hydration.stream,
-      cancel: { await termination.run() }
-    )
   }
 
   package func deferredValueHydrationFailure(
@@ -7263,8 +7241,7 @@ public final class InstantRuntime: Sendable {
       )
     }
     let emission = try await firstLocalAnswer(plan, remotePageInfo: remotePageInfo)
-    recordActorHop(.persistence)
-    let didSave = try await persistence.saveQueryCache(
+    let didSave = try await saveQueryCacheAnswer(
       InstantCachedQuery(
         queryID: plan.id,
         plan: plan,
@@ -7362,8 +7339,7 @@ public final class InstantRuntime: Sendable {
           plan: plan,
           attributes: state.snapshot.store.attributes
         )
-        recordActorHop(.persistence)
-        let didSave = try await persistence.saveQueryCache(
+        let didSave = try await saveQueryCacheAnswer(
           InstantCachedQuery(
             queryID: plan.id,
             plan: plan,
@@ -7390,6 +7366,44 @@ public final class InstantRuntime: Sendable {
     } catch {
       await leaveOperationGate()
       throw error
+    }
+  }
+
+  /// Leaves a one-shot read's answer as its query's cached row while the store's revisions are still the expected
+  /// ones, and returns whether it did (#1498).
+  ///
+  /// The answer's digest is computed here, on the reader's task. When the row already holds the answer, one persistence
+  /// turn updates the row's time, revisions and sequence, and nothing is encoded; otherwise the answer is encoded here
+  /// too and written whole in a second turn. Every read used to encode its whole answer on the persistence actor, where
+  /// each write's turn waited behind it: 431 of queryOnce's 795 ms of CPU a minute in the #1482 audit's sample of the
+  /// recording exercise, for 60 reads of one unchanged page.
+  private func saveQueryCacheAnswer(
+    _ entry: InstantCachedQuery,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64
+  ) async throws -> Bool {
+    let digest = InstantQueryAnswerDigest(entry.emission)
+    recordActorHop(.persistence)
+    switch try await persistence.confirmQueryCacheAnswer(
+      entry,
+      digest: digest,
+      expectedStoreRevision: expectedStoreRevision,
+      expectedAttributeRevision: expectedAttributeRevision
+    ) {
+    case .confirmed:
+      return true
+    case .stale:
+      return false
+    case .absent:
+      let json = try persistence.encodedQueryCacheAnswer(entry)
+      recordActorHop(.persistence)
+      return try await persistence.saveQueryCache(
+        entry,
+        encodedJSON: json,
+        digest: digest,
+        expectedStoreRevision: expectedStoreRevision,
+        expectedAttributeRevision: expectedAttributeRevision
+      )
     }
   }
 
@@ -10830,6 +10844,8 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// A stream reader's observation (not a query's): its source's continuation belongs to the stream content
+  /// registry, which ends a reader only when that stream ends, so a forwarding task still stands between them (#394).
   private static func liveObservation<Element: Sendable>(
     _ source: AsyncStream<Element>,
     onTermination: @escaping @Sendable () async -> Void
@@ -10857,7 +10873,10 @@ public final class InstantRuntime: Sendable {
     let output = AsyncStream<Element>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
+    let census = InstantObservationTaskCensus.current
+    census?.taskStarted()
     let task = Task {
+      defer { census?.taskFinished() }
       for await emission in source {
         output.continuation.yield(emission)
       }
@@ -10881,9 +10900,10 @@ public final class InstantRuntime: Sendable {
     // gets a stream whose storage holds a release token instead: returning out of `for await`, or dropping the stream,
     // ends the observation as an explicit cancel does (#394).
     return InstantLiveInfiniteQueryChunkObservationLease(
-      stream: InstantObservationConsumerStream.make(output.stream) {
-        Task { await cancel() }
-      },
+      stream: InstantObservationConsumerStream.make(
+        output.stream,
+        onRelease: { Task { await cancel() } }
+      ),
       cancel: cancel
     )
   }

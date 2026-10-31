@@ -1,3 +1,68 @@
+## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
+
+- **Release:** `docs/releases/v1.9.59.md`, tag `v1.9.59` on this release branch's tip, cut from `main` at `81c07e43`.
+  Carries #1493 (merge `dffd9a06`): a query observation is one stream; library tasks per live FetchAll 7 -> 1. No API,
+  storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`), on `main` after the cut; its owner is still measuring its
+  cost.
+- **Next:** Scribe pins 1.9.59 exactly and cuts 0.1 (211) (#1482).
+
+## 2026-10-31 15:56:01 EDT — perf-observe-1493 (#1493): a query observation is one stream; 7 library tasks per live FetchAll -> 1
+
+- **Landed:** red `02ef83f5`, green `6256949a`, exercise `c5f7c882`, doc `b00e2d04` (merge `dffd9a06`). No release cut,
+  tagged or installed; "READY FOR BUILD" on #1482.
+- **Change:** the store yields into the observation's output (`InstantObservationOutput`), the stream its consumer
+  reads; a live query's server error writes into the same output under the lock the emissions take (#360's semantics,
+  its suites unchanged); deferred values, a typed subscription's decode and `map` run in the consumer's own pull. The
+  two forwarders, the error stage's three tasks, the decoding bridge and map's task are gone; a compatibility client's
+  bare stream keeps its bridge. A fetch wrapper tells Observation only of the members an emission changed.
+- **Measured (Mac mini M4, release, `scripts/contention-exercises/run-observation-exercise.sh`, 48 live FetchAll, 50
+  rows, 200 writes):** library tasks per open observation 7.00 -> 1.00 (census); the process's alive tasks over the idle
+  window 289-291 -> 49-51 (xctrace Swift Concurrency); publication -> each wrapper's value p50 2,631 -> 681 us, p90
+  4,406 -> 2,581, p99 6,202 -> 3,754, worst 14,722 -> 6,352 (9,600 samples each). Debug pins: raw live 5 -> 0, local
+  2 -> 0, deferred 6 -> 0, typed 6 -> 0, mapped 7 -> 0, FetchAll 7 -> 1.
+- **Checks:** the focused suites on the mini (111 tests, 1 known issue); the whole core bundle against
+  Tests/known-failing.txt on `35651b04` (this and #1494 merged with main): 1,627 tests, 1 failing, a CPU-ratio timing test of the frame decoder (0.339 against its 0.33 bound) in code this change does not touch; the wrapper bundle: only #304 (pre-existing, fails at the
+  base too) beyond two cross-suite flakes that pass alone.
+- **Not done, logged on #1493:** dropping `objectWillChange` (FetchAll.publisher is built on it, and iOS 16's
+  @StateObject has no other signal; Sharing's shape, a proposal); Scribe's own forwarding task around each typed
+  subscription (`InstantRecordingRealtime.swift`, a follow-up for the app: `map` now composes at no task).
+- **Next:** #1494 (a server frame's planning turns 7 -> 3; its A/B of retries per frame is running), then the ship
+  agent's build.
+
+## 2026-10-31 15:35:00 EDT — perf-writes-1510 (#1510): a recorder that names the pages each table, index and write statement writes
+
+- **Why:** a phone's local save wrote 102 KB and the store's meters named only the store call. Read page by page (two
+  USB pulls, 13:21 and 13:32, build 208 recording), a save is 24.4 pages across 17 b-trees and a server confirm 35.5;
+  a transcript segment save 32.6 pages (131 KB) with an 11.7-17.9 KB body for about 1.3 KB of values. Michael, typed
+  13:30 on #1510: first a recorder in the library, per statement and per table, over time, read from the ledger.
+  Evidence and method: `docs/audits/2026-10-31-writes-1510.md`.
+- **Plan:** `2026-10-31-perf-writes-1510` (bd868c21). **Commits:** red `6434d6e2`; green `cb989369`, fix `07156001`
+  (SQLite opens a path through a symlink by its resolved name, `SQLITE_OK_SYMLINK`; `EXPLAIN` on the writer reset
+  `sqlite3_changes()` and the outbox quarantined claims, so it runs on a connection of the recorder's own), test
+  `14da2b5b`, perf `be771453` (a read teaches only interior pages and page 1: the prune gate test).
+- **What it is:** `InstantSQLiteWriteRecorder.snapshot()`, read once a minute like the store's other meters: each
+  b-tree's log pages (overflow apart) and checkpoint copies, each write statement's runs, rows and pages with the
+  b-trees its `EXPLAIN` opens for writing, and each store call's pages by b-tree. Learned from the pages SQLite already
+  reads and writes through the file meter's VFS; one byte a page, bounded collections, nothing recursive.
+- **Checks (Mac mini, debug):** red fails as expected; green: `InstantSQLiteWriteRecorderTests` 8/8, including a run
+  checked frame by frame against the log file and `dbstat`; whole bundle (known-failing compare) 1,630 tests, one new
+  failure, `InstantLiveFrameDecodeTests`' decode-speed ratio (0.370, bound 0.33; no SQLite in its path), checked on main.
+- **Scribe:** the minute row's `disk.tables` and `disk.statements` landed (scribe `b87c51f61`); the bridge that reads
+  the recorder is branch `agent/claude/perf-writes-1510-bridge` (`0fc60774`), to merge with the pin's bump.
+- **Next:** the recorder's own cost (ab-commits.sh, main against this branch), then land and READY FOR BUILD on #1482;
+  then amendments: a compact stored body (perf-send-1492 handed it over), write keys and effect entities as one b-tree
+  each, #1254's revision counters. Continue from `~/Sync/worktrees/perf-writes-1510`; evidence in
+  `~/Sync/audit/perf-writes-1510/`.
+
+
+## 2026-10-31 15:12:10 EDT — perf-ship-2 (#1482): v1.9.58 for Scribe build 210
+
+- **Release:** `docs/releases/v1.9.58.md`, tag `v1.9.58` on this landing's merge. Carries #1495 (merge `e6e71913`):
+  an observer keeps the ids its result shows, collected once per result. No API, storage or conversion change.
+- **After number:** #1495's `perf-read-1495-fanout-after` still queued on the mini; recorded on #1495 when it runs.
+- **Next:** Scribe pins 1.9.58 exactly and cuts 0.1 (210) (#1482).
+
 ## 2026-10-31 15:05:00 EDT — perf-gate-1491 (#1491): the one-job A/B says no commit moved the write's hold; three write costs removed
 
 - **Measured (perf-gate-1491-ab2, Mac mini, release, one job 13:13-13:45):** steady transact hold p50 alone / beside six
@@ -13,6 +78,56 @@
   round alone and beside load; the tight-loop benchmark x3.
 - **Next:** if green, record the change log (`/tmp/perf-gate-1491/record-final.sh` drafts it), land, ledger, READY FOR
   BUILD with the benchmark's before and after; remove `.build/ab-trees` in the mini's slot 1 and this worktree.
+
+## 2026-10-31 14:58:00 EDT — perf-read-1498 (#1495): an observer keeps the ids its result shows
+
+- **Landing:** red `3cce5ca1`, green `9051d75e`, exercise `ff8fb803` (plan `d5fd5466`), branch
+  `agent/claude/perf-read-1498`. No release cut, no build.
+- **What changed:** the set of every entity id an observer's result shows is collected once per result and kept on the
+  observer while it holds that result (as its own or as the one it was last handed); the decision, the splice and the
+  absent-entity check read it. Same observers refresh, same hand-overs.
+- **Checks:** laptop, debug: 516 tests in 16 suites pass (11 listed known issues), the new pin among them (red 3 and 3
+  sets, now 0 and 0) and the random-write suites that check every observer against a fresh materialization.
+- **Before (fan-out exercise, Mac mini, release, `3cce5ca1` + the exercise of `ff8fb803`, 14:47):** the app's write
+  shape (interims as unlinked live rows): a final's publication p50 18.4 ms, an interim's 52 us, a duration's 817 us;
+  6,350 id sets collected per 2,000 writes. Sampled: re-materialization (`materializePage`) is 92% of a publication's
+  time, the id sets about 1%, `wasLastHanded`'s equality about 0.1%. **After:** queued as
+  `perf-read-1495-fanout-after` at `9051d75e`; recorded on #1495 and here.
+- **Found:** `wasLastHanded`'s equality measured at about 0.1% of a publication, and a fingerprint would still need the
+  full equality on every match (the unchanged case), so it is not added. The publication's cost is the
+  re-materialization of the pages a final shifts and of the list whose preview changes: a lever of its own.
+- **Next:** the after run; READY FOR BUILD on #1482; a follow-up issue for the re-materialization with these numbers.
+
+
+## 2026-10-31 13:56:58 EDT — perf-ship-1 (#1482): v1.9.57, the three landed performance fixes for Scribe 209
+
+- **Release:** `docs/releases/v1.9.57.md`, tagged on this landing's merge. Carries #1491 (a new write encodes its body
+  once), #1492 (one attribute resolver per server schema, kept across sends) and #1498 (a one-shot read writes its
+  answer to the query cache only when it changed). No conversion; `instant_query_cache` gains four nullable columns.
+- **Numbers (Mac mini M4, release, from each fix's log):** `mutationEncode` 2,650.1 -> 14.5 us per send, live session
+  actor 238.5 -> 1.3 ms a minute (#1492); `transact` p50 0.457 -> 0.434 ms (#1491); #1498's after is still queued.
+- **Not in (not landed):** #1493, #1494, #1495, #1496, #1497, #1500, #1504, #1505.
+- **Next:** Scribe pins 1.9.57 and cuts build 209 (#1482).
+
+## 2026-10-31 13:46:00 EDT — perf-read-1498 (#1498): a one-shot read writes its answer to the query cache only when it changed
+
+- **Landed:** red `38c426f6`, green `2c1c003d` (plan `d5fd5466`, amendment `92fe6a34`), branch
+  `agent/claude/perf-read-1498`. No release cut, no build; a later ship agent tags and installs.
+- **What changed:** a query-cache row holds its answer's SHA-256 digest (computed on the reader's task) and, in
+  columns, the last read's time, revisions and sequence, which readers lay over the row's JSON. An unchanged answer is
+  one statement and no encode; a first or changed one is encoded on the reader's task, never on the persistence actor.
+  A fresh store's first answer takes one more persistence turn (relaunch pins 14 -> 15, ADR 0018's log).
+- **Found:** no read answers from `instant_query_cache` (the issue's premise); its readers are the closed connection's
+  error and the public `cachedQuery(_:)` / `cachedQueries()`, unchanged.
+- **Checks:** Mac mini, debug: `InstantQueryCacheAnswerWriteTests` 5/5 (red 2/5), the query-cache and closed-connection
+  tests, the #1131 and #300 suites. `LocalTodoValidationTests`' three TypeScript verifiers fail on the mini for a
+  missing `validation/ts-runner/node_modules/.bin/tsx` (environment).
+- **Before (M6, mini, release, 60 s sample at 1 ms, main `7f0595b8`, 12:52):** `queryOnce` 802 ms of CPU, of which
+  `saveQueryCache` 553 (69%); `SQLitePersistenceStore.encode` 541; `sqlite3_step` 1,260. **After:** queued as
+  `perf-read-1498-m6-after` at `3cce5ca1`; recorded on #1498 and here when it lands.
+- **Next:** #1495 (red `3cce5ca1`; green in the worktree, tests queued); the fan-out exercise before and after.
+  Continue from `~/Sync/worktrees/perf-read-1498`; evidence in `~/Sync/audit/perf-read-1498/`.
+
 
 ## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
 
