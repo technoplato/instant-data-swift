@@ -36,7 +36,10 @@ receipt fingerprint).
 4. Any further cost the A/B or a sample names inside the transact's own turns (its reads, prepare, save, status read,
    diagnostics), one red/green each, measured with ab-commits.sh (this branch against main, same job, both
    conditions).
-5. After each green: land, ledger with land --prepend, "READY FOR BUILD" on #1482. No build cut, tagged or installed.
+5. Amendment 1 (measured at 12:44: 287f77d1 alone holds 5.02 ms, so F0 is mostly machine state): the two digests a
+   save writes format their 32 bytes with `String(format:)` each, about 0.11 ms a write on the M4 (M6 sample); red pins
+   the digest of a known input, green writes the same lowercase hex from a byte table.
+6. After each green: land, ledger with land --prepend, "READY FOR BUILD" on #1482. No build cut, tagged or installed.
 
 Write contract unchanged: transact/save is local materialize and durable outbox only. Nothing is batched, delayed,
 throttled, sampled, dropped or limited.
@@ -50,6 +53,8 @@ throttled, sampled, dropped or limited.
   `acceptOutboxMutation` or the receipt digest, which perf-send-1492 owns, nor the query cache or the server apply)
 - Sources/InstantSwiftDataCore/InstantRuntime.swift (`transact`, `performTransact`, `loadLocalWriteReads`,
   `saveLocalMutationReadingConnectionStatus` only)
+- Sources/InstantSwiftDataCore/InstantModels.swift (amendment 1: `instantSHA256HexDigest` only; not
+  `optimisticEffectReceiptFingerprint`, which perf-send-1492 owns)
 - Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift (new)
 - docs/audits/2026-10-31-transact-hold-1491.md (new: the A/B's lines and what they mean)
 - CHANGELOG.md, PROGRESS.md, docs/audits/commit-changelog.md

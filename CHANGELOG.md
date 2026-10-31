@@ -10,6 +10,48 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 1:00:52 p.m. EDT — `02b7cf8abb6a` perf(#1491): green: a new local write encodes its body once; the size bound reads the bytes the save writes
+
+- **Implementation commit:** `02b7cf8abb6a5524cd047ea3b2ffa10ca3290b9c`
+- **Change:** perf(#1491): green: a new local write encodes its body once; the size bound reads the bytes the save writes
+- **Details:**
+  - The admission no longer encodes the whole mutation to sorted-key JSON to count its bytes; the save of a new write encodes the stored body once before its transaction, checks the 8 MiB limit on it (same error), and writes that text. About 0.37 ms of a write's ~3 ms of CPU on an M4 in the #1482 sample.
+  - Verified (laptop, debug, Xcode beta): 95 tests in 6 suites (the outbox, oversized body, supersession, body conversion, narrow row, hop pin) and 518 tests in 25 suites (#1426, #1435, #1115, #1121 suites) pass, known issues as on main.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1491 validateNewMutation keeps the receipt and step checks; validateEncodedBodyByteCount checks the stored body's bytes
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 saveLocalMutation(admittingNewWrite:) encodes once and passes the text to the row write
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1491 the transact's save admits a new write
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:00:52 p.m. EDT — `efc0656f06c6` test(#1491): red: a new local write encodes its body once (today twice: the admission's size check encodes it again)
+
+- **Implementation commit:** `efc0656f06c6a7ce1d712c4eec797e927d2149fb`
+- **Change:** test(#1491): red: a new local write encodes its body once (today twice: the admission's size check encodes it again)
+- **Details:**
+  - Red on the laptop (debug, Xcode beta): 10 writes encoded their bodies 20 times; the oversized write's guard passes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1491 a task-local counter of body encodes, nil outside a test
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 the stored body's encode counted
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 one encode per write; the oversized write fails before it commits
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:00:51 p.m. EDT — `a79caca2fce3` test(#1491): ab-commits.sh runs the recording exercise at several commits in one job, alone and beside a CPU load
+
+- **Implementation commit:** `a79caca2fce3232431e670328708b615726826fc`
+- **Change:** test(#1491): ab-commits.sh runs the recording exercise at several commits in one job, alone and beside a CPU load
+- **Details:**
+  - The #1482 day bisect compared runs from different jobs; every run beside another job on the Mac mini measured a fast hold, every run alone a slow one. This runner builds each commit once and runs every commit in every condition, rotated, round after round, recording the CPU's other users per run.
+  - 02944ced: survives macOS's bash 3.2 (an empty array is unbound under set -u) and adds --bench-runs, the tight-loop cross-SDK benchmark per commit.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 the one-job A/B of commits, alone and beside N busy loops, and the tight-loop benchmark
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491@ld); no SpecStory capture
+
 ## October 31st, 2026 at 5:51:52 a.m. EDT — `da073db4dc6e` fix(#1426): green: a stored live-query result is its ownership rows, its facts and a narrow header; nothing waits
 
 - **Implementation commit:** `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
