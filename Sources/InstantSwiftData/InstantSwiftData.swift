@@ -2430,7 +2430,10 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
       continuation: mapped.continuation,
       cancellationOwner: cancellationOwner,
       start: {
-        Task {
+        let census = InstantObservationTaskCensus.current
+        census?.taskStarted()
+        return Task {
+          defer { census?.taskFinished() }
           do {
             for try await value in self {
               try Task.checkCancellation()
@@ -2630,7 +2633,10 @@ private func fetchSubscription<Input: Sendable, Output: Sendable>(
     continuation: stream.continuation,
     cancellationOwner: cancellationOwner,
     start: {
-      Task {
+      let census = InstantObservationTaskCensus.current
+      census?.taskStarted()
+      return Task {
+        defer { census?.taskFinished() }
         do {
           for await value in values {
             try Task.checkCancellation()
@@ -3845,7 +3851,10 @@ private func startAutomaticFetchObservation<Value: Sendable>(
     message: "Started automatic observation for a static fetch declaration.",
     metadata: ["valueType": String(reflecting: Value.self)]
   )
+  let census = InstantObservationTaskCensus.current
+  census?.taskStarted()
   let task = Task {
+    defer { census?.taskFinished() }
     var subscriptionID: Int?
     var emissionCount = 0
     do {

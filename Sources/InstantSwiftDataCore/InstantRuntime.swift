@@ -6091,18 +6091,25 @@ public final class InstantRuntime: Sendable {
     let errorUpdates = await liveQueryErrors.updates(for: registrationKey)
     let events = AsyncStream<InstantLiveQueryErrorReportingEvent>.makeStream()
     let output = AsyncStream<InstantQueryEmission>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let census = InstantObservationTaskCensus.current
+    census?.taskStarted()
     let emissionFeed = Task {
+      defer { census?.taskFinished() }
       for await emission in source {
         events.continuation.yield(.emission(emission))
       }
       events.continuation.yield(.sourceFinished)
     }
+    census?.taskStarted()
     let errorFeed = Task {
+      defer { census?.taskFinished() }
       for await error in errorUpdates {
         events.continuation.yield(.serverError(error))
       }
     }
+    census?.taskStarted()
     let consumer = Task {
+      defer { census?.taskFinished() }
       var latest: InstantQueryEmission?
       var serverError: InstantError?
       events: for await event in events.stream {
@@ -6159,7 +6166,10 @@ public final class InstantRuntime: Sendable {
     let pair = AsyncStream<InstantQueryEmission>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
+    let census = InstantObservationTaskCensus.current
+    census?.taskStarted()
     let task = Task { [weak self] in
+      defer { census?.taskFinished() }
       guard let self else {
         pair.continuation.finish()
         return
@@ -10855,7 +10865,10 @@ public final class InstantRuntime: Sendable {
     let output = AsyncStream<Element>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
+    let census = InstantObservationTaskCensus.current
+    census?.taskStarted()
     let task = Task {
+      defer { census?.taskFinished() }
       for await emission in source {
         output.continuation.yield(emission)
       }
