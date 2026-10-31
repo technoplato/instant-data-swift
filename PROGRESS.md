@@ -1,3 +1,19 @@
+## 2026-10-31 15:05:00 EDT — perf-gate-1491 (#1491): the one-job A/B says no commit moved the write's hold; three write costs removed
+
+- **Measured (perf-gate-1491-ab2, Mac mini, release, one job 13:13-13:45):** steady transact hold p50 alone / beside six
+  busy loops: `287f77d1` 5.04, 4.90 / 3.40, 3.21 ms; `4accbf45` 5.76, 4.12 / 3.32, 3.29; main `13cdf499` 6.81, 5.95 /
+  2.80, 3.19; `02b7cf8a` 5.40, 6.62 / 3.13, 2.88. Tight loop (300 transacts, p50 of three runs): 0.434, 0.438, 0.457,
+  0.434 ms. F0's 1.58 -> 7.22 compared a run beside a cold build with runs alone; #1514 files the tooling cause.
+- **Landed:** `1e1ba548` (a new write encodes its body once), ledger `69f2fe51`; READY FOR BUILD posted on #1482.
+- **On the branch, not landed:** hex red `cd3faf28` / green `d564a099` (333 allocations a digest on the laptop, debug;
+  the hex now adds its string only), wire red `aa18c4af` / green `4ff5e5c4` (a new write fingerprints no wire intent),
+  runner `1e822082`, `221573c6`, the note `docs/audits/2026-10-31-transact-hold-1491.md`.
+- **Running:** perf-gate-1491-final (mini): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path
+  and supersession suites; my suite at `13cdf499`, `02b7cf8a`, `aa18c4af` (the wire red) and `4ff5e5c4`; one exercise
+  round alone and beside load; the tight-loop benchmark x3.
+- **Next:** if green, record the change log (`/tmp/perf-gate-1491/record-final.sh` drafts it), land, ledger, READY FOR
+  BUILD with the benchmark's before and after; remove `.build/ab-trees` in the mini's slot 1 and this worktree.
+
 ## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
 
 - **Measured:** the 10-24 baseline `287f77d1`, run alone on the Mac mini (release, the recording exercise, 12:44, nothing
