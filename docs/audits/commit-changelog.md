@@ -1,3 +1,6 @@
+## 2026-10-31 16:08:46 EDT — scribe `655e5f00eb2fe4eff2ab8a0a9bb4059b43520ce2`
+Fix (#1508): the recording Live Activity drops its 60 s keep-alive and its 90 s stale date (Michael chose option 1); new words still go every 5 s behind and 30 s in front and state at once, the clock counts on the device by itself, and about 60 of the 107 updates an hour go away.
+
 ## 2026-10-31 18:34:51 EDT — scribe `85839caa580e8b53eaa0b6b08984543dfbd42391`
 Telemetry (#1507 a) and recovery (#1510, #1463): a diagnostics spool's compaction counts the bytes it rewrites under diagnostics.spool in the energy ledger (red 1b9914513, green 2b5961326; on build 208 the collector lane's compactions wrote 1.29 MB a minute that no writer named), and scripts/recovery/recover-recording-from-outbox.mjs inflates a body instant-data-swift stores compressed, text bodies still read (red c070c27b4, green 6ade1b1c9). Change log e335051c6.
 
