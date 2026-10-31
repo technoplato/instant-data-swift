@@ -10,10 +10,13 @@ import Testing
 
 /// The store's publication on a recording phone (#1495): 48 observers, three of them recordings lists of 50 rows with
 /// five includes each (a recording's transcriptions, two preview lines, its audio and its preview image), eight
-/// transcript pages of the live recording, and 37 small queries of past recordings; a live transcript line written 4
-/// times then finalized, with the recording's heartbeat every eighth write, at no pace: each write is committed and
-/// published, and the publication alone is timed. Set INSTANT_PUBLISH_FANOUT=1 to run it; INSTANT_PUBLISH_FANOUT_STEPS
-/// sets the measured writes (2,000).
+/// transcript pages of the live recording, its live line, and 36 small queries of past recordings; a live line written
+/// four times then finalized, with the recording's duration every eighth write, at no pace: each write is committed and
+/// published, and the publication alone is timed. As the app writes them (ADR 0069), an interim is the line's
+/// `liveLines` row, which links to nothing, and the final is a transcript line linked to the recording and put in its
+/// preview slot (A for an even index, B for an odd one), its live row deleted. INSTANT_PUBLISH_FANOUT_INTERIMS=segments
+/// writes each interim into the open transcript line instead, linked to the recording, as a stress of the lists'
+/// judgement. Set INSTANT_PUBLISH_FANOUT=1 to run it; INSTANT_PUBLISH_FANOUT_STEPS sets the measured writes (2,000).
 @Suite(
   .serialized,
   .enabled(
@@ -23,8 +26,9 @@ import Testing
 )
 struct PublishFanOutExercises {
   @Test func recordingPhone() async throws {
-    let steps = ProcessInfo.processInfo.environment["INSTANT_PUBLISH_FANOUT_STEPS"].flatMap(Int.init) ?? 2_000
-    var fixture = PublishFanOutFixture()
+    let environment = ProcessInfo.processInfo.environment
+    let steps = environment["INSTANT_PUBLISH_FANOUT_STEPS"].flatMap(Int.init) ?? 2_000
+    var fixture = PublishFanOutFixture(interimsAreLinked: environment["INSTANT_PUBLISH_FANOUT_INTERIMS"] == "segments")
     let store = try await fixture.seededStore()
     let plans = fixture.observedPlans()
     var readings: [Task<Void, Never>] = []
@@ -34,7 +38,8 @@ struct PublishFanOutExercises {
     }
     defer { readings.forEach { $0.cancel() } }
     print(
-      "PUBLISH fanout setup recordings=\(PublishFanOutFixture.recordingCount) "
+      "PUBLISH fanout setup interims=\(fixture.interimsAreLinked ? "segments" : "liveLines") "
+        + "recordings=\(PublishFanOutFixture.recordingCount) "
         + "live_segments=\(PublishFanOutFixture.liveSegmentCount) observers=\(plans.count) lists=3 list_rows=50 "
         + "includes=5 triples=\(await store.currentTripleCount())"
     )
@@ -97,6 +102,7 @@ struct PublishFanOutFixture {
   static let transcriptions = "fanoutTranscriptions"
   static let segments = "fanoutSegments"
   static let attachments = "fanoutAttachments"
+  static let liveLines = "fanoutLiveLines"
   /// The newest recording, the one being recorded.
   static let live = recordingCount - 1
 
@@ -105,10 +111,15 @@ struct PublishFanOutFixture {
     var transaction: InstantStoreTransaction
   }
 
+  /// Whether an interim rewrites the open transcript line, linked to the recording, instead of its live row.
+  let interimsAreLinked: Bool
   private var step = 0
   private var openSegment = liveSegmentCount
   private var openRevision = 0
-  private var previewA = liveSegmentCount - 1
+
+  init(interimsAreLinked: Bool = false) {
+    self.interimsAreLinked = interimsAreLinked
+  }
 
   static let attributes: [InstantAttribute] = {
     func scalar(_ namespace: String, _ name: String, _ type: InstantValueType, indexed: Bool = false) -> InstantAttribute {
@@ -150,6 +161,12 @@ struct PublishFanOutFixture {
       scalar(segments, "wordsJSON", .json),
       scalar(segments, "isFinal", .boolean),
       scalar(segments, "updatedAtMs", .number),
+      .primaryKey(namespace: liveLines),
+      scalar(liveLines, "recordingID", .string, indexed: true),
+      scalar(liveLines, "segmentIndex", .number),
+      scalar(liveLines, "text", .string),
+      scalar(liveLines, "wordsJSON", .json),
+      scalar(liveLines, "updatedAtMs", .number),
       .primaryKey(namespace: attachments),
       scalar(attachments, "recordingID", .string, indexed: true),
       scalar(attachments, "kind", .string),
@@ -162,8 +179,10 @@ struct PublishFanOutFixture {
   static func segmentID(_ recording: Int, _ index: Int) -> String { "fanout-segment-\(recording)-\(index)" }
   static func transcriptionID(_ recording: Int, _ index: Int) -> String { "fanout-transcription-\(recording)-\(index)" }
   static func attachmentID(_ recording: Int, _ index: Int) -> String { "fanout-attachment-\(recording)-\(index)" }
+  static func liveLineID(_ index: Int) -> String { "fanout-live-line-\(index)" }
 
-  /// The three lists, the live recording's eight transcript pages and 37 small queries of past recordings: 48.
+  /// The three lists, the live recording's eight transcript pages, its live line and 36 small queries of past
+  /// recordings: 48.
   func observedPlans() -> [InstantQueryPlan] {
     var plans = (0..<3).map { page in Self.listPlan(id: "fanout.list.\(page)", offset: page * 50, limit: 50) }
     plans += (0..<8).map { page in
@@ -176,7 +195,14 @@ struct PublishFanOutFixture {
         limit: 64
       )
     }
-    for index in 0..<37 {
+    plans.append(
+      InstantQueryPlan(
+        id: "fanout.live-line",
+        namespace: Self.liveLines,
+        filters: [.equals(field: "recordingID", value: .string(Self.recordingID(Self.live)))]
+      )
+    )
+    for index in 0..<36 {
       let recording = Self.live - 1 - index
       let namespace = [Self.segments, Self.attachments, Self.transcriptions][index % 3]
       plans.append(
@@ -221,7 +247,9 @@ struct PublishFanOutFixture {
     for recording in 0..<Self.recordingCount {
       var operations: [InstantTripleOperation] = []
       let id = Self.recordingID(recording)
-      let segmentCount = recording == Self.live ? Self.liveSegmentCount + 1 : Self.pastSegmentCount
+      let segmentCount = recording == Self.live
+        ? Self.liveSegmentCount + (interimsAreLinked ? 1 : 0)
+        : Self.pastSegmentCount
       operations += Self.entity(
         id,
         Self.recordings,
@@ -247,8 +275,16 @@ struct PublishFanOutFixture {
         operations.append(Self.set(id, "segments", .ref(segment)))
       }
       let lastFinal = recording == Self.live ? Self.liveSegmentCount - 1 : Self.pastSegmentCount - 1
-      operations.append(Self.set(id, "previewSegmentA", .ref(Self.segmentID(recording, lastFinal))))
-      operations.append(Self.set(id, "previewSegmentB", .ref(Self.segmentID(recording, lastFinal - 1))))
+      for index in [lastFinal - 1, lastFinal] {
+        operations.append(Self.set(id, Self.previewSlot(index), .ref(Self.segmentID(recording, index))))
+      }
+      if recording == Self.live, !interimsAreLinked {
+        operations += Self.entity(
+          Self.liveLineID(Self.liveSegmentCount),
+          Self.liveLines,
+          Self.liveLineValues(Self.liveSegmentCount, revision: 0)
+        )
+      }
       for (index, kind) in ["audio", "image"].enumerated() {
         let attachment = Self.attachmentID(recording, index)
         operations += Self.entity(
@@ -261,64 +297,87 @@ struct PublishFanOutFixture {
         )
         operations.append(Self.set(id, kind == "audio" ? "audioAttachment" : "previewImage", .ref(attachment)))
       }
+      let transactionID = "fanout-seed-\(recording)"
       let prepared = try await store.prepareCurrent(
-        InstantStoreTransaction(id: "fanout-seed-\(recording)", operations: operations.map { $0.stamped("fanout-seed-\(recording)", step: 0) })
+        InstantStoreTransaction(id: transactionID, operations: operations.map { $0.stamped(transactionID, step: 0) })
       )
       _ = await store.commitAndPublish(prepared)
     }
     return store
   }
 
-  /// The live recording's next write: its open line's next interim, every fifth write its final and the next line
-  /// opened with the preview lines moved on, and every eighth its heartbeat.
+  /// The live recording's next write: its open line's next interim, every fifth write the line's final, and every
+  /// eighth the recording's duration.
   mutating func nextWrite() -> Write {
     step += 1
     let live = Self.recordingID(Self.live)
     let transactionID = "fanout-write-\(step)"
     if step % 8 == 0 {
       return Write(
-        kind: "heartbeat",
+        kind: "duration",
         transaction: InstantStoreTransaction(
           id: transactionID,
-          operations: [
-            Self.set(live, "durationSeconds", .number(600 + Double(step))),
-            Self.set(live, "updatedAtMs", .number(Double(Self.live) * 60_000 + Double(step))),
-          ].map { $0.stamped(transactionID, step: step) }
+          operations: [Self.set(live, "durationSeconds", .number(600 + Double(step)))]
+            .map { $0.stamped(transactionID, step: step) }
         )
       )
     }
     openRevision += 1
-    let open = Self.segmentID(Self.live, openSegment)
     if openRevision < 5 {
+      let operations = interimsAreLinked
+        ? Self.entity(
+          Self.segmentID(Self.live, openSegment),
+          Self.segments,
+          Self.segmentValues(Self.live, openSegment, revision: openRevision, final: false)
+        )
+        : Self.entity(Self.liveLineID(openSegment), Self.liveLines, Self.liveLineValues(openSegment, revision: openRevision))
       return Write(
-        kind: "line",
+        kind: "interim",
         transaction: InstantStoreTransaction(
           id: transactionID,
-          operations: Self.entity(
-            open,
-            Self.segments,
-            Self.segmentValues(Self.live, openSegment, revision: openRevision, final: false)
-          ).map { $0.stamped(transactionID, step: step) }
+          operations: operations.map { $0.stamped(transactionID, step: step) }
         )
       )
     }
+    let finalLine = Self.segmentID(Self.live, openSegment)
     var operations = Self.entity(
-      open,
+      finalLine,
       Self.segments,
       Self.segmentValues(Self.live, openSegment, revision: openRevision, final: true)
     )
-    operations.append(Self.set(live, "previewSegmentB", .ref(Self.segmentID(Self.live, previewA))))
-    operations.append(Self.set(live, "previewSegmentA", .ref(open)))
-    previewA = openSegment
+    operations.append(Self.set(live, "segments", .ref(finalLine)))
+    operations.append(Self.set(live, Self.previewSlot(openSegment), .ref(finalLine)))
+    if !interimsAreLinked {
+      operations.append(.deleteEntityInNamespace(entityID: Self.liveLineID(openSegment), namespace: Self.liveLines))
+    }
     openSegment += 1
     openRevision = 0
-    let next = Self.segmentID(Self.live, openSegment)
-    operations += Self.entity(next, Self.segments, Self.segmentValues(Self.live, openSegment, revision: 0, final: false))
-    operations.append(Self.set(live, "segments", .ref(next)))
+    if interimsAreLinked {
+      let next = Self.segmentID(Self.live, openSegment)
+      operations += Self.entity(next, Self.segments, Self.segmentValues(Self.live, openSegment, revision: 0, final: false))
+      operations.append(Self.set(live, "segments", .ref(next)))
+    } else {
+      operations += Self.entity(Self.liveLineID(openSegment), Self.liveLines, Self.liveLineValues(openSegment, revision: 0))
+    }
     return Write(
-      kind: "line-final",
-      transaction: InstantStoreTransaction(id: transactionID, operations: operations.map { $0.stamped(transactionID, step: step) })
+      kind: "final",
+      transaction: InstantStoreTransaction(
+        id: transactionID,
+        operations: operations.map { $0.stamped(transactionID, step: step) }
+      )
     )
+  }
+
+  /// The preview slot a final line goes to, as the app picks it: A for an even index, B for an odd one.
+  static func previewSlot(_ index: Int) -> String {
+    index.isMultiple(of: 2) ? "previewSegmentA" : "previewSegmentB"
+  }
+
+  static func liveLineValues(_ index: Int, revision: Int) -> [String: InstantValue] {
+    var values = segmentValues(live, index, revision: revision, final: false)
+    values["segmentIndex"] = values.removeValue(forKey: "index")
+    values["isFinal"] = nil
+    return values
   }
 
   static func segmentValues(_ recording: Int, _ index: Int, revision: Int, final: Bool) -> [String: InstantValue] {
