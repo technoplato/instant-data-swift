@@ -1,3 +1,6 @@
+## 2026-10-31 12:40:54 EDT — scribe `cfe947808dabe72e837ccca7250d57709de1caaa`
+Audit (#1482): Swift concurrency, scheduling and isolation in instant-data-swift first, Scribe second, measured (landed bd29efea2 with its change log 65b24b771; issues #1491-#1498).
+
 ## 2026-10-31 12:39:25 EDT — instant-data-swift `524bf6e1b2a0d2a9ea021bdd6cb7144d698a9e2e`
 Tools (#1482): the recording exercise profiled under sample and xctrace, and an A/B of the writer's SQLite mutex (merge of aa325f311; no difference between FULLMUTEX and NOMUTEX, 0.456 against 0.458 ms per transact).
 
