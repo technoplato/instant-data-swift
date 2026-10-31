@@ -88,6 +88,9 @@
 //   sequence, which readers lay over its JSON; a read whose answer the row holds updates those columns only (#1498).
 // - 2026-10-31: the store keeps the receipt fingerprint it computed for each write, keyed by a hash of the fingerprint's
 //   inputs, so the delivery claim and the acknowledgement no longer encode a write the save just fingerprinted (#1497).
+// - 2026-10-31: the writer keeps SQLite's temporary structures in memory from the end of its bootstrap, after the one-time
+//   migrations and before the server apply's staging tables: a phone wrote 34-37K temporary-file writes an hour of
+//   recording and 470K across one evening's launches (#1504).
 
 import Foundation
 import IssueReporting
@@ -2941,6 +2944,14 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try ensureRareStateIndexes()
     }
+    // #1504: SQLite's temporary structures in memory from here on: a statement's journal, a sort's or a DISTINCT's
+    // spill, the server apply's staging tables. With SQLite's default, a file, a phone wrote them 34,124-36,677 times an
+    // hour of recording (19-49 MB/h) and 470,007 times across one evening's eight launches, bytes SQLite deletes when the
+    // statement ends. What one holds is bounded by the library's own batches (a prune batch of 1,000 facts, a released or
+    // reloaded chunk, a server apply's page of 51 rows). The one-time migrations above keep the file: one copies every
+    // fact's key into a temporary table. Set before the staging tables, because a change of the setting drops every
+    // temporary table that exists.
+    try execute("PRAGMA temp_store = MEMORY")
     try ensureServerApplyStagingSchema()
     try withSQLiteBusyRetry {
       try ensureLookupIndexes()
@@ -14067,6 +14078,11 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The writer's `PRAGMA temp_store`: 0 SQLite's build default (a file here), 1 a file, 2 memory (#1504).
+  func temporaryStoreForTesting() throws -> Int64 {
+    try selectInt64("PRAGMA temp_store")
+  }
+
   /// Finishes a prune's release of facts that a crash or a failure cut short (#1129), before anything reads the store.
   ///
   /// A closed result larger than a prune batch is released over several batches; a fact left unchecked would stay in
@@ -20855,6 +20871,8 @@ public actor SQLitePersistenceStore {
   private func reopenConnection() throws {
     connection.close()
     connection.raw = try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS)
+    // #1504: a reopened writer keeps its temporary structures in memory, as its bootstrap left them.
+    try execute("PRAGMA temp_store = MEMORY")
   }
 
   private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) throws {
