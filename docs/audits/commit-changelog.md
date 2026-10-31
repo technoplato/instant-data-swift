@@ -1,3 +1,12 @@
+## 2026-10-30 23:49:35 EDT — scribe `e75259261720e4e727612120363fccf74e5d08a1`
+Cut (#1404): Scribe 0.1 (197).
+
+## 2026-10-30 23:49:35 EDT — scribe `32cc67c2d280610944cba5febb7bf4e4d9494ec1`
+Fix (#1404): other platforms keep their list rows as they were.
+
+## 2026-10-30 23:49:35 EDT — scribe `2c5e64f019f4666a59de4c3f13eb0ef43ced59c9`
+Fix (#1404): a list row's insets reach the list on Vision Pro.
+
 ## 2026-10-30 23:37:30 EDT — scribe `3bc5bed1b4ad7b8ef12d2cee21f440444f89278f`
 Chore (#1435): change-log for the export's red and green.
 
