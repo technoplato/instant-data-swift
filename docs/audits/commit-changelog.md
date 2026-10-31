@@ -1,3 +1,12 @@
+## 2026-10-31 00:22:26 EDT — scribe `ffe9a13290483349780e0df1dc6df5dc3202158b`
+Docs (#1442): the plan's steps name their issues.
+
+## 2026-10-31 00:20:48 EDT — scribe `b24a46a48fbc2b2688742f04c40cd0d1d2aab611`
+Docs (#1442): what a stream append and a stream reader cost, measured through the library.
+
+## 2026-10-31 00:04:53 EDT — scribe `a44ce7ca3ae6691c308628d69cd08d807530b81e`
+Docs (#1442): the first recording on the live room path.
+
 ## 2026-10-31 00:15:35 EDT — scribe `77b905e7a38c44b465f3ac80476e1db8f8c3879a`
 Landing (#1432): two tests now fail on the old shared file key, and the install result of the build that carries the fix.
 
