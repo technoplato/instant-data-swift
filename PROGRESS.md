@@ -1,3 +1,23 @@
+## 2026-10-31 19:58:00 EDT — perf-gate-1491 (#1491): amendment 3, the outbox tail is one entry of a creation-order index
+
+- **Why:** every local write's creation cursor, the supersession tail and the server apply plan's begin and extend read
+  the outbox's newest row in delivery order; no index held that order, so each scanned the global-effect index whole
+  and sorted (291 us at the phone-shaped store's 700 rows, 2.25 ms at 5,400; laptop, the outbox's schema; M6: 39 samples
+  a minute, 18 inside the transact's hold).
+- **Commits:** plan `7887351d` (landed `61e20540`), red `e10668ae`, green `e712d3e3`, guard `bf8748e0` + `7a67778d`,
+  runner `d8185dde` (packages resolved one tree at a time after a SwiftPM clone race; a failed build stops the job),
+  plan note `8cb1d994`, change log `1c8a539e`.
+- **Measured (one job, Mac mini, release, perf-gate-1491-tail-ab 19:25-19:43, before `e10668ae`, after `d8185dde`):**
+  beside load, transact hold 2.70 -> 2.60 ms, write.line 3.38 -> 3.08, plan hold 1.35 -> 1.04 (means of two rounds);
+  serverApplyPlan CPU a call alone 852 -> 807 us. Pages a step: save 16.79 -> 17.79, claim 2, ack 4, echo 19.97 ->
+  20.97. Red fails, green passes in release; the fixed suites pass in debug (26 tests in 3 suites).
+- **Cost accepted:** #1115's budget of 24 outbox frames a write is 25 (23.0 -> 25.0, the index's page on the save and
+  the echo); perf-writes-1510's amendment 2 (-4 a save, -2 an echo) is told on the channel.
+- **Open:** the tight-loop transact read 0.68 ms in this job at both commits, 0.389 ms at `4ff5e5c4` in the 16:11 job;
+  every commit here includes main's 13:01-16:19 merges. perf-gate-1491-bench-bisect (queued) runs the tight loop at
+  `69f2fe51`, `e6e71913`, `dffd9a06` and `d3b08d41` in one job to say whether one of them moved it.
+- **Next:** land this branch, ledger, READY FOR BUILD on #1482; the bisect's lines on #1491 and #1482; cleanup.
+
 ## 2026-10-31 16:50:00 EDT — perf-gate-1491 (#1491): the write's own cost -18% in one job; the outbox tail read next
 
 - **Measured (perf-gate-1491-final, Mac mini M4, release, one job 16:11-16:37):** tight-loop transact p50 (cross-SDK
