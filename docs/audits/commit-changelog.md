@@ -1,3 +1,6 @@
+## 2026-10-31 15:56:21 EDT — instant-data-swift `dffd9a0629b07bf718c467f175203083fde4606e`
+Perf (#1493): a query observation is one stream, written by the store and the live query's server error under one lock and read in its consumer's own pull (red 02ef83f5, green 6256949a, exercise c5f7c882, doc b00e2d04; change log b6a3274e): library tasks per open live FetchAll 7 -> 1, the process's alive tasks with 48 live observers 290 -> 50 (xctrace), publication -> wrapper value p50 2,631 -> 681 us (Mac mini, release).
+
 ## 2026-10-31 15:22:44 EDT — scribe `e565fa39a8a0edd0adf89dbc70428a604ede5edb`
 Perf (#1501): the recordings list's page carries no build provenance: the list selects no buildInfo on recordings or on its transcriptions include, and a line's final writes its transcription's counts without buildInfo, which the create sets once (red 8e71fdad3, green d1d1d0a43); stored list pages on the 10-30 iPhone store copy 617/594/471/108 KB, buildInfo 74/80/72/96% of each.
 
