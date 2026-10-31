@@ -1,3 +1,9 @@
+## 2026-10-31 15:14:30  — scribe `cef2d9a7d9269aede44ca8f4c22d3b144d835906`
+Release (#1482): Scribe 0.1 (210): instant-data-swift pinned exactly at 1.9.58 (pin 000210f5f, cut 83dec0324, change log 6813cf9e7), carrying #1495; with #1510's app half and #1499's heads-up wording since 209.
+
+## 2026-10-31 15:12:35  — instant-data-swift `97241036e8284525b9ac05957cd9af12f72c2622`
+Release (#1482): v1.9.58 tagged on this merge (release document 02566ad4, change log 3431e78b): #1495, an observer keeps the ids its result shows, collected once per result. No API, storage or conversion change.
+
 ## 2026-10-31 15:06:17 EDT — scribe `b87c51f61a34bf590b9a185e78b5076dfe6585fd`
 Feat (#1510): each minute row of the energy ledger names the store's SQLite pages by table or index (at most 16, each with its three largest store calls) and by write statement (at most 12: shape, runs, rows, pages), counted between two reads of instant-data-swift's write recorder (red 8d0bf7a4, green 2fdd4522; change log 27448522f). Empty until the library tag that carries the recorder is pinned.
 
