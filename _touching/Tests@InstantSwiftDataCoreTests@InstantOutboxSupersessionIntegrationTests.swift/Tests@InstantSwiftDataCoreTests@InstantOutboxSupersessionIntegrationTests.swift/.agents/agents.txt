@@ -4,3 +4,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/rollback_invariant_sourc
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T09:54:56-0400 mower attainable-claimed-tail-corruption-order plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:27:30-0400 mower focused-claimed-tail-store-assertion plan=2026-08-14-semantic-noop-insert-v2
 claude-opus-5.5-receipt-quarantine-d417e89e 2026-10-14T23:24:56-04:00 grower plan=2026-10-14-retained-mutation-quarantine #696 (tests that pin 1.9.9's startup wall ask for it)
+claude-code/outbox-1435@strangelearning 2026-10-30T21:12:00-0400 mower plan=2026-10-30-outbox-1435 #1435 #1436 (raw outbox SQL in fixtures only)

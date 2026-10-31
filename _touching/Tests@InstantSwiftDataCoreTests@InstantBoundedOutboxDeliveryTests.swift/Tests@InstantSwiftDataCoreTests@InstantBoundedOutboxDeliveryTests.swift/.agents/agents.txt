@@ -22,3 +22,4 @@ claude-opus-5.5-fast-drain 2026-10-01T03:36:11-04:00 mower plan=2026-10-01-libra
 claude-code-no-words-990-sync 2026-10-21T22:19:55-04:00 grower plan=2026-10-21-claim-lease-990 #990
 claude-code/fix-storage-1076@ld 2026-10-25T04:09:02-0400 mower plan=2026-10-24-fix-storage-1076 #1115 amendment 10 (two schema-rollback helpers)
 claude-code/sync-jam-1378@halfjew22 2026-10-29T21:26:58-0400 mower plan=2026-10-29-ack-deferral-1383 #1383
+claude-code/outbox-1435@strangelearning 2026-10-30T21:12:00-0400 mower plan=2026-10-30-outbox-1435 #1435 #1436 (raw outbox SQL in fixtures only)

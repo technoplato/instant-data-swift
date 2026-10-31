@@ -8,3 +8,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/attempt_core_fixture_mig
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/bounded_claim_token_tests 2026-08-15T08:48:10-0400 mower row-addressed-exact-claim-authority plan=semantic_noop_v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:42:00-0400 mower strict-receipt-fixture-alignment plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:23:30-0400 mower rename-resident-snapshot-test-seam plan=2026-08-15-legacy-priority-durable-migration
+claude-code/outbox-1435@strangelearning 2026-10-30T21:12:00-0400 mower plan=2026-10-30-outbox-1435 #1435 #1436 (raw outbox SQL in fixtures only)

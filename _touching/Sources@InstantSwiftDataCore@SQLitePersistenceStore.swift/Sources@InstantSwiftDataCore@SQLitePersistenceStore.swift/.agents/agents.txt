@@ -75,3 +75,4 @@ claude-code/sync-jam-1270@al 2026-10-27T19:14:47-0400 mower plan=2026-10-27-sync
 claude-code/gate-1319@al 2026-10-28T21:32:54-0400 mower plan=2026-10-28-gate-1319 #1319
 claude-code/sync-jam-1378@halfjew22 2026-10-29T20:27:27-0400 mower plan=2026-10-29-sync-jam-1378 #1378
 claude-code/sqlite-writes-1426@strangelearning 2026-10-30T20:24:16-0400 mower plan=2026-10-30-sqlite-writes-1426 #1426
+claude-code/outbox-1435@strangelearning 2026-10-30T21:12:00-0400 mower plan=2026-10-30-outbox-1435 #1435 #1436 (outbox regions only)
