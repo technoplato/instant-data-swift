@@ -70,3 +70,12 @@ and InstantModels.swift's receipt fingerprint only (this plan changes neither). 
 path) and perf-observe-1493 (#1493 the observation chain, #1494 the server apply) may share InstantRuntime.swift,
 InstantStore.swift and SQLitePersistenceStore.swift in other regions: channel 2026-10-31-perf-read-1498. Rebase onto
 each landing before a land.
+
+## Amendment 1 (2026-10-31T12:45:57-0400): the hop pins a first or changed answer moves
+
+A first or changed answer is encoded on the reader's task between two persistence turns (the first finds the row does
+not hold it; the second writes it), so the persistence actor never encodes a query-cache answer. That is one more
+persistence call for those reads: `runtimeWorkloadsPinEveryActorHop`'s relaunch (persistence 6 to 7) and
+BenchmarkTests' `query-materialization.todos` (persistence 2 to 3), each a first read on a fresh store, and ADR 0018's
+consequence log. Touching (added): Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift and
+InstantCrossSDKRuntimeBenchmarkTests.swift (those pins only), docs/adr/0018-one-actor-turn-per-step.md (one line).
