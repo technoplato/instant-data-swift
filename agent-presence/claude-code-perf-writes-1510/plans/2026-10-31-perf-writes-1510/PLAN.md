@@ -111,7 +111,7 @@ Touching (added): Sources/InstantSwiftDataCore/InstantOutboxBodyCodec.swift (new
 Tests/InstantSwiftDataCoreTests/InstantOutboxBodyCodecTests.swift (new); in Scribe,
 scripts/recovery/recover-recording-from-outbox.mjs and its test.
 
-## Amendment 2 (2026-10-31 18:10): a live write's body kept in its leaf, compressed; its lifecycle derived from it (#1463)
+## Amendment 2 (2026-10-31 16:50): a live write's body kept in its leaf, compressed; its lifecycle derived from it (#1463)
 
 Replaces amendment 1's compact re-encoding, which measured too small: on the pulled store's 738 bodies it takes the
 median from 8,389 B to 2,595 B and leaves every live body in overflow, where raw deflate alone takes it to 944 B. A
