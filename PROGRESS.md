@@ -1,3 +1,24 @@
+## 2026-10-31 16:50:00 EDT — perf-gate-1491 (#1491): the write's own cost -18% in one job; the outbox tail read next
+
+- **Measured (perf-gate-1491-final, Mac mini M4, release, one job 16:11-16:37):** tight-loop transact p50 (cross-SDK
+  runtime benchmark, 300 transacts, three runs each within 0.011 ms): `13cdf499` 0.476 ms, `02b7cf8a` (one encode)
+  0.452, `aa18c4af` (the hex) 0.411, `4ff5e5c4` (no wire fingerprint for a new row) 0.389: -18%. Reconnect drain 0.88
+  -> 0.79 ms. Recording exercise steady transact hold p50, one round: alone 6.83 / 6.56 / 6.40 / 4.08 ms, beside six
+  busy loops 3.00 / 3.07 / 3.21 / 2.69. Debug suites: 125 tests in 8 suites passed (15 known issues as on main); the
+  wire red fails its count, the green passes. Evidence `~/Sync/audit/perf-gate-1491/mini/ab-1491c/`.
+- **Branch:** `agent/claude/perf-gate-1491` merged main at `94328840` (sources clean); post-merge suites queued as
+  perf-gate-1491-merged (the #1426/#1435/#1115/#1121 criteria suites, the write-path suites, #1510's recorder and
+  #1498's cache tests). Change log recorded for `cd3faf28`, `d564a099`, `aa18c4af`, `4ff5e5c4`, `221573c6`.
+- **Criteria:** the 2.5 ms steady hold target came from the confounded 1.58 ms (F0); alone, every commit holds 4-7 ms,
+  beside load 2.7-3.4 ms; no commit moved it 4.6x (the ab2 table in `docs/audits/2026-10-31-transact-hold-1491.md`).
+- **Amendment 3 (branch `agent/claude/perf-gate-1491-tail`, worktree `~/Sync/worktrees/perf-gate-1491-tail`):** every
+  write's creation-cursor read, and the server apply plan's begin and extend, sort the whole outbox (no index in
+  delivery order): red `e10668ae`, green `e712d3e3` (a creation-order index at open), a guard that no other plan of a
+  live write's statements changes. Queued as perf-gate-1491-tail: the outbox and server-apply suites, red/green, pages
+  per step of a live write at both commits, a two-round A/B and the tight loop.
+- **Next:** when perf-gate-1491-merged passes, `~/Scribe/tools/land` this branch, the ledger with `land --prepend`,
+  READY FOR BUILD on #1482; then the tail slice the same way, merging main first.
+
 ## 2026-10-31 17:31:11 EDT — perf-read-1498 (#1498, #1495): both after numbers, measured on the Mac mini
 
 - **#1498 after (M6: the recording exercise, Mac mini M4, release, `sample` 60 s at 1 ms,
@@ -94,6 +115,22 @@
 - **After number:** #1495's `perf-read-1495-fanout-after` still queued on the mini; recorded on #1495 when it runs.
 - **Next:** Scribe pins 1.9.58 exactly and cuts 0.1 (210) (#1482).
 
+## 2026-10-31 15:05:00 EDT — perf-gate-1491 (#1491): the one-job A/B says no commit moved the write's hold; three write costs removed
+
+- **Measured (perf-gate-1491-ab2, Mac mini, release, one job 13:13-13:45):** steady transact hold p50 alone / beside six
+  busy loops: `287f77d1` 5.04, 4.90 / 3.40, 3.21 ms; `4accbf45` 5.76, 4.12 / 3.32, 3.29; main `13cdf499` 6.81, 5.95 /
+  2.80, 3.19; `02b7cf8a` 5.40, 6.62 / 3.13, 2.88. Tight loop (300 transacts, p50 of three runs): 0.434, 0.438, 0.457,
+  0.434 ms. F0's 1.58 -> 7.22 compared a run beside a cold build with runs alone; #1514 files the tooling cause.
+- **Landed:** `1e1ba548` (a new write encodes its body once), ledger `69f2fe51`; READY FOR BUILD posted on #1482.
+- **On the branch, not landed:** hex red `cd3faf28` / green `d564a099` (333 allocations a digest on the laptop, debug;
+  the hex now adds its string only), wire red `aa18c4af` / green `4ff5e5c4` (a new write fingerprints no wire intent),
+  runner `1e822082`, `221573c6`, the note `docs/audits/2026-10-31-transact-hold-1491.md`.
+- **Running:** perf-gate-1491-final (mini): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path
+  and supersession suites; my suite at `13cdf499`, `02b7cf8a`, `aa18c4af` (the wire red) and `4ff5e5c4`; one exercise
+  round alone and beside load; the tight-loop benchmark x3.
+- **Next:** if green, record the change log (`/tmp/perf-gate-1491/record-final.sh` drafts it), land, ledger, READY FOR
+  BUILD with the benchmark's before and after; remove `.build/ab-trees` in the mini's slot 1 and this worktree.
+
 ## 2026-10-31 14:58:00 EDT — perf-read-1498 (#1495): an observer keeps the ids its result shows
 
 - **Landing:** red `3cce5ca1`, green `9051d75e`, exercise `ff8fb803` (plan `d5fd5466`), branch
@@ -142,6 +179,7 @@
   `perf-read-1498-m6-after` at `3cce5ca1`; recorded on #1498 and here when it lands.
 - **Next:** #1495 (red `3cce5ca1`; green in the worktree, tests queued); the fan-out exercise before and after.
   Continue from `~/Sync/worktrees/perf-read-1498`; evidence in `~/Sync/audit/perf-read-1498/`.
+
 
 ## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
 
