@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 5:44:09 p.m. EDT — `cbda8b883012` release(#1482): v1.9.60: a local write does less hashing
+
+- **Implementation commit:** `cbda8b883012f115b2df6783ea6d071bc3e33de4`
+- **Change:** release(#1482): v1.9.60: a local write does less hashing
+- **Details:**
+  - The release document for v1.9.60, branched from v1.9.59 (1d9ba2ba) with #1491's four commits cherry-picked from main (99a46951), for Scribe build 212.
+  - No API, storage or conversion change. The #1510 write recorder (d3b08d41) is not in it: its owner has not marked it ready.
+- **Files:**
+  - `docs/releases/v1.9.60.md` — #1482 the release: what #1491 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-5@ld); no SpecStory capture
+
 ## October 31st, 2026 at 4:16:17 p.m. EDT — `0d24c6261b5f` release(#1482): v1.9.59: a query observation is one stream
 
 - **Implementation commit:** `0d24c6261b5f4cfa7f756bd2ec5e4d0e75a1f423`
