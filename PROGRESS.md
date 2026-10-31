@@ -1,3 +1,20 @@
+## 2026-10-31 13:12:00 EDT — perf-send-1492 (#1492, #1497, #1496): one attribute resolver per server schema landed; #1497 red
+
+- **Landed:** plan `90582dbd` (claims), amendment 1 `0cc5e7d6`; #1492 red `8b5a4584`, green `14ee7622`, merged
+  `4ba76de7`. The live session keeps the attribute resolver beside `serverAttributes` (dropped in its `didSet`, built by
+  the next send); same frames.
+- **Measured (#1492):** Mac mini M4, release, the recording contention exercise (60 s, 90 sends), one run each in a
+  pinned worktree: mutationEncode CPU per send 2,650.1 -> 14.5 us (238.5 -> 1.3 ms a minute). Lines in
+  `~/Sync/audit/perf-send-1492/mini/recording-before-8b5a4584.txt` and `recording-after-1492-14ee7622.txt`; the
+  exercise prints `CONTENTION recording energy` lines since `8b5a4584`.
+- **#1497:** the audit's interim fix cannot be byte-equal (the receipt digest covers a sorted-keys payload, not the
+  stored body). The store keeps the fingerprint it computed for each body, keyed by the SHA-256 of the stored text; the
+  claim and the acknowledgement reuse it. Red `13699326` (pin 1/1/1 -> 1/0/0; 10 earlier-process bodies cost 22
+  fingerprints; a re-encoded body costs 6 and 6). Green in the worktree, under test.
+- **Next:** #1497 green, merge main (perf-gate-1491 changed `saveOutboxMutationWithoutTransaction`), A/B with
+  `scripts/contention-exercises/ab-commits.sh`; then #1496 (one writer task per socket). READY FOR BUILD on #1482 per
+  landing.
+
 ## 2026-10-31 08:55:00 EDT — sqlite-writes-1426 (#1426): v1.9.56 shipped in Scribe 0.1 (206); the phone's after-numbers wait for a recording
 
 - **Shipped:** Scribe 206 (18ba5013b, the 1.9.56 pin) installed by build.sh's main lane 08:21-08:47: the iPhone at 08:32

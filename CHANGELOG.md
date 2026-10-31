@@ -10,6 +10,37 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 1:08:05 p.m. EDT — `14ee76226d8c` fix(#1492): green: one attribute resolver per server schema, kept across sends
+
+- **Implementation commit:** `14ee76226d8c847c676ed5b012b156596a5f0af9`
+- **Change:** fix(#1492): green: one attribute resolver per server schema, kept across sends
+- **Details:**
+  - The live session keeps the attribute resolver beside serverAttributes; any assignment drops it and the next send builds it once. Same frames: the resolution code is unchanged.
+  - Measured (Mac mini M4, release, recording contention exercise, 60 s, 90 sends, one run each, same machine and hour): mutationEncode CPU per send 2,650.1 -> 14.5 us; 238.5 -> 1.3 ms of CPU a minute on the live session actor. write.accepted p50 35.3 -> 35.3 ms. Before at 8b5a4584 (pinned worktree), after at 14ee7622's tree.
+  - Tests: 100 sends build 1 resolver (was 100); a refresh-ok that carries a new attribute rebuilds it for the next send; 166 live transport and reactor parity tests pass, 3 known issues unchanged.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1492 the resolver kept beside serverAttributes, dropped in its didSet
+  - `Sources/InstantSwiftDataCore/InstantLiveMutation.swift` — #1492 the resolver is a value the session keeps; resolveAttributeIDs(in:resolver:)
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1492 a refresh-ok with new attributes rebuilds the resolver
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1492@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:08:05 p.m. EDT — `8b5a4584f766` test(#1492): red: a connection builds its attribute resolver once for every send; the recording exercise prints the energy meter
+
+- **Implementation commit:** `8b5a4584f76617b7a18f2e30162066198766df92`
+- **Change:** test(#1492): red: a connection builds its attribute resolver once for every send; the recording exercise prints the energy meter
+- **Details:**
+  - Red on main 5d772e41 + plan (laptop debug): 100 sends on one connection with 2,283 generated attributes; the wire is right (100 transacts, server attribute ids) and the resolver is built 100 times, expected 1.
+  - The recording contention exercise prints each library operation's count and CPU from the energy meter over its window (CONTENTION recording energy), the before/after line for #1492 and #1497.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1492 the resolver build pin; the exercise's energy report
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — #1492 the recording exercise snapshots the energy meter over its window
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1492 a resolver build counter for tests
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1492@ld); no SpecStory capture
+
 ## October 31st, 2026 at 5:51:52 a.m. EDT — `da073db4dc6e` fix(#1426): green: a stored live-query result is its ownership rows, its facts and a narrow header; nothing waits
 
 - **Implementation commit:** `da073db4dc6ef975ac4248fa5b4fe071a4941dcf`
