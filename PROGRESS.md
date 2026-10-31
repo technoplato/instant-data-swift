@@ -1,3 +1,17 @@
+## 2026-10-31 08:55:00 EDT — sqlite-writes-1426 (#1426): v1.9.56 shipped in Scribe 0.1 (206); the phone's after-numbers wait for a recording
+
+- **Shipped:** Scribe 206 (18ba5013b, the 1.9.56 pin) installed by build.sh's main lane 08:21-08:47: the iPhone at 08:32
+  (installed; not launched, it was locked, so its store converts at the next open), the iPad (launched; running 206
+  since 08:33, writing normally, so its store opened through the one-time conversion), the Mac and the Vision Pro.
+- **Bundle at the tag:** 1,613 tests, 2 unlisted timing failures under load; both suites pass alone on the mini
+  (`docs/releases/v1.9.56.md`, Checks after the tag).
+- **Before, on the phone:** 55 recording minutes on the 1.9.54 builds (2026-10-30 23:29 to 01:30): SQLite 584.7 MB/h,
+  server-apply commits 109.5 MB/h at 137.0 KB each. **Next:** the same measures from the phone's energy ledger once a
+  recording runs on 206 (`python3 -I ledger_window.py <ledger> --from <206's launch>`); #1480; ScribeLiveQueryResultFlush
+  in the app can go (#1423).
+- **Cleanup:** the store clone (598 MB, laptop scratch only) deleted; worktrees removed (red 891 MB, results 5.2 GB, Scribe
+  9.2 GB, Scribe ledger 162 MB) and the first worktree's .build (5.2 GB).
+
 ## 2026-10-31 05:55:00 EDT — v1.9.56 (sqlite-writes-1426, #1426, #1440): a stored result is its rows; nothing waits
 
 - **Release:** `docs/releases/v1.9.56.md`, cut at `da073db4` (plan amendment `5f19115a`, red `d331eb02`, green
