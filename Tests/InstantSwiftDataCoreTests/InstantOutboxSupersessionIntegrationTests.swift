@@ -1422,7 +1422,11 @@ private func supersessionOutboxRawRow(
   var statement: OpaquePointer?
   guard sqlite3_prepare_v2(
     database,
-    "SELECT encoded_body_bytes, json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+    """
+    SELECT outbox.encoded_body_bytes, body.json
+    FROM instant_outbox AS outbox JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+    WHERE outbox.mutation_id = ? LIMIT 1
+    """,
     -1,
     &statement,
     nil
@@ -1475,7 +1479,7 @@ private func replaceSupersessionOutboxBody(
   var statement: OpaquePointer?
   guard sqlite3_prepare_v2(
     database,
-    "UPDATE instant_outbox SET json = ? WHERE mutation_id = ?",
+    "UPDATE instant_outbox_bodies SET json = ? WHERE mutation_id = ?",
     -1,
     &statement,
     nil

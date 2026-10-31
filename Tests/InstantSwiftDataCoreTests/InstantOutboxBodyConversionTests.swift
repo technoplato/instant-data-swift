@@ -78,7 +78,8 @@ struct InstantOutboxBodyConversionTests {
     expectNoDifference(claimedWindow.mutations.map(\.id), [claimed.id])
     cycle.clock.advance(by: 1_000)
     _ = try await cycle.runtime.transact(pending, createdAt: cycle.clock.now())
-    _ = try await cycle.runtime.closeConnection()
+    // The process ends mid-flight, as an app killed during a recording does: its claim stays on the row
+    // (`closeConnection()` would release it).
     await cycle.runtime.persistence.simulateUnexpectedConnectionCloseForTesting()
 
     let ids = refused + [acknowledged.id, claimed.id, pending.id]
@@ -146,8 +147,11 @@ struct InstantOutboxBodyConversionTests {
     for id in [acknowledged.id, claimed.id, pending.id] {
       #expect(delivered.mutations[id] == .some(nil), "\(id) is still in the outbox after its echo")
     }
+    // A refused write stays, failed, with its whole body; the refresh may have peeled its optimistic layer.
     for id in refused {
-      #expect(delivered.mutations[id] == before.mutations[id], "refused write \(id) changed")
+      let held = delivered.mutations[id] ?? nil
+      #expect(held?.status == .failed, "refused write \(id): \(String(describing: held?.status))")
+      #expect(held?.transaction == (before.mutations[id] ?? nil)?.transaction, "refused write \(id) lost its operations")
     }
     let finalLayout = try OutboxConversion.Layout.read(url: url)
     #expect(finalLayout.bodyCount == refused.count, "\(finalLayout.bodyCount) bodies for \(refused.count) refused rows")
@@ -263,13 +267,22 @@ enum OutboxConversion {
   }
 
   /// Puts each body back in its row, in the layout every store had before #1435 (columns in the order the migrations
-  /// added them, the body carrying its delivery fields again), and forgets that the store was converted. A store already
-  /// in that layout is left alone.
+  /// added them, the body carrying its status, server transaction id and confirmation source again, every index and
+  /// trigger the table had), and forgets the conversion. A store already in that layout is left alone. Fixtures that
+  /// rebuild an older store's outbox call this first.
   static func restoreBodiesInTheirRows(url: URL) throws {
     let hasBodies = try strings(
       url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'instant_outbox_bodies'"
     ).isEmpty == false
     guard hasBodies else { return }
+    let definitions = try strings(
+      url,
+      """
+      SELECT sql FROM sqlite_master
+      WHERE tbl_name = 'instant_outbox' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+      ORDER BY type, name
+      """
+    )
     let columns = rowColumns.joined(separator: ", ")
     try execute(
       url,
@@ -309,28 +322,19 @@ enum OutboxConversion {
       );
       INSERT INTO instant_outbox_wide (\(columns), json, lifecycle_json, quarantine_json, quarantine_lifecycle_json)
       SELECT \(rowColumns.map { "outbox.\($0)" }.joined(separator: ", ")),
-        json_set(
-          CASE WHEN outbox.confirmation_source IS NULL THEN body.json
-            ELSE json_set(body.json, '$.confirmationSource', outbox.confirmation_source) END,
-          '$.status', outbox.status
-        ),
+        CASE WHEN json_valid(body.json) THEN json_set(body.json, '$.status', outbox.status) ELSE body.json END,
         body.lifecycle_json, body.quarantine_json, body.quarantine_lifecycle_json
       FROM instant_outbox AS outbox JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id;
       UPDATE instant_outbox_wide
       SET json = json_set(json, '$.serverTransactionID', server_transaction_id)
-      WHERE server_transaction_id IS NOT NULL;
+      WHERE server_transaction_id IS NOT NULL AND json_valid(json);
+      UPDATE instant_outbox_wide
+      SET json = json_set(json, '$.confirmationSource', confirmation_source)
+      WHERE confirmation_source IS NOT NULL AND json_valid(json);
       DROP TABLE instant_outbox_bodies;
       DROP TABLE instant_outbox;
       ALTER TABLE instant_outbox_wide RENAME TO instant_outbox;
-      CREATE INDEX instant_outbox_delivery_idx ON instant_outbox
-        (delivery_claim_state, delivery_state, delivery_claim_deadline_ms, created_at_ms, mutation_id);
-      CREATE INDEX instant_outbox_global_effect_order_idx ON instant_outbox
-        (optimistic_overlay_active, optimistic_effect_is_global, created_at_ms, mutation_id);
-      CREATE INDEX instant_outbox_server_apply_watermark_idx ON instant_outbox
-        (status, confirmation_proven, server_transaction_id, optimistic_overlay_active, created_at_ms, mutation_id);
-      CREATE INDEX instant_outbox_server_apply_failed_idx ON instant_outbox
-        (status, optimistic_overlay_active, created_at_ms, mutation_id)
-        WHERE status = 'failed' AND optimistic_overlay_active = 1;
+      \(definitions.map { $0 + ";" }.joined(separator: "\n"))
       COMMIT;
       PRAGMA foreign_keys = ON;
       """

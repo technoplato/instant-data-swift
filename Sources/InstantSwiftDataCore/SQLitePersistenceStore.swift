@@ -75,6 +75,10 @@
 // - 2026-10-30: a changed result's whole JSON waits for the app's flush, an unsubscribe or the close, not five minutes;
 //   its marker holds its page info for the rebuild after a kill; and a stored JSON this process has not written is
 //   learned, so a relaunch's unchanged answer writes its row only (#1426).
+// - 2026-10-30: an outbox write's body lives in instant_outbox_bodies, without the status, server transaction id and
+//   confirmation source its row holds, and the row is narrow and WITHOUT ROWID: a claim and an acknowledgement write
+//   the row and their indexes alone (4.17 and 6.17 -> 2.00 and 4.00 log frames). A store converts once at open, by
+//   SQLite's twelve-step rebuild (#1435).
 
 import Foundation
 import IssueReporting
@@ -587,11 +591,58 @@ struct InstantMutationLifecycleResolution: Sendable {
 struct InstantOutboxBodyRow: Sendable {
   var mutationID: String
   var createdAtMilliseconds: Int64
+  /// The body as stored (#1435): decode it with ``delivery``.
   var json: String
   var optimisticEffectReceiptFingerprint: String?
   var deliveryClaimPayloadFingerprint: String?
   var serverAcceptancePayloadFingerprint: String?
+  var delivery: InstantOutboxRowDelivery
 }
+
+/// A write's status, server transaction id and confirmation source: its outbox row's columns, which its stored body
+/// does not carry (#1435). A claim and an acknowledgement change these and the claim columns only, so they write the
+/// narrow row and never the body.
+struct InstantOutboxRowDelivery: Hashable, Sendable {
+  var status: InstantMutationStatus
+  var serverTransactionID: String?
+  var confirmationSource: InstantMutationConfirmationSource?
+
+  /// The columns' SQL, in this order, for a statement whose outbox table is named `outbox`.
+  static let columns = "outbox.status, outbox.server_transaction_id, outbox.confirmation_source"
+
+  /// Reads the three columns starting at `index`; nil when the status or the confirmation source is not one this
+  /// version knows.
+  init?(statement: OpaquePointer?, from index: Int32) {
+    guard let statusText = sqlite3_column_text(statement, index),
+      let status = InstantMutationStatus(rawValue: String(cString: statusText))
+    else { return nil }
+    var confirmationSource: InstantMutationConfirmationSource?
+    if let sourceText = sqlite3_column_text(statement, index + 2) {
+      guard let source = InstantMutationConfirmationSource(rawValue: String(cString: sourceText)) else { return nil }
+      confirmationSource = source
+    }
+    self.status = status
+    serverTransactionID = sqlite3_column_text(statement, index + 1).map { String(cString: $0) }
+    self.confirmationSource = confirmationSource
+  }
+
+  init(
+    status: InstantMutationStatus,
+    serverTransactionID: String?,
+    confirmationSource: InstantMutationConfirmationSource?
+  ) {
+    self.status = status
+    self.serverTransactionID = serverTransactionID
+    self.confirmationSource = confirmationSource
+  }
+
+  func apply(to mutation: inout PendingMutation) {
+    mutation.status = status
+    mutation.serverTransactionID = serverTransactionID
+    mutation.confirmationSource = confirmationSource
+  }
+}
+
 
 private struct InstantTerminalLifecycleRecord: Sendable {
   var json: String
@@ -1771,7 +1822,7 @@ public actor SQLitePersistenceStore {
 
   package func quarantinedOutboxBodyForTesting(id: String) throws -> String? {
     try selectScalar(
-      "SELECT quarantine_json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+      "SELECT quarantine_json FROM instant_outbox_bodies WHERE mutation_id = ? LIMIT 1",
       [.text(id)]
     )
   }
@@ -1780,7 +1831,7 @@ public actor SQLitePersistenceStore {
     Int(try selectInt64(
       """
       SELECT COALESCE(length(CAST(quarantine_json AS BLOB)), 0)
-      FROM instant_outbox
+      FROM instant_outbox_bodies
       WHERE mutation_id = ?
       LIMIT 1
       """,
@@ -1869,14 +1920,14 @@ public actor SQLitePersistenceStore {
   ) throws -> Bool {
     try transaction {
       guard let row = try loadOutboxBodyRowWithoutTransaction(id: id),
-        let mutation: PendingMutation = try? decodeOutboxBody(row.json),
+        let mutation: PendingMutation = try? decodeOutboxBody(row),
         try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
       else { return false }
       let projectedBodyByteCount = Int(try selectInt64(
         """
-        SELECT COALESCE(encoded_body_bytes, length(CAST(json AS BLOB)))
-        FROM instant_outbox
-        WHERE mutation_id = ?
+        SELECT \(Self.storedBodyByteCountSQL(outbox: "outbox"))
+        FROM instant_outbox AS outbox
+        WHERE outbox.mutation_id = ?
         LIMIT 1
         """,
         [.text(id)]
@@ -3055,6 +3106,10 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
+    // After every migration above, which wrote the old table's shape; a restore that rebuilds that shape converts again.
+    try withSQLiteBusyRetry {
+      try moveOutboxBodiesToTheirOwnTableIfNeeded()
+    }
     // A restore that rebuilt `instant_outbox` after 0031 ran keeps the claim off a scan too (#1108, #1115).
     try execute(Self.deliveryIndexSQL)
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
@@ -3367,6 +3422,248 @@ public actor SQLitePersistenceStore {
         "rowsWithoutAResult": String(counts.rows - counts.copiedRows),
       ]
     )
+  }
+
+  /// The ledger row the conversion below writes. The table's columns, not this row, decide whether it runs (#1435).
+  private static let outboxBodiesMigrationName = "0033_outbox_bodies_in_their_own_table"
+
+  /// An outbox row: a write's delivery state, the columns its save, claim, acknowledgement and echo change, and nothing
+  /// else (#1435). The write's body lives in ``outboxBodiesTableSQL``. While the body shared the row, a claim or an
+  /// acknowledgement changed the record's size, and SQLite rewrites a cell whose size changes whole, every overflow page
+  /// of the body with it; the claim wrote 4.2 log frames and the acknowledgement 6.2 for a 2-frame change. WITHOUT ROWID,
+  /// keyed by the mutation id alone: as a rowid table with a text primary key it kept a second b-tree, the key's index,
+  /// that every save and echo wrote. The columns and defaults are the ones migrations 0001-0020 gave the old table.
+  static func outboxTableSQL(named name: String) -> String {
+    """
+    CREATE TABLE \(name) (
+      mutation_id TEXT PRIMARY KEY NOT NULL,
+      status TEXT NOT NULL,
+      created_at_ms INTEGER NOT NULL,
+      delivery_state TEXT,
+      delivery_metadata_version INTEGER NOT NULL DEFAULT 0,
+      transport_step_count INTEGER,
+      encoded_body_bytes INTEGER,
+      failure_message TEXT,
+      confirmation_proven INTEGER,
+      optimistic_overlay_active INTEGER NOT NULL DEFAULT 1,
+      delivery_started INTEGER NOT NULL DEFAULT 1,
+      delivery_claim_state TEXT NOT NULL DEFAULT 'ready',
+      delivery_claim_token TEXT,
+      delivery_claimant_id TEXT,
+      delivery_claim_deadline_ms INTEGER,
+      mutation_revision INTEGER NOT NULL DEFAULT 0,
+      optimistic_effect_metadata_version INTEGER NOT NULL DEFAULT 0,
+      optimistic_effect_is_global INTEGER NOT NULL DEFAULT 0,
+      server_transaction_id TEXT,
+      confirmation_source TEXT,
+      failure_attribute_revision INTEGER,
+      delivery_claim_projected_body_bytes INTEGER,
+      optimistic_effect_receipt_fingerprint TEXT,
+      delivery_claim_payload_fingerprint TEXT,
+      server_acceptance_payload_fingerprint TEXT
+    ) WITHOUT ROWID
+    """
+  }
+
+  /// The columns an outbox row keeps, in ``outboxTableSQL(named:)``'s order.
+  static let outboxRowColumns = """
+    mutation_id, status, created_at_ms, delivery_state, delivery_metadata_version, transport_step_count,
+    encoded_body_bytes, failure_message, confirmation_proven, optimistic_overlay_active, delivery_started,
+    delivery_claim_state, delivery_claim_token, delivery_claimant_id, delivery_claim_deadline_ms, mutation_revision,
+    optimistic_effect_metadata_version, optimistic_effect_is_global, server_transaction_id, confirmation_source,
+    failure_attribute_revision, delivery_claim_projected_body_bytes, optimistic_effect_receipt_fingerprint,
+    delivery_claim_payload_fingerprint, server_acceptance_payload_fingerprint
+    """
+
+  /// A write's body (#1435): what the write is, written at its save and again only when that changes (a rebase's new
+  /// rollback, a failure, a quarantine), never by a claim or an acknowledgement. It does not carry the write's status,
+  /// server transaction id or confirmation source, which the row's columns hold (``storedOutboxBody(_:)``).
+  /// `lifecycle_json`, the body without its operations, comes first, so a reader of lifecycles alone finds it in the
+  /// row's first bytes. WITHOUT ROWID, keyed by the mutation id, and deleted with its row: on the phone's body sizes
+  /// (6.6 KB live, 19.2 KB refused) a rowid table keyed by an integer held one body a leaf, so every echo emptied a leaf
+  /// and rebalanced the tree (9 frames an echo against 7 in a layout check, 2026-10-30).
+  static let outboxBodiesTableSQL = """
+    CREATE TABLE instant_outbox_bodies (
+      mutation_id TEXT PRIMARY KEY NOT NULL
+        REFERENCES instant_outbox (mutation_id) ON DELETE CASCADE,
+      lifecycle_json TEXT,
+      json TEXT NOT NULL,
+      quarantine_json TEXT,
+      quarantine_lifecycle_json TEXT
+    ) WITHOUT ROWID
+    """
+
+  /// A row's body size in bytes: its `encoded_body_bytes`, or, on a row whose delivery metadata predates that column,
+  /// its stored body's length, read only then (#1435).
+  static func storedBodyByteCountSQL(outbox: String) -> String {
+    """
+    COALESCE(\(outbox).encoded_body_bytes, (
+      SELECT length(CAST(body.json AS BLOB)) FROM instant_outbox_bodies AS body
+      WHERE body.mutation_id = \(outbox).mutation_id
+    ))
+    """
+  }
+
+  /// A row's stored body, for a statement whose outbox table is named `outbox` (#1435).
+  static func storedBodySQL(outbox: String) -> String {
+    "(SELECT body.json FROM instant_outbox_bodies AS body WHERE body.mutation_id = \(outbox).mutation_id)"
+  }
+
+  /// A row's stored body length in bytes, for a statement whose outbox table is named `outbox` (#1435).
+  static func bodyLengthSQL(outbox: String) -> String {
+    """
+    (SELECT length(CAST(body.json AS BLOB)) FROM instant_outbox_bodies AS body
+      WHERE body.mutation_id = \(outbox).mutation_id)
+    """
+  }
+
+  /// Moves each outbox row's body into `instant_outbox_bodies` and rebuilds `instant_outbox` narrow, the first time a
+  /// store opens with its bodies in their rows (#1435).
+  ///
+  /// SQLite's twelve-step rebuild (lang_altertable.html, "Making Other Kinds Of Table Schema Changes"): foreign keys off
+  /// outside the transaction, so dropping the old table deletes no key row, effect entity or body through their
+  /// cascades; the new table filled and checked against the old one (rows, body bytes, revisions) before the old one
+  /// goes; its indexes and triggers made again from the definitions the store held, so whatever an older or newer
+  /// version built stays. One transaction: a store that fails the check keeps its old table whole. A key row or effect
+  /// entity whose write is gone (a restore that turned foreign keys off can leave one) is not carried over, as in 0030.
+  /// The bodies are moved as stored; an old body that still carries its delivery fields is decoded with the columns'
+  /// values (``decodeOutboxBody(_:delivery:)``) and is written in the new form at its next change.
+  private func moveOutboxBodiesToTheirOwnTableIfNeeded() throws {
+    guard try outboxRowsHoldTheirBodies() else { return }
+    // A new store, whose first migration made the old table, converts it empty: the launch's trace names the phase
+    // only when there are rows to move.
+    let stopwatch = try selectInt64("SELECT EXISTS(SELECT 1 FROM instant_outbox)") == 0
+      ? nil
+      : startupTrace.started("sqlite.outbox-body-split", metadata: ["file": fileURL.lastPathComponent])
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    let counts: (rows: Int64, bodyBytes: Int64)?
+    do {
+      try execute("PRAGMA foreign_keys = OFF")
+      defer { _ = try? execute("PRAGMA foreign_keys = ON") }
+      // Dirty pages spill to the log past 256, as in the fact table's rebuild (#1121), so the copy's memory stays small.
+      let cacheSpill = try selectInt64("PRAGMA cache_spill")
+      try execute("PRAGMA cache_spill = 256")
+      defer { _ = try? execute("PRAGMA cache_spill = \(cacheSpill)") }
+      counts = try transaction { () -> (rows: Int64, bodyBytes: Int64)? in
+        // Another connection may have converted the store while this one waited for the write lock.
+        guard try outboxRowsHoldTheirBodies() else { return nil }
+        let definitions = try selectStrings(
+          """
+          SELECT sql FROM sqlite_master
+          WHERE tbl_name = 'instant_outbox' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+          ORDER BY type, name
+          """
+        )
+        func census(rows: String, bodies: String) throws -> String? {
+          try selectScalar(
+            """
+            SELECT (SELECT count(*) || ':' || coalesce(sum(created_at_ms), 0) || ':' || coalesce(sum(mutation_revision), 0)
+              || ':' || coalesce(sum(length(mutation_id) + length(status) + coalesce(length(delivery_claim_token), 0)
+              + coalesce(length(optimistic_effect_receipt_fingerprint), 0)
+              + coalesce(length(server_acceptance_payload_fingerprint), 0)), 0) FROM \(rows))
+              || '/' || (SELECT count(*) || ':' || coalesce(sum(length(CAST(json AS BLOB))
+              + coalesce(length(CAST(lifecycle_json AS BLOB)), 0) + coalesce(length(CAST(quarantine_json AS BLOB)), 0)
+              + coalesce(length(CAST(quarantine_lifecycle_json AS BLOB)), 0)), 0) FROM \(bodies))
+            """
+          )
+        }
+        let before = try census(rows: "instant_outbox", bodies: "instant_outbox")
+        try execute("DROP TABLE IF EXISTS instant_outbox_0033")
+        try execute(Self.outboxTableSQL(named: "instant_outbox_0033"))
+        try execute(
+          """
+          INSERT INTO instant_outbox_0033 (\(Self.outboxRowColumns))
+          SELECT \(Self.outboxRowColumns) FROM instant_outbox ORDER BY mutation_id
+          """
+        )
+        let rows = Int64(sqlite3_changes(connection.raw))
+        // A restore that rebuilt the old shape keeps the bodies table of the store it restored over: the old table's
+        // bodies are the ones that hold.
+        try execute("DROP TABLE IF EXISTS instant_outbox_bodies")
+        try execute(Self.outboxBodiesTableSQL)
+        try execute(
+          """
+          INSERT INTO instant_outbox_bodies (mutation_id, lifecycle_json, json, quarantine_json, quarantine_lifecycle_json)
+          SELECT mutation_id, lifecycle_json, json, quarantine_json, quarantine_lifecycle_json
+          FROM instant_outbox ORDER BY mutation_id
+          """
+        )
+        let after = try census(rows: "instant_outbox_0033", bodies: "instant_outbox_bodies")
+        guard before == after else {
+          throw persistenceError(
+            operation: "move outbox bodies to their own table",
+            message: "The rebuilt outbox does not match the old one (\(after ?? "none") against \(before ?? "none"))."
+          )
+        }
+        let bodyBytes = try selectInt64(
+          "SELECT coalesce(sum(length(CAST(json AS BLOB))), 0) FROM instant_outbox_bodies"
+        )
+        try execute("DROP TABLE instant_outbox")
+        try execute("ALTER TABLE instant_outbox_0033 RENAME TO instant_outbox")
+        for definition in definitions {
+          try execute(definition)
+        }
+        for child in ["instant_outbox_write_keys", "instant_outbox_effect_entities"] {
+          try execute(
+            """
+            DELETE FROM \(child)
+            WHERE NOT EXISTS (SELECT 1 FROM instant_outbox AS outbox WHERE outbox.mutation_id = \(child).mutation_id)
+            """
+          )
+        }
+        let violations = try selectStrings(
+          "SELECT \"table\" || ':' || coalesce(parent, '') FROM pragma_foreign_key_check WHERE \"table\" LIKE 'instant_outbox%'"
+        )
+        guard violations.isEmpty else {
+          throw persistenceError(
+            operation: "move outbox bodies to their own table",
+            message: "The rebuilt outbox leaves rows without their write: \(violations.prefix(5))."
+          )
+        }
+        try execute(
+          "INSERT OR IGNORE INTO instant_schema_migrations (name, applied_at_ms) VALUES (?, ?)",
+          [.text(Self.outboxBodiesMigrationName), .int(Self.nowMilliseconds())]
+        )
+        return (rows, bodyBytes)
+      }
+    } catch {
+      if let stopwatch {
+        startupTrace.failed(
+          "sqlite.outbox-body-split",
+          error: error,
+          since: stopwatch,
+          metadata: ["file": fileURL.lastPathComponent]
+        )
+      }
+      throw error
+    }
+    if let stopwatch {
+      startupTrace.completed(
+        "sqlite.outbox-body-split",
+        since: stopwatch,
+        metadata: ["file": fileURL.lastPathComponent]
+      )
+    }
+    guard let counts, counts.rows > 0 else { return }
+    let milliseconds = (DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.outbox-bodies.moved",
+      message: "#1435 Outbox rows are narrow and their bodies live in their own table.",
+      metadata: [
+        "bodyBytes": String(counts.bodyBytes),
+        "milliseconds": String(milliseconds),
+        "path": fileURL.path,
+        "rows": String(counts.rows),
+      ]
+    )
+  }
+
+  /// Whether `instant_outbox` still holds its rows' bodies, as every store did before #1435.
+  private func outboxRowsHoldTheirBodies() throws -> Bool {
+    try selectInt64("SELECT COUNT(*) FROM pragma_table_info('instant_outbox') WHERE name = 'json'") > 0
   }
 
   /// Whether the ownership table still has 0011's `query_key` column (#704).
@@ -4158,27 +4455,31 @@ public actor SQLitePersistenceStore {
     if let mutationID {
       sql =
         """
-        SELECT mutation_id, created_at_ms, length(CAST(json AS BLOB)), json,
-               delivery_started, confirmation_proven,
-               optimistic_overlay_active,
-               optimistic_effect_receipt_fingerprint,
-               server_acceptance_payload_fingerprint
-        FROM instant_outbox
-        WHERE mutation_id > ?
-        ORDER BY mutation_id
+        SELECT outbox.mutation_id, outbox.created_at_ms, length(CAST(body.json AS BLOB)), body.json,
+               outbox.delivery_started, outbox.confirmation_proven,
+               outbox.optimistic_overlay_active,
+               outbox.optimistic_effect_receipt_fingerprint,
+               outbox.server_acceptance_payload_fingerprint,
+               \(InstantOutboxRowDelivery.columns)
+        FROM instant_outbox AS outbox
+        JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+        WHERE outbox.mutation_id > ?
+        ORDER BY outbox.mutation_id
         LIMIT 1
         """
       bindings = [.text(mutationID)]
     } else {
       sql =
         """
-        SELECT mutation_id, created_at_ms, length(CAST(json AS BLOB)), json,
-               delivery_started, confirmation_proven,
-               optimistic_overlay_active,
-               optimistic_effect_receipt_fingerprint,
-               server_acceptance_payload_fingerprint
-        FROM instant_outbox
-        ORDER BY mutation_id
+        SELECT outbox.mutation_id, outbox.created_at_ms, length(CAST(body.json AS BLOB)), body.json,
+               outbox.delivery_started, outbox.confirmation_proven,
+               outbox.optimistic_overlay_active,
+               outbox.optimistic_effect_receipt_fingerprint,
+               outbox.server_acceptance_payload_fingerprint,
+               \(InstantOutboxRowDelivery.columns)
+        FROM instant_outbox AS outbox
+        JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+        ORDER BY outbox.mutation_id
         LIMIT 1
         """
       bindings = []
@@ -4210,7 +4511,13 @@ public actor SQLitePersistenceStore {
       )
     }
     let json = String(cString: jsonBytes)
-    let mutation: PendingMutation = try decodeOutboxBody(json)
+    guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 9) else {
+      throw persistenceError(
+        operation: "read local persistence migration outbox row",
+        message: "Mutation '\(rowMutationID)' has a status or confirmation source this version does not know."
+      )
+    }
+    let mutation = try decodeOutboxBody(json, delivery: delivery)
     guard mutation.id == rowMutationID,
       mutation.createdAt.milliseconds == createdAtMilliseconds
     else {
@@ -4838,7 +5145,7 @@ public actor SQLitePersistenceStore {
             encodedBodyByteCountAtLeast: decodedByteCount + bodyByteCount
           )
         }
-        let mutation: PendingMutation = try decodeOutboxBody(body.json)
+        let mutation: PendingMutation = try decodeOutboxBody(body)
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += bodyByteCount
         decodedByteCount += bodyByteCount
@@ -4916,7 +5223,7 @@ public actor SQLitePersistenceStore {
           blockedMutationID = candidate.mutationID
           break
         }
-        let mutation: PendingMutation = try decodeOutboxBody(row.json)
+        let mutation: PendingMutation = try decodeOutboxBody(row)
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += bodyByteCount
         decodedBodyCount += 1
@@ -5165,9 +5472,10 @@ public actor SQLitePersistenceStore {
           INSERT INTO instant_outbox_quarantined (
             mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
           )
-          SELECT mutation_id, ?, ?, created_at_ms, status, json, \(rowJSON)
-          FROM instant_outbox
-          WHERE mutation_id = ? AND \(predicate)
+          SELECT outbox.mutation_id, ?, ?, outbox.created_at_ms, outbox.status, body.json, \(rowJSON)
+          FROM instant_outbox AS outbox
+          JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+          WHERE outbox.mutation_id = ? AND \(predicate)
           """,
           [
             .text(InstantQuarantinedMutation.Reason.noPreparationReceipt.rawValue),
@@ -5249,7 +5557,7 @@ public actor SQLitePersistenceStore {
     return try readTransaction {
       try heldQuarantinedOutboxMutationsWithoutTransaction(
         """
-        SELECT mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+        SELECT \(Self.quarantinedMutationColumns)
         FROM instant_outbox_quarantined
         WHERE resolution IS NULL
         ORDER BY created_at_ms, mutation_id, quarantine_id
@@ -5275,7 +5583,7 @@ public actor SQLitePersistenceStore {
     try readTransaction {
       try heldQuarantinedOutboxMutationsWithoutTransaction(
         """
-        SELECT mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+        SELECT \(Self.quarantinedMutationColumns)
         FROM instant_outbox_quarantined
         WHERE resolution IS NULL AND mutation_id = ?
         ORDER BY quarantine_id
@@ -5330,16 +5638,27 @@ public actor SQLitePersistenceStore {
         continue
       }
       let body = String(cString: bodyBytes)
+      let status = InstantMutationStatus(rawValue: String(cString: statusBytes))
+      var mutation: PendingMutation? = try? decodeOutboxBody(body)
+      // Since #1435 a body does not carry its delivery fields: they come from the row the quarantine kept.
+      if let status, mutation != nil {
+        InstantOutboxRowDelivery(
+          status: status,
+          serverTransactionID: sqlite3_column_text(statement, 7).map { String(cString: $0) },
+          confirmationSource: sqlite3_column_text(statement, 8)
+            .flatMap { InstantMutationConfirmationSource(rawValue: String(cString: $0)) }
+        ).apply(to: &mutation!)
+      }
       mutations.append(
         InstantQuarantinedMutation(
           id: String(cString: idBytes),
           reason: reason,
           quarantinedAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 2)),
           createdAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 3)),
-          status: InstantMutationStatus(rawValue: String(cString: statusBytes)),
+          status: status,
           body: body,
           outboxRowJSON: String(cString: rowBytes),
-          mutation: try? decodeOutboxBody(body) as PendingMutation
+          mutation: mutation
         )
       )
     }
@@ -5379,27 +5698,39 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  /// A `json_object(...)` expression of every column `instant_outbox` has in this store, read from its schema, so a
-  /// quarantined row keeps the columns of whichever version wrote it. A BLOB, which no outbox column holds today, is
-  /// kept as its hex digits.
+  /// A `json_object(...)` expression of every column `instant_outbox` (as `outbox`) and its body row in
+  /// `instant_outbox_bodies` (as `body`) have in this store, read from their schemas, so a quarantined row keeps the
+  /// columns of whichever version wrote it, the same keys as when the body shared the row (#1435). A BLOB, which no
+  /// outbox column holds today, is kept as its hex digits.
   private func outboxRowJSONObjectExpressionWithoutTransaction() throws -> String {
-    let columns = try selectStrings("SELECT name FROM pragma_table_info('instant_outbox') ORDER BY cid")
-    guard !columns.isEmpty,
-      columns.allSatisfy({ name in
+    let rowColumns = try selectStrings("SELECT name FROM pragma_table_info('instant_outbox') ORDER BY cid")
+    let bodyColumns = try selectStrings(
+      "SELECT name FROM pragma_table_info('instant_outbox_bodies') WHERE name != 'mutation_id' ORDER BY cid"
+    )
+    let columns = rowColumns.map { ("outbox", $0) } + bodyColumns.map { ("body", $0) }
+    guard !rowColumns.isEmpty,
+      columns.allSatisfy({ _, name in
         !name.isEmpty && name.unicodeScalars.allSatisfy { $0 == "_" || CharacterSet.alphanumerics.contains($0) }
       })
     else {
       throw persistenceError(
         operation: "quarantine a retained mutation without a preparation receipt",
-        message: "instant_outbox has a column name the quarantine cannot copy: \(columns)."
+        message: "instant_outbox has a column name the quarantine cannot copy: \(columns.map(\.1))."
       )
     }
-    let pairs = columns.map { column in
-      "'\(column)', CASE typeof(\"\(column)\") WHEN 'blob' THEN json_object('hex', hex(\"\(column)\")) "
-        + "ELSE \"\(column)\" END"
+    let pairs = columns.map { table, column in
+      "'\(column)', CASE typeof(\(table).\"\(column)\") WHEN 'blob' THEN json_object('hex', hex(\(table).\"\(column)\")) "
+        + "ELSE \(table).\"\(column)\" END"
     }
     return "json_object(\(pairs.joined(separator: ", ")))"
   }
+
+  /// The columns a quarantined mutation is read with: its row, and the delivery fields the kept outbox row held, which a
+  /// body written since #1435 does not carry.
+  static let quarantinedMutationColumns = """
+    mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json,
+    json_extract(outbox_row_json, '$.server_transaction_id'), json_extract(outbox_row_json, '$.confirmation_source')
+    """
 
   /// Returns the first active optimistic row that has no SQLite-owned Runtime
   /// preparation receipt. The check is body-free and intentionally includes
@@ -6008,7 +6339,7 @@ public actor SQLitePersistenceStore {
         guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else {
           return .ineligible(.revisionChanged)
         }
-        let mutation: PendingMutation = try decodeOutboxBody(row.json)
+        let mutation: PendingMutation = try decodeOutboxBody(row)
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += row.json.utf8.count
         context.bodies[mutationID] = mutation
@@ -6188,8 +6519,8 @@ public actor SQLitePersistenceStore {
           )
 
         case let .update(mutation):
-          let body = try encode(mutation)
-          let lifecycle = try encode(mutation.compactedForMemory)
+          // The body and lifecycle as stored (#1435); the staged delivery columns below carry the rest.
+          let (body, lifecycle) = try encodeOutboxBody(mutation)
           let lifecycleByteCount = lifecycle.utf8.count
           guard lifecycleByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
           else {
@@ -6222,11 +6553,13 @@ public actor SQLitePersistenceStore {
               SELECT planned.expected_server_acceptance_payload_fingerprint,
                      planned.expected_delivery_claim_payload_fingerprint,
                      planned.expected_delivery_claimant_id,
-                     planned.confirm_at_apply, outbox.json,
+                     planned.confirm_at_apply, body.json,
                      planned.expected_delivery_started, outbox.delivery_started
               FROM instant_server_apply_rows AS planned
               JOIN instant_outbox AS outbox
                 ON outbox.mutation_id = planned.mutation_id
+              JOIN instant_outbox_bodies AS body
+                ON body.mutation_id = planned.mutation_id
               WHERE planned.plan_id = ? AND planned.mutation_id = ?
               LIMIT 1
               """,
@@ -6457,7 +6790,7 @@ public actor SQLitePersistenceStore {
 
       let appendedBodyByteCount = Int(try selectInt64(
         """
-        SELECT COALESCE(SUM(length(CAST(outbox.json AS BLOB))), 0)
+        SELECT COALESCE(SUM(\(Self.bodyLengthSQL(outbox: "outbox"))), 0)
         FROM instant_outbox AS outbox
         WHERE \(positionPredicate)
         """,
@@ -6491,7 +6824,7 @@ public actor SQLitePersistenceStore {
                outbox.server_acceptance_payload_fingerprint,
                MAX(
                  COALESCE(outbox.encoded_body_bytes, 0),
-                 length(CAST(outbox.json AS BLOB))
+                 \(Self.bodyLengthSQL(outbox: "outbox"))
                ),
                1, 1, 1, 0, 0, 0, 0
         FROM instant_outbox AS outbox
@@ -6541,6 +6874,20 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// Whether a staged server-apply row (`planned`) changes its outbox row (`outbox`) or its body (`body`) (#932): the
+  /// body, the receipt and acceptance fingerprints, and the status, server transaction id and confirmation source,
+  /// which the body carried until #1435 and the row's columns hold since.
+  static let stagedRowChangedSQL = """
+    (
+      planned.staged_json != body.json
+      OR planned.staged_effect_receipt_fingerprint IS NOT outbox.optimistic_effect_receipt_fingerprint
+      OR planned.staged_server_acceptance_payload_fingerprint IS NOT outbox.server_acceptance_payload_fingerprint
+      OR planned.staged_status IS NOT outbox.status
+      OR planned.staged_server_transaction_id IS NOT outbox.server_transaction_id
+      OR planned.staged_confirmation_source IS NOT outbox.confirmation_source
+    )
+    """
+
   func commitServerApplyPlan(
     planID: String,
     changedEntityTriples: [String: [InstantTriple]],
@@ -6588,15 +6935,13 @@ public actor SQLitePersistenceStore {
           FROM instant_server_apply_rows AS planned
           LEFT JOIN instant_outbox AS outbox
             ON outbox.mutation_id = planned.mutation_id
+          LEFT JOIN instant_outbox_bodies AS body
+            ON body.mutation_id = planned.mutation_id
           WHERE planned.plan_id = ? AND planned.staged = 1
             AND (
               planned.staged_delete = 1
               OR outbox.mutation_id IS NULL
-              OR planned.staged_json != outbox.json
-              OR planned.staged_effect_receipt_fingerprint
-                IS NOT outbox.optimistic_effect_receipt_fingerprint
-              OR planned.staged_server_acceptance_payload_fingerprint
-                IS NOT outbox.server_acceptance_payload_fingerprint
+              OR \(Self.stagedRowChangedSQL)
             )
           LIMIT 1
         )
@@ -6650,7 +6995,6 @@ public actor SQLitePersistenceStore {
               delivery_metadata_version = ?,
               transport_step_count = planned.staged_transport_step_count,
               encoded_body_bytes = length(CAST(planned.staged_json AS BLOB)),
-              lifecycle_json = planned.staged_lifecycle_json,
               failure_message = planned.staged_failure_message,
               confirmation_proven = planned.staged_confirmation_proven,
               optimistic_overlay_active = planned.staged_overlay_active,
@@ -6660,23 +7004,30 @@ public actor SQLitePersistenceStore {
               optimistic_effect_receipt_fingerprint = planned.staged_effect_receipt_fingerprint,
               server_acceptance_payload_fingerprint = planned.staged_server_acceptance_payload_fingerprint,
               server_transaction_id = planned.staged_server_transaction_id,
-              confirmation_source = planned.staged_confirmation_source,
-              json = planned.staged_json
+              confirmation_source = planned.staged_confirmation_source
           FROM instant_server_apply_rows AS planned
+          JOIN instant_outbox_bodies AS body ON body.mutation_id = planned.mutation_id
           WHERE planned.plan_id = ? AND planned.staged = 1 AND planned.staged_delete = 0
             AND outbox.mutation_id = planned.mutation_id
-            AND (
-              planned.staged_json != outbox.json
-              OR planned.staged_effect_receipt_fingerprint
-                IS NOT outbox.optimistic_effect_receipt_fingerprint
-              OR planned.staged_server_acceptance_payload_fingerprint
-                IS NOT outbox.server_acceptance_payload_fingerprint
-            )
+            AND \(Self.stagedRowChangedSQL)
           """,
           // #932: one join visits the plan's staged rows and each one's outbox row through its key. The fifteen
           // correlated lookups this replaces read the staged row once per column, under the operation gate. (Before
           // #277 a correlated IN rescanned every plan row for each outbox row: 7.4 s for 2,000 pending mutations.)
           [.int(Int64(InstantOutboxDeliveryMetadata.currentVersion)), .text(planID)]
+        )
+        // #1435: the body only where the write itself changed (a rebase's new rollback, a failure), after the row's
+        // columns, whose statement compares the body as it was.
+        try execute(
+          """
+          UPDATE instant_outbox_bodies AS body
+          SET json = planned.staged_json, lifecycle_json = planned.staged_lifecycle_json
+          FROM instant_server_apply_rows AS planned
+          WHERE planned.plan_id = ? AND planned.staged = 1 AND planned.staged_delete = 0
+            AND body.mutation_id = planned.mutation_id
+            AND (planned.staged_json != body.json OR planned.staged_lifecycle_json IS NOT body.lifecycle_json)
+          """,
+          [.text(planID)]
         )
         try execute(
           """
@@ -6862,17 +7213,18 @@ public actor SQLitePersistenceStore {
         removedMutationIDs.append(candidate.mutationID)
         continue
       }
-      let lifecycleJSON: String? = try selectScalar(
+      // The staged lifecycle is stored without its delivery fields, which the staged columns hold (#1435).
+      let staged = try loadStoredBodyWithDeliveryWithoutTransaction(
         """
-        SELECT staged_lifecycle_json
+        SELECT staged_lifecycle_json, staged_status, staged_server_transaction_id, staged_confirmation_source
         FROM instant_server_apply_rows
         WHERE plan_id = ? AND mutation_id = ? AND staged_delete = 0
         LIMIT 1
         """,
         [.text(planID), .text(candidate.mutationID)]
       )
-      guard let lifecycleJSON,
-        lifecycleJSON.utf8.count == candidate.actualLifecycleByteCount
+      guard let staged,
+        staged.json.utf8.count == candidate.actualLifecycleByteCount
       else {
         throw persistenceError(
           operation: "load bounded server-apply resident patch",
@@ -6880,7 +7232,7 @@ public actor SQLitePersistenceStore {
             "Mutation '\(candidate.mutationID)' changed while loading its compact lifecycle body."
         )
       }
-      let mutation: PendingMutation = try decodeOutboxBody(lifecycleJSON)
+      let mutation = try decodeOutboxBody(staged.json, delivery: staged.delivery)
       guard mutation.id == candidate.mutationID,
         mutation.createdAt.milliseconds == candidate.position.createdAtMilliseconds
       else {
@@ -7025,7 +7377,7 @@ public actor SQLitePersistenceStore {
              outbox.delivery_claimant_id,
              outbox.server_acceptance_payload_fingerprint,
              \(readsBodyBytes
-               ? "MAX(COALESCE(outbox.encoded_body_bytes, 0), length(CAST(outbox.json AS BLOB)))"
+               ? "MAX(COALESCE(outbox.encoded_body_bytes, 0), \(Self.bodyLengthSQL(outbox: "outbox")))"
                : "0"),
              ?, ?, 0, 0, 0, 0, 0, ?
       \(selectionSQL)
@@ -7341,7 +7693,7 @@ public actor SQLitePersistenceStore {
     var sql =
       """
       SELECT planned.mutation_id, planned.created_at_ms,
-             length(CAST(outbox.json AS BLOB)),
+             \(Self.bodyLengthSQL(outbox: "outbox")),
              planned.is_component_body, planned.prune_at_watermark,
              planned.confirm_at_apply
       FROM instant_server_apply_rows AS planned
@@ -7443,11 +7795,17 @@ public actor SQLitePersistenceStore {
     var entries: [InstantServerApplyBodyEntry] = []
     entries.reserveCapacity(candidates.count)
     for candidate in candidates {
-      let json: String? = try selectScalar(
-        "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+      let stored = try loadStoredBodyWithDeliveryWithoutTransaction(
+        """
+        SELECT body.json, \(InstantOutboxRowDelivery.columns)
+        FROM instant_outbox AS outbox
+        JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+        WHERE outbox.mutation_id = ?
+        LIMIT 1
+        """,
         [.text(candidate.mutationID)]
       )
-      guard let json, json.utf8.count == candidate.actualBodyByteCount else {
+      guard let stored, stored.json.utf8.count == candidate.actualBodyByteCount else {
         return InstantServerApplyBodyPage(
           isStale: true,
           entries: [],
@@ -7457,7 +7815,7 @@ public actor SQLitePersistenceStore {
       }
       let mutation: PendingMutation
       do {
-        mutation = try decodeOutboxBody(json)
+        mutation = try decodeOutboxBody(stored.json, delivery: stored.delivery)
       } catch {
         let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
           mutationID: candidate.mutationID
@@ -8024,8 +8382,14 @@ public actor SQLitePersistenceStore {
         guard preferredByteCount <= maximumEncodedByteCount - admittedByteCount else { break }
 
         if let lifecycleByteCount = candidate.lifecycleByteCount,
-          let lifecycleJSON = try selectScalar(
-            "SELECT lifecycle_json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+          let lifecycle = try loadStoredBodyWithDeliveryWithoutTransaction(
+            """
+            SELECT body.lifecycle_json, \(InstantOutboxRowDelivery.columns)
+            FROM instant_outbox AS outbox
+            JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+            WHERE outbox.mutation_id = ?
+            LIMIT 1
+            """,
             [.text(candidate.mutationID)]
           )
         {
@@ -8033,7 +8397,7 @@ public actor SQLitePersistenceStore {
           decodedOutboxLifecycleCount += 1
           decodedOutboxLifecycleByteCount += lifecycleByteCount
           do {
-            let mutation: PendingMutation = try decodeOutboxBody(lifecycleJSON)
+            let mutation = try decodeOutboxBody(lifecycle.json, delivery: lifecycle.delivery)
             guard mutation.id == candidate.mutationID else {
               throw persistenceError(
                 operation: "decode failed mutation lifecycle",
@@ -8070,7 +8434,7 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += candidate.bodyByteCount
         do {
-          var mutation: PendingMutation = try decodeOutboxBody(row.json)
+          var mutation: PendingMutation = try decodeOutboxBody(row)
           guard mutation.id == candidate.mutationID else {
             throw persistenceError(
               operation: "repair failed mutation lifecycle",
@@ -8395,7 +8759,7 @@ public actor SQLitePersistenceStore {
     SELECT mutation_id, status, optimistic_overlay_active,
            delivery_claim_state, delivery_started, delivery_state,
            delivery_metadata_version, encoded_body_bytes,
-           created_at_ms, length(CAST(json AS BLOB))
+           created_at_ms, \(SQLitePersistenceStore.bodyLengthSQL(outbox: "instant_outbox"))
     FROM instant_outbox
     WHERE mutation_id = (
       SELECT mutation_id
@@ -8497,7 +8861,7 @@ public actor SQLitePersistenceStore {
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
       do {
-        let mutation: PendingMutation = try decodeOutboxBody(row.json)
+        let mutation: PendingMutation = try decodeOutboxBody(row)
         guard mutation.id == mutationID,
           mutation.status == .pending,
           mutation.provesReplayableOptimisticEffectReceipt,
@@ -8550,7 +8914,7 @@ public actor SQLitePersistenceStore {
       case let .bounded(row, reason):
         guard
           try selectScalar(
-            "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+            "SELECT json FROM instant_outbox_bodies WHERE mutation_id = ? LIMIT 1",
             [.text(row.mutationID)]
           ) == row.json
         else { return false }
@@ -8569,7 +8933,7 @@ public actor SQLitePersistenceStore {
               SELECT 1 FROM instant_outbox
               WHERE mutation_id = ? AND created_at_ms = ?
                 AND encoded_body_bytes = ?
-                AND length(CAST(json AS BLOB)) = ?
+                AND \(Self.bodyLengthSQL(outbox: "instant_outbox")) = ?
             )
             """,
             [
@@ -8733,7 +9097,7 @@ public actor SQLitePersistenceStore {
         // failed, with its effect unknown, instead of waiting forever (#696). Send Again writes it anew.
         if let held = try heldQuarantinedOutboxMutationsWithoutTransaction(
           """
-          SELECT mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+          SELECT \(Self.quarantinedMutationColumns)
           FROM instant_outbox_quarantined
           WHERE resolution IS NULL AND mutation_id = ?
           ORDER BY quarantine_id
@@ -8761,7 +9125,7 @@ public actor SQLitePersistenceStore {
       }
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
-      let mutation: PendingMutation = try decodeOutboxBody(row.json)
+      let mutation: PendingMutation = try decodeOutboxBody(row)
       let hasPreparedReceipt = try hasStoredPreparedOptimisticEffectReceipt(
         mutation,
         in: row
@@ -8907,7 +9271,7 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += row.json.utf8.count
         do {
-          let mutation: PendingMutation = try decodeOutboxBody(row.json)
+          let mutation: PendingMutation = try decodeOutboxBody(row)
           guard mutation.id == mutationID else {
             failedMutations.append(
               try quarantineInvalidOutboxMutationWithoutTransaction(
@@ -9051,7 +9415,7 @@ public actor SQLitePersistenceStore {
           // and takes the bounded current-body decode below instead.
           mutation = selectedMutation
         } else {
-          mutation = try decodeOutboxBody(row.json)
+          mutation = try decodeOutboxBody(row)
           decodedOutboxBodyCount += 1
           decodedOutboxBodyByteCount += row.json.utf8.count
         }
@@ -9069,18 +9433,20 @@ public actor SQLitePersistenceStore {
         mutation.confirmationSource = result.acceptance == .serverAccepted
           ? .serverTransport
           : .localTransport
+        // The row's column, which the decode reads since #1435, is cleared below.
+        mutation.serverTransactionID = nil
         let confirmationSource = mutation.confirmationSource!.rawValue
         let deliveryState = result.acceptance == .serverAccepted
           ? InstantOutboxDeliveryState.serverAccepted
           : .needsDelivery
-        let encodedBody = try encode(mutation)
+        let encoded = try encodeOutboxBody(mutation)
         try execute(
           """
           UPDATE instant_outbox
           SET status = ?, delivery_state = ?, failure_message = NULL,
               confirmation_proven = ?, server_transaction_id = NULL,
               confirmation_source = ?, mutation_revision = mutation_revision + 1,
-              encoded_body_bytes = ?, json = ?, lifecycle_json = ?,
+              encoded_body_bytes = ?,
               server_acceptance_payload_fingerprint = ?
           WHERE mutation_id = ? AND status = ? AND delivery_claim_state = ?
             AND delivery_claim_token = ?
@@ -9092,9 +9458,7 @@ public actor SQLitePersistenceStore {
             .text(deliveryState.rawValue),
             .int(result.acceptance == .serverAccepted ? 1 : 0),
             .text(confirmationSource),
-            .int(Int64(encodedBody.utf8.count)),
-            .text(encodedBody),
-            .text(try encode(mutation.compactedForMemory)),
+            .int(Int64(encoded.body.utf8.count)),
             result.acceptance == .serverAccepted ? .text(claimPayloadFingerprint) : .null,
             .text(result.mutationID),
             .text(InstantMutationStatus.pending.rawValue),
@@ -9105,6 +9469,12 @@ public actor SQLitePersistenceStore {
           ]
         )
         guard sqlite3_changes(connection.raw) == 1 else { continue }
+        // The body changes only when the confirmation cleared a failure it held (#1435).
+        try saveOutboxBodyWithoutTransaction(
+          mutationID: mutation.id,
+          body: encoded.body,
+          lifecycle: encoded.lifecycle
+        )
         try saveMutationLifecycleWithoutTransaction(mutation)
         confirmed.append(mutation)
       }
@@ -9181,7 +9551,7 @@ public actor SQLitePersistenceStore {
   func outboxMutationForDiagnostics(id: String) throws -> PendingMutation? {
     try readTransaction {
       guard let row = try loadOutboxBodyRowWithoutTransaction(id: id) else { return nil }
-      return try? decodeOutboxBody(row.json)
+      return try? decodeOutboxBody(row)
     }
   }
 
@@ -9249,7 +9619,7 @@ public actor SQLitePersistenceStore {
       mutation = decoded
     } else {
       guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else { return (.none, nil, 0) }
-      mutation = try decodeOutboxBody(row.json)
+      mutation = try decodeOutboxBody(row)
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
     }
@@ -9275,7 +9645,7 @@ public actor SQLitePersistenceStore {
     var newestAcceptedTransactionID: String?
     for candidate in candidates {
       guard let row = try loadOutboxBodyRowWithoutTransaction(id: candidate.id) else { continue }
-      let covering: PendingMutation = try decodeOutboxBody(row.json)
+      let covering: PendingMutation = try decodeOutboxBody(row)
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
       allOperations.append(contentsOf: covering.transaction.operations)
@@ -9497,13 +9867,13 @@ public actor SQLitePersistenceStore {
     superseded.failure = nil
     superseded.serverTransactionID = serverTransactionID
     superseded.confirmationSource = .supersededByAcceptedWrite
-    let encodedBody = try encode(superseded)
+    let encoded = try encodeOutboxBody(superseded)
     try execute(
       """
       UPDATE instant_outbox
       SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
           transport_step_count = ?, encoded_body_bytes = ?, delivery_started = 1,
-          lifecycle_json = ?, failure_message = NULL, confirmation_proven = 1,
+          failure_message = NULL, confirmation_proven = 1,
           optimistic_overlay_active = ?, delivery_claim_state = ?,
           server_transaction_id = ?, confirmation_source = ?,
           mutation_revision = mutation_revision + 1,
@@ -9511,7 +9881,7 @@ public actor SQLitePersistenceStore {
           delivery_claim_deadline_ms = NULL,
           delivery_claim_projected_body_bytes = NULL,
           delivery_claim_payload_fingerprint = NULL,
-          server_acceptance_payload_fingerprint = ?, json = ?
+          server_acceptance_payload_fingerprint = ?
       WHERE mutation_id = ? AND delivery_state = ? AND status IN (?, ?)
         AND COALESCE(confirmation_proven, 0) = 0
       """,
@@ -9520,14 +9890,12 @@ public actor SQLitePersistenceStore {
         .text(InstantOutboxDeliveryState.serverAccepted.rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
         .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: superseded))),
-        .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(superseded.compactedForMemory)),
+        .int(Int64(encoded.body.utf8.count)),
         .int(superseded.optimisticOverlayState == .removed ? 0 : 1),
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
         .text(serverTransactionID),
         .text(InstantMutationConfirmationSource.supersededByAcceptedWrite.rawValue),
         .text(try mutation.mutationWireIntentFingerprint()),
-        .text(encodedBody),
         .text(mutation.id),
         .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
         .text(InstantMutationStatus.pending.rawValue),
@@ -9535,6 +9903,8 @@ public actor SQLitePersistenceStore {
       ]
     )
     guard sqlite3_changes(connection.raw) == 1 else { return nil }
+    // The body changes only when the write held a failure, which the resolution clears (#1435).
+    try saveOutboxBodyWithoutTransaction(mutationID: mutation.id, body: encoded.body, lifecycle: encoded.lifecycle)
     try replaceOutboxWriteKeysWithoutTransaction(for: superseded)
     try saveMutationLifecycleWithoutTransaction(superseded)
     InstantDiagnostics.shared.record(
@@ -9800,7 +10170,7 @@ public actor SQLitePersistenceStore {
       let position = try loadOutboxPositionWithoutTransaction(id: id),
       let row = try loadOutboxBodyRowWithoutTransaction(id: id)
     else { return nil }
-    let mutation: PendingMutation = try decodeOutboxBody(row.json)
+    let mutation: PendingMutation = try decodeOutboxBody(row)
     // A failed row's write keys are gone, so each slot finds its later writes by its own key, newest first: the first
     // that covers it is the one whose value the server holds now. Each later write is decoded once per read.
     func coverers(
@@ -9814,7 +10184,7 @@ public actor SQLitePersistenceStore {
           coverage = cached
         } else {
           guard let candidateRow = try loadOutboxBodyRowWithoutTransaction(id: candidate.id) else { continue }
-          let covering: PendingMutation = try decodeOutboxBody(candidateRow.json)
+          let covering: PendingMutation = try decodeOutboxBody(candidateRow)
           coverage = InstantAuthoritativeWriteCoverage(
             operations: covering.transaction.operations,
             attributes: attributes,
@@ -10184,7 +10554,7 @@ public actor SQLitePersistenceStore {
             mutationID: row.mutationID
           )
           do {
-            let mutation: PendingMutation = try decodeOutboxBody(row.json)
+            let mutation: PendingMutation = try decodeOutboxBody(row)
             guard mutation.id == row.mutationID else {
               failedMutations.append(
                 try quarantineInvalidOutboxMutationWithoutTransaction(
@@ -10739,7 +11109,7 @@ public actor SQLitePersistenceStore {
           nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
         )
       }
-      var mutation: PendingMutation = try decodeOutboxBody(row.json)
+      var mutation: PendingMutation = try decodeOutboxBody(row)
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
       guard mutation.id == id else {
@@ -10809,18 +11179,22 @@ public actor SQLitePersistenceStore {
             nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
           )
         }
+        // #1435: the acknowledgement sets the row's columns, and its body only when the write held a failure, which it
+        // clears; the status, server transaction id and confirmation source are columns only. It re-encoded and
+        // rewrote the body every time, overflow pages and all: 6.2 log frames for a 4-frame change.
+        let clearsFailure = mutation.failure != nil || mutation.failureMessage != nil
         mutation.status = .confirmed
         mutation.failureMessage = nil
         mutation.failure = nil
         mutation.serverTransactionID = serverTransactionID
         mutation.confirmationSource = .webSocketTransactOK
-        let encodedBody = try encode(mutation)
+        let encoded = clearsFailure ? try encodeOutboxBody(mutation) : nil
         try execute(
           """
           UPDATE instant_outbox
           SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
-              transport_step_count = ?, encoded_body_bytes = ?, delivery_started = 1,
-              lifecycle_json = ?, failure_message = NULL, confirmation_proven = 1,
+              transport_step_count = ?, encoded_body_bytes = COALESCE(?, encoded_body_bytes), delivery_started = 1,
+              failure_message = NULL, confirmation_proven = 1,
               delivery_claim_state = ?,
               server_transaction_id = ?, confirmation_source = ?,
               mutation_revision = mutation_revision + 1,
@@ -10828,7 +11202,7 @@ public actor SQLitePersistenceStore {
               delivery_claim_deadline_ms = NULL,
               delivery_claim_projected_body_bytes = NULL,
               delivery_claim_payload_fingerprint = NULL,
-              server_acceptance_payload_fingerprint = ?, json = ?
+              server_acceptance_payload_fingerprint = ?
           WHERE mutation_id = ? AND delivery_claim_state = ?
             AND delivery_claim_payload_fingerprint = ?
             AND delivery_claimant_id = ?
@@ -10839,13 +11213,11 @@ public actor SQLitePersistenceStore {
             .text(InstantOutboxDeliveryState.serverAccepted.rawValue),
             .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
             .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
-            .int(Int64(encodedBody.utf8.count)),
-            .text(try encode(mutation.compactedForMemory)),
+            encoded.map { SQLiteBinding.int(Int64($0.body.utf8.count)) } ?? .null,
             .text(InstantOutboxDeliveryClaimState.ready.rawValue),
             .text(serverTransactionID),
             .text(InstantMutationConfirmationSource.webSocketTransactOK.rawValue),
             .text(claimPayloadFingerprint),
-            .text(encodedBody),
             .text(mutation.id),
             .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
             .text(claimPayloadFingerprint),
@@ -10854,6 +11226,9 @@ public actor SQLitePersistenceStore {
           ]
         )
         guard sqlite3_changes(connection.raw) == 1 else { return nil }
+        if let encoded {
+          try saveOutboxBodyWithoutTransaction(mutationID: mutation.id, body: encoded.body, lifecycle: encoded.lifecycle)
+        }
         try setOptimisticOverlayActiveIfChangedWithoutTransaction(mutation)
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
         try saveMutationLifecycleWithoutTransaction(mutation)
@@ -10927,7 +11302,7 @@ public actor SQLitePersistenceStore {
           nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
         )
       }
-      let mutation: PendingMutation = try decodeOutboxBody(row.json)
+      let mutation: PendingMutation = try decodeOutboxBody(row)
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
       guard mutation.id == id,
@@ -11020,7 +11395,7 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += row.json.utf8.count
         do {
-          let mutation: PendingMutation = try decodeOutboxBody(row.json)
+          let mutation: PendingMutation = try decodeOutboxBody(row)
           guard mutation.id == row.mutationID else {
             throw persistenceError(
               operation: "inspect durable outbox mutation",
@@ -11406,13 +11781,49 @@ public actor SQLitePersistenceStore {
     tracesStartupCollections: Bool = true
   ) throws -> [PendingMutation] {
     localMutationQueueWideReadCount += 1
-    let mutations: [PendingMutation] = try loadStateCollection(
+    let order = """
+      FROM instant_outbox AS outbox
+      JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+      ORDER BY outbox.created_at_ms, outbox.mutation_id
+      """
+    var mutations: [PendingMutation] = try loadStateCollection(
       phase: "sqlite.state-load.outbox",
-      sql: "SELECT json FROM instant_outbox ORDER BY created_at_ms, mutation_id",
+      sql: "SELECT body.json \(order)",
       tracesStartupCollection: tracesStartupCollections
     )
+    // The bodies decode in batches off this actor; their delivery fields come from the rows, read in the same order in
+    // the same transaction (#1435).
+    let deliveries = try loadOutboxRowDeliveriesWithoutTransaction("SELECT \(InstantOutboxRowDelivery.columns) \(order)")
+    guard deliveries.count == mutations.count else {
+      throw persistenceError(
+        operation: "load outbox",
+        message: "The outbox held \(deliveries.count) rows for \(mutations.count) bodies."
+      )
+    }
+    for index in mutations.indices {
+      deliveries[index].apply(to: &mutations[index])
+    }
     decodedOutboxBodyCount += mutations.count
     return mutations
+  }
+
+  /// The delivery columns `sql` selects, row by row (#1435).
+  private func loadOutboxRowDeliveriesWithoutTransaction(_ sql: String) throws -> [InstantOutboxRowDelivery] {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { finishStatement(statement) }
+    var deliveries: [InstantOutboxRowDelivery] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return deliveries }
+      guard code == SQLITE_ROW, let delivery = InstantOutboxRowDelivery(statement: statement, from: 0) else {
+        throw persistenceError(
+          operation: "load outbox",
+          message: "SQLite returned an outbox status or confirmation source this version does not know."
+        )
+      }
+      deliveries.append(delivery)
+    }
   }
 
   /// The facts `sql` selects (it selects ``InstantFactRowReader/columns``), read from their columns (#1149): the launch
@@ -15372,9 +15783,10 @@ public actor SQLitePersistenceStore {
       let predatesBoundedDeliveryMetadata = sqlite3_column_int64(statement, 8) == 0
       guard bodyByteCount >= 0,
         bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes),
-        let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID),
+        let row = try? loadPreSplitOutboxBodyRowWithoutTransaction(id: mutationID),
         row.createdAtMilliseconds == createdAtMilliseconds,
         row.json.utf8.count == Int(bodyByteCount),
+        // Before #1435's conversion the body carries its delivery fields, which the checks below compare.
         var mutation: PendingMutation = try? decodeOutboxBody(row.json),
         mutation.id == mutationID,
         mutation.transaction.id == mutation.id,
@@ -15828,7 +16240,7 @@ public actor SQLitePersistenceStore {
       created_at_ms,
       delivery_metadata_version,
       transport_step_count,
-      COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
+      \(SQLitePersistenceStore.storedBodyByteCountSQL(outbox: "instant_outbox")),
       status,
       delivery_started
     FROM instant_outbox
@@ -15839,7 +16251,7 @@ public actor SQLitePersistenceStore {
       created_at_ms,
       delivery_metadata_version,
       transport_step_count,
-      COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
+      \(SQLitePersistenceStore.storedBodyByteCountSQL(outbox: "instant_outbox")),
       status,
       delivery_started
     FROM instant_outbox
@@ -16054,28 +16466,29 @@ public actor SQLitePersistenceStore {
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT mutation_id, created_at_ms,
-             CASE WHEN lifecycle_json IS NULL
-               THEN NULL ELSE length(CAST(lifecycle_json AS BLOB)) END,
-             COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
-             optimistic_effect_receipt_fingerprint IS NOT NULL
-      FROM instant_outbox
-      WHERE status = ? AND (
-        delivery_metadata_version < ? OR lifecycle_json IS NULL OR
-        LOWER(COALESCE(failure_message, '')) LIKE '%operation timed out%' OR
-        LOWER(COALESCE(failure_message, '')) LIKE '%transaction timed out%' OR
-        LOWER(COALESCE(failure_message, '')) LIKE '%service unavailable%' OR
-        LOWER(COALESCE(failure_message, '')) LIKE '%temporarily unavailable%' OR
-        LOWER(COALESCE(failure_message, '')) LIKE '%could not resolve%'
+      SELECT outbox.mutation_id, outbox.created_at_ms,
+             CASE WHEN body.lifecycle_json IS NULL
+               THEN NULL ELSE length(CAST(body.lifecycle_json AS BLOB)) END,
+             \(Self.storedBodyByteCountSQL(outbox: "outbox")),
+             outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+      FROM instant_outbox AS outbox
+      LEFT JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+      WHERE outbox.status = ? AND (
+        outbox.delivery_metadata_version < ? OR body.lifecycle_json IS NULL OR
+        LOWER(COALESCE(outbox.failure_message, '')) LIKE '%operation timed out%' OR
+        LOWER(COALESCE(outbox.failure_message, '')) LIKE '%transaction timed out%' OR
+        LOWER(COALESCE(outbox.failure_message, '')) LIKE '%service unavailable%' OR
+        LOWER(COALESCE(outbox.failure_message, '')) LIKE '%temporarily unavailable%' OR
+        LOWER(COALESCE(outbox.failure_message, '')) LIKE '%could not resolve%'
       )
       ORDER BY CASE
-        WHEN LOWER(COALESCE(failure_message, '')) LIKE '%operation timed out%'
-          OR LOWER(COALESCE(failure_message, '')) LIKE '%transaction timed out%'
-          OR LOWER(COALESCE(failure_message, '')) LIKE '%service unavailable%'
-          OR LOWER(COALESCE(failure_message, '')) LIKE '%temporarily unavailable%'
-          OR LOWER(COALESCE(failure_message, '')) LIKE '%could not resolve%'
+        WHEN LOWER(COALESCE(outbox.failure_message, '')) LIKE '%operation timed out%'
+          OR LOWER(COALESCE(outbox.failure_message, '')) LIKE '%transaction timed out%'
+          OR LOWER(COALESCE(outbox.failure_message, '')) LIKE '%service unavailable%'
+          OR LOWER(COALESCE(outbox.failure_message, '')) LIKE '%temporarily unavailable%'
+          OR LOWER(COALESCE(outbox.failure_message, '')) LIKE '%could not resolve%'
         THEN 0 ELSE 1 END,
-        created_at_ms, mutation_id
+        outbox.created_at_ms, outbox.mutation_id
       LIMIT ?
       """,
       statement: &statement
@@ -16166,7 +16579,7 @@ public actor SQLitePersistenceStore {
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += candidate.actualBodyByteCount
       do {
-        var mutation: PendingMutation = try decodeOutboxBody(row.json)
+        var mutation: PendingMutation = try decodeOutboxBody(row)
         guard mutation.id == candidate.mutationID,
           mutation.status == .failed,
           mutation.failureMessage.map(
@@ -16251,7 +16664,7 @@ public actor SQLitePersistenceStore {
     try prepare(
       """
       SELECT mutation_id, created_at_ms, mutation_revision, delivery_state,
-             length(CAST(json AS BLOB))
+             \(Self.bodyLengthSQL(outbox: "instant_outbox"))
       FROM instant_outbox INDEXED BY instant_outbox_failed_retry_window_idx
       WHERE \(Self.automaticFailedMutationRetryEligibilitySQL)
         \(Self.automaticFailedMutationRetryAttributeRevisionSQL)
@@ -16362,7 +16775,7 @@ public actor SQLitePersistenceStore {
     originalJSON: String?,
     expectedAttributeRevision: Int64
   ) throws -> Bool {
-    let jsonProofSQL = originalJSON == nil ? "" : "AND json = ?"
+    let jsonProofSQL = originalJSON == nil ? "" : "AND \(Self.storedBodySQL(outbox: "instant_outbox")) = ?"
     let deliveryStateBinding = candidate.deliveryState.map(SQLiteBinding.text) ?? .null
     var bindings: [SQLiteBinding] = [
       .text(candidate.mutationID),
@@ -16381,7 +16794,7 @@ public actor SQLitePersistenceStore {
         SELECT 1 FROM instant_outbox
         WHERE mutation_id = ? AND created_at_ms = ? AND mutation_revision = ?
           AND delivery_state IS ?
-          AND length(CAST(json AS BLOB)) = ?
+          AND \(Self.bodyLengthSQL(outbox: "instant_outbox")) = ?
           AND \(Self.automaticFailedMutationRetryEligibilitySQL)
           \(Self.automaticFailedMutationRetryAttributeRevisionSQL)
           \(jsonProofSQL)
@@ -16405,12 +16818,12 @@ public actor SQLitePersistenceStore {
           "The failed mutation '\(mutation.id)' has no canonical prepared optimistic-effect receipt."
       )
     }
-    let encodedBody = try encode(mutation)
+    let encoded = try encodeOutboxBody(mutation)
     try execute(
       """
       UPDATE instant_outbox
       SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
-          transport_step_count = ?, encoded_body_bytes = ?, lifecycle_json = ?,
+          transport_step_count = ?, encoded_body_bytes = ?,
           failure_message = NULL, confirmation_proven = 0,
           failure_attribute_revision = NULL,
           server_transaction_id = NULL, confirmation_source = NULL,
@@ -16419,24 +16832,21 @@ public actor SQLitePersistenceStore {
           delivery_claim_state = ?, delivery_claim_token = NULL,
           delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
           delivery_claim_projected_body_bytes = NULL,
-          delivery_claim_payload_fingerprint = NULL,
-          json = ?
+          delivery_claim_payload_fingerprint = NULL
       WHERE mutation_id = ? AND created_at_ms = ? AND mutation_revision = ?
-        AND delivery_state IS ? AND length(CAST(json AS BLOB)) = ?
+        AND delivery_state IS ? AND \(Self.bodyLengthSQL(outbox: "instant_outbox")) = ?
         AND optimistic_effect_receipt_fingerprint = ?
         AND \(Self.automaticFailedMutationRetryEligibilitySQL)
         \(Self.automaticFailedMutationRetryAttributeRevisionSQL)
-        AND json = ?
+        AND \(Self.storedBodySQL(outbox: "instant_outbox")) = ?
       """,
       [
         .text(InstantMutationStatus.pending.rawValue),
         .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
         .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
-        .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(mutation.compactedForMemory)),
+        .int(Int64(encoded.body.utf8.count)),
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-        .text(encodedBody),
         .text(candidate.mutationID),
         .int(candidate.position.createdAtMilliseconds),
         .int(candidate.mutationRevision),
@@ -16453,6 +16863,7 @@ public actor SQLitePersistenceStore {
         message: "The exact failed mutation '\(candidate.mutationID)' changed during its retry."
       )
     }
+    try saveOutboxBodyWithoutTransaction(mutationID: mutation.id, body: encoded.body, lifecycle: encoded.lifecycle)
     try saveMutationLifecycleWithoutTransaction(mutation)
   }
 
@@ -16463,12 +16874,12 @@ public actor SQLitePersistenceStore {
     reason: String,
     expectedAttributeRevision: Int64
   ) throws {
-    let encodedBody = try encode(mutation)
+    let encoded = try encodeOutboxBody(mutation)
     try execute(
       """
       UPDATE instant_outbox
       SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
-          transport_step_count = ?, encoded_body_bytes = ?, lifecycle_json = ?,
+          transport_step_count = ?, encoded_body_bytes = ?,
           failure_message = ?, confirmation_proven = 0,
           failure_attribute_revision = NULL,
           server_transaction_id = NULL, confirmation_source = NULL,
@@ -16477,24 +16888,21 @@ public actor SQLitePersistenceStore {
           delivery_claim_state = ?, delivery_claim_token = NULL,
           delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
           delivery_claim_projected_body_bytes = NULL,
-          delivery_claim_payload_fingerprint = NULL,
-          json = ?
+          delivery_claim_payload_fingerprint = NULL
       WHERE mutation_id = ? AND created_at_ms = ? AND mutation_revision = ?
-        AND delivery_state IS ? AND length(CAST(json AS BLOB)) = ?
+        AND delivery_state IS ? AND \(Self.bodyLengthSQL(outbox: "instant_outbox")) = ?
         AND \(Self.automaticFailedMutationRetryEligibilitySQL)
         \(Self.automaticFailedMutationRetryAttributeRevisionSQL)
-        AND json = ?
+        AND \(Self.storedBodySQL(outbox: "instant_outbox")) = ?
       """,
       [
         .text(InstantMutationStatus.failed.rawValue),
         .text(InstantOutboxDeliveryState.invalid.rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
         .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
-        .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(mutation.compactedForMemory)),
+        .int(Int64(encoded.body.utf8.count)),
         mutation.failureMessage.map(SQLiteBinding.text) ?? .null,
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-        .text(encodedBody),
         .text(candidate.mutationID),
         .int(candidate.position.createdAtMilliseconds),
         .int(candidate.mutationRevision),
@@ -16510,6 +16918,7 @@ public actor SQLitePersistenceStore {
         message: "The exact failed mutation '\(candidate.mutationID)' changed during isolation."
       )
     }
+    try saveOutboxBodyWithoutTransaction(mutationID: mutation.id, body: encoded.body, lifecycle: encoded.lifecycle)
     try resetOptimisticEffectMetadataForUnknownMutationWithoutTransaction(
       id: mutation.id
     )
@@ -16555,14 +16964,16 @@ public actor SQLitePersistenceStore {
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT mutation_id, created_at_ms, failure_message, lifecycle_json,
-             CASE WHEN lifecycle_json IS NULL
-               THEN NULL ELSE length(CAST(lifecycle_json AS BLOB)) END,
-             delivery_metadata_version,
-             optimistic_effect_receipt_fingerprint
-      FROM instant_outbox
-      WHERE status = ?
-      ORDER BY created_at_ms, mutation_id
+      SELECT outbox.mutation_id, outbox.created_at_ms, outbox.failure_message, body.lifecycle_json,
+             CASE WHEN body.lifecycle_json IS NULL
+               THEN NULL ELSE length(CAST(body.lifecycle_json AS BLOB)) END,
+             outbox.delivery_metadata_version,
+             outbox.optimistic_effect_receipt_fingerprint,
+             \(InstantOutboxRowDelivery.columns)
+      FROM instant_outbox AS outbox
+      LEFT JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+      WHERE outbox.status = ?
+      ORDER BY outbox.created_at_ms, outbox.mutation_id
       LIMIT 1
       """,
       statement: &statement
@@ -16588,9 +16999,8 @@ public actor SQLitePersistenceStore {
       let lifecycleByteCount,
       lifecycleByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes,
       let lifecycleBytes = sqlite3_column_text(statement, 3),
-      let lifecycle: PendingMutation = try? decodeOutboxBody(
-        String(cString: lifecycleBytes)
-      ),
+      let delivery = InstantOutboxRowDelivery(statement: statement, from: 7),
+      let lifecycle = try? decodeOutboxBody(String(cString: lifecycleBytes), delivery: delivery),
       lifecycle.id == mutationID,
       lifecycle.status == .failed
     {
@@ -16666,10 +17076,30 @@ public actor SQLitePersistenceStore {
   ) throws -> InstantOutboxBodyRow? {
     try loadOutboxBodyRowsWithoutTransaction(
       """
+      SELECT outbox.mutation_id, outbox.created_at_ms, body.json,
+             outbox.optimistic_effect_receipt_fingerprint,
+             outbox.delivery_claim_payload_fingerprint,
+             outbox.server_acceptance_payload_fingerprint,
+             \(InstantOutboxRowDelivery.columns)
+      FROM instant_outbox AS outbox
+      JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+      WHERE outbox.mutation_id = ?
+      LIMIT 1
+      """,
+      [.text(id)]
+    ).first
+  }
+
+  /// A body row from the outbox as it was before #1435, the body in its row: for migration 0020's backfill, which runs
+  /// before the store converts (``moveOutboxBodiesToTheirOwnTableIfNeeded()``).
+  private func loadPreSplitOutboxBodyRowWithoutTransaction(id: String) throws -> InstantOutboxBodyRow? {
+    try loadOutboxBodyRowsWithoutTransaction(
+      """
       SELECT mutation_id, created_at_ms, json,
              optimistic_effect_receipt_fingerprint,
              delivery_claim_payload_fingerprint,
-             server_acceptance_payload_fingerprint
+             server_acceptance_payload_fingerprint,
+             status, server_transaction_id, confirmation_source
       FROM instant_outbox
       WHERE mutation_id = ?
       LIMIT 1
@@ -16735,7 +17165,7 @@ public actor SQLitePersistenceStore {
              optimistic_effect_metadata_version, optimistic_effect_is_global,
              MAX(
                COALESCE(encoded_body_bytes, 0),
-               length(CAST(json AS BLOB))
+               \(Self.bodyLengthSQL(outbox: "instant_outbox"))
              ),
              status, confirmation_proven, delivery_state,
              delivery_claim_state, delivery_claim_token
@@ -16899,7 +17329,7 @@ public actor SQLitePersistenceStore {
              optimistic_effect_metadata_version, optimistic_effect_is_global,
              MAX(
                COALESCE(encoded_body_bytes, 0),
-               length(CAST(json AS BLOB))
+               \(Self.bodyLengthSQL(outbox: "instant_outbox"))
              )
       FROM instant_outbox
       WHERE (
@@ -16939,7 +17369,7 @@ public actor SQLitePersistenceStore {
              outbox.optimistic_effect_is_global,
              MAX(
                COALESCE(outbox.encoded_body_bytes, 0),
-               length(CAST(outbox.json AS BLOB))
+               \(Self.bodyLengthSQL(outbox: "outbox"))
              )
       FROM instant_outbox_effect_entities AS effects
         INDEXED BY instant_outbox_effect_entities_lookup_idx
@@ -16973,7 +17403,7 @@ public actor SQLitePersistenceStore {
              optimistic_effect_metadata_version, optimistic_effect_is_global,
              MAX(
                COALESCE(encoded_body_bytes, 0),
-               length(CAST(json AS BLOB))
+               \(Self.bodyLengthSQL(outbox: "instant_outbox"))
              )
       FROM instant_outbox INDEXED BY instant_outbox_global_effect_order_idx
       WHERE optimistic_overlay_active = 1
@@ -17003,7 +17433,7 @@ public actor SQLitePersistenceStore {
              optimistic_effect_metadata_version, optimistic_effect_is_global,
              MAX(
                COALESCE(encoded_body_bytes, 0),
-               length(CAST(json AS BLOB))
+               \(Self.bodyLengthSQL(outbox: "instant_outbox"))
              )
       FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
       WHERE \(Self.unknownActiveEffectPredicate)
@@ -17042,7 +17472,7 @@ public actor SQLitePersistenceStore {
              optimistic_effect_metadata_version, optimistic_effect_is_global,
              MAX(
                COALESCE(encoded_body_bytes, 0),
-               length(CAST(json AS BLOB))
+               \(Self.bodyLengthSQL(outbox: "instant_outbox"))
              )
       FROM instant_outbox
       WHERE (
@@ -17557,10 +17987,80 @@ public actor SQLitePersistenceStore {
     return try decoder.decode(Value.self, from: data)
   }
 
+  /// The write a stored body and its row's delivery columns make together (#1435): the body as decoded, its status,
+  /// server transaction id and confirmation source from the columns.
+  private func decodeOutboxBody(_ json: String, delivery: InstantOutboxRowDelivery) throws -> PendingMutation {
+    var mutation: PendingMutation = try decodeOutboxBody(json)
+    delivery.apply(to: &mutation)
+    return mutation
+  }
+
+  private func decodeOutboxBody(_ row: InstantOutboxBodyRow) throws -> PendingMutation {
+    try decodeOutboxBody(row.json, delivery: row.delivery)
+  }
+
+  /// One stored body or lifecycle and the delivery columns it is decoded with (#1435): `sql` selects the text, then
+  /// the status, the server transaction id and the confirmation source. Nil when no row matches or the text is NULL.
+  private func loadStoredBodyWithDeliveryWithoutTransaction(
+    _ sql: String,
+    _ bindings: [SQLiteBinding]
+  ) throws -> (json: String, delivery: InstantOutboxRowDelivery)? {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW, let text = sqlite3_column_text(statement, 0) else { return nil }
+    guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 1) else {
+      throw persistenceError(
+        operation: "decode outbox delivery row",
+        message: "SQLite returned an outbox status or confirmation source this version does not know."
+      )
+    }
+    return (String(cString: text), delivery)
+  }
+
+  /// A write's body as `instant_outbox_bodies` stores it (#1435): without the fields its row's columns hold (status,
+  /// server transaction id, confirmation source), so a claim or an acknowledgement, which change only those, never
+  /// rewrite it. Every reader decodes it with the columns (``decodeOutboxBody(_:delivery:)``).
+  static func storedOutboxBody(_ mutation: PendingMutation) -> PendingMutation {
+    var body = mutation
+    body.status = .pending
+    body.serverTransactionID = nil
+    body.confirmationSource = nil
+    return body
+  }
+
+  /// The stored body's text and its lifecycle's, the body without its operations (#1435).
+  private func encodeOutboxBody(_ mutation: PendingMutation) throws -> (body: String, lifecycle: String) {
+    let body = Self.storedOutboxBody(mutation)
+    return (try encode(body), try encode(body.compactedForMemory))
+  }
+
+  /// Writes a write's body and lifecycle when they differ from what its body row holds, or makes the row (#1435). A
+  /// claim and an acknowledgement change only the outbox row's columns, so for them this writes nothing.
+  private func saveOutboxBodyWithoutTransaction(
+    mutationID: String,
+    body: String,
+    lifecycle: String
+  ) throws {
+    try execute(
+      """
+      INSERT INTO instant_outbox_bodies (mutation_id, lifecycle_json, json)
+      VALUES (?, ?, ?)
+      ON CONFLICT(mutation_id) DO UPDATE SET
+        lifecycle_json = excluded.lifecycle_json,
+        json = excluded.json
+      WHERE instant_outbox_bodies.json IS NOT excluded.json
+        OR instant_outbox_bodies.lifecycle_json IS NOT excluded.lifecycle_json
+      """,
+      [.text(mutationID), .text(lifecycle), .text(body)]
+    )
+  }
+
   private func saveOutboxDeliveryMetadataWithoutTransaction(
     _ mutation: PendingMutation
   ) throws {
-    let encodedBody = try encode(mutation)
+    let encoded = try encodeOutboxBody(mutation)
     let row = try loadOutboxBodyRowWithoutTransaction(id: mutation.id)
     let hasPreparedReceipt = if let row {
       try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
@@ -17576,7 +18076,7 @@ public actor SQLitePersistenceStore {
       """
       UPDATE instant_outbox
       SET delivery_state = ?, delivery_metadata_version = ?, transport_step_count = ?,
-          encoded_body_bytes = ?, lifecycle_json = ?, failure_message = ?,
+          encoded_body_bytes = ?, failure_message = ?,
           confirmation_proven = ?, optimistic_overlay_active = ?
       WHERE mutation_id = ?
       """,
@@ -17587,15 +18087,68 @@ public actor SQLitePersistenceStore {
         ).rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
         .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
-        .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(mutation.compactedForMemory)),
+        .int(Int64(encoded.body.utf8.count)),
         mutation.failureMessage.map(SQLiteBinding.text) ?? .null,
         .int(hasAcceptedWireIntent ? 1 : 0),
         .int(mutation.optimisticOverlayState == .removed && hasPreparedReceipt ? 0 : 1),
         .text(mutation.id),
       ]
     )
+    if sqlite3_changes(connection.raw) == 1 {
+      // The body in its stored form, so its size and the row's agree (#1435); unchanged bodies are not written.
+      try saveOutboxBodyWithoutTransaction(mutationID: mutation.id, body: encoded.body, lifecycle: encoded.lifecycle)
+    }
     try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
+  }
+
+  /// Turns a row into a visible failed shell and keeps its original body and lifecycle in the body row's quarantine
+  /// columns (`originalBody`, or the stored body when nil). The shell carries no server transaction id or confirmation
+  /// source, so the row's columns hold none either (#1435).
+  private func replaceOutboxRowWithQuarantineShellWithoutTransaction(
+    id: String,
+    shell: PendingMutation,
+    message: String,
+    originalBody: String?
+  ) throws {
+    let encoded = try encodeOutboxBody(shell)
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
+          transport_step_count = 0, encoded_body_bytes = ?,
+          failure_message = ?, confirmation_proven = 0,
+          server_transaction_id = NULL, confirmation_source = NULL,
+          optimistic_overlay_active = 1, delivery_claim_state = ?,
+          delivery_claim_token = NULL, delivery_claimant_id = NULL,
+          delivery_claim_deadline_ms = NULL,
+          delivery_claim_projected_body_bytes = NULL
+      WHERE mutation_id = ?
+      """,
+      [
+        .text(InstantMutationStatus.failed.rawValue),
+        .text(InstantOutboxDeliveryState.invalid.rawValue),
+        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+        .int(Int64(encoded.body.utf8.count)),
+        .text(message),
+        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+        .text(id),
+      ]
+    )
+    // Each right-hand side reads the row as it was, so the quarantine columns get the original body and lifecycle.
+    try execute(
+      """
+      UPDATE instant_outbox_bodies
+      SET quarantine_json = COALESCE(?, json), quarantine_lifecycle_json = lifecycle_json,
+          lifecycle_json = ?, json = ?
+      WHERE mutation_id = ?
+      """,
+      [
+        originalBody.map(SQLiteBinding.text) ?? .null,
+        .text(encoded.lifecycle),
+        .text(encoded.body),
+        .text(id),
+      ]
+    )
   }
 
   private func quarantineInvalidOutboxMutationWithoutTransaction(
@@ -17618,33 +18171,11 @@ public actor SQLitePersistenceStore {
     mutation.optimisticOverlayState = nil
     mutation.optimisticEffectReceiptVersion = nil
     mutation.rollbackTransaction = nil
-    let encodedMutation = try encode(mutation)
-    let encodedLifecycle = try encode(mutation.compactedForMemory)
-    try execute(
-      """
-      UPDATE instant_outbox
-      SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
-          transport_step_count = 0, encoded_body_bytes = ?, lifecycle_json = ?,
-          failure_message = ?, confirmation_proven = 0, quarantine_json = ?,
-          quarantine_lifecycle_json = lifecycle_json,
-          optimistic_overlay_active = 1, delivery_claim_state = ?,
-          delivery_claim_token = NULL, delivery_claimant_id = NULL,
-          delivery_claim_deadline_ms = NULL,
-          delivery_claim_projected_body_bytes = NULL, json = ?
-      WHERE mutation_id = ?
-      """,
-      [
-        .text(InstantMutationStatus.failed.rawValue),
-        .text(InstantOutboxDeliveryState.invalid.rawValue),
-        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-        .int(Int64(encodedMutation.utf8.count)),
-        .text(encodedLifecycle),
-        .text(message),
-        .text(row.json),
-        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-        .text(encodedMutation),
-        .text(row.mutationID),
-      ]
+    try replaceOutboxRowWithQuarantineShellWithoutTransaction(
+      id: row.mutationID,
+      shell: mutation,
+      message: message,
+      originalBody: row.json
     )
     try execute(
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
@@ -17693,31 +18224,11 @@ public actor SQLitePersistenceStore {
     mutation.optimisticOverlayState = nil
     mutation.optimisticEffectReceiptVersion = nil
     mutation.rollbackTransaction = nil
-    let encodedMutation = try encode(mutation)
-    try execute(
-      """
-      UPDATE instant_outbox
-      SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
-          transport_step_count = 0, encoded_body_bytes = ?, lifecycle_json = ?,
-          failure_message = ?, confirmation_proven = 0, quarantine_json = json,
-          quarantine_lifecycle_json = lifecycle_json,
-          optimistic_overlay_active = 1, delivery_claim_state = ?,
-          delivery_claim_token = NULL, delivery_claimant_id = NULL,
-          delivery_claim_deadline_ms = NULL,
-          delivery_claim_projected_body_bytes = NULL, json = ?
-      WHERE mutation_id = ?
-      """,
-      [
-        .text(InstantMutationStatus.failed.rawValue),
-        .text(InstantOutboxDeliveryState.invalid.rawValue),
-        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-        .int(Int64(encodedMutation.utf8.count)),
-        .text(try encode(mutation.compactedForMemory)),
-        .text(message),
-        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-        .text(encodedMutation),
-        .text(id),
-      ]
+    try replaceOutboxRowWithQuarantineShellWithoutTransaction(
+      id: id,
+      shell: mutation,
+      message: message,
+      originalBody: nil
     )
     try execute(
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
@@ -17769,31 +18280,11 @@ public actor SQLitePersistenceStore {
     mutation.optimisticOverlayState = nil
     mutation.optimisticEffectReceiptVersion = nil
     mutation.rollbackTransaction = nil
-    let encodedMutation = try encode(mutation)
-    try execute(
-      """
-      UPDATE instant_outbox
-      SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
-          transport_step_count = 0, encoded_body_bytes = ?, lifecycle_json = ?,
-          failure_message = ?, confirmation_proven = 0, quarantine_json = json,
-          quarantine_lifecycle_json = lifecycle_json,
-          optimistic_overlay_active = 1, delivery_claim_state = ?,
-          delivery_claim_token = NULL, delivery_claimant_id = NULL,
-          delivery_claim_deadline_ms = NULL,
-          delivery_claim_projected_body_bytes = NULL, json = ?
-      WHERE mutation_id = ?
-      """,
-      [
-        .text(InstantMutationStatus.failed.rawValue),
-        .text(InstantOutboxDeliveryState.invalid.rawValue),
-        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-        .int(Int64(encodedMutation.utf8.count)),
-        .text(try encode(mutation.compactedForMemory)),
-        .text(message),
-        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-        .text(encodedMutation),
-        .text(id),
-      ]
+    try replaceOutboxRowWithQuarantineShellWithoutTransaction(
+      id: id,
+      shell: mutation,
+      message: message,
+      originalBody: nil
     )
     try execute(
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
@@ -18275,6 +18766,12 @@ public actor SQLitePersistenceStore {
           message: "SQLite returned a NULL bounded-delivery column."
         )
       }
+      guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 6) else {
+        throw persistenceError(
+          operation: "read outbox delivery rows",
+          message: "SQLite returned an outbox status or confirmation source this version does not know."
+        )
+      }
       let body = String(cString: json)
       materializedOutboxBodyCount += 1
       materializedOutboxBodyByteCount += body.utf8.count
@@ -18288,7 +18785,8 @@ public actor SQLitePersistenceStore {
           deliveryClaimPayloadFingerprint: sqlite3_column_text(statement, 4)
             .map(String.init(cString:)),
           serverAcceptancePayloadFingerprint: sqlite3_column_text(statement, 5)
-            .map(String.init(cString:))
+            .map(String.init(cString:)),
+          delivery: delivery
         )
       )
     }
@@ -18979,12 +19477,13 @@ public actor SQLitePersistenceStore {
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT optimistic_effect_receipt_fingerprint,
-             server_acceptance_payload_fingerprint,
-             server_transaction_id, confirmation_source, json,
-             delivery_started
-      FROM instant_outbox
-      WHERE mutation_id = ?
+      SELECT outbox.optimistic_effect_receipt_fingerprint,
+             outbox.server_acceptance_payload_fingerprint,
+             outbox.server_transaction_id, outbox.confirmation_source, body.json,
+             outbox.delivery_started
+      FROM instant_outbox AS outbox
+      LEFT JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+      WHERE outbox.mutation_id = ?
       LIMIT 1
       """,
       statement: &statement
@@ -19085,7 +19584,8 @@ public actor SQLitePersistenceStore {
       for: durableMutation,
       hasServerAcceptance: acceptanceFingerprint != nil
     )
-    let encodedBody = try encode(durableMutation)
+    // The body without its delivery fields, which the columns below hold (#1435).
+    let encoded = try encodeOutboxBody(durableMutation)
     let effectFootprint = receiptFingerprint == nil
       ? nil
       : InstantOptimisticEffectFootprint.normalized(for: durableMutation)
@@ -19100,7 +19600,6 @@ public actor SQLitePersistenceStore {
         transport_step_count,
         encoded_body_bytes,
         delivery_started,
-        lifecycle_json,
         failure_message,
         failure_attribute_revision,
         confirmation_proven,
@@ -19112,10 +19611,9 @@ public actor SQLitePersistenceStore {
         server_acceptance_payload_fingerprint,
         server_transaction_id,
         confirmation_source,
-        delivery_claim_state,
-        json
+        delivery_claim_state
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(mutation_id) DO UPDATE SET
         status = excluded.status,
         created_at_ms = excluded.created_at_ms,
@@ -19123,7 +19621,6 @@ public actor SQLitePersistenceStore {
         delivery_metadata_version = excluded.delivery_metadata_version,
         transport_step_count = excluded.transport_step_count,
         encoded_body_bytes = excluded.encoded_body_bytes,
-        lifecycle_json = excluded.lifecycle_json,
         failure_message = excluded.failure_message,
         failure_attribute_revision = CASE
           WHEN excluded.status = 'failed'
@@ -19142,8 +19639,7 @@ public actor SQLitePersistenceStore {
         optimistic_effect_receipt_fingerprint = excluded.optimistic_effect_receipt_fingerprint,
         server_acceptance_payload_fingerprint = excluded.server_acceptance_payload_fingerprint,
         server_transaction_id = excluded.server_transaction_id,
-        confirmation_source = excluded.confirmation_source,
-        json = excluded.json
+        confirmation_source = excluded.confirmation_source
       """,
       [
         .text(durableMutation.id),
@@ -19152,8 +19648,7 @@ public actor SQLitePersistenceStore {
         .text(deliveryState.rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
         .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: durableMutation))),
-        .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(durableMutation.compactedForMemory)),
+        .int(Int64(encoded.body.utf8.count)),
         durableMutation.failureMessage.map(SQLiteBinding.text) ?? .null,
         failureAttributeRevision.map(SQLiteBinding.int) ?? .null,
         .int(acceptanceFingerprint == nil ? 0 : 1),
@@ -19174,8 +19669,12 @@ public actor SQLitePersistenceStore {
           ? durableMutation.confirmationSource?.rawValue
           : existingConfirmationSource).map(SQLiteBinding.text) ?? .null,
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-        .text(encodedBody),
       ]
+    )
+    try saveOutboxBodyWithoutTransaction(
+      mutationID: durableMutation.id,
+      body: encoded.body,
+      lifecycle: encoded.lifecycle
     )
     try replaceOutboxEffectEntitiesWithoutTransaction(
       mutationID: durableMutation.id,

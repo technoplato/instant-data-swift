@@ -478,7 +478,12 @@ private func quarantineTestOutboxRows(in cacheURL: URL, ids: [String]) throws ->
     guard
       let row = try quarantineTestQuery(
         database,
-        "SELECT * FROM instant_outbox WHERE mutation_id = ?",
+        // The row and its body row (#1435), the columns the quarantine keeps.
+        """
+        SELECT outbox.*, body.lifecycle_json, body.json, body.quarantine_json, body.quarantine_lifecycle_json
+        FROM instant_outbox AS outbox JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+        WHERE outbox.mutation_id = ?
+        """,
         bindings: [id]
       ).first,
       case .text(let json)? = row.first(where: { $0.name == "json" })?.value

@@ -5692,6 +5692,8 @@ private func clearBoundedDeliveryMetadata(id: String, cacheURL: URL) throws {
 }
 
 private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
+  // Stores this old held each body in its row (#1435).
+  try OutboxConversion.restoreBodiesInTheirRows(url: cacheURL)
   try executeBoundedOutboxSQL(
     """
     PRAGMA foreign_keys = OFF;
@@ -5739,6 +5741,8 @@ private let preReceiptAuthorityEffectNormalizationIndexSQL = """
 /// A store before migration 0020 had migration 0014's full effect normalization index; since #1115 the index is partial
 /// on the receipt column this drops, so the rollback drops it first and puts the full one back.
 private func restorePreReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
+  // Stores this old held each body in its row (#1435).
+  try OutboxConversion.restoreBodiesInTheirRows(url: cacheURL)
   try executeBoundedOutboxSQL(
     """
     DROP INDEX IF EXISTS instant_outbox_synchronization_blocker_idx;
@@ -5757,6 +5761,8 @@ private func restorePreReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
 /// As ``restorePreReceiptAuthorityOutboxSchema(cacheURL:)``, from before migration 0017: the full effect normalization
 /// index goes back too (#1115).
 private func restorePreServerApplyAndReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
+  // Stores this old held each body in its row (#1435).
+  try OutboxConversion.restoreBodiesInTheirRows(url: cacheURL)
   try executeBoundedOutboxSQL(
     """
     DROP INDEX IF EXISTS instant_outbox_synchronization_blocker_idx;
@@ -5806,7 +5812,7 @@ private func replaceBoundedOutboxBody(
   guard
     sqlite3_prepare_v2(
       database,
-      "UPDATE instant_outbox SET json = ? WHERE mutation_id = ?",
+      "UPDATE instant_outbox_bodies SET json = ? WHERE mutation_id = ?",
       -1,
       &statement,
       nil
@@ -5845,7 +5851,7 @@ private func corruptBoundedOutboxLifecycle(id: String, cacheURL: URL) throws {
   guard
     sqlite3_prepare_v2(
       database,
-      "UPDATE instant_outbox SET lifecycle_json = '{malformed-lifecycle' WHERE mutation_id = ?",
+      "UPDATE instant_outbox_bodies SET lifecycle_json = '{malformed-lifecycle' WHERE mutation_id = ?",
       -1,
       &statement,
       nil
@@ -6381,14 +6387,15 @@ private func boundedOutboxAuthoritySnapshot(
       sqlite3_prepare_v2(
         database,
         """
-        SELECT json, encoded_body_bytes,
+        SELECT body.json, encoded_body_bytes,
                optimistic_effect_receipt_fingerprint,
                delivery_claim_payload_fingerprint,
                server_acceptance_payload_fingerprint,
                optimistic_overlay_active, confirmation_proven,
                delivery_state, mutation_revision
         FROM instant_outbox
-        WHERE mutation_id = ?
+        JOIN instant_outbox_bodies AS body ON body.mutation_id = instant_outbox.mutation_id
+        WHERE instant_outbox.mutation_id = ?
         LIMIT 1
         """,
         -1,
@@ -6469,7 +6476,7 @@ private func boundedOutboxRawBody(id: String, cacheURL: URL) throws -> String? {
   guard
     sqlite3_prepare_v2(
       database,
-      "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+      "SELECT json FROM instant_outbox_bodies WHERE mutation_id = ? LIMIT 1",
       -1,
       &statement,
       nil

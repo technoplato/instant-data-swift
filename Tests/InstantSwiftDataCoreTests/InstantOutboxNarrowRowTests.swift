@@ -22,17 +22,87 @@ extension StorageIOExercises {
   @Test
   func aClaimAndAnAcknowledgementWriteNoPageOfTheBody() async throws {
     let measured = try await OutboxStepPages.measure(label: "outbox-narrow-row")
-    measured.print()
+    measured.print("outbox-narrow-row")
+    // Each write after a line's first saved before the previous one's echo, as a phone saves its next interim while the
+    // server's answer to the last is on its way: the echo's apply rebases the pending write (#1119).
+    let overlapping = try await OutboxStepPages.measure(label: "outbox-narrow-row-overlapping", overlapping: true)
+    overlapping.print("outbox-narrow-row-overlapping")
 
-    let claimOutside = measured.frames(of: .claim).filter { !OutboxStepPages.claimTrees.contains($0.key) }
-    let acknowledgementOutside = measured.frames(of: .ack).filter {
-      !OutboxStepPages.acknowledgementTrees.contains($0.key)
+    for (name, run) in [("one write at a time", measured), ("overlapping", overlapping)] {
+      let claimOutside = run.frames(of: .claim).filter { !OutboxStepPages.claimTrees.contains($0.key) }
+      let acknowledgementOutside = run.frames(of: .ack).filter {
+        !OutboxStepPages.acknowledgementTrees.contains($0.key)
+      }
+      #expect(claimOutside.isEmpty, "\(name): the claim wrote pages beyond its row and index: \(claimOutside)")
+      #expect(
+        acknowledgementOutside.isEmpty,
+        "\(name): the acknowledgement wrote pages beyond its row, indexes and revision: \(acknowledgementOutside)"
+      )
     }
-    #expect(claimOutside.isEmpty, "the claim wrote pages beyond its row and index: \(claimOutside)")
-    #expect(
-      acknowledgementOutside.isEmpty,
-      "the acknowledgement wrote pages beyond its row, indexes and revision: \(acknowledgementOutside)"
+  }
+}
+
+extension StorageIOExercises {
+  /// The conversion on a copy of a phone's store, when `OUTBOX_PHONE_STORE` names one (#1435): it converts that file in
+  /// place, so give it a scratch copy, never the evidence. Prints the conversion's time, the rows and body bytes it moved
+  /// and each outbox b-tree's pages before and after; counts only, nothing a row holds. Laptop only: the copy stays on
+  /// the machine that pulled it.
+  ///
+  ///     OUTBOX_PHONE_STORE=/tmp/copy/store.sqlite swift test --filter theConversionOnACopyOfAPhonesStore
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["OUTBOX_PHONE_STORE"] != nil))
+  func theConversionOnACopyOfAPhonesStore() async throws {
+    let url = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["OUTBOX_PHONE_STORE"]))
+    let pagesBefore = try OutboxPhoneStore.pagesByTree(url)
+    let events = OutboxPhoneStore.TraceEvents()
+    let trace = InstantStartupTrace { events.append($0) }
+    let started = ContinuousClock.now
+    let store = try SQLitePersistenceStore(fileURL: url, startupTrace: trace)
+    try await store.bootstrap()
+    let bootstrap = ContinuousClock.now - started
+    await store.simulateUnexpectedConnectionCloseForTesting()
+    let pagesAfter = try OutboxPhoneStore.pagesByTree(url)
+
+    let split = events.all.first { $0.phase == "sqlite.outbox-body-split" && $0.kind == .completed }
+    var line = StorageIOLine("outbox-phone-conversion", "conversion")
+    line.add("conversionMs", Int(split?.durationMilliseconds ?? -1))
+    line.add("bootstrapMs", Int(bootstrap.components.seconds * 1_000 + bootstrap.components.attoseconds / 1_000_000_000_000_000))
+    line.add("rows", try OutboxConversion.strings(url, "SELECT COUNT(*) FROM instant_outbox").first ?? "?")
+    line.add(
+      "bodyBytes",
+      try OutboxConversion.strings(url, "SELECT sum(length(CAST(json AS BLOB))) FROM instant_outbox_bodies").first ?? "?"
     )
+    line.print()
+    for tree in Set(pagesBefore.keys).union(pagesAfter.keys).sorted() {
+      var treeLine = StorageIOLine("outbox-phone-conversion-pages", "conversion")
+      treeLine.add("btree", tree)
+      treeLine.add("pagesBefore", pagesBefore[tree] ?? 0)
+      treeLine.add("pagesAfter", pagesAfter[tree] ?? 0)
+      treeLine.print()
+    }
+    #expect(split != nil, "the store did not convert: \(events.all.map(\.phase))")
+  }
+}
+
+enum OutboxPhoneStore {
+  /// Pages each outbox table and index holds, from `dbstat`.
+  static func pagesByTree(_ url: URL) throws -> [String: Int] {
+    var pages: [String: Int] = [:]
+    for row in try OutboxConversion.strings(
+      url,
+      "SELECT name || '=' || count(*) FROM dbstat WHERE name LIKE '%outbox%' GROUP BY name"
+    ) {
+      let parts = row.split(separator: "=")
+      if parts.count == 2, let count = Int(parts[1]) { pages[String(parts[0])] = count }
+    }
+    return pages
+  }
+
+  final class TraceEvents: @unchecked Sendable {
+    // SAFETY: `lock` guards `events`.
+    private let lock = NSLock()
+    private var events: [InstantStartupTraceEvent] = []
+    func append(_ event: InstantStartupTraceEvent) { lock.withLock { events.append(event) } }
+    var all: [InstantStartupTraceEvent] { lock.withLock { events } }
   }
 }
 
@@ -52,14 +122,14 @@ struct OutboxStepPages {
 
   func frames(of step: StorageIOStep) -> [String: Int] { framesByStep[step] ?? [:] }
 
-  func print() {
+  func print(_ exercise: String) {
     for step in [StorageIOStep.save, .claim, .ack, .echo] {
       let frames = frames(of: step)
-      var line = StorageIOLine("outbox-narrow-row", step.rawValue)
+      var line = StorageIOLine(exercise, step.rawValue)
       line.add("framesPerWrite", Double(frames.values.reduce(0, +)) / Double(max(1, writes)), digits: 2)
       line.print()
       for (tree, count) in frames.sorted(by: { ($0.value, $1.key) > ($1.value, $0.key) }) {
-        var treeLine = StorageIOLine("outbox-narrow-row-btrees", step.rawValue)
+        var treeLine = StorageIOLine("\(exercise)-btrees", step.rawValue)
         treeLine.add("btree", tree)
         treeLine.add("framesPerWrite", Double(count) / Double(max(1, writes)), digits: 2)
         treeLine.print()
@@ -69,7 +139,7 @@ struct OutboxStepPages {
 
   /// Six live writes, after one that prepares the recording's statements, on a small store (`StorageIOWriteCycle`:
   /// Scribe's line writes answered by `FastDrainServer`), each step's frames named by the page they landed on.
-  static func measure(label: String) async throws -> Self {
+  static func measure(label: String, overlapping: Bool = false) async throws -> Self {
     StorageIOCounters.install(asDefault: false)
     let run = try StorageIORun(label: label)
     defer { run.remove() }
@@ -81,9 +151,9 @@ struct OutboxStepPages {
     var cycle = try await SQLitePersistenceStore.$connectionVFSForTesting.withValue(StorageIOCounters.vfsName) {
       try await StorageIOWriteCycle.make(label: label, directory: run.directory, settings: settings)
     }
-    try await cycle.writeLine(into: StorageIOLedger())
+    try await cycle.writeLine(into: StorageIOLedger(), overlapping: overlapping)
     let ledger = StorageIOLedger()
-    for _ in 0..<settings.stepLines { try await cycle.writeLine(into: ledger) }
+    for _ in 0..<settings.stepLines { try await cycle.writeLine(into: ledger, overlapping: overlapping) }
     let pages = try OutboxPageKinds.read(store: cycle.configuration.persistenceURL)
     _ = try? await cycle.runtime.closeConnection()
     var framesByStep: [StorageIOStep: [String: Int]] = [:]

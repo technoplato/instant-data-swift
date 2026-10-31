@@ -528,7 +528,7 @@ struct InstantStoreTests {
       )
       let outboxBefore: [PendingMutation] = try persistenceMigrationJSONRows(
         at: cacheURL,
-        sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+        sql: "SELECT json FROM instant_outbox_bodies ORDER BY mutation_id"
       )
       let claimBefore = try await runtime.persistence.outboxDeliveryClaimForTesting(
         id: priority.txID
@@ -565,7 +565,7 @@ struct InstantStoreTests {
       )
       let outboxAfter: [PendingMutation] = try persistenceMigrationJSONRows(
         at: cacheURL,
-        sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+        sql: "SELECT json FROM instant_outbox_bodies ORDER BY mutation_id"
       )
       expectNoDifference(stateAfter, stateBefore)
       expectNoDifference(attributesAfter, attributesBefore)
@@ -647,7 +647,7 @@ struct InstantStoreTests {
     )
     let outboxBefore: [PendingMutation] = try persistenceMigrationJSONRows(
       at: cacheURL,
-      sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+      sql: "SELECT json FROM instant_outbox_bodies ORDER BY mutation_id"
     )
     let effectMetadataBefore = try readOutboxEffectMetadata(
       at: cacheURL,
@@ -683,7 +683,7 @@ struct InstantStoreTests {
     )
     let outboxAfter: [PendingMutation] = try persistenceMigrationJSONRows(
       at: cacheURL,
-      sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+      sql: "SELECT json FROM instant_outbox_bodies ORDER BY mutation_id"
     )
     expectNoDifference(attributesAfter, attributesBefore)
     expectNoDifference(triplesAfter, triplesBefore)
@@ -22381,7 +22381,7 @@ struct InstantStoreTests {
       var statement: OpaquePointer?
       guard sqlite3_prepare_v2(
         connection,
-        "UPDATE instant_outbox SET json = ? WHERE mutation_id = ?",
+        "UPDATE instant_outbox_bodies SET json = ? WHERE mutation_id = ?",
         -1,
         &statement,
         nil

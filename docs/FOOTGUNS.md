@@ -1083,14 +1083,18 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 #### F59. Keep small mutable columns out of a row that holds a large blob
 
 - Symptom: a claim or an acceptance that changes a delivery column's size rewrites the row's whole overflow chain:
-  SQLite overwrites a record in place only when its payload size is unchanged. `instant_outbox` stores its delivery
-  columns after `json`; `instant_live_query_results` keeps its count and time beside the result JSON.
-- Measured cost: 55% of the claim and acceptance frames in a device store copy's write-ahead log (#1245).
+  SQLite overwrites a record in place only when its payload size is unchanged. `instant_outbox` stored its delivery
+  columns after `json` until #1435; `instant_live_query_results` keeps its count and time beside the result JSON.
+- Measured cost: 55% of the claim and acceptance frames in a device store copy's write-ahead log (#1245); in the
+  library's harness a claim wrote 4.17 log frames and an acknowledgement 6.17, for changes of 2 and 4 pages (#1435).
 - Rule: keep columns that change on every step in a narrow row of their own, or in fixed-size encodings before the
-  blob, so a step rewrites one leaf page and never the overflow chain.
-- Issues: #1245, #1115, #1123.
-- Guard: none yet. Proposed (always): on `StorageIOWriteCycle`, a claim and an acceptance write no overflow page
-  (`StorageIOPageMap` frames by b-tree and page kind).
+  blob, so a step rewrites one leaf page and never the overflow chain. Since #1435 an outbox write's body lives in
+  `instant_outbox_bodies`, without the status, server transaction id and confirmation source its row holds.
+- Issues: #1245, #1115, #1123, #1435.
+- Guard: `Tests/InstantSwiftDataCoreTests/InstantOutboxNarrowRowTests.swift:
+  StorageIOExercises/aClaimAndAnAcknowledgementWriteNoPageOfTheBody` (always; on `StorageIOWriteCycle`, one write at a
+  time and overlapping, a claim writes only the row's leaf and the delivery index, an acknowledgement those, the
+  watermark index and the outbox revision).
 - Upstream: -
 
 <a id="f60"></a>

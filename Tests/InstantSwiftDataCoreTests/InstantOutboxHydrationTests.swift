@@ -1567,7 +1567,7 @@ private func corruptOutboxJSON(id: String, in cacheURL: URL) throws {
   var statement: OpaquePointer?
   guard sqlite3_prepare_v2(
     database,
-    "UPDATE instant_outbox SET json = '{malformed-json' WHERE mutation_id = ?",
+    "UPDATE instant_outbox_bodies SET json = '{malformed-json' WHERE mutation_id = ?",
     -1,
     &statement,
     nil

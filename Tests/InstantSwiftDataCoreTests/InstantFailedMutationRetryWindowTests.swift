@@ -209,7 +209,12 @@ struct InstantFailedMutationRetryWindowTests {
     try executeRetryWindowSQL(
       at: fileURL,
       sql:
-        "UPDATE instant_outbox SET json = '{', encoded_body_bytes = 1, mutation_revision = mutation_revision + 1 WHERE mutation_id = 'tx-corrupt-legacy-00000'"
+        // The body lives in instant_outbox_bodies since #1435.
+        """
+        UPDATE instant_outbox_bodies SET json = '{' WHERE mutation_id = 'tx-corrupt-legacy-00000';
+        UPDATE instant_outbox SET encoded_body_bytes = 1, mutation_revision = mutation_revision + 1
+        WHERE mutation_id = 'tx-corrupt-legacy-00000'
+        """
     )
     let persistence = try SQLitePersistenceStore(fileURL: fileURL)
     try await persistence.bootstrap()
