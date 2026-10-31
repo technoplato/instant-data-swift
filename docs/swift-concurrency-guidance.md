@@ -238,6 +238,12 @@ AsyncThrowingStream<QueryEmission, Error>(bufferingPolicy: .bufferingNewest(1)) 
 }
 ```
 
+An observation is one stream from its writers to its one consumer (#1493). The store yields into the stream the
+consumer reads; anything else that changes what an emission says (a live query's server error) writes into the same
+stream under the lock the emissions take, so nothing older can land after something newer. Per-emission work the
+consumer needs (deferred values, a typed decode, `map`) runs in the consumer's own pull. A `Task` that forwards one
+stream into another is a resume per emission and a resident task per observation: do not add one.
+
 Unbounded streams are not acceptable for sync feeds, query invalidation,
 presence, topics, or storage progress. They can turn reconnect, bulk import, or
 high-bandwidth writes into memory growth bugs.
