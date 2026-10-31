@@ -17868,6 +17868,7 @@ public actor SQLitePersistenceStore {
   /// The stored body's text and its lifecycle's, the body without its operations (#1435).
   private func encodeOutboxBody(_ mutation: PendingMutation) throws -> (body: String, lifecycle: String) {
     let body = Self.storedOutboxBody(mutation)
+    InstantAutomaticOutboxAdmission.recordBodyEncode()
     return (try encode(body), try encode(body.compactedForMemory))
   }
 

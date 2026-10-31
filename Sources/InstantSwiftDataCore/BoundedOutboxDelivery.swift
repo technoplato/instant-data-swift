@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum InstantOutboxDeliveryState: String, Sendable {
   case needsDelivery = "needs_delivery"
@@ -39,6 +40,14 @@ enum InstantOutboxClaimLimits {
 typealias InstantAutomaticOutboxClaimLimits = InstantOutboxClaimLimits
 
 enum InstantAutomaticOutboxAdmission {
+  /// Counts, in a test's task, each JSON encode of a new write's whole body made to admit and store it (#1491). Nil
+  /// everywhere else, where recording one is a single task-local load.
+  @TaskLocal static var bodyEncodesForTesting: OSAllocatedUnfairLock<Int>?
+
+  static func recordBodyEncode() {
+    bodyEncodesForTesting?.withLock { $0 += 1 }
+  }
+
   /// Validates the exact durable mutation after rollback metadata is attached
   /// and before either SQLite or the hot store commits it. Existing legacy rows
   /// are quarantined by the selector, but a new local write must fail without
@@ -70,6 +79,7 @@ enum InstantAutomaticOutboxAdmission {
 
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
+    recordBodyEncode()
     let encodedBodyByteCount = try encoder.encode(mutation).count
     guard encodedBodyByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
     else {
