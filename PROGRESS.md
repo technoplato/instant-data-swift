@@ -17,8 +17,9 @@
   (stress 11,600 -> 4,800); materialized snapshots identical, so the same hand-overs. Evidence:
   `~/Sync/audit/perf-read-1498/fanout-ab.txt` and `fanout-ab-summary.txt`; the script is `bin/fanout-ab-1495.sh` there.
 - **Found:** the finals' +2% between the separate before and after jobs (14:47 and 15:36) was the machine's state: in
-  one job the second run of a round is about 3% faster whichever side it is. Finals are 96% of the app shape's
-  publication time, and their cost is re-materialization (#1513). The interims' +0.5 us is small and consistent; its
+  one job the second run of a round is 1.6-1.8% faster on finals on average (up to 3% in one pair of rounds),
+  whichever side it is. Finals are 96% of the app shape's publication time, and their cost is re-materialization
+  (#1513). The interims' +0.5 us is small and consistent; its
   cause is not measured (a likely one: each observer copied out of the store's dictionary per publication now carries
   two more references).
 - **Merged tree:** `perf-read-1498-main-check` (laptop, debug, `e6e71913`, which holds #1491, #1492, #1498 and #1495):
