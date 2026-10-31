@@ -1,1 +1,2 @@
 claude-opus-5.5-receipt-quarantine-d417e89e 2026-10-14T22:00:38-04:00 grower plan=2026-10-14-retained-mutation-quarantine #696
+claude-code/outbox-1435@strangelearning 2026-10-30T21:36:56-0400 mower plan=2026-10-30-outbox-1435 #1435 amendment 1 (raw outbox SQL in fixtures only)
