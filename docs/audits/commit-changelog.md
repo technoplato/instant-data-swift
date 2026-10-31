@@ -1,3 +1,6 @@
+## 2026-10-30 21:04:14 EDT — scribe `94366681cadd78ca00f134c5b35fa4e05264fecd`
+Cut (#1432): Scribe 0.1 (194): a shared file key never writes over a file it could not read, and the setup screen waits for it.
+
 ## 2026-10-30 21:03:06 EDT — scribe `c3d205fd2972ef803815b2d8a25a1bae1890a742`
 Landing (#1432): a shared file key never writes over a file it could not read, and the setup screen waits for preferences it could not read.
 
