@@ -1,3 +1,15 @@
+## 2026-10-31 07:12:47 EDT — scribe `5adac1946a58beea9ce575ca54d44f16c95c638b`
+Merge (#1459): the Playground restacks at AX5, its reads select every required field, and its arrival line counts only new posts.
+
+## 2026-10-31 07:12:47 EDT — scribe `3babf10afd97f572496e7449297e8294767f7d34`
+Fix (#1459): the Playground's rows restack at accessibility text sizes and titles wrap by words; AX5 broke words letter by letter beside a score or thumbnail.
+
+## 2026-10-31 07:12:47 EDT — scribe `a2bdfcfc0aefe47a1ead110807f15de6ada8c10b`
+Fix (#1459, #1466): every Playground list selects the attempt's required fields (FieldLimitedInstantQueryTests); an attempt's picture drags out with its link.
+
+## 2026-10-31 07:12:47 EDT — scribe `3f5766fc888a7dba79fa9ad73f7c3142fd205872`
+Fix (#1459): the Playground's arrival line counts only attempts posted since the screen began following.
+
 ## 2026-10-31 06:53:51 EDT — scribe `fdc519631edfa91cd84891b1b74a44da0126d217`
 Docs (#1478): audit: an APFS clone of warm derived data at a new worktree path recompiles every target (probe, Xcode 27A5194q); builds 199-203 took 19.5-27 min to the iPhone.
 
