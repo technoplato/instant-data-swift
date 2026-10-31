@@ -107,17 +107,29 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
       [[7, 7], [15, 15], [25, 25]]
     )
 
-    // A server refresh restating a 50-row list (#1494), eight persistence turns: the frame's seed; its plan in three
-    // (the restated result's retractions and saves and the retractions' protection in one read transaction, the
-    // reduction's context, the plan's begin; a plan that holds no pending write reads no body page); then, holding the
-    // gate, the catch-up, the commit, the plan's end and the connection status. The plan took seven: the three reads
-    // one turn each, and an empty body page each way.
+    // A server refresh restating a 50-row list (#1494), six persistence turns: the frame's seed; its plan in two (the
+    // restated result's retractions and saves, the retractions' protection and the reduction's context in one turn,
+    // then the plan's begin; a plan that holds no pending write reads no body page); then, holding the gate, the
+    // catch-up, the commit, and the plan's end with the connection status. It took twelve: each of the four reads in a
+    // turn of its own, an empty body page each way, the plan's end and the status read apart.
     let refresh = try await Self.serverRefreshHops()
-    expectNoDifference(refresh.breakdown["persistence"], 8, "\(refresh.breakdown)")
+    let refreshHops: [String: Int] = ["observers": 1, "operation-gate": 4, "outbox": 1, "persistence": 6, "store": 4]
+    expectNoDifference(refresh.breakdown, refreshHops, "\(refresh.breakdown)")
+
+    // The same refresh over a pending local write on its first row, which the plan holds as a body: its first reverse
+    // page is read in the plan's begin, and each pass stops at the page that held its last row. Eight persistence
+    // turns: the six above, a forward page and its stage. Without, the reverse pass read its page and then an empty one,
+    // and the forward pass an empty page after its stage.
+    let overLocalWrite = try await Self.serverRefreshHops(overPendingLocalWrite: true)
+    let overLocalWriteHops: [String: Int] = [
+      "observers": 1, "operation-gate": 4, "outbox": 1, "persistence": 8, "store": 4,
+    ]
+    expectNoDifference(overLocalWrite.breakdown, overLocalWriteHops, "\(overLocalWrite.breakdown)")
   }
 
-  /// The actor hops of one refresh-ok restating a 50-row todos list that the store already holds, one row changed.
-  static func serverRefreshHops() async throws -> InstantActorHopSummary {
+  /// The actor hops of one refresh-ok restating a 50-row todos list that the store already holds, one row changed,
+  /// and, with `overPendingLocalWrite`, a local text update of that row still pending beneath it.
+  static func serverRefreshHops(overPendingLocalWrite: Bool = false) async throws -> InstantActorHopSummary {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantCrossSDKRuntimeBenchmarkServerRefresh-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -158,6 +170,20 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
       )
     }
     _ = try await runtime.applyLiveRefresh(refresh(1, changedText: "first"))
+    if overPendingLocalWrite {
+      let transactionID = "server-refresh-local-write"
+      _ = try await runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: TodoExample.updateTextOperations(
+            id: "refresh-todo-0",
+            text: "local",
+            updatedAt: InstantTimestamp(milliseconds: 1_700_000_495_000),
+            transactionID: transactionID
+          )
+        )
+      )
+    }
     let baseline = recorder.baseline()
     _ = try await runtime.applyLiveRefresh(refresh(2, changedText: "restated"))
     return recorder.summary(since: baseline)
