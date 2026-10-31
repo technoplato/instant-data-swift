@@ -21,6 +21,32 @@
 - **Next:** #1494 (a server frame's planning turns 7 -> 3; its A/B of retries per frame is running), then the ship
   agent's build.
 
+## 2026-10-31 15:35:00 EDT — perf-writes-1510 (#1510): a recorder that names the pages each table, index and write statement writes
+
+- **Why:** a phone's local save wrote 102 KB and the store's meters named only the store call. Read page by page (two
+  USB pulls, 13:21 and 13:32, build 208 recording), a save is 24.4 pages across 17 b-trees and a server confirm 35.5;
+  a transcript segment save 32.6 pages (131 KB) with an 11.7-17.9 KB body for about 1.3 KB of values. Michael, typed
+  13:30 on #1510: first a recorder in the library, per statement and per table, over time, read from the ledger.
+  Evidence and method: `docs/audits/2026-10-31-writes-1510.md`.
+- **Plan:** `2026-10-31-perf-writes-1510` (bd868c21). **Commits:** red `6434d6e2`; green `cb989369`, fix `07156001`
+  (SQLite opens a path through a symlink by its resolved name, `SQLITE_OK_SYMLINK`; `EXPLAIN` on the writer reset
+  `sqlite3_changes()` and the outbox quarantined claims, so it runs on a connection of the recorder's own), test
+  `14da2b5b`, perf `be771453` (a read teaches only interior pages and page 1: the prune gate test).
+- **What it is:** `InstantSQLiteWriteRecorder.snapshot()`, read once a minute like the store's other meters: each
+  b-tree's log pages (overflow apart) and checkpoint copies, each write statement's runs, rows and pages with the
+  b-trees its `EXPLAIN` opens for writing, and each store call's pages by b-tree. Learned from the pages SQLite already
+  reads and writes through the file meter's VFS; one byte a page, bounded collections, nothing recursive.
+- **Checks (Mac mini, debug):** red fails as expected; green: `InstantSQLiteWriteRecorderTests` 8/8, including a run
+  checked frame by frame against the log file and `dbstat`; whole bundle (known-failing compare) 1,630 tests, one new
+  failure, `InstantLiveFrameDecodeTests`' decode-speed ratio (0.370, bound 0.33; no SQLite in its path), checked on main.
+- **Scribe:** the minute row's `disk.tables` and `disk.statements` landed (scribe `b87c51f61`); the bridge that reads
+  the recorder is branch `agent/claude/perf-writes-1510-bridge` (`0fc60774`), to merge with the pin's bump.
+- **Next:** the recorder's own cost (ab-commits.sh, main against this branch), then land and READY FOR BUILD on #1482;
+  then amendments: a compact stored body (perf-send-1492 handed it over), write keys and effect entities as one b-tree
+  each, #1254's revision counters. Continue from `~/Sync/worktrees/perf-writes-1510`; evidence in
+  `~/Sync/audit/perf-writes-1510/`.
+
+
 ## 2026-10-31 15:12:10 EDT — perf-ship-2 (#1482): v1.9.58 for Scribe build 210
 
 - **Release:** `docs/releases/v1.9.58.md`, tag `v1.9.58` on this landing's merge. Carries #1495 (merge `e6e71913`):
@@ -46,6 +72,7 @@
   full equality on every match (the unchanged case), so it is not added. The publication's cost is the
   re-materialization of the pages a final shifts and of the list whose preview changes: a lever of its own.
 - **Next:** the after run; READY FOR BUILD on #1482; a follow-up issue for the re-materialization with these numbers.
+
 
 ## 2026-10-31 13:56:58 EDT — perf-ship-1 (#1482): v1.9.57, the three landed performance fixes for Scribe 209
 

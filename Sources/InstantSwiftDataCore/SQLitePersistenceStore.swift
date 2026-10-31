@@ -1873,8 +1873,18 @@ public actor SQLitePersistenceStore {
       message: "Opening the Instant SQLite cache.",
       metadata: ["path": fileURL.path]
     )
+    // #1510: the recorder attaches before any connection opens, so it sees every page of the file and its log.
+    let writeRecorder = InstantSQLiteWriteRecorder.attach(databaseAt: fileURL.path)
     do {
-      self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS))
+      let raw: OpaquePointer?
+      do {
+        raw = try Self.openRawConnection(fileURL: fileURL, vfs: connectionVFS)
+      } catch {
+        writeRecorder?.detach()
+        throw error
+      }
+      writeRecorder?.reloadSchema(from: raw)
+      self.connection = SQLiteConnection(raw, writeRecorder: writeRecorder)
       self.memoryPressureMonitor = SQLiteMemoryPressureMonitor()
       startupTrace.completed(
         "sqlite.open",
@@ -16131,7 +16141,10 @@ public actor SQLitePersistenceStore {
       "SQLite persistence transactions must not be nested."
     )
     let countersBefore = sqliteCounters()
+    // #1510: the recorder names the pages this transaction commits by its store call.
+    connection.writeRecorder?.beginTransaction(call: operation)
     defer {
+      connection.writeRecorder?.endTransaction()
       let counters = sqliteCounters()
       recordStorageWrites(
         operation: operation,
@@ -20754,6 +20767,11 @@ public actor SQLitePersistenceStore {
     connection.statements.checkIn(statement)
   }
 
+  /// What this store's SQLite wrote since it opened, by b-tree, statement and store call (#1510).
+  package func writeRecordForTesting() -> InstantSQLiteWriteRecord {
+    connection.writeRecorder?.record() ?? InstantSQLiteWriteRecord()
+  }
+
   /// How many statements SQLite has prepared on this store's connections (#653).
   package func preparedStatementCountForTesting() -> Int {
     connection.statements.preparedCount
@@ -20981,9 +20999,13 @@ private final class SQLiteConnection: @unchecked Sendable {
   var raw: OpaquePointer?
   /// Prepared statements kept for reuse on this connection (#653).
   var statements = SQLiteStatementCache()
+  /// What the store's SQLite wrote, by b-tree and statement (#1510); detached when the connection goes.
+  let writeRecorder: InstantSQLiteDatabaseWriteRecorder?
 
-  init(_ raw: OpaquePointer?) {
+  init(_ raw: OpaquePointer?, writeRecorder: InstantSQLiteDatabaseWriteRecorder? = nil) {
     self.raw = raw
+    self.writeRecorder = writeRecorder
+    statements.recorder = writeRecorder
   }
 
   /// Finalizes the cached statements and closes the connection. `sqlite3_close_v2` closes it once a statement still
@@ -20997,6 +21019,7 @@ private final class SQLiteConnection: @unchecked Sendable {
   deinit {
     statements.finalizeAll()
     sqlite3_close_v2(raw)
+    writeRecorder?.detach()
   }
 }
 
@@ -21028,6 +21051,8 @@ struct SQLiteStatementCache {
     var lastUse: UInt64 = 0
     /// False once the entry has left the cache; a statement of it that comes back is finalized.
     var isKept = true
+    /// The write recorder's shape for this SQL, found at its first use (#1510).
+    var recorderShape: Int32?
 
     init(sql: String) {
       self.sql = sql
@@ -21035,6 +21060,11 @@ struct SQLiteStatementCache {
   }
 
   let capacity: Int
+  /// The recorder each write statement's use reports to (#1510): its runs, its rows and its SQL.
+  var recorder: InstantSQLiteDatabaseWriteRecorder?
+  /// Rows the write statements this cache took back changed, so a use that ran while another was checked out is not
+  /// counted twice (#1510).
+  private var rowsCheckedIn: Int64 = 0
   /// What the statements did, summed over every use this cache took back (#1245).
   private(set) var statementCounters = InstantSQLiteCounters()
   /// How many statements this cache has prepared.
@@ -21042,7 +21072,9 @@ struct SQLiteStatementCache {
   /// How many statements wait for reuse.
   private(set) var idleCount = 0
   private var entries: [String: Entry] = [:]
-  private var checkedOut: [OpaquePointer: (entry: Entry?, generation: Int)] = [:]
+  /// Each statement checked out: its entry, the cache's generation, and the connection's change count and this cache's
+  /// checked-in rows when it went out (#1510).
+  private var checkedOut: [OpaquePointer: (entry: Entry?, generation: Int, changes: Int64, rowsCheckedIn: Int64)] = [:]
   private var generation = 0
   private var useClock: UInt64 = 0
 
@@ -21057,10 +21089,11 @@ struct SQLiteStatementCache {
     on connection: OpaquePointer?
   ) -> (statement: OpaquePointer?, resultCode: Int32) {
     let entry = entries[sql]
+    let changes = recorder == nil ? 0 : sqlite3_total_changes64(connection)
     if let entry, let statement = entry.idle {
       entry.idle = nil
       idleCount -= 1
-      checkedOut[statement] = (entry, generation)
+      checkedOut[statement] = (entry, generation, changes, rowsCheckedIn)
       return (statement, SQLITE_OK)
     }
     let mayKeep = !Self.isDDL(sql)
@@ -21088,7 +21121,7 @@ struct SQLiteStatementCache {
         kept = created
       }
     }
-    checkedOut[statement] = (kept, generation)
+    checkedOut[statement] = (kept, generation, changes, rowsCheckedIn)
     return (statement, resultCode)
   }
 
@@ -21096,6 +21129,9 @@ struct SQLiteStatementCache {
   /// use's statement that comes back while the first one is already idle again is finalized.
   mutating func checkIn(_ statement: OpaquePointer?) {
     guard let statement else { return }
+    if let recorder {
+      recordUse(of: statement, to: recorder)
+    }
     // #1245: what this use did, read and reset, so the statement's next use counts from zero.
     statementCounters.addStatementStatus(of: statement)
     guard let use = checkedOut.removeValue(forKey: statement),
@@ -21116,6 +21152,38 @@ struct SQLiteStatementCache {
     if idleCount > capacity {
       evictLeastRecentlyUsed()
     }
+  }
+
+  /// Reports a write statement's use to the recorder (#1510): its runs (SQLite's run count, and this use if it
+  /// stepped), the rows it changed (the connection's change count since it went out, less what statements checked in
+  /// meanwhile changed) and its SQL. A read-only statement reports nothing; a schema change reloads the recorder's
+  /// b-trees. Called before the statement's counters reset.
+  private mutating func recordUse(of statement: OpaquePointer, to recorder: InstantSQLiteDatabaseWriteRecorder) {
+    guard sqlite3_stmt_readonly(statement) == 0, let use = checkedOut[statement] else { return }
+    let stepped = sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 0) > 0
+    let runs = Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_RUN, 1)) + (stepped ? 1 : 0)
+    let connection = sqlite3_db_handle(statement)
+    let changed = sqlite3_total_changes64(connection) - use.changes - (rowsCheckedIn - use.rowsCheckedIn)
+    let rows = max(0, changed)
+    rowsCheckedIn += rows
+    let shape: Int32
+    if let entry = use.entry {
+      if let known = entry.recorderShape {
+        shape = known
+      } else {
+        shape = recorder.shape(forSQL: entry.sql, statement: statement)
+        entry.recorderShape = shape
+      }
+    } else {
+      guard let text = sqlite3_sql(statement) else { return }
+      let sql = String(cString: text)
+      if Self.isDDL(sql) {
+        recorder.reloadSchema(from: connection)
+        return
+      }
+      shape = recorder.shape(forSQL: sql, statement: statement)
+    }
+    recorder.statementFinished(shape: shape, runs: runs, rows: Int(rows))
   }
 
   /// Finalizes the idle statement used longest ago, and its entry leaves the cache.
