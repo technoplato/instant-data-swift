@@ -72,7 +72,7 @@ done
 
 spin_pids=()
 start_load() {
-  for _ in $(seq 1 "$1"); do (while :; do :; done) & spin_pids+=($!); done
+  for (( spin = 0; spin < $1; spin++ )); do (while :; do :; done) & spin_pids+=($!); done
 }
 stop_load() {
   # macOS's bash 3.2 calls an empty array unbound under `set -u`.
@@ -112,7 +112,7 @@ run_one() {   # <commit> <condition> <round>
 
 set -- $commits
 count=$#
-for round in $(seq 1 "$rounds"); do
+for (( round = 1; round <= rounds; round++ )); do
   for condition in alone load; do
     # Rotate the order each round and condition, so no commit always runs first or last.
     offset=0
@@ -129,7 +129,7 @@ if [ "$bench_runs" -gt 0 ]; then
     (cd "$tree" && swift build -j "$jobs" -c release -Xswiftc -enable-testing --product instant-swift-data-benchmarks \
       --scratch-path "$tree/.build/contention-release" 2>&1 | grep -E "error:|Build complete")
   done
-  for run in $(seq 1 "$bench_runs"); do
+  for (( run = 1; run <= bench_runs; run++ )); do
     for commit in $commits; do
       tree=$(tree_for "$commit")
       name=$(name_for "$commit")
@@ -145,6 +145,7 @@ fi
 {
   echo "== summary (recording.steady): commit condition round | transact hold p50 | write.line p50 | read.local p50 | claim hold p50"
   for file in "$out_dir"/*-r*.txt; do
+    [ -f "$file" ] || continue
     label=$(basename "$file" .txt)
     pick() { grep -E "^CONTENTION $only\.steady $1" "$file" | head -1 | sed -E 's/.* p50_ms=([0-9.]+).*/\1/'; }
     echo "$label | $(pick 'gate.hold holder=transact') | $(pick 'call caller=write.line') | $(pick 'call caller=read.local') | $(pick 'gate.hold holder="claim')"
