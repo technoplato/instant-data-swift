@@ -179,6 +179,47 @@ struct InstantLiveSendPathTests {
     await live.close()
   }
 
+  /// The send path's own cost (#1496), measured in release with `INSTANT_SEND_PATH_BENCH=1`: 20,000 transacts through
+  /// one live session to a socket that takes each at once. Prints the process's CPU time and the wall time per send, and
+  /// the CPU of the 5.5 s after the last one, when the timers a send armed and cancelled still fire.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["INSTANT_SEND_PATH_BENCH"] == "1"))
+  func measureTheSendPath() async throws {
+    let wire = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: Self.attributes)])
+    let live = InstantRuntimeLiveSession()
+    try await live.open(
+      request: InstantLiveSessionRequest(appID: "live-send-path-bench"),
+      transport: wire.transport,
+      makeID: { UUID().uuidString.lowercased() }
+    )
+    func send(_ indices: Range<Int>) async throws {
+      for index in indices {
+        let mutation = Self.lineWrite(index)
+        try await live.sendMutations([mutation], claimToken: nil)
+        await live.releaseMutationReservations([mutation.mutationID], timedOut: false)
+      }
+    }
+    try await send(0..<1_000)
+    try await Task.sleep(for: .milliseconds(5_500))
+
+    let sends = 20_000
+    let cpuStart = clock_gettime_nsec_np(CLOCK_PROCESS_CPUTIME_ID)
+    let wallStart = ContinuousClock.now
+    try await send(1_000..<(1_000 + sends))
+    let wall = ContinuousClock.now - wallStart
+    let cpuSends = clock_gettime_nsec_np(CLOCK_PROCESS_CPUTIME_ID) - cpuStart
+    try await Task.sleep(for: .milliseconds(5_500))
+    let cpuTail = clock_gettime_nsec_np(CLOCK_PROCESS_CPUTIME_ID) - cpuStart - cpuSends
+
+    let wallMicroseconds = Double(wall.components.seconds) * 1e6 + Double(wall.components.attoseconds) / 1e12
+    print(
+      "SENDPATH n=\(sends) cpu_per_send_us=\(String(format: "%.2f", Double(cpuSends) / Double(sends) / 1_000)) "
+        + "wall_per_send_us=\(String(format: "%.2f", wallMicroseconds / Double(sends))) "
+        + "tail_cpu_ms=\(String(format: "%.2f", Double(cpuTail) / 1e6)) "
+        + "send_tasks=\(await live.sendTaskStartCountForTesting())"
+    )
+    await live.close()
+  }
+
   /// A real-size schema: 2,283 attributes, as a phone's init-ok carries (`RealSizeFixture`), across 41 namespaces.
   static let attributes: [InstantLiveJSONValue] = (0..<2_283).map { index in
     liveReactorServerAttr(
