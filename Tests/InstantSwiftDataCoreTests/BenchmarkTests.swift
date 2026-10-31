@@ -84,15 +84,17 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopCount),
-      [5, 5]
+      [6, 6]
     )
     // A one-shot read takes no operation gate while the store holds what SQLite does (#1134): its answer is a local
     // observation's first, which registers with the store and ends there, besides the attribute index it validates with.
+    // This first answer of a fresh store is saved in two turns (#1498): one finds no row holding it, the answer is
+    // encoded on the reader's task, and the second writes it.
     expectNoDifference(
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopBreakdown),
       [
-        ["persistence": 2, "store": 3],
-        ["persistence": 2, "store": 3],
+        ["persistence": 3, "store": 3],
+        ["persistence": 3, "store": 3],
       ]
     )
     expectNoDifference(
@@ -272,16 +274,17 @@ extension InstantStoreTests {
     )
     // The relaunch reads its first connection status and auth session under the gate, one gate pass and one persistence
     // turn, so status reads and the status and session observations answer without the gate after it (#1132); its query
-    // takes no gate, and its answer's local observation two store calls (#1134).
+    // takes no gate, and its answer's local observation two store calls (#1134). The fresh store's first answer is saved
+    // in two persistence turns, encoded on the reader's task between them (#1498).
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopCount),
-      [14, 14]
+      [15, 15]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 4, "persistence": 6, "store": 4],
-        ["operation-gate": 4, "persistence": 6, "store": 4],
+        ["operation-gate": 4, "persistence": 7, "store": 4],
+        ["operation-gate": 4, "persistence": 7, "store": 4],
       ]
     )
     // One automatic claim window is 50 mutations; residual pending stays behind

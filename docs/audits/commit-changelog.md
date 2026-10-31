@@ -1,3 +1,42 @@
+## 2026-10-31 15:22:44 EDT — scribe `e565fa39a8a0edd0adf89dbc70428a604ede5edb`
+Perf (#1501): the recordings list's page carries no build provenance: the list selects no buildInfo on recordings or on its transcriptions include, and a line's final writes its transcription's counts without buildInfo, which the create sets once (red 8e71fdad3, green d1d1d0a43); stored list pages on the 10-30 iPhone store copy 617/594/471/108 KB, buildInfo 74/80/72/96% of each.
+
+## 2026-10-31 15:14:30 EDT — scribe `cef2d9a7d9269aede44ca8f4c22d3b144d835906`
+Release (#1482): Scribe 0.1 (210): instant-data-swift pinned exactly at 1.9.58 (pin 000210f5f, cut 83dec0324, change log 6813cf9e7), carrying #1495; with #1510's app half and #1499's heads-up wording since 209.
+
+## 2026-10-31 15:12:35 EDT — instant-data-swift `97241036e8284525b9ac05957cd9af12f72c2622`
+Release (#1482): v1.9.58 tagged on this merge (release document 02566ad4, change log 3431e78b): #1495, an observer keeps the ids its result shows, collected once per result. No API, storage or conversion change.
+
+## 2026-10-31 15:06:17 EDT — scribe `b87c51f61a34bf590b9a185e78b5076dfe6585fd`
+Feat (#1510): each minute row of the energy ledger names the store's SQLite pages by table or index (at most 16, each with its three largest store calls) and by write statement (at most 12: shape, runs, rows, pages), counted between two reads of instant-data-swift's write recorder (red 8d0bf7a4, green 2fdd4522; change log 27448522f). Empty until the library tag that carries the recorder is pinned.
+
+## 2026-10-31 14:54:08 EDT — instant-data-swift `e6e719134d2a754bf08489781ed5052d46642fc9`
+Perf (#1495): an observer keeps the set of ids its result shows, collected once per result and kept while it holds that result, so a publication no longer rebuilds it for every change it judges and again for the splice (red 3cce5ca1, green 9051d75e; a phone-shaped publication fan-out exercise ff8fb803; change log 8ccd5d57). Measured before on the Mac mini (release): a final's publication p50 18.4 ms, of which re-materialization 92%, the id sets about 1%, wasLastHanded's equality about 0.1% (so no fingerprint was added).
+
+## 2026-10-31 13:51:10 EDT — instant-data-swift `4ba76de7f91ae84b30b7a2ccd72bd27b3701d12c`
+Perf (#1492): the live session keeps one attribute resolver per server schema instead of indexing all 2,283 attributes for every mutation it sends (red 8b5a4584, green 14ee7622); mutationEncode CPU per send 2,650.1 -> 14.5 us on the Mac mini (release, recording exercise, 90 sends).
+
+## 2026-10-31 13:45:14 EDT — instant-data-swift `c9dc143dd60615479083b7a24522c0c5844ba86d`
+Perf (#1498): a one-shot read writes its answer to the query cache only when it changed, and never encodes it on the persistence actor: the row keeps its answer's digest and, in columns, the last read's time, revisions and sequence, which readers lay over its JSON (red 38c426f6, green 2c1c003d; change log f07f53fc). A fresh store's first answer takes one more persistence turn (relaunch pins 14 to 15). Before on the Mac mini (release, the recording exercise sampled 60 s at 1 ms): queryOnce 802 ms of CPU, saveQueryCache 553 of it.
+
+## 2026-10-31 13:32:48 EDT — scribe `20b7467ed46e247ffbca5f918e9b4856f08d42d2`
+Audit (#1509): the whole system, not one cause: the phone's cost mapped by state and subsystem from the 10-30 powerlog, MetricKit and the 10-30 and 10-31 energy ledgers; the floating bar's breathing symbol behind the lock with the screen on (#1502, +8.5 points of a core for 85 of 122 background minutes); 1.9.56's write fixes verified on the phone per event (claim -67%, ack -47%, apply -56%) while the save stays at 103 KB; #1491's 4.6x was the mini's clock state; filed #1511 #1512, queued six fixes. Landed as merge e5fe2a29051aec4ee41098ba14ef43f6337f36f3.
+
+## 2026-10-31 13:01:39 EDT — instant-data-swift `1e1ba548d0b25b1c5ae439a894ba9a94dbc07474`
+Perf (#1491): a new local write encodes its body once, its 8 MiB bound read from the bytes the save writes (red efc0656f, green 02b7cf8a); scripts/contention-exercises/ab-commits.sh compares commits in one job on one machine, alone and beside a CPU load (the 10-24 baseline run alone on the Mac mini holds 5.02 ms, so the #1482 audit's 4.6x is mostly machine state).
+
+## 2026-10-31 12:46:23 EDT — scribe `e00f51ba8d5738403a09e59a7ac714ba8e0ca8d9`
+Audit (#1481): wasted work in instant-data-swift and Scribe after the night's fixes, nine findings filed and queued (#1500-#1508): closed results kept as 207 MB of duplicate, dead value copies; list pages carrying each row's build provenance; the floating bar's per-frame breathe on every screen; the device log at 22 lines a second; a never-analyzed store; the Codable wrapper on stored values; whole-library screen windows; the ledger's unattributed writes and missing footprint; the Live Activity keep-alive as a proposal.
+
+## 2026-10-31 12:43:05 EDT — scribe `5bf97955c537`
+Audit (#1482): what this pass did not measure, and the one-job recipe for the task and actor counts (change log fbeca0780).
+
+## 2026-10-31 12:40:54 EDT — scribe `cfe947808dabe72e837ccca7250d57709de1caaa`
+Audit (#1482): Swift concurrency, scheduling and isolation in instant-data-swift first, Scribe second, measured (landed bd29efea2 with its change log 65b24b771; issues #1491-#1498).
+
+## 2026-10-31 12:39:25 EDT — instant-data-swift `524bf6e1b2a0d2a9ea021bdd6cb7144d698a9e2e`
+Tools (#1482): the recording exercise profiled under sample and xctrace, and an A/B of the writer's SQLite mutex (merge of aa325f311; no difference between FULLMUTEX and NOMUTEX, 0.456 against 0.458 ms per transact).
+
 ## 2026-10-31 12:25:02 EDT — scribe `b41e6f2a80fea5a22fd01b0735397ed730c8b762`
 Fix (#1489): a library list keeps an episode with no file of its own when its page can be resolved, and an empty list says so.
 
