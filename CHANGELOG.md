@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 12:26:13 a.m. EDT — `47afdc9b8c80` test(#1436): every outbox index a live write writes is read by its own cycle, and its effect rows are written once
+
+- **Implementation commit:** `47afdc9b8c802699df8989f7985d8a38b5417bfc`
+- **Change:** test(#1436): every outbox index a live write writes is read by its own cycle, and its effect rows are written once
+- **Details:**
+  - A test-only statement trace (sqlite3_trace_v2 on the writer) and EXPLAIN QUERY PLAN on the writer's connection: of 66 outbox statements a live write's cycle runs, every full index it writes is read (delivery 10, global-effect order 9, effect entities' lookup 6, watermark 6, key rows' lookup 1).
+  - Audit triggers: a recording's overlapping writes and an 18-write backlog insert each effect row once and delete it once; a minimal-write change for effect entities moved nothing and was not shipped.
+  - No index can go without turning a hot search into a scan; the structural levers are #1463 (the body's overflow churn) and #1464 (the two key-table pairs).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1436 a test-only statement trace and query plan on the writer
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeReadsTests.swift` — #1436 the per-index reads guard and the effect-row audits
+- **User context (verbatim):**
+  > you are to diagnose any library-based issues and use the most expert tracing techniques and technologies available to you.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, outbox-1435@strangelearning); no SpecStory capture
+
 ## October 30th, 2026 at 11:48:47 p.m. EDT — `da140b69ab85` fix(#1435): green: an outbox write's body lives in its own table, and a claim and an acknowledgement write the narrow row alone
 
 - **Implementation commit:** `da140b69ab85dcb77a912575096c2cc6eb9e5258`

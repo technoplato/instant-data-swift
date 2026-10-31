@@ -1,3 +1,16 @@
+## 2026-10-31 00:26:23 EDT — outbox-1435 (#1436): no outbox index can go; the save's and echo's levers are structural
+
+- **Landed:** `47afdc9b` (tests and a test-only statement trace; no behavior change, no release).
+- **Found:** of the 66 outbox statements a live write's cycle runs (traced with `sqlite3_trace_v2`, each planned with
+  `EXPLAIN QUERY PLAN` on the writer), every full index it writes is read: delivery 10, global-effect order 9, effect
+  entities' lookup 6, watermark 6, key rows' lookup 1. The text key's autoindex was the one no read needed; 1.9.55
+  removed it and the body's table took its place, so the save and the echo still write nine outbox b-trees (harness:
+  save 15.33 -> 16.17, echo 18.50 -> 19.17 frames, the rise page 1 for the body's overflow). Effect rows are inserted
+  once and deleted once, in a recording and in an 18-write backlog: the minimal-write change measured nothing and
+  was not shipped.
+- **Next:** #1463 (a live body under ~1 KB stays in its leaf: no overflow, no free-list writes at save and echo, up to
+  ~4 of a cycle's ~41 frames) and #1464 (one table for effect entities and key rows, up to 4 frames).
+
 ## 2026-10-30 23:49:14 EDT — v1.9.55 (outbox-1435, #1435): a claim and an acknowledgement write the outbox row alone
 
 - **Release:** `docs/releases/v1.9.55.md`, cut at `da140b69` (plan `47891a5f`, red `7730fb22`, green `da140b69`),

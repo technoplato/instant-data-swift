@@ -1,3 +1,6 @@
+## 2026-10-31 00:25:31 EDT — instant-data-swift `47afdc9b8c802699df8989f7985d8a38b5417bfc`
+Test (#1436): every outbox index a live write writes is read by its own cycle (SQLite's plans of its 66 statements), and its effect rows are written once; the levers left are #1463 and #1464.
+
 ## 2026-10-31 00:23:31 EDT — scribe `f3c7872c505467c733a9238f356d86a6226d5f3f`
 Docs (#1442): a corrected cause for a counter that read zero.
 
