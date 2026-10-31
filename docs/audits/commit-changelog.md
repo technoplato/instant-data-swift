@@ -1,3 +1,33 @@
+## 2026-10-31 01:57:46 EDT — scribe `b5a55ab31a7442666fd9116b1c93a231c913c6b1`
+Fix (#1473): scribe settings list no longer crashes on the side bars.
+
+## 2026-10-31 02:51:39 EDT — scribe `f2020f41faccbff8024bce7044d3508d2127144f`
+Audit (#1455): last week's 9 rejected plans: 5 caught at the time, 5 of 5 the second time; 2 of 128 held-out briefs refused.
+
+## 2026-10-31 01:51:11 EDT — scribe `c8b7473f61caf347bb2d82782e5027114701822f`
+Docs (#1455): ADR 0105 and the guide: what he rejects goes in the store; the check before any agent starts.
+
+## 2026-10-31 02:22:45 EDT — scribe `5fbabcbd79a6217fa1d3283751f6b45b1316ec6c`
+Fix (#1455): the pre-plan check refuses only what he would recognize at once; an argument is at most a rewrite.
+
+## 2026-10-31 01:48:48 EDT — scribe `5b9175d2b8d8c5fe433304c74625480fe6d59170`
+Feature (#1455): the pre-plan check as a red team (Haiku) and a judge (Opus 5.5).
+
+## 2026-10-31 00:44:09 EDT — scribe `9d6dff39071531963d1c496bd512a346c01ddb93`
+Feature (#1455): scribe preplan check: read a plan against what he rejected and decided, before any agent starts.
+
+## 2026-10-31 01:05:53 EDT — scribe `fbb9e902f83355095ee0c379da5db6bebc5b2397`
+Feature (#1455): the extractor and the scan: each thumbs-down or negative remark becomes one plain rule.
+
+## 2026-10-31 00:44:09 EDT — scribe `86a3832b806c101e3c9f52e498ad59fe2a5fb5fe`
+Feature (#1455): scribe feedback: his rejections beside the decision log.
+
+## 2026-10-31 00:22:45 EDT — scribe `b3c17e6436f1d9bff9ca1e1f979a0a0ebd5a7891`
+Feature (#1455): scribe decision takes a comment he typed in a Scribe thread.
+
+## 2026-10-31 00:16:04 EDT — scribe `83820239d3e08a30699c6f8be4686ee953985faa`
+Schema (#1455): the feedback entity, on production; a Scribe thread is a source of typed words.
+
 ## 2026-10-31 02:49:30 EDT — scribe `d59867e2dcf466b9e231f9037842526c89c9d093`
 Docs (#1419): the pictures' final counts.
 
