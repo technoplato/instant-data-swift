@@ -1,3 +1,13 @@
+## 2026-10-31 13:56:58 EDT — perf-ship-1 (#1482): v1.9.57, the three landed performance fixes for Scribe 209
+
+- **Release:** `docs/releases/v1.9.57.md`, tagged on this landing's merge. Carries #1491 (a new write encodes its body
+  once), #1492 (one attribute resolver per server schema, kept across sends) and #1498 (a one-shot read writes its
+  answer to the query cache only when it changed). No conversion; `instant_query_cache` gains four nullable columns.
+- **Numbers (Mac mini M4, release, from each fix's log):** `mutationEncode` 2,650.1 -> 14.5 us per send, live session
+  actor 238.5 -> 1.3 ms a minute (#1492); `transact` p50 0.457 -> 0.434 ms (#1491); #1498's after is still queued.
+- **Not in (not landed):** #1493, #1494, #1495, #1496, #1497, #1500, #1504, #1505.
+- **Next:** Scribe pins 1.9.57 and cuts build 209 (#1482).
+
 ## 2026-10-31 13:46:00 EDT — perf-read-1498 (#1498): a one-shot read writes its answer to the query cache only when it changed
 
 - **Landed:** red `38c426f6`, green `2c1c003d` (plan `d5fd5466`, amendment `92fe6a34`), branch
