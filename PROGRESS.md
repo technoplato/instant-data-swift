@@ -1,3 +1,12 @@
+## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
+
+- **Release:** `docs/releases/v1.9.59.md`, tag `v1.9.59` on this release branch's tip, cut from `main` at `81c07e43`.
+  Carries #1493 (merge `dffd9a06`): a query observation is one stream; library tasks per live FetchAll 7 -> 1. No API,
+  storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`), on `main` after the cut; its owner is still measuring its
+  cost.
+- **Next:** Scribe pins 1.9.59 exactly and cuts 0.1 (211) (#1482).
+
 ## 2026-10-31 15:56:01 EDT — perf-observe-1493 (#1493): a query observation is one stream; 7 library tasks per live FetchAll -> 1
 
 - **Landed:** red `02ef83f5`, green `6256949a`, exercise `c5f7c882`, doc `b00e2d04` (merge `dffd9a06`). No release cut,
