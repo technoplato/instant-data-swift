@@ -1,3 +1,5 @@
+- 2026-10-31 10:13:50 EDT · realtime-voice · `0b3fac6fd7f2` · #1487: any speech to text runs the full pipeline; Point-Free gets chapters
+
 ## 2026-10-31 09:51:16 EDT — scribe `cf3193a0fcf344582d7d844dc15b655cc18d5897`
 Merge (#1486): land-1486's presence: ~/Scribe/tools/land installed, 13 hand landing copies forward to it, claims released.
 
