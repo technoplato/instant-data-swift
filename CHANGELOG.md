@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 6:45:23 p.m. EDT — `a92b8ca44d05` fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
+
+- **Implementation commit:** `a92b8ca44d0580ce31d7a70aca04fc1844234d17`
+- **Change:** fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
+- **Details:**
+  - The writer sets temp_store = MEMORY at the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and again when it reopens; every read connection at open. A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0 after. Green: 17 tests in 5 suites (pwf-1504-redgreen 17:20).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 the writer's temp_store, at bootstrap and on reopen
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 each read connection's temp_store
+- **User context (verbatim):**
+  > No feature compromises. Just fixing at the source
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:45:23 p.m. EDT — `6ec56cba96ab` test(#1504): red: every store connection keeps SQLite's temporary structures in memory
+
+- **Implementation commit:** `6ec56cba96ab77d3dd57e8c3ae3dd30f6f567577`
+- **Change:** test(#1504): red: every store connection keeps SQLite's temporary structures in memory
+- **Details:**
+  - PRAGMA temp_store read on the writer after bootstrap, on a read connection and on a reopened writer: 0 (a file) on all three, expected 2 (memory). Two guards: a recording exercise and closing a 300-todo query write no temporary file. Red by build.sh pwf-1504-redgreen 17:12.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantTemporaryStoreTests.swift` — #1504 the setting on every connection, and two guards
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 temporaryStoreForTesting
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 temporaryStoreForTesting
+- **User context (verbatim):**
+  > No feature compromises. Just fixing at the source
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 5:44:09 p.m. EDT — `cbda8b883012` release(#1482): v1.9.60: a local write does less hashing
 
 - **Implementation commit:** `cbda8b883012f115b2df6783ea6d071bc3e33de4`
