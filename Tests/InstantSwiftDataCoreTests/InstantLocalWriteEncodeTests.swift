@@ -3,6 +3,8 @@
 //                    bytes against the durable delivery limit, and once more for the body the store writes, which is
 //                    the same text. The recording exercise's sample put the first encode at about 0.37 ms of the
 //                    write's ~3 ms of CPU on an M4, inside the operation gate.
+// 2026-10-31  #1491  The two SHA-256 digests a save writes formatted their bytes with String(format:), 32 strings
+//                    joined, each time; the sample put it at about 0.11 ms a write.
 
 import CustomDump
 import Foundation
@@ -66,5 +68,19 @@ struct InstantLocalWriteEncodeTests {
     try await InstantOfflineRuntimeFixture.createTodo("after", in: runtime)
     let pendingCount = await runtime.pendingMutationCount()
     #expect(pendingCount == 1)
+  }
+
+  /// The two digests each save writes (its receipt and its wire intent) are SHA-256 as lowercase hex. Each formatted its
+  /// 32 bytes with `String(format:)`, a string a byte, joined (#1491).
+  @Test
+  func aDigestIsLowercaseHexWrittenInOneAllocation() {
+    #expect(
+      instantSHA256HexDigest(Data("abc".utf8))
+        == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    )
+    #expect(instantSHA256HexDigest(Data()) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    let data = Data(repeating: 0xA5, count: 4_096)
+    let allocations = RefreshCostTests.allocations(iterations: 20) { _ = instantSHA256HexDigest(data) }
+    #expect(allocations <= 2, "a digest allocated \(allocations) times")
   }
 }
