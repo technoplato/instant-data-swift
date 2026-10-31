@@ -84,9 +84,12 @@
 //   JSON is written or waits, so nothing is kept in memory, marked or repaired after a kill, and a header's update reads
 //   no JSON (#1440). A store 1.9.54 left converts once at open (0034). The retraction diff reads the stored result's
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
+// - 2026-10-31: a query-cache row holds its answer's digest and, in columns, the last read's time, revisions and
+//   sequence, which readers lay over its JSON; a read whose answer the row holds updates those columns only (#1498).
 
 import Foundation
 import IssueReporting
+import os
 import SQLite3
 
 public struct InstantPersistenceSnapshot: Hashable, Codable, Sendable {
@@ -1317,6 +1320,8 @@ public actor SQLitePersistenceStore {
   /// Test-visible count of durable outbox JSON bodies decoded by this actor.
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
+  /// Query-cache answers encoded as JSON (#1498), on this actor or off it: for tests and the release's measurements.
+  private let queryCacheAnswerEncodes = OSAllocatedUnfairLock(initialState: 0)
   private var optimisticEffectFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
@@ -1422,6 +1427,11 @@ public actor SQLitePersistenceStore {
 
   package func currentDecodedOutboxBodyCount() -> Int {
     decodedOutboxBodyCount
+  }
+
+  /// How many query-cache answers have been encoded as JSON (#1498).
+  package nonisolated func queryCacheAnswerEncodeCountForTesting() -> Int {
+    queryCacheAnswerEncodes.withLock { $0 }
   }
 
   /// How many optimistic-effect fingerprints this store has computed (#1007).
@@ -2177,7 +2187,7 @@ public actor SQLitePersistenceStore {
           """
         )
         for entry in entries {
-          try saveQueryCacheEntryWithoutTransaction(entry, tableName: "instant_query_cache_v2")
+          try copyQueryCacheEntryWithoutTransaction(entry, into: "instant_query_cache_v2")
         }
         try execute("DROP TABLE instant_query_cache")
         try execute("ALTER TABLE instant_query_cache_v2 RENAME TO instant_query_cache")
@@ -2877,6 +2887,9 @@ public actor SQLitePersistenceStore {
     try ensureServerApplyStagingSchema()
     try withSQLiteBusyRetry {
       try ensureLookupIndexes()
+    }
+    try withSQLiteBusyRetry {
+      try ensureQueryCacheAnswerColumns()
     }
     try Self.securePersistenceFiles(at: fileURL)
     InstantDiagnostics.shared.record(
@@ -11731,24 +11744,57 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadQueryCache() throws -> [InstantCachedQuery] {
-    try selectJSON(
-      "SELECT json FROM instant_query_cache ORDER BY updated_at_ms, query_id, cache_key"
-    )
+    try queryCacheEntries("ORDER BY updated_at_ms, query_id, cache_key")
   }
 
   public func cachedQuery(cacheKey: String) throws -> InstantCachedQuery? {
-    let rows: [InstantCachedQuery] = try selectJSON(
-      "SELECT json FROM instant_query_cache WHERE cache_key = ? LIMIT 1",
-      [.text(cacheKey)]
-    )
-    return rows.first
+    try queryCacheEntries("WHERE cache_key = ? LIMIT 1", [.text(cacheKey)]).first
   }
 
   public func cachedQueries(queryID: String) throws -> [InstantCachedQuery] {
-    try selectJSON(
-      "SELECT json FROM instant_query_cache WHERE query_id = ? ORDER BY updated_at_ms, cache_key",
-      [.text(queryID)]
+    try queryCacheEntries("WHERE query_id = ? ORDER BY updated_at_ms, cache_key", [.text(queryID)])
+  }
+
+  /// The query cache's rows `clause` selects (#1498): each the answer its JSON holds, with the time, revisions and
+  /// sequence of the read that last left it laid over the copies in the JSON. A read whose answer was unchanged updates
+  /// only those columns; a row written before them has none, and its JSON's own are the last read's.
+  private func queryCacheEntries(_ clause: String, _ bindings: [SQLiteBinding] = []) throws -> [InstantCachedQuery] {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT json, updated_at_ms, store_revision, attribute_revision, emission_sequence
+      FROM instant_query_cache \(clause)
+      """,
+      statement: &statement
     )
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    var entries: [InstantCachedQuery] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return entries }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(operation: "read query cache", message: lastErrorMessage())
+      }
+      guard let json = sqlite3_column_text(statement, 0) else {
+        throw persistenceError(operation: "decode row", message: "SQLite returned a NULL JSON row.")
+      }
+      var entry = try decoder.decode(
+        InstantCachedQuery.self,
+        from: Data(bytes: json, count: Int(sqlite3_column_bytes(statement, 0)))
+      )
+      entry.updatedAt = InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 1))
+      if sqlite3_column_type(statement, 2) != SQLITE_NULL {
+        entry.storeRevision = sqlite3_column_int64(statement, 2)
+      }
+      if sqlite3_column_type(statement, 3) != SQLITE_NULL {
+        entry.attributeRevision = sqlite3_column_int64(statement, 3)
+      }
+      if sqlite3_column_type(statement, 4) != SQLITE_NULL {
+        entry.emission.sequence = sqlite3_column_int64(statement, 4)
+      }
+      entries.append(entry)
+    }
   }
 
   func liveQueryResult(key: String) throws -> InstantPersistedLiveQueryResult? {
@@ -15305,23 +15351,11 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64? = nil
   ) throws -> Bool {
-    try transaction {
-      let attributeRevisionMatches = if let expectedAttributeRevision {
-        try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
-          == expectedAttributeRevision
-      } else {
-        true
-      }
-      guard
-        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
-        attributeRevisionMatches
-      else {
-        return false
-      }
-
-      try saveQueryCacheEntryWithoutTransaction(entry)
-      return true
-    }
+    try saveQueryCache(
+      [entry],
+      expectedStoreRevision: expectedStoreRevision,
+      expectedAttributeRevision: expectedAttributeRevision
+    )
   }
 
   func saveQueryCache(
@@ -15330,23 +15364,167 @@ public actor SQLitePersistenceStore {
     expectedAttributeRevision: Int64? = nil
   ) throws -> Bool {
     try transaction {
-      let attributeRevisionMatches = if let expectedAttributeRevision {
-        try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
-          == expectedAttributeRevision
-      } else {
-        true
-      }
       guard
-        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
-        attributeRevisionMatches
+        try queryCacheRevisionsMatchWithoutTransaction(
+          expectedStoreRevision: expectedStoreRevision,
+          expectedAttributeRevision: expectedAttributeRevision
+        )
       else {
         return false
       }
 
       for entry in entries {
-        try saveQueryCacheEntryWithoutTransaction(entry)
+        let digest = InstantQueryAnswerDigest(entry.emission)
+        if try !confirmQueryCacheAnswerWithoutTransaction(entry, digest: digest) {
+          try writeQueryCacheEntryWithoutTransaction(entry, json: encodedQueryCacheAnswer(entry), digest: digest)
+        }
       }
       return true
+    }
+  }
+
+  /// What ``confirmQueryCacheAnswer(_:digest:expectedStoreRevision:expectedAttributeRevision:)`` found (#1498).
+  enum QueryCacheAnswerConfirmation: Equatable, Sendable {
+    /// The row holds the answer, and now the read's time, revisions and sequence.
+    case confirmed
+    /// The row holds another answer, or there is none: the answer must be written whole.
+    case absent
+    /// The store or its attributes changed since the answer was read: nothing was written.
+    case stale
+  }
+
+  /// Leaves `entry` as its query's row when the row already holds its answer (#1498): one statement, conditioned on the
+  /// row's `digest`, updates the row's time, revisions and sequence, and nothing is encoded. A one-shot read rewrote
+  /// the whole answer every time, on this actor: 431 of queryOnce's 795 ms of CPU a minute for 60 reads of one
+  /// unchanged page in the #1482 audit's sample. The row is compared, not anyone's memory of it, so a row another
+  /// connection replaced is written again.
+  func confirmQueryCacheAnswer(
+    _ entry: InstantCachedQuery,
+    digest: InstantQueryAnswerDigest,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64?
+  ) throws -> QueryCacheAnswerConfirmation {
+    try transaction {
+      guard
+        try queryCacheRevisionsMatchWithoutTransaction(
+          expectedStoreRevision: expectedStoreRevision,
+          expectedAttributeRevision: expectedAttributeRevision
+        )
+      else {
+        return .stale
+      }
+      return try confirmQueryCacheAnswerWithoutTransaction(entry, digest: digest) ? .confirmed : .absent
+    }
+  }
+
+  /// Writes `entry` whole as its query's row, its JSON encoded by the caller off this actor with
+  /// ``encodedQueryCacheAnswer(_:)``, when the store's revisions are still the expected ones (#1498).
+  func saveQueryCache(
+    _ entry: InstantCachedQuery,
+    encodedJSON: String,
+    digest: InstantQueryAnswerDigest,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64?
+  ) throws -> Bool {
+    try transaction {
+      guard
+        try queryCacheRevisionsMatchWithoutTransaction(
+          expectedStoreRevision: expectedStoreRevision,
+          expectedAttributeRevision: expectedAttributeRevision
+        )
+      else {
+        return false
+      }
+      try writeQueryCacheEntryWithoutTransaction(entry, json: encodedJSON, digest: digest)
+      return true
+    }
+  }
+
+  /// `entry`'s row JSON as this store writes it, encoded on the caller's task and counted (#1498).
+  nonisolated func encodedQueryCacheAnswer(_ entry: InstantCachedQuery) throws -> String {
+    queryCacheAnswerEncodes.withLock { $0 += 1 }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return String(decoding: try encoder.encode(entry), as: UTF8.self)
+  }
+
+  private func queryCacheRevisionsMatchWithoutTransaction(
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64?
+  ) throws -> Bool {
+    if let expectedAttributeRevision,
+      try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey) != expectedAttributeRevision
+    {
+      return false
+    }
+    return try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision
+  }
+
+  /// Updates the row of `entry`'s query to the read's time, revisions and sequence when the row's answer has `digest`,
+  /// and returns whether it did (#1498).
+  private func confirmQueryCacheAnswerWithoutTransaction(
+    _ entry: InstantCachedQuery,
+    digest: InstantQueryAnswerDigest
+  ) throws -> Bool {
+    try execute(
+      """
+      UPDATE instant_query_cache
+      SET updated_at_ms = ?, store_revision = ?, attribute_revision = ?, emission_sequence = ?
+      WHERE cache_key = ? AND answer_digest = ?
+      """,
+      [
+        .int(entry.updatedAt.milliseconds),
+        .int(entry.storeRevision),
+        .int(entry.attributeRevision),
+        .int(entry.emission.sequence),
+        .text(entry.cacheKey),
+        .text(digest.hexValue),
+      ]
+    )
+    return sqlite3_changes(connection.raw) == 1
+  }
+
+  /// Writes `entry` whole as its query's row: its JSON, the digest of its answer, and the time, revisions and sequence
+  /// a reader lays over the JSON (#1498).
+  private func writeQueryCacheEntryWithoutTransaction(
+    _ entry: InstantCachedQuery,
+    json: String,
+    digest: InstantQueryAnswerDigest
+  ) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_query_cache
+        (cache_key, query_id, json, updated_at_ms, answer_digest, store_revision, attribute_revision, emission_sequence)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(entry.cacheKey),
+        .text(entry.queryID),
+        .text(json),
+        .int(entry.updatedAt.milliseconds),
+        .text(digest.hexValue),
+        .int(entry.storeRevision),
+        .int(entry.attributeRevision),
+        .int(entry.emission.sequence),
+      ]
+    )
+  }
+
+  /// The columns a read's unchanged answer updates in place (#1498), added to a query cache made before them.
+  private static let queryCacheAnswerColumns = [
+    "answer_digest TEXT",
+    "store_revision INTEGER",
+    "attribute_revision INTEGER",
+    "emission_sequence INTEGER",
+  ]
+
+  /// Adds ``queryCacheAnswerColumns`` to a query cache that lacks them: one made before #1498, or rebuilt in an older
+  /// shape by a restore. Its rows have none, read from their JSON alone, and are written whole at their next read.
+  private func ensureQueryCacheAnswerColumns() throws {
+    let existing = Set(try selectStrings("SELECT name FROM pragma_table_info('instant_query_cache')"))
+    for column in Self.queryCacheAnswerColumns {
+      guard let name = column.split(separator: " ").first, !existing.contains(String(name)) else { continue }
+      try execute("ALTER TABLE instant_query_cache ADD COLUMN \(column)")
     }
   }
 
@@ -19828,10 +20006,12 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  private func saveQueryCacheEntryWithoutTransaction(
+  /// Copies `entry` into migration 0003's table, which has none of the columns #1498 added.
+  private func copyQueryCacheEntryWithoutTransaction(
     _ entry: InstantCachedQuery,
-    tableName: String = "instant_query_cache"
+    into tableName: String
   ) throws {
+    queryCacheAnswerEncodes.withLock { $0 += 1 }
     try execute(
       """
       INSERT OR REPLACE INTO \(tableName) (cache_key, query_id, json, updated_at_ms)

@@ -1,3 +1,22 @@
+## 2026-10-31 13:46:00 EDT — perf-read-1498 (#1498): a one-shot read writes its answer to the query cache only when it changed
+
+- **Landed:** red `38c426f6`, green `2c1c003d` (plan `d5fd5466`, amendment `92fe6a34`), branch
+  `agent/claude/perf-read-1498`. No release cut, no build; a later ship agent tags and installs.
+- **What changed:** a query-cache row holds its answer's SHA-256 digest (computed on the reader's task) and, in
+  columns, the last read's time, revisions and sequence, which readers lay over the row's JSON. An unchanged answer is
+  one statement and no encode; a first or changed one is encoded on the reader's task, never on the persistence actor.
+  A fresh store's first answer takes one more persistence turn (relaunch pins 14 -> 15, ADR 0018's log).
+- **Found:** no read answers from `instant_query_cache` (the issue's premise); its readers are the closed connection's
+  error and the public `cachedQuery(_:)` / `cachedQueries()`, unchanged.
+- **Checks:** Mac mini, debug: `InstantQueryCacheAnswerWriteTests` 5/5 (red 2/5), the query-cache and closed-connection
+  tests, the #1131 and #300 suites. `LocalTodoValidationTests`' three TypeScript verifiers fail on the mini for a
+  missing `validation/ts-runner/node_modules/.bin/tsx` (environment).
+- **Before (M6, mini, release, 60 s sample at 1 ms, main `7f0595b8`, 12:52):** `queryOnce` 802 ms of CPU, of which
+  `saveQueryCache` 553 (69%); `SQLitePersistenceStore.encode` 541; `sqlite3_step` 1,260. **After:** queued as
+  `perf-read-1498-m6-after` at `3cce5ca1`; recorded on #1498 and here when it lands.
+- **Next:** #1495 (red `3cce5ca1`; green in the worktree, tests queued); the fan-out exercise before and after.
+  Continue from `~/Sync/worktrees/perf-read-1498`; evidence in `~/Sync/audit/perf-read-1498/`.
+
 ## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
 
 - **Measured:** the 10-24 baseline `287f77d1`, run alone on the Mac mini (release, the recording exercise, 12:44, nothing
