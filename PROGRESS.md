@@ -1,3 +1,12 @@
+## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
+
+- **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
+  with #1491's four commits cherry-picked from `main` (merge `99a46951`): a digest's hex in one string; a new local
+  write computes no wire-intent fingerprint. Tight-loop transact p50 0.476 -> 0.389 ms (Mac mini M4, release). No API,
+  storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
+- **Next:** Scribe pins 1.9.60 exactly and cuts 0.1 (212) (#1482).
+
 ## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
 
 - **Release:** `docs/releases/v1.9.59.md`, tag `v1.9.59` on this release branch's tip, cut from `main` at `81c07e43`.
