@@ -1,3 +1,7 @@
+// History:
+// - 2026-10-31: an observer keeps the ids its result shows, collected once per result, instead of collecting them for
+//   every change a publication judges and again for the splice (#1495).
+
 import Darwin
 import Foundation
 
@@ -358,6 +362,8 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var materializedSnapshotCount = 0
   /// Refreshed observers whose result equaled the one they were last handed, so it was not handed again (#653).
   package var unchangedObserverCount = 0
+  /// Sets of every entity id an observer's result shows, at any depth, collected to judge or splice a change (#1495).
+  package var allEntityIDsBuildCount = 0
 
   mutating func add(_ other: Self) {
     skippedObserverCount += other.skippedObserverCount
@@ -365,6 +371,7 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
     rematerializedObserverCount += other.rematerializedObserverCount
     materializedSnapshotCount += other.materializedSnapshotCount
     unchangedObserverCount += other.unchangedObserverCount
+    allEntityIDsBuildCount += other.allEntityIDsBuildCount
   }
 }
 
@@ -501,6 +508,15 @@ private struct StoreObserver: Sendable {
   /// The store's observer epoch when `lastValues` was last materialized from the whole store, or nil when it may be
   /// stale (#654). Only a verified result is a baseline the unreachable-observer skip may compare against.
   var verifiedEpoch: Int?
+  /// The ids `lastValues` shows, kept while the observer holds the result they were collected from (#1495).
+  var shownEntityIDs: ShownEntityIDs?
+}
+
+/// The ids of every entity a result shows, at any depth, and the result they were collected from (#1495).
+private struct ShownEntityIDs: Sendable {
+  /// The result itself, sharing its storage: the ids are a result's while it is this one.
+  var values: [InstantEntitySnapshot]
+  var ids: Set<String>
 }
 
 /// One refreshed observer's emission in a publication, and whether it equals what the observer was last handed (#653).
@@ -2037,11 +2053,13 @@ public actor InstantStore {
       : changedEntityIDs.subtracting(absentEntityIDs)
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID] else { continue }
+      let idSetBuildsBefore = metrics.allEntityIDsBuildCount
       // An observer whose result may be stale (#654) can still show an entity the store no longer holds, and one that
       // shows it must drop it: both refresh from the whole change, as before #1007. Any other observer judges the
       // change without those entities, which no result it matched could show.
       let judgesWholeChange = !absentEntityIDs.isEmpty
-        && (observer.verifiedEpoch != observerEpoch || observer.lastValues.contains(anyEntityID: absentEntityIDs))
+        && (observer.verifiedEpoch != observerEpoch
+          || !observer.shownEntityIDs(metrics: &metrics).isDisjoint(with: absentEntityIDs))
       let observedChangedEntityIDs = judgesWholeChange ? changedEntityIDs : presentChangedEntityIDs
       let pageInfoChanged: Bool
       if let liveQueryKey = observer.liveQueryKey,
@@ -2064,7 +2082,8 @@ public actor InstantStore {
           decision = .skip
         } else {
           decision = Self.refreshDecision(
-            for: observer,
+            for: &observer,
+            metrics: &metrics,
             changedNamespaces: changedNamespaces,
             changedEntityIDs: observedChangedEntityIDs,
             indexes: indexes,
@@ -2078,6 +2097,10 @@ public actor InstantStore {
           break
         case .skip:
           metrics.skippedObserverCount += 1
+          // Keep the ids its decision collected, for the next publication (#1495).
+          if metrics.allEntityIDsBuildCount != idSetBuildsBefore {
+            observers[observerID] = observer
+          }
           continue
         case .skipUnverified:
           metrics.skippedObserverCount += 1
@@ -2096,7 +2119,8 @@ public actor InstantStore {
         observer.verifiedEpoch = verifiedEmissionKeys.contains(key) ? observerEpoch : nil
       } else if !pageInfoChanged,
         let spliced = Self.splicedEmission(
-          observer,
+          &observer,
+          metrics: &metrics,
           changedEntityIDs: observedChangedEntityIDs,
           indexes: indexes,
           attributes: attributes,
@@ -2276,7 +2300,8 @@ public actor InstantStore {
   /// from (`verifiedEpoch`); a result the pre-#654 check below left stale, or that predates a store change made without
   /// refreshing observers, is refreshed by that check alone until it is materialized again.
   private static func refreshDecision(
-    for observer: StoreObserver,
+    for observer: inout StoreObserver,
+    metrics: inout InstantStorePublishMetrics,
     changedNamespaces: Set<String>?,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
@@ -2294,7 +2319,10 @@ public actor InstantStore {
     } else {
       return .refresh
     }
-    if observer.lastValues.contains(anyEntityID: changedEntityIDs) {
+    // The ids the result shows, kept from the publication that installed it (#1495): a set of a recordings page's 300
+    // ids was built for every change judged here, and again for the splice.
+    let shownEntityIDs = observer.shownEntityIDs(metrics: &metrics)
+    if !shownEntityIDs.isDisjoint(with: changedEntityIDs) {
       return .refresh
     }
     if observer.plan.hasOnlyNamespaceLocalDependencies,
@@ -2327,7 +2355,6 @@ public actor InstantStore {
     {
       guard changedEntityIDs.count <= resultSetComparisonLimit else { return .refresh }
       // No changed entity is shown at any depth (checked above).
-      let shownEntityIDs = observer.lastValues.allEntityIDs()
       for entityID in changedEntityIDs {
         if baseline.indexes.hasLink(entityID, toAnyOf: shownEntityIDs, attributes: baseline.attributes)
           || indexes.hasLink(entityID, toAnyOf: shownEntityIDs, attributes: attributes)
@@ -2361,13 +2388,14 @@ public actor InstantStore {
   }
 
   private static func splicedEmission(
-    _ observer: StoreObserver,
+    _ observer: inout StoreObserver,
+    metrics: inout InstantStorePublishMetrics,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
     attributes: AttributeStore,
     sequence: Int64
   ) -> InstantQueryEmission? {
-    let representedIDs = observer.lastValues.allEntityIDs()
+    let representedIDs = observer.shownEntityIDs(metrics: &metrics)
     guard changedEntityIDs.isSubset(of: representedIDs) else { return nil }
     var parentIDsToReplace = Set<String>()
     for snapshot in observer.lastValues {
@@ -3392,6 +3420,30 @@ private extension StoreObserver {
   mutating func apply(_ emission: InstantQueryEmission) {
     lastValues = emission.values
     lastPageInfo = emission.pageInfo
+    dropUnheldShownEntityIDs()
+  }
+
+  /// The ids of every entity `lastValues` shows, at any depth, collected once per result (#1495) and kept while this
+  /// observer holds that result as its own or as the one it was last handed: a publication that leaves the result as
+  /// it was, or hands back the one it held, collects nothing.
+  mutating func shownEntityIDs(metrics: inout InstantStorePublishMetrics) -> Set<String> {
+    if let shown = shownEntityIDs, shown.values.sharesStorage(with: lastValues) {
+      return shown.ids
+    }
+    metrics.allEntityIDsBuildCount += 1
+    let ids = lastValues.allEntityIDs()
+    shownEntityIDs = ShownEntityIDs(values: lastValues, ids: ids)
+    return ids
+  }
+
+  /// Forgets the kept ids once this observer holds their result neither as its own nor as the one it was last handed,
+  /// so they never keep a result alive on their own.
+  mutating func dropUnheldShownEntityIDs() {
+    guard let shown = shownEntityIDs,
+      !shown.values.sharesStorage(with: lastValues),
+      !shown.values.sharesStorage(with: lastHandedValues)
+    else { return }
+    shownEntityIDs = nil
   }
 
   /// Whether `emission` shows exactly what this observer was last handed (#653): the same values and page info, and no
@@ -3412,6 +3464,7 @@ private extension StoreObserver {
     lastHandedValues = emission.values
     lastHandedPageInfo = emission.pageInfo
     hasUnhandedDeferredValueChange = false
+    dropUnheldShownEntityIDs()
   }
 }
 
@@ -3454,6 +3507,15 @@ extension InstantLinkedEntitySnapshot {
 extension Array where Element == InstantEntitySnapshot {
   fileprivate func contains(anyEntityID ids: Set<String>) -> Bool {
     contains { $0.contains(anyEntityID: ids) }
+  }
+
+  /// Whether this result and `other` are one result: the same storage, not equal elements (#1495).
+  fileprivate func sharesStorage(with other: [InstantEntitySnapshot]) -> Bool {
+    guard count == other.count else { return false }
+    guard !isEmpty else { return true }
+    return withUnsafeBufferPointer { mine in
+      other.withUnsafeBufferPointer { theirs in mine.baseAddress == theirs.baseAddress }
+    }
   }
 
   fileprivate func allEntityIDs() -> Set<String> {

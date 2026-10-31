@@ -10,6 +10,60 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 3:12:28 p.m. EDT — `02566ad49376` release(#1482): v1.9.58: an observer keeps the ids its result shows
+
+- **Implementation commit:** `02566ad49376a94c9cbc3a4993b99f7980b2d25f`
+- **Change:** release(#1482): v1.9.58: an observer keeps the ids its result shows
+- **Details:**
+  - The release document for v1.9.58, cut from main for Scribe build 210: #1495 (e6e71913).
+  - No API, storage or conversion change; 1.9.57 opens a store 1.9.58 opened.
+- **Files:**
+  - `docs/releases/v1.9.58.md` — #1482 the release: what #1495 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-2@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `ff8fb80358bf` test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
+
+- **Implementation commit:** `ff8fb80358bf29f5ae4e5282c04133708b1407fb`
+- **Change:** test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
+- **Details:**
+  - The app writes a line in progress as its liveLines row, which links to nothing (ADR 0069), and a final as a transcript line linked to the recording and put in its preview slot; the linked shape stays as INSTANT_PUBLISH_FANOUT_INTERIMS=segments.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1495 interims as the app writes them; the linked shape as a stress run
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `9051d75eb1a9` perf(#1495): green: an observer keeps the ids its result shows, collected once per result
+
+- **Implementation commit:** `9051d75eb1a98b21e2a8e40da9b38abab2a40d1e`
+- **Change:** perf(#1495): green: an observer keeps the ids its result shows, collected once per result
+- **Details:**
+  - The set lives on the observer, keyed to the storage of the result it was collected from, kept while the observer holds that result as its own or as the one it was last handed, dropped once it holds neither; the decision's shown-entity check, its includes branch, the absent-entity check and the splice read it. Hand-overs are unchanged.
+  - Laptop (debug): 516 tests in 16 suites pass with their 11 listed known issues, the random-write suites that check every observer against a fresh materialization among them.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1495 the kept ids on the observer and their readers
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `3cce5ca1140d` test(#1495): red: an observer a publication leaves unchanged collects the ids it shows again; a phone-shaped publish exercise
+
+- **Implementation commit:** `3cce5ca1140d4814ac5c3391d58fb48be2f1a324`
+- **Change:** test(#1495): red: an observer a publication leaves unchanged collects the ids it shows again; a phone-shaped publish exercise
+- **Details:**
+  - InstantStorePublishMetrics.allEntityIDsBuildCount counts the sets of every entity id an observer's result shows that a publication collects; the pin in InstantPageRefreshEnergyTests: three recordings pages with includes judge a change none can reach, then a heartbeat one shows.
+  - Red on the laptop (debug, 13:07): 3 sets collected for skipped changes, 3 for results already collected.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1495 the build count, at the decision's includes branch and the splice
+  - `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift` — #1495 an unchanged observer collects no id set
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1495 the publication fan-out on the phone's shape, timed, with its metrics
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
 ## October 31st, 2026 at 1:57:12 p.m. EDT — `5d349b259d14` release(#1482): v1.9.57: a write encodes its body once, one attribute resolver per schema, a one-shot read writes only a changed answer
 
 - **Implementation commit:** `5d349b259d141422338b8357579b4a74c2575c65`
