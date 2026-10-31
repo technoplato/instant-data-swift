@@ -1,3 +1,9 @@
+## 2026-10-30 23:33:14 EDT — scribe `29063405ed03e4d758d04bfd42ed6a6f20289779`
+Docs (#1442): the streams report, corrected against the source.
+
+## 2026-10-30 23:22:49 EDT — scribe `ddadd09fefa077cff003aa4c9af059ee177ce9f2`
+Docs (#1442): a report comparing streams with the live room path on latency, wire bytes and storage writes.
+
 ## 2026-10-30 22:41:55 EDT — scribe `0f09365a24948d26c68a9ff34452252a97bb0d97`
 Cut (#1393, #954, #1437, #1438): Scribe 0.1 (196): Today holds what it counts, one speaker name sideways, the notice's timer.
 
