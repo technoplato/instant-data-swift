@@ -14,8 +14,9 @@ import Testing
 
 @Suite(.serialized)
 struct InstantAcknowledgementDigestTests {
-  /// A body an earlier process saved is fingerprinted from its stored bytes, once in the new process (#1497), and its
-  /// writes are claimed and accepted as before: transcript segments, live lines and link attachments.
+  /// A body an earlier process saved is fingerprinted from its stored bytes once in the new process, by its claim, and
+  /// its acknowledgement reuses that (#1497); its writes are claimed and accepted as before: transcript segments, live
+  /// lines and link attachments.
   @Test
   func aBodySavedByAnEarlierProcessIsFingerprintedOnceFromItsStoredBytes() async throws {
     var fixture = try await FastDrainFixture.make(
@@ -28,8 +29,10 @@ struct InstantAcknowledgementDigestTests {
     )
     _ = try await fixture.writeSegments(2)
     try await fixture.relaunch()
+    let afterRelaunch = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
 
     let window = try await fixture.claimWindow()
+    let afterClaim = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
     for mutation in window.mutations {
       let transactionID = fixture.server.accept(mutation.transaction.operations)
       _ = try await fixture.runtime.acceptMutationIfPresent(
@@ -38,11 +41,16 @@ struct InstantAcknowledgementDigestTests {
         claimToken: window.token
       )
     }
+    let afterAcknowledgements = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
 
-    let fingerprints = await fixture.runtime.persistence.optimisticEffectFingerprintCountForTesting()
     let pending = try await fixture.pendingCount()
+    print(
+      "#1497 earlier-process bodies: \(window.mutations.count) claimed; fingerprints: relaunch \(afterRelaunch), "
+        + "claim \(afterClaim - afterRelaunch), acknowledgements \(afterAcknowledgements - afterClaim)"
+    )
     #expect(!window.mutations.isEmpty)
-    #expect(fingerprints == window.mutations.count, "\(fingerprints) fingerprints for \(window.mutations.count) bodies")
+    #expect(afterClaim - afterRelaunch == window.mutations.count)
+    #expect(afterAcknowledgements - afterClaim == 0)
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
   }
