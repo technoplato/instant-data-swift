@@ -84,6 +84,9 @@
 //   JSON is written or waits, so nothing is kept in memory, marked or repaired after a kill, and a header's update reads
 //   no JSON (#1440). A store 1.9.54 left converts once at open (0034). The retraction diff reads the stored result's
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
+// - 2026-10-31: a server apply's planning reads (its restated results' retractions and saves, the retractions'
+//   protection) are one read transaction in one turn; they were three turns, between which a local write made the
+//   attempt stale (#1494).
 
 import Foundation
 import IssueReporting
@@ -139,6 +142,16 @@ private enum InstantBoundedLiveQueryResultRow {
 struct InstantLiveQueryReplacementRetractions: Sendable {
   var operations: [InstantTripleOperation]
   var clearedSlots: Set<InstantVisibleWriteKey>
+}
+
+/// What a server apply's planning reads came to, part by part (#1494): each part is nil where it was not read (the
+/// caller had worked it out, or nothing needed it) or went stale, and `isStale` says the attempt must plan again.
+struct InstantServerApplyPlanningReads: Sendable {
+  var retractions: InstantLiveQueryReplacementRetractions?
+  var saves: [InstantPreparedLiveQueryResultSave]?
+  /// The server's operations with the retractions protected, ahead of them, when there were retractions.
+  var protectedRetractions: [InstantTripleOperation]?
+  var isStale = false
 }
 
 struct InstantPersistenceStateLoad: Sendable {
@@ -11782,6 +11795,60 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// A server apply's planning reads, in one read transaction (#1494): the restated results' retractions and saves,
+  /// each at the query-result revision the commit checks, then the retractions' protection at the outbox revision, as
+  /// the three calls read them. A part the caller already worked out is passed in and not read again; the first stale
+  /// part ends the reads, as each call's nil did, and the parts read before it are kept for the retry (#1128).
+  ///
+  /// - Parameters:
+  ///   - retractions: The retractions the caller worked out at these revisions; nil reads them from `replacements`
+  ///     (none are read when `replacements` is empty).
+  ///   - results: The results whose saves to work out, or nil when the caller worked them out or saves none.
+  func serverApplyPlanningReads(
+    replacements: [InstantLiveQueryResultReplacement],
+    retractions workedOutRetractions: InstantLiveQueryReplacementRetractions?,
+    savingResults results: [InstantPersistedLiveQueryResult]?,
+    expectedQueryResultRevision: Int64,
+    expectedOutboxRevision: Int64,
+    processedTransactionID: String
+  ) throws -> InstantServerApplyPlanningReads {
+    try readTransaction {
+      var reads = InstantServerApplyPlanningReads()
+      var retractions = workedOutRetractions
+      if retractions == nil, !replacements.isEmpty {
+        let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
+        guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
+        else {
+          reads.isStale = true
+          return reads
+        }
+        retractions = try liveQueryReplacementRetractionsWithoutTransaction(for: replacements)
+        reads.retractions = retractions
+      }
+      if let results, !results.isEmpty {
+        let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
+        guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
+        else {
+          reads.isStale = true
+          return reads
+        }
+        reads.saves = try preparedLiveQueryResultSavesWithoutTransaction(results)
+      }
+      if let retractions {
+        guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision else {
+          reads.isStale = true
+          return reads
+        }
+        reads.protectedRetractions = try protectingServerRetractionsWithoutTransaction(
+          retractions.operations,
+          processedTransactionID: processedTransactionID,
+          clearedSlots: retractions.clearedSlots
+        )
+      }
+      return reads
+    }
+  }
+
   private func liveQueryReplacementRetractionsWithoutTransaction(
     for replacements: [InstantLiveQueryResultReplacement]
   ) throws -> InstantLiveQueryReplacementRetractions {
@@ -19871,19 +19938,25 @@ public actor SQLitePersistenceStore {
     return try readTransaction {
       guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
       else { return nil }
-      // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
-      var storedFactsByKey: [String: [InstantTriple]] = [:]
-      var saves: [InstantPreparedLiveQueryResultSave] = []
-      for result in results {
-        let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
-          result,
-          previousFacts: storedFactsByKey[result.key]
-        )
-        storedFactsByKey[result.key] = prepared.storedFacts
-        saves.append(prepared.save)
-      }
-      return saves
+      return try preparedLiveQueryResultSavesWithoutTransaction(results)
     }
+  }
+
+  private func preparedLiveQueryResultSavesWithoutTransaction(
+    _ results: [InstantPersistedLiveQueryResult]
+  ) throws -> [InstantPreparedLiveQueryResultSave] {
+    // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
+    var storedFactsByKey: [String: [InstantTriple]] = [:]
+    var saves: [InstantPreparedLiveQueryResultSave] = []
+    for result in results {
+      let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
+        result,
+        previousFacts: storedFactsByKey[result.key]
+      )
+      storedFactsByKey[result.key] = prepared.storedFacts
+      saves.append(prepared.save)
+    }
+    return saves
   }
 
   /// One result's save against the rows `previousFacts` own (an earlier save of the same key in this frame), or the
