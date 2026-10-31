@@ -1,3 +1,15 @@
+## 2026-10-31 03:08:24 EDT — scribe `40ec3dd0fb0863054ca108d3d4d8a773e14ce1f9`
+Docs (#1427): the measured before and after: recognizer to another device p50 454 to 62 ms, p95 1,060 to 154 ms.
+
+## 2026-10-31 01:35:23 EDT — scribe `805fa48770eedf08457a4dda0b554d7985a721a9`
+Docs (#1427): ADR 0094 amendment B and its audit: the line in progress goes to the room in the recognizer's own pass.
+
+## 2026-10-31 01:27:16 EDT — scribe `dc6adfa8b96d7b259d79da2c88afb02e194d6278`
+Feature (#1427): each in-progress line reaches the live room the moment it is heard; saves unchanged; stamps keep order.
+
+## 2026-10-31 01:17:32 EDT — scribe `4b962ee3ba1c9cea2258ad0b5af3e89c61f3ad95`
+Test (#1427): red: the line reaches the room with no clock advance and in order; a stale or ended copy never wins.
+
 ## 2026-10-31 01:57:46 EDT — scribe `b5a55ab31a7442666fd9116b1c93a231c913c6b1`
 Fix (#1473): scribe settings list no longer crashes on the side bars.
 
