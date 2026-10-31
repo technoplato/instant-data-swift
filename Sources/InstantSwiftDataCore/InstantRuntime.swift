@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-31: a server frame plans in fewer persistence turns: its restated results' retractions, saves and protection
+//   in one read transaction, and no body page read when its plan holds no body (#1494).
 // - 2026-10-31: a query observation is one stream: the store yields into it, a live query's server error writes into it
 //   under the same lock, and its consumer reads it in its own pull, deferred values included; a live observation ran
 //   five forwarding tasks, each resumed by every emission, and a local one two (#1493).
@@ -3135,55 +3137,45 @@ public final class InstantRuntime: Sendable {
           }
         }
         let mergedAttributeCount = changedMergedAttributes.count
-        var retractions: InstantLiveQueryReplacementRetractions?
-        if !liveQueryResultReplacements.isEmpty {
-          if let workedOut = workedOutRetractions, workedOut.revisions == restatedRevisions {
-            retractions = workedOut.value
-          } else {
-            recordActorHop(.persistence)
-            guard let computed = try await persistence.liveQueryReplacementRetractions(
-              for: liveQueryResultReplacements,
-              expectedQueryResultRevision: compactState.queryResultRevision
-            ) else { break planning }
-            await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
-              "retractions",
-              operationGateAlreadyHeld || holdsGateWhilePlanning
-            )
-            workedOutRetractions = (restatedRevisions, computed)
-            retractions = computed
-          }
-        }
-        // #932: the restated results' saves (their ownership rows and, when due, their JSON) are worked out here, outside
-        // the operation gate, under the revisions the commit checks; it read 7,287 restated facts' rows and encoded their
-        // values under the gate on every frame. A frame that changes attributes saves in the commit, as the merged
-        // attributes decide each result's nested limits there. #1128: before the retractions' protection, which a local
-        // write's outbox revision makes stale, so a first attempt that goes stale there has worked them out for its retry.
+        // The restated results' retractions, then their saves, then the retractions' protection, in one read
+        // transaction (#1494): three turns on the persistence actor, between which a local write made the attempt
+        // stale (#932), and the reads of a retry that reused nothing.
+        //
+        // #932: the saves (their ownership rows and, when due, their JSON) are worked out here, outside the operation
+        // gate, under the revisions the commit checks; it read 7,287 restated facts' rows and encoded their values under
+        // the gate on every frame. A frame that changes attributes saves in the commit, as the merged attributes decide
+        // each result's nested limits there. #1128: the retractions and saves are kept before the protection, which a
+        // local write's outbox revision makes stale, so a first attempt that goes stale there has worked them out for its
+        // retry.
         var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
-        if !persistedLiveQueryResults.isEmpty, mergedAttributeCount == 0 {
-          if let workedOut = workedOutSaves, workedOut.revisions == restatedRevisions {
-            preparedQueryResults = workedOut.value
-          } else {
-            recordActorHop(.persistence)
-            guard let prepared = try await persistence.prepareLiveQueryResultSaves(
-              persistedLiveQueryResults,
-              expectedQueryResultRevision: compactState.queryResultRevision
-            ) else { break planning }
-            await configuration.onServerApplyRestatedResultsWorkedOutForTesting?(
-              "saves",
-              operationGateAlreadyHeld || holdsGateWhilePlanning
+        // The saves, like the retractions, come from the restated results; a frame that restates none reads nothing.
+        if !liveQueryResultReplacements.isEmpty {
+          let savesResults = !persistedLiveQueryResults.isEmpty && mergedAttributeCount == 0
+          let reusedRetractions = workedOutRetractions.flatMap { $0.revisions == restatedRevisions ? $0.value : nil }
+          let reusedSaves = savesResults
+            ? workedOutSaves.flatMap { $0.revisions == restatedRevisions ? $0.value : nil } : nil
+          let resultsToSave = savesResults && reusedSaves == nil ? persistedLiveQueryResults : nil
+          let reads = try await withPersistence { persistence in
+            try persistence.serverApplyPlanningReads(
+              replacements: liveQueryResultReplacements,
+              retractions: reusedRetractions,
+              savingResults: resultsToSave,
+              expectedQueryResultRevision: compactState.queryResultRevision,
+              expectedOutboxRevision: compactState.outboxRevision,
+              processedTransactionID: processedTransactionID
             )
-            workedOutSaves = (restatedRevisions, prepared)
-            preparedQueryResults = prepared
           }
-        }
-        if let retractions {
-          recordActorHop(.persistence)
-          guard let protectedRetractions = try await persistence.protectingServerRetractions(
-            retractions.operations,
-            expectedOutboxRevision: compactState.outboxRevision,
-            processedTransactionID: processedTransactionID,
-            clearedSlots: retractions.clearedSlots
-          ) else { break planning }
+          let gateHeld = operationGateAlreadyHeld || holdsGateWhilePlanning
+          if let computed = reads.retractions {
+            await configuration.onServerApplyRestatedResultsWorkedOutForTesting?("retractions", gateHeld)
+            workedOutRetractions = (restatedRevisions, computed)
+          }
+          if let prepared = reads.saves {
+            await configuration.onServerApplyRestatedResultsWorkedOutForTesting?("saves", gateHeld)
+            workedOutSaves = (restatedRevisions, prepared)
+          }
+          preparedQueryResults = reads.saves ?? reusedSaves
+          guard !reads.isStale, let protectedRetractions = reads.protectedRetractions else { break planning }
           authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
         }
         var footprint = Self.serverApplyFootprint(
@@ -3367,7 +3359,9 @@ public final class InstantRuntime: Sendable {
         var changedFactScope = prepared.factScope.completed(over: prepared.result.changedEntityIDs)
         var reversePosition: InstantOutboxDeliveryPosition?
         var stalePlan = false
-        while true {
+        // #1494: a plan that holds no body reads no page, in either pass. A page checks only its own rows, so both
+        // would read empty and current whenever they ran; the catch-up and the commit check every row of the plan.
+        while plan.plannedBodyCount > 0 {
           recordActorHop(.persistence)
           let page = try await persistence.loadServerApplyBodyPage(
             planID: plan.id,
@@ -3484,7 +3478,7 @@ public final class InstantRuntime: Sendable {
         var confirmedMutation: PendingMutation?
         var forwardPosition: InstantOutboxDeliveryPosition?
         var stagedReceiptPatchIDs: Set<String> = []
-        while true {
+        while plan.plannedBodyCount > 0 {
           recordActorHop(.persistence)
           let page = try await persistence.loadServerApplyBodyPage(
             planID: plan.id,
