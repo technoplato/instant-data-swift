@@ -1,3 +1,12 @@
+## 2026-10-31 07:19:26 EDT — scribe `f401bc9bfe507b2f6b43ed080391d8566aa9020d`
+Merge (#1459): scribe design post reads its attempt beside the render and uploads beside the chat's write.
+
+## 2026-10-31 07:19:26 EDT — scribe `5824ddcf74673e18c3785db78268991c3919deee`
+Fix (#1459): green: a post reads its attempt while the drawing renders and uploads the picture while the chat's row is written; a chat from client work is refused before the upload.
+
+## 2026-10-31 07:19:26 EDT — scribe `b757bf04f045b120fd7bc3e6841df98161912904`
+Test (#1459): red: a post's attempt read runs beside the render and its upload beside the chat's write.
+
 ## 2026-10-31 04:02:48 EDT — scribe `bd7b9057264cc21de7385dc84cce94ef2eaff580`
 Fix (#1467): the launch reads isProtectedDataAvailable in App.init itself, before the dependencies closure.
 
