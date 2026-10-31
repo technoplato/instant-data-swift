@@ -1,2 +1,3 @@
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/mac_segment_gap 2026-08-16T03:55:11-0400 mower attribute-upgrade-regression plan=2026-08-16-attribute-identity-upgrade
 claude-opus-5.5-live-query-704-d417e89e 2026-10-15T08:47:44-04:00 grower plan=2026-10-15-live-query-compact-ownership #704
+claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)

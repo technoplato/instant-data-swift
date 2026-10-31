@@ -63,3 +63,22 @@ kill.
 SQLitePersistenceStore.swift and InstantRuntime.swift: the last claims (sync-jam-1378, ack-deferral-1383, vision-396)
 are released slices; the other library worktrees (audio-1262, sqlite-1245 at 7a5a173a; vision-1404) have no commits on
 these files past origin/main. InstantLiveQueryResultWriteTests.swift: last claimed by #1123's slice, released.
+
+## Amendment 1 (2026-10-31 00:10): a stored result is its ownership rows, its facts and a narrow header
+
+Decided by heat-trace (the dispatcher) after Michael's words in Recording 332 (typed 23:57:51: "Realtime means realtime
+I'm not batching or delaying. We fix issues at source"; 00:00:45: "Using instant db and pfw skills"): no whole-result
+JSON blob and no deferral of any kind; each refresh writes exactly its diff in the same transaction. The design is on
+#1426's log. #1440 (a refresh's header update reads the whole JSON) folds in.
+
+Steps: red (a reader's result equals the stored rows in every field in a running process and after a kill; a refresh
+writes no result page beyond its header and reads no JSON; a 1.9.54 store converts with and without waiting markers),
+green, the bundle, release, Scribe pin, cut, install, the phone's ledger.
+
+Touching (added): Sources/InstantSwiftDataCore/SQLiteReadConnection.swift (the prune's pre-decode reads stored rows),
+Sources/InstantSwiftData/InstantSwiftData.swift (flushPendingLiveQueryResults' documentation only), and the tests that
+read a stored result's JSON: InstantLiveQueryCompactOwnershipTests, InstantLiveQueryNestedLimitMemoryTests,
+InstantLocalStampShadowsDeviceStoreTests, InstantOversizedCachedResultOpenTests, InstantPartialEntityRepairTests,
+InstantPruneGateHoldTests, InstantPruneOffTheApplierTests, InstantStoreTests, PhonePruneHoldTests, PhoneReplayGateTests,
+AttributeStoreIdentityUpgradeTests, RealSize/RealSizeFixture.swift, RealSize/StorageIOExercises.swift,
+RealSize/MemoryExercises.swift, RealSize/MemoryLongRunReplay.swift.

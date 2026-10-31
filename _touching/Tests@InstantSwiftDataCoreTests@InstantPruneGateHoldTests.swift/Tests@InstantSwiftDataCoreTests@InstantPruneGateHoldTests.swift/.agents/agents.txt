@@ -1,1 +1,2 @@
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)

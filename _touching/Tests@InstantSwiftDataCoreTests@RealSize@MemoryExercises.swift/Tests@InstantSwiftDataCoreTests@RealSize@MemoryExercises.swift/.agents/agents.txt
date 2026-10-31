@@ -4,3 +4,4 @@ claude-code/fix-memory-1075@ld 2026-10-25T01:02:19-0400 mower plan=2026-10-24-fi
 claude-code/fix-memory-1075@ld 2026-10-25T01:33:15-0400 mower plan=2026-10-24-fix-memory-1075 #1150 amendment 9 (E14's per-page budget)
 claude-code/fix-memory-1075@ld 2026-10-25T03:50:04-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 14 (E03's 64-line budget)
 claude-code/fix-memory-1075@ld 2026-10-25T04:29:47-0400 mower plan=2026-10-24-fix-memory-1075 #1149 amendment 16 (E07's budget)
+claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)

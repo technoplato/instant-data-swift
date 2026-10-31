@@ -1,3 +1,4 @@
 claude-opus-5.5-library-79 2026-10-04T16:23:54-04:00 mower plan=2026-10-02-library-79-hops #566
 claude-code/fix-storage-1076@ld 2026-10-25T01:05:14-0400 mower plan=2026-10-24-fix-storage-1076 #1123 amendment 6 (the throttle test's window, a ten-minute test)
 claude-code/sqlite-writes-1426@strangelearning 2026-10-30T20:24:16-0400 mower plan=2026-10-30-sqlite-writes-1426 #1426
+claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)
