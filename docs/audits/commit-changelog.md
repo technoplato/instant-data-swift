@@ -1,3 +1,6 @@
+## 2026-10-31 17:39:13 EDT — instant-data-swift `99a46951afc3d9e270e679190f6a6358a5cdf889`
+Perf (#1491): a save's two SHA-256 digests write their hex into one string (red cd3faf28, green d564a099), and a new write's row write no longer computes a forward wire-intent fingerprint it never reads (red aa18c4af, green 4ff5e5c4); ab-commits.sh builds its trees side by side and runs a test filter at each commit; docs/audits/2026-10-31-transact-hold-1491.md. One job on the Mac mini (release): tight-loop transact 0.476 -> 0.389 ms (-18%); after merging main, 638 tests in 31 suites passed (laptop, debug, 20 known issues).
+
 ## 2026-10-31 16:18:36 EDT — scribe `bf0364538cb2998fb275d337b48b62bb10477475`
 Release (#1482): Scribe 0.1 (211): instant-data-swift pinned exactly at 1.9.59 (pin db21c0a90, cut d8f028b3f, change log d40dc5a42), carrying #1493; with #1501 since 210.
 
