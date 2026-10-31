@@ -3,6 +3,8 @@
 //   operation gate and sends after leaving; one registration held the gate 5.0-7.8 s across its send (#1131).
 // - 2026-10-31: the attribute index the wire encoder resolves with is kept until the server's attributes change, not
 //   rebuilt for every mutation sent (#1492).
+// - 2026-10-31: one writer task per socket writes every frame, in the order this actor sent them, and one watcher
+//   bounds each write at 5 s; a send started three tasks and armed a timer (#1496).
 
 import Foundation
 import IssueReporting
@@ -353,7 +355,13 @@ package actor InstantRuntimeLiveSession {
     var sessionIdentity: UUID
   }
 
-  private var session: InstantLiveWebSocketSession?
+  private var session: InstantLiveWebSocketSession? {
+    didSet { replaceSocketWriterIfNeeded() }
+  }
+  /// The current socket's writer (#1496): one task writes every frame this actor sends on the socket, in the order
+  /// it sent them, and one watcher bounds each write at 5 s. Made with the socket, at the priority of the task that
+  /// opened it, and finished when this actor lets go of the socket.
+  private var socketWriter: InstantLiveSocketWriter?
   private let receiverTaskOwner = InstantRuntimeExactTaskOwner()
   private var registeredQueries: [String: RegisteredQuery] = [:]
   /// Consecutive transient server errors of each live query, and its pending re-send on this socket (#360).
@@ -467,6 +475,17 @@ package actor InstantRuntimeLiveSession {
 
   var isOpen: Bool {
     isOpened
+  }
+
+  deinit {
+    socketWriter?.finish()
+  }
+
+  private func replaceSocketWriterIfNeeded() {
+    guard socketWriter?.sessionIdentity != session?.identity else { return }
+    socketWriter?.finish()
+    socketWriter = session.map { InstantLiveSocketWriter(session: $0) }
+    sendTaskStartCount += socketWriter?.startedTaskCount ?? 0
   }
 
   /// ``isOpen`` without a hop onto this actor, for ``InstantRuntime/connectionHealth()`` (#482). Like `await isOpen`,
@@ -2240,18 +2259,14 @@ package actor InstantRuntimeLiveSession {
       // A write that began finishes, or fails the socket within its timeout, whatever happens to its caller. The
       // timeout used to end on the caller's cancellation too, and a failed write ends the socket below, so cancelling
       // an observation while its add-query was being written closed a healthy socket and re-added every query
-      // (library-78). Upstream `Reactor.js` writes with a synchronous `ws.send`, which no caller can interrupt. The
-      // unstructured task does not inherit the caller's cancellation, and awaiting its value does not propagate it.
-      // This send's task, and instantLiveWithTimeout's work and deadline tasks (#1496).
-      sendTaskStartCount += 3
-      try await Task {
-        try await instantLiveWithTimeout(
-          operation: "send Instant live session message",
-          timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
-        ) {
-          try await session.send(message)
-        }
-      }.value
+      // (library-78). Upstream `Reactor.js` writes with a synchronous `ws.send`, in call order, which no caller can
+      // interrupt. The socket's writer writes from its own task, in the order this actor sent the frames, and its
+      // watcher fails a write's caller at its deadline (#1496): a send starts no task and arms no timer. A socket this
+      // actor no longer holds has no writer, so its send fails as superseded, as its write would have.
+      guard let socketWriter, socketWriter.sessionIdentity == session.identity else {
+        throw InstantSupersededLiveSessionSend()
+      }
+      try await socketWriter.write(message)
       // Routine send chatter is debug; failures remain error-level.
       InstantDiagnostics.shared.record(
         .debug,

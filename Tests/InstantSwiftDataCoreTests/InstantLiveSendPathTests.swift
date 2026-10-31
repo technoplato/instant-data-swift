@@ -220,6 +220,91 @@ struct InstantLiveSendPathTests {
     await live.close()
   }
 
+  /// A write still in the socket at its deadline fails its caller then, with the live timeout's error, and nothing
+  /// waits for it (#1496), as `instantLiveWithTimeout` never waited for work it abandoned (#1021).
+  @Test
+  func aWritePastItsDeadlineFailsItsCallerWithoutWaitingForIt() async throws {
+    let held = InstantLiveHeldWrite(clientEventID: "held")
+    let writer = InstantLiveSocketWriter(session: Self.socket(holding: held), timeoutMilliseconds: 50)
+
+    do {
+      try await writer.write(Self.frame("held"))
+      Issue.record("Expected the write's deadline to fail it.")
+    } catch let error as InstantError {
+      #expect(error.code == .networkFailed)
+      #expect(error.operation == "send Instant live session message")
+      #expect(error.message == "Timed out after 50ms waiting for Instant live transport.")
+    }
+
+    #expect(await held.isHeld, "the writer waited for the write it abandoned")
+    writer.finish()
+    await held.release()
+  }
+
+  /// Finishing the writer fails every frame not yet written, and the write in progress still completes (#1496).
+  @Test
+  func finishingTheWriterFailsTheFramesNotYetWritten() async throws {
+    let held = InstantLiveHeldWrite(clientEventID: "first")
+    let sent = InstantLiveSentFrames()
+    let writer = InstantLiveSocketWriter(session: Self.socket(holding: held, recording: sent))
+    let first = Task { try await writer.write(Self.frame("first")) }
+    await held.waitUntilHolding()
+    let second = Task { try await writer.write(Self.frame("second")) }
+    let queued = ContinuousClock.now + InstantTestWait.hang
+    while writer.unwrittenCountForTesting < 1, ContinuousClock.now < queued {
+      try await Task.sleep(for: .milliseconds(1))
+    }
+
+    writer.finish()
+    await #expect(throws: InstantSupersededLiveSessionSend.self) { try await second.value }
+    await #expect(throws: InstantSupersededLiveSessionSend.self) { try await writer.write(Self.frame("third")) }
+    await held.release()
+    try await first.value
+
+    #expect(await sent.clientEventIDs == ["first"])
+  }
+
+  /// A caller cancelled while its frame is being written does not stop the write, and returns when the socket took it
+  /// (#1496, library-78).
+  @Test
+  func aCancelledCallerDoesNotStopItsWrite() async throws {
+    let held = InstantLiveHeldWrite(clientEventID: "first")
+    let sent = InstantLiveSentFrames()
+    let writer = InstantLiveSocketWriter(session: Self.socket(holding: held, recording: sent))
+    let caller = Task { try await writer.write(Self.frame("first")) }
+    await held.waitUntilHolding()
+
+    caller.cancel()
+    await held.release()
+    try await caller.value
+
+    #expect(await sent.clientEventIDs == ["first"])
+    writer.finish()
+  }
+
+  static func frame(_ clientEventID: String) -> InstantLiveMessage {
+    InstantLiveMessage(op: "transact", clientEventID: clientEventID, fields: [:])
+  }
+
+  /// A socket whose writes pass `held`, then reach `sent`.
+  static func socket(
+    holding held: InstantLiveHeldWrite,
+    recording sent: InstantLiveSentFrames = InstantLiveSentFrames()
+  ) -> InstantLiveWebSocketSession {
+    InstantLiveWebSocketSession(
+      send: { message in
+        await held.pass(message)
+        await sent.record(message)
+      },
+      receive: {
+        try await Task.sleep(for: .seconds(3_600))
+        throw CancellationError()
+      },
+      close: {},
+      abort: {}
+    )
+  }
+
   /// A real-size schema: 2,283 attributes, as a phone's init-ok carries (`RealSizeFixture`), across 41 namespaces.
   static let attributes: [InstantLiveJSONValue] = (0..<2_283).map { index in
     liveReactorServerAttr(
@@ -284,11 +369,23 @@ actor InstantLiveHeldWrite {
     return passed.contains(clientEventID)
   }
 
+  /// Whether the held write is waiting for ``release()``.
+  var isHeld: Bool { !held.isEmpty }
+
   func release() {
     isReleased = true
     let continuations = held
     held = []
     continuations.forEach { $0.resume() }
+  }
+}
+
+/// The frames a test socket took, in order (#1496).
+actor InstantLiveSentFrames {
+  private(set) var clientEventIDs: [String] = []
+
+  func record(_ message: InstantLiveMessage) {
+    clientEventIDs.append(message.clientEventID ?? message.op)
   }
 }
 
