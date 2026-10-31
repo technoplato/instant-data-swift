@@ -480,9 +480,10 @@ private func quarantineTestOutboxRows(in cacheURL: URL, ids: [String]) throws ->
     guard
       let row = try quarantineTestQuery(
         database,
-        // The row and its body row (#1435), the columns the quarantine keeps.
+        // The row and its body row (#1435), the columns the quarantine keeps; lifecycle_bytes since #1463.
         """
-        SELECT outbox.*, body.lifecycle_json, body.json, body.quarantine_json, body.quarantine_lifecycle_json
+        SELECT outbox.*, body.lifecycle_json, body.json, body.quarantine_json, body.quarantine_lifecycle_json,
+               body.lifecycle_bytes
         FROM instant_outbox AS outbox JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
         WHERE outbox.mutation_id = ?
         """,
