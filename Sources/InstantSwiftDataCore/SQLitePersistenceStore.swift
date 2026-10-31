@@ -8523,15 +8523,17 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The id of the outbox's newest row in delivery order, which a write that supersedes the tail must still find there.
+  package static let outboxTailIDSQL =
+    """
+    SELECT mutation_id
+    FROM instant_outbox
+    ORDER BY created_at_ms DESC, mutation_id DESC
+    LIMIT 1
+    """
+
   private func immediateOutboxTailIDWithoutTransaction() throws -> String? {
-    try selectScalar(
-      """
-      SELECT mutation_id
-      FROM instant_outbox
-      ORDER BY created_at_ms DESC, mutation_id DESC
-      LIMIT 1
-      """
-    )
+    try selectScalar(Self.outboxTailIDSQL)
   }
 
   /// Reproves the scalar ordering/claim boundary before quarantining a tail.
@@ -17140,19 +17142,21 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// The outbox's newest row in delivery order: the creation cursor every local write follows, and the tail a server
+  /// apply's plan starts from.
+  package static let outboxTailPositionSQL =
+    """
+    SELECT created_at_ms, mutation_id
+    FROM instant_outbox
+    ORDER BY created_at_ms DESC, mutation_id DESC
+    LIMIT 1
+    """
+
   private func latestOutboxPositionWithoutTransaction()
     throws -> InstantOutboxDeliveryPosition?
   {
     var statement: OpaquePointer?
-    try prepare(
-      """
-      SELECT created_at_ms, mutation_id
-      FROM instant_outbox
-      ORDER BY created_at_ms DESC, mutation_id DESC
-      LIMIT 1
-      """,
-      statement: &statement
-    )
+    try prepare(Self.outboxTailPositionSQL, statement: &statement)
     defer { finishStatement(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW,
       let mutationID = sqlite3_column_text(statement, 1)
