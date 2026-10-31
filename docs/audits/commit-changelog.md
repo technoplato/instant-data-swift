@@ -1,3 +1,6 @@
+## 2026-10-31 18:34:51 EDT — scribe `85839caa580e8b53eaa0b6b08984543dfbd42391`
+Telemetry (#1507 a) and recovery (#1510, #1463): a diagnostics spool's compaction counts the bytes it rewrites under diagnostics.spool in the energy ledger (red 1b9914513, green 2b5961326; on build 208 the collector lane's compactions wrote 1.29 MB a minute that no writer named), and scripts/recovery/recover-recording-from-outbox.mjs inflates a body instant-data-swift stores compressed, text bodies still read (red c070c27b4, green 6ade1b1c9). Change log e335051c6.
+
 ## 2026-10-31 17:58:36 EDT — scribe `334c150a2256dff65a8d82e71d3d1d9a4350c4ef`
 Perf (#1503, #1506): landing 1 of perf-waste-fixes. Each audio chunk sent and each server message on the live transcription socket is counted in the energy ledger (speech.stream-send, speech.stream-receive) instead of a device-log line: 82% and 8.4% of the phone's 10-31 log, 63-70 MB an hour of recording (red 682941c7d, green 10fa5b026). The chapters query filters retiredAtMs null on the server, 225 KB -> 25 KB a restated frame for the recording chaptered live, and a held audio-keeper pass reads no audio rows (red c21743187, green b5e8b37bd). #1507 (e) documented (dcb21c180).
 
