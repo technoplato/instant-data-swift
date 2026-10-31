@@ -1,0 +1,1 @@
+claude-code/perf-writes-1510@ld 2026-10-31T13:45:27-0400 grower plan=2026-10-31-perf-writes-1510 #1510 (new: the write recorder)
