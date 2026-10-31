@@ -1,3 +1,6 @@
+## 2026-10-31 19:08:57 EDT — scribe `e14305ded95347015e7136a6d1cd8a240092e790`
+Schema (#1515): buildDetails, one immutable row per owner and content hash, linked from recordings, transcriptions and sharedRecordings (ADR 0109).
+
 ## 2026-10-31 19:03:07 EDT — scribe `2cb05b71e53b4c732aa6361cc9c85088215ece38`
 Release (#1482): Scribe 0.1 (213) cut from main 97fb01384 (plan dfb5695b0, cut 83dc64994, change log 3869847b5), carrying #1503, #1506 (landing 1), #1508 and #1507/#1510's Scribe side; instant-data-swift stays pinned exactly at 1.9.60 (no library fix after it has a READY FOR BUILD line).
 
