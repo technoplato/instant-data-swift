@@ -358,6 +358,8 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var materializedSnapshotCount = 0
   /// Refreshed observers whose result equaled the one they were last handed, so it was not handed again (#653).
   package var unchangedObserverCount = 0
+  /// Sets of every entity id an observer's result shows, at any depth, collected to judge or splice a change (#1495).
+  package var allEntityIDsBuildCount = 0
 
   mutating func add(_ other: Self) {
     skippedObserverCount += other.skippedObserverCount
@@ -365,6 +367,7 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
     rematerializedObserverCount += other.rematerializedObserverCount
     materializedSnapshotCount += other.materializedSnapshotCount
     unchangedObserverCount += other.unchangedObserverCount
+    allEntityIDsBuildCount += other.allEntityIDsBuildCount
   }
 }
 
@@ -2065,6 +2068,7 @@ public actor InstantStore {
         } else {
           decision = Self.refreshDecision(
             for: observer,
+            metrics: &metrics,
             changedNamespaces: changedNamespaces,
             changedEntityIDs: observedChangedEntityIDs,
             indexes: indexes,
@@ -2097,6 +2101,7 @@ public actor InstantStore {
       } else if !pageInfoChanged,
         let spliced = Self.splicedEmission(
           observer,
+          metrics: &metrics,
           changedEntityIDs: observedChangedEntityIDs,
           indexes: indexes,
           attributes: attributes,
@@ -2277,6 +2282,7 @@ public actor InstantStore {
   /// refreshing observers, is refreshed by that check alone until it is materialized again.
   private static func refreshDecision(
     for observer: StoreObserver,
+    metrics: inout InstantStorePublishMetrics,
     changedNamespaces: Set<String>?,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
@@ -2327,6 +2333,7 @@ public actor InstantStore {
     {
       guard changedEntityIDs.count <= resultSetComparisonLimit else { return .refresh }
       // No changed entity is shown at any depth (checked above).
+      metrics.allEntityIDsBuildCount += 1
       let shownEntityIDs = observer.lastValues.allEntityIDs()
       for entityID in changedEntityIDs {
         if baseline.indexes.hasLink(entityID, toAnyOf: shownEntityIDs, attributes: baseline.attributes)
@@ -2362,11 +2369,13 @@ public actor InstantStore {
 
   private static func splicedEmission(
     _ observer: StoreObserver,
+    metrics: inout InstantStorePublishMetrics,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
     attributes: AttributeStore,
     sequence: Int64
   ) -> InstantQueryEmission? {
+    metrics.allEntityIDsBuildCount += 1
     let representedIDs = observer.lastValues.allEntityIDs()
     guard changedEntityIDs.isSubset(of: representedIDs) else { return nil }
     var parentIDsToReplace = Set<String>()

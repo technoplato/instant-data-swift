@@ -1,3 +1,6 @@
+// History:
+// - 2026-10-31: an observer that a publication leaves unchanged collects no set of the ids it shows (#1495).
+
 import CustomDump
 import Foundation
 import Testing
@@ -111,6 +114,45 @@ struct InstantPageRefreshEnergyTests {
       }
       try await Self.expectEveryObserverIsCurrent(in: store, "seed \(seed) step \(step)")
     }
+  }
+
+  /// An observer whose result a publication leaves as it was collects no set of the ids it shows (#1495): it keeps the
+  /// one collected for that result. Each page of a recordings list built a set of every recording and included row it
+  /// shows to judge every change in its namespaces, and the splice built it again.
+  @Test
+  func anUnchangedObserverCollectsNoEntityIDSet() async throws {
+    let store = try await InstantIncludePlanSkipTests.seededStore()
+    let readings = await InstantIncludePlanSkipTests.observe(InstantIncludePlanSkipTests.pages(), in: store)
+    defer { readings.forEach { $0.cancel() } }
+
+    // An attachment no page can reach: each page judges it and keeps its result.
+    try await InstantIncludePlanSkipTests.commit(
+      InstantIncludePlanSkipTests.orphanAttachment("loose-1", updatedAtMs: 9_000, at: 500),
+      to: store
+    )
+    try await InstantIncludePlanSkipTests.commit(
+      InstantIncludePlanSkipTests.orphanAttachment("loose-2", updatedAtMs: 9_001, at: 501),
+      to: store
+    )
+    let unchanged = await store.lastPublishMetrics
+    // A heartbeat of a recording the second page shows: the second page splices it, the others keep their results.
+    try await InstantIncludePlanSkipTests.commit(
+      InstantIncludePlanSkipTests.heartbeat(recording: 4, seconds: 60, at: 502),
+      to: store
+    )
+    let heartbeat = await store.lastPublishMetrics
+
+    #expect(unchanged.skippedObserverCount == 3)
+    #expect(
+      unchanged.allEntityIDsBuildCount == 0,
+      "#1495: \(unchanged.allEntityIDsBuildCount) pages collected their shown ids again for a change they skipped"
+    )
+    #expect(heartbeat.splicedObserverCount + heartbeat.rematerializedObserverCount == 1)
+    #expect(
+      heartbeat.allEntityIDsBuildCount == 0,
+      "#1495: \(heartbeat.allEntityIDsBuildCount) sets were collected for results already collected"
+    )
+    try await Self.expectEveryObserverIsCurrent(in: store, "after the heartbeat")
   }
 
   /// A snapshot replaced without refreshing observers leaves their results unverified, so the next write refreshes
