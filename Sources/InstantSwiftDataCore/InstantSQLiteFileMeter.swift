@@ -8,6 +8,8 @@ import os
 //   write-ahead log, not a checkpoint's copies into the database file, the temporary database or its journal. The
 //   storage audit's test shim (#1076, `StorageIOCounters`) showed the method; this is its production part: counts
 //   only, no per-page maps, no journal, one lock and a few additions per call.
+// - 2026-10-31: a database's and its log's files hand their pages to the database's write recorder, when one is
+//   attached (#1510): which table, index and statement each page belongs to.
 
 /// What SQLite writes to each kind of file the store opens, counted by a pass-through VFS in front of the system's
 /// (#1245).
@@ -39,6 +41,19 @@ public enum InstantSQLiteFileMeter {
   /// (a connection then opens through SQLite's default, uncounted).
   static func registeredVFSName() -> String? {
     MeteredVFS.install() ? vfsName : nil
+  }
+
+  /// The name SQLite gives the files of the database at `path`, as the system VFS spells it (#1510): its log is this
+  /// name and `-wal`. Nil when the meter is not installed or the system VFS cannot spell it.
+  static func fullPathname(_ path: String) -> String? {
+    guard MeteredVFS.install(), let real = MeteredVFS.realVFS else { return nil }
+    let capacity = Int(max(real.pointee.mxPathname, 1_024)) + 1
+    var buffer = [CChar](repeating: 0, count: capacity)
+    // SQLITE_OK_SYMLINK (SQLITE_OK | 2 << 8) when the path crossed a symbolic link (`/var` is one on Apple's systems):
+    // SQLite opens the resolved name then, so that is the name to match.
+    let result = real.pointee.xFullPathname(real, path, Int32(capacity), &buffer)
+    guard result & 0xFF == SQLITE_OK else { return nil }
+    return String(cString: buffer)
   }
 
   /// Each kind's counts, by ``InstantSQLiteFileSnapshot/Kind``'s position in `allCases`: an array of fixed length,
@@ -177,6 +192,9 @@ private struct MeteredFile {
   var real: UnsafeMutablePointer<sqlite3_file>
   /// The file's ``InstantSQLiteFileSnapshot/Kind``, as its position in `allCases`.
   var kind: Int
+  /// The write recorder of the database the file belongs to (#1510), retained while the file is open; nil for a
+  /// database no recorder is attached to, and for every file that is not a database or its log.
+  var recorder: Unmanaged<InstantSQLiteDatabaseWriteRecorder>?
 }
 
 /// The pass-through VFS: every call goes to the system VFS's file; writes, reads, syncs and truncates are counted.
@@ -193,6 +211,9 @@ private enum MeteredVFS {
   static let realFileOffset = (MemoryLayout<MeteredFile>.stride + 15) & ~15
 
   static let kinds = InstantSQLiteFileSnapshot.Kind.allCases
+
+  /// The log's kind, as its position in `allCases`.
+  static let walKind = kinds.firstIndex(of: .wal) ?? 1
 
   /// Registers the VFS once (not as the default); false when SQLite has no system VFS.
   static func install() -> Bool {
@@ -243,12 +264,18 @@ private enum MeteredVFS {
       let realFile = (raw + MeteredVFS.realFileOffset).bindMemory(to: sqlite3_file.self, capacity: 1)
       memset(realFile, 0, Int(real.pointee.szOsFile))
       let kind = InstantSQLiteFileSnapshot.Kind(openFlags: flags)
+      var recorder: Unmanaged<InstantSQLiteDatabaseWriteRecorder>?
+      if kind == .database || kind == .wal, let name {
+        recorder = InstantSQLiteWriteRecorder.recorder(forFileNamed: String(cString: name), isLog: kind == .wal)
+          .map { Unmanaged.passRetained($0) }
+      }
       let header = raw.bindMemory(to: MeteredFile.self, capacity: 1)
       header.initialize(
         to: MeteredFile(
           base: sqlite3_file(pMethods: nil),
           real: realFile,
-          kind: MeteredVFS.kinds.firstIndex(of: kind) ?? MeteredVFS.kinds.count - 1
+          kind: MeteredVFS.kinds.firstIndex(of: kind) ?? MeteredVFS.kinds.count - 1,
+          recorder: recorder
         )
       )
       let result = real.pointee.xOpen(real, name, realFile, flags, outFlags)
@@ -256,6 +283,10 @@ private enum MeteredVFS {
       // only when it has something to close.
       if let methods = realFile.pointee.pMethods {
         header.pointee.base.pMethods = MeteredVFS.methods(matching: methods.pointee.iVersion)
+      } else {
+        // No close follows: let the recorder go now.
+        header.pointee.recorder?.release()
+        header.pointee.recorder = nil
       }
       return result
     }
@@ -305,6 +336,9 @@ private enum MeteredVFS {
     var methods = sqlite3_io_methods()
     methods.iVersion = version
     methods.xClose = { file in
+      let header = MeteredVFS.header(file)
+      header.pointee.recorder?.release()
+      header.pointee.recorder = nil
       let real = MeteredVFS.real(file)
       return real.pointee.pMethods.pointee.xClose(real)
     }
@@ -317,6 +351,15 @@ private enum MeteredVFS {
           $0.bytesRead += Int(amount)
         }
       }
+      if result == SQLITE_OK, let buffer, let recorder = MeteredVFS.header(file).pointee.recorder {
+        // #1510: the pages SQLite reads name the b-trees of the pages they point to.
+        let recording = recorder.takeUnretainedValue()
+        if MeteredVFS.header(file).pointee.kind == MeteredVFS.walKind {
+          recording.logRead(UnsafeRawPointer(buffer), count: Int(amount), offset: offset, file: MeteredVFS.real(file))
+        } else {
+          recording.databaseRead(UnsafeRawPointer(buffer), count: Int(amount), offset: offset)
+        }
+      }
       return result
     }
     methods.xWrite = { file, buffer, amount, offset in
@@ -326,11 +369,23 @@ private enum MeteredVFS {
           $0.writes += 1
           $0.bytesWritten += Int(amount)
         }
+        if let buffer, let recorder = MeteredVFS.header(file).pointee.recorder {
+          // #1510: each log frame's page, and each page a checkpoint copies, by the b-tree it belongs to.
+          let recording = recorder.takeUnretainedValue()
+          if MeteredVFS.header(file).pointee.kind == MeteredVFS.walKind {
+            recording.logWrite(buffer, count: Int(amount), offset: offset)
+          } else {
+            recording.databaseWrite(count: Int(amount), offset: offset)
+          }
+        }
       }
       return result
     }
     methods.xTruncate = { file, size in
       InstantSQLiteFileMeter.count(MeteredVFS.header(file).pointee.kind) { $0.truncates += 1 }
+      if MeteredVFS.header(file).pointee.kind == MeteredVFS.walKind, let recorder = MeteredVFS.header(file).pointee.recorder {
+        recorder.takeUnretainedValue().logTruncated()
+      }
       return MeteredVFS.realMethods(file).xTruncate(MeteredVFS.real(file), size)
     }
     methods.xSync = { file, flags in
@@ -373,7 +428,14 @@ private enum MeteredVFS {
     }
     if version >= 3 {
       methods.xFetch = { file, offset, amount, out in
-        MeteredVFS.realMethods(file).xFetch(MeteredVFS.real(file), offset, amount, out)
+        let result = MeteredVFS.realMethods(file).xFetch(MeteredVFS.real(file), offset, amount, out)
+        // #1510: a mapped page is a page SQLite reads.
+        if result == SQLITE_OK, let mapped = out?.pointee, let recorder = MeteredVFS.header(file).pointee.recorder,
+          MeteredVFS.header(file).pointee.kind != MeteredVFS.walKind
+        {
+          recorder.takeUnretainedValue().databaseRead(UnsafeRawPointer(mapped), count: Int(amount), offset: offset)
+        }
+        return result
       }
       methods.xUnfetch = { file, offset, pointer in
         MeteredVFS.realMethods(file).xUnfetch(MeteredVFS.real(file), offset, pointer)

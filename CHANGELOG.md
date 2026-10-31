@@ -41,6 +41,213 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > let's postpone other work to let performance focus and get those wins in.
 - **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1492@ld); no SpecStory capture
 
+## October 31st, 2026 at 4:16:17 p.m. EDT — `0d24c6261b5f` release(#1482): v1.9.59: a query observation is one stream
+
+- **Implementation commit:** `0d24c6261b5f4cfa7f756bd2ec5e4d0e75a1f423`
+- **Change:** release(#1482): v1.9.59: a query observation is one stream
+- **Details:**
+  - The release document for v1.9.59, cut from main at 81c07e43 for Scribe build 211: #1493 (dffd9a06).
+  - No API, storage or conversion change; 1.9.58 opens a store 1.9.59 opened. The #1510 write recorder (d3b08d41) is not in it.
+- **Files:**
+  - `docs/releases/v1.9.59.md` — #1482 the release: what #1493 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-ship-3@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:12:21 p.m. EDT — `9d965199b4f8` docs(#1510): what a phone's save writes, page by page, and the recorder's progress
+
+- **Implementation commit:** `9d965199b4f8e59cf4dd6b4b38be0aa0e1ec9cbe`
+- **Change:** docs(#1510): what a phone's save writes, page by page
+- **Details:**
+  - The phone's log frame by frame, File Activity, the launch catch-up and Core ML, saves by kind, the levers for a save under 20 KB.
+- **Files:**
+  - `docs/audits/2026-10-31-writes-1510.md` — #1510 the audit
+  - `PROGRESS.md` — #1510 the recorder's progress
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `be77145336bf` perf(#1510): the recorder learns from a page SQLite reads only when it is an interior page or page 1, checked before its lock
+
+- **Implementation commit:** `be77145336bf00506be195c34f8af308778dc3a1`
+- **Change:** perf(#1510): the recorder learns from a read page only when it is an interior page or page 1, checked before its lock
+- **Details:**
+  - InstantPruneCostTests failed (40K-fact prune 2.26x the 4K one, bound 2): every leaf read was parsed; now a leaf read is one byte compare and no lock; the gate passes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 reads teach only interior pages and page 1
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the stress bound 100 us a frame in debug
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `14da2b5b68ff` test(#1510): the recorder's stress test bounds its own collections, and a recorded statement leaves the connection's change count
+
+- **Implementation commit:** `14da2b5b68ff018b4ae3cf5bf200d15d520fa00f`
+- **Change:** test(#1510): the stress test bounds the recorder's own collections; a recorded statement leaves the change count
+- **Details:**
+  - The process footprint grew 110 MB beside the outbox suites; the recorder's own collections stay under 1 MB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 retainedBytesForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the bound and the change-count test
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `071560016750` fix(#1510): green: the recorder matches the name SQLite opens a file by when its path crosses a symbolic link, and explains statements on a connection of its own
+
+- **Implementation commit:** `0715600167501ad612719e891e4dfa73b4485168`
+- **Change:** fix(#1510): green: the recorder matches the name SQLite opens a file by through a symlink, and explains on a connection of its own
+- **Details:**
+  - SQLITE_OK_SYMLINK meant no file found its recorder; EXPLAIN on the writer reset sqlite3_changes() and the outbox quarantined first claims (InstantBoundedOutboxDeliveryTests).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — #1510 the full pathname through a symlink
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 EXPLAIN on a read-only connection of its own
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:19 p.m. EDT — `cb989369cdf3` feat(#1510): green: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees, each checkpoint copy and store call
+
+- **Implementation commit:** `cb989369cdf3660430ab34b44db922f1bc9b91f1`
+- **Change:** feat(#1510): green: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees
+- **Details:**
+  - Page owners learned from the pages SQLite reads and writes; each commit's pages placed together, its own links first; statements by change count and EXPLAIN once per shape.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 page owners, commits, statements, store calls, the record
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:19 p.m. EDT — `6434d6e26dc2` test(#1510): red: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees, each checkpoint copy and store call
+
+- **Implementation commit:** `6434d6e26dc29c9afea03847af8c69e307e82a14`
+- **Change:** test(#1510): red: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees
+- **Details:**
+  - The recorder's types, registry and hooks wired (VFS, statement cache, transaction); counting stubbed, so the tests fail (Mac mini: red exit 1).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the recorder's tests against the log file and dbstat
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 the public record, the registry, the hooks
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — #1510 the VFS hands pages to a database's recorder
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1510 the statement cache, the transaction and the writer's open call the recorder
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:51 p.m. EDT — `b00e2d04d74a` docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
+
+- **Implementation commit:** `b00e2d04d74a34ab7d6ddf1bd01af2046938d09e`
+- **Change:** docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
+- **Files:**
+  - `docs/swift-concurrency-guidance.md` — #1493 the one-stream rule
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:51 p.m. EDT — `c5f7c882081e` test(#1493): the observation exercise: 48 live FetchAll observers, the tasks they keep and each write's way to them
+
+- **Implementation commit:** `c5f7c882081e55731b9abf6e2da1bf65e54ea99d`
+- **Change:** test(#1493): the observation exercise: 48 live FetchAll observers, the tasks they keep and each write's way to them
+- **Details:**
+  - An executable target (release), since the wrapper test bundle does not link in release on the macOS 27 SDK.
+- **Files:**
+  - `Sources/InstantObservationExercise/main.swift` — #1493 the exercise
+  - `Package.swift` — #1493 the exercise's executable target
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1493 the publication's start instant
+  - `scripts/contention-exercises/run-observation-exercise.sh` — #1493 the release runner with xctrace
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:50 p.m. EDT — `6256949a59c6` fix(#1493): green: a query observation is one stream, written by the store and the server error, read in its consumer's pull
+
+- **Implementation commit:** `6256949a59c698b37f10e6dd2e917fca8980420b`
+- **Change:** fix(#1493): green: a query observation is one stream, written by the store and the server error, read in its consumer's pull
+- **Details:**
+  - The store yields into the observation's output; a live query's server error writes into it under the same lock (#360 semantics, its tests unchanged); deferred values, the typed decode and map run in the consumer's pull.
+  - Tasks alive per open observation: raw live 5 -> 0, local 2 -> 0, deferred 6 -> 0, typed 6 -> 0, mapped 7 -> 0, FetchAll 7 -> 1 (its own consumer).
+  - A fetch wrapper tells Observation only of the members an emission changed; its per-emission trace metadata is built only when recorded.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantObservationOutput.swift` — #1493 the output: store and server error under one lock
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1493 one lease per observation, deferred values in the pull; forwarders gone
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1493 an observer yields into the runtime's output
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryErrors.swift` — #1493 the registry writes into the outputs
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — #1493 pulled typed subscription, composed map, changed-member publish
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:50 p.m. EDT — `02ef83f51a78` test(#1493): red: an open query observation keeps five to seven library tasks; it should keep none of its own
+
+- **Implementation commit:** `02ef83f51a78a2b1ca450455524c422c9935c915`
+- **Change:** test(#1493): red: an open query observation keeps five to seven library tasks; it should keep none of its own
+- **Details:**
+  - A task census (a task-local the observation path's tasks report to) counts the library tasks an open observation keeps.
+  - Red (debug): raw live 5, local 2, live with deferred values 6, typed 6, mapped 7, FetchAll 7; pinned 0, 0, 0, 0, 0 and 1.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantObservationOutput.swift` — #1493 the task census
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1493 the forwarding tasks report to the census
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — #1493 the bridge, map and automatic tasks report to the census
+  - `Tests/InstantSwiftDataCoreTests/InstantObservationTaskCountTests.swift` — #1493 raw, local and deferred-value pins
+  - `Tests/InstantSwiftDataTests/InstantFetchObservationTaskCountTests.swift` — #1493 typed, mapped and FetchAll pins
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:12:28 p.m. EDT — `02566ad49376` release(#1482): v1.9.58: an observer keeps the ids its result shows
+
+- **Implementation commit:** `02566ad49376a94c9cbc3a4993b99f7980b2d25f`
+- **Change:** release(#1482): v1.9.58: an observer keeps the ids its result shows
+- **Details:**
+  - The release document for v1.9.58, cut from main for Scribe build 210: #1495 (e6e71913).
+  - No API, storage or conversion change; 1.9.57 opens a store 1.9.58 opened.
+- **Files:**
+  - `docs/releases/v1.9.58.md` — #1482 the release: what #1495 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-2@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `ff8fb80358bf` test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
+
+- **Implementation commit:** `ff8fb80358bf29f5ae4e5282c04133708b1407fb`
+- **Change:** test(#1495): the fan-out exercise writes an interim as the app does: an unlinked live row
+- **Details:**
+  - The app writes a line in progress as its liveLines row, which links to nothing (ADR 0069), and a final as a transcript line linked to the recording and put in its preview slot; the linked shape stays as INSTANT_PUBLISH_FANOUT_INTERIMS=segments.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1495 interims as the app writes them; the linked shape as a stress run
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `9051d75eb1a9` perf(#1495): green: an observer keeps the ids its result shows, collected once per result
+
+- **Implementation commit:** `9051d75eb1a98b21e2a8e40da9b38abab2a40d1e`
+- **Change:** perf(#1495): green: an observer keeps the ids its result shows, collected once per result
+- **Details:**
+  - The set lives on the observer, keyed to the storage of the result it was collected from, kept while the observer holds that result as its own or as the one it was last handed, dropped once it holds neither; the decision's shown-entity check, its includes branch, the absent-entity check and the splice read it. Hand-overs are unchanged.
+  - Laptop (debug): 516 tests in 16 suites pass with their 11 listed known issues, the random-write suites that check every observer against a fresh materialization among them.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1495 the kept ids on the observer and their readers
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
+## October 31st, 2026 at 2:53:41 p.m. EDT — `3cce5ca1140d` test(#1495): red: an observer a publication leaves unchanged collects the ids it shows again; a phone-shaped publish exercise
+
+- **Implementation commit:** `3cce5ca1140d4814ac5c3391d58fb48be2f1a324`
+- **Change:** test(#1495): red: an observer a publication leaves unchanged collects the ids it shows again; a phone-shaped publish exercise
+- **Details:**
+  - InstantStorePublishMetrics.allEntityIDsBuildCount counts the sets of every entity id an observer's result shows that a publication collects; the pin in InstantPageRefreshEnergyTests: three recordings pages with includes judge a change none can reach, then a heartbeat one shows.
+  - Red on the laptop (debug, 13:07): 3 sets collected for skipped changes, 3 for results already collected.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1495 the build count, at the decision's includes branch and the splice
+  - `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift` — #1495 an unchanged observer collects no id set
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1495 the publication fan-out on the phone's shape, timed, with its metrics
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-read-1498@ld); no SpecStory capture
+
 ## October 31st, 2026 at 1:57:12 p.m. EDT — `5d349b259d14` release(#1482): v1.9.57: a write encodes its body once, one attribute resolver per schema, a one-shot read writes only a changed answer
 
 - **Implementation commit:** `5d349b259d141422338b8357579b4a74c2575c65`
