@@ -1,3 +1,9 @@
+## 2026-10-31 01:43:20 EDT — scribe `d2820ba1adf6e9152df2cb9fd2fb8fbb5bd23971`
+Feature (#1466): a line or a picture dragged out of a recording and let go on it again adds nothing; another recording's moment becomes a link.
+
+## 2026-10-31 01:43:20 EDT — scribe `bab27dbdec987cc42a5a06dadc27da59f532d130`
+Feature (#1466): lines, selections, pictures and recordings drag out of Scribe with their words or picture and the deep link; a thread takes dropped pictures and words.
+
 ## 2026-10-31 00:25:31 EDT — instant-data-swift `47afdc9b8c802699df8989f7985d8a38b5417bfc`
 Test (#1436): every outbox index a live write writes is read by its own cycle (SQLite's plans of its 66 statements), and its effect rows are written once; the levers left are #1463 and #1464.
 
