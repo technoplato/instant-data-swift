@@ -52,6 +52,10 @@ enum InstantAutomaticOutboxAdmission {
   /// and before either SQLite or the hot store commits it. Existing legacy rows
   /// are quarantined by the selector, but a new local write must fail without
   /// ever materializing an undeliverable optimistic value.
+  ///
+  /// The body's byte bound is checked where the body is encoded, by the save that writes it
+  /// (``validateEncodedBodyByteCount(_:of:)``): this check encoded the same sorted-key text a second time only to count
+  /// its bytes (#1491).
   static func validateNewMutation(_ mutation: PendingMutation) throws {
     guard mutation.provesReplayableOptimisticEffectReceipt else {
       throw InstantError(
@@ -76,11 +80,11 @@ enum InstantAutomaticOutboxAdmission {
           "Split this write into smaller transactions before retrying; no local triples or outbox row were committed."
       )
     }
+  }
 
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    recordBodyEncode()
-    let encodedBodyByteCount = try encoder.encode(mutation).count
+  /// Fails a new write whose stored body, `encodedBodyByteCount` bytes of the text the save writes, passes the durable
+  /// delivery limit. The save calls it before its SQLite transaction, so nothing is committed (#1491).
+  static func validateEncodedBodyByteCount(_ encodedBodyByteCount: Int, of mutation: PendingMutation) throws {
     guard encodedBodyByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
     else {
       throw InstantError(

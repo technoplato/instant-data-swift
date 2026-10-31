@@ -14825,6 +14825,7 @@ public actor SQLitePersistenceStore {
     supersedingImmediateTail: PendingMutation? = nil,
     metadataEntries: [InstantPersistenceMetadataEntry] = [],
     deletingMetadataKeys: [String] = [],
+    admittingNewWrite: Bool = false,
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64,
     expectedOutboxRevision: Int64
@@ -14837,6 +14838,16 @@ public actor SQLitePersistenceStore {
         message:
           "Mutation '\(pendingMutation.id)' was not prepared by Runtime before local admission."
       )
+    }
+    // A new write's byte bound reads the body this save writes, encoded once (#1491): the admission encoded the same
+    // sorted-key text a second time only to count its bytes. Checked before the transaction, so nothing commits.
+    let encodedBody: (body: String, lifecycle: String)?
+    if admittingNewWrite {
+      let encoded = try encodeOutboxBody(pendingMutation)
+      try InstantAutomaticOutboxAdmission.validateEncodedBodyByteCount(encoded.body.utf8.count, of: pendingMutation)
+      encodedBody = encoded
+    } else {
+      encodedBody = nil
     }
     // Dual-residency thin cache keeps attributes/outbox/revisions only. Empty
     // triples must not be treated as "entity has no triples" — fall back to SQLite.
@@ -14903,7 +14914,8 @@ public actor SQLitePersistenceStore {
         pendingMutation,
         lifecycleID: supersessionLifecycleID,
         advancingFromMutationID: supersedingImmediateTail?.id,
-        receiptWriteAuthority: .runtimePrepared
+        receiptWriteAuthority: .runtimePrepared,
+        encodedBody: encodedBody
       )
       if let supersedingImmediateTail, let supersessionLifecycleID {
         try saveMutationLifecycleAliasWithoutTransaction(
@@ -19371,12 +19383,14 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// `encodedBody` is ``encodeOutboxBody(_:)`` of `mutation` when the caller already encoded it (#1491).
   private func saveOutboxMutationWithoutTransaction(
     _ mutation: PendingMutation,
     lifecycleID requestedLifecycleID: String? = nil,
     advancingFromMutationID: String? = nil,
     failureAttributeRevision: Int64? = nil,
-    receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
+    receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority,
+    encodedBody: (body: String, lifecycle: String)? = nil
   ) throws {
     let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
     let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
@@ -19492,7 +19506,7 @@ public actor SQLitePersistenceStore {
       hasServerAcceptance: acceptanceFingerprint != nil
     )
     // The body without its delivery fields, which the columns below hold (#1435).
-    let encoded = try encodeOutboxBody(durableMutation)
+    let encoded = try encodedBody ?? encodeOutboxBody(durableMutation)
     let effectFootprint = receiptFingerprint == nil
       ? nil
       : InstantOptimisticEffectFootprint.normalized(for: durableMutation)

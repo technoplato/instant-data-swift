@@ -2689,6 +2689,8 @@ public final class InstantRuntime: Sendable {
           changedFactScope: changedFactScope,
           pendingMutation: pendingMutation,
           supersedingImmediateTail: supersededTail,
+          // The admission's byte bound, on the body the save encodes for the row (#1491).
+          admittingNewWrite: true,
           expectedStoreRevision: storeRevision,
           expectedAttributeRevision: attributeRevision,
           expectedOutboxRevision: outboxRevision
