@@ -1,3 +1,24 @@
+## 2026-10-30 20:23:46 EDT — scribe `1b9fcd34c24d972295aea149db159eb832a45e49`
+Cut (#1393, #1365): Scribe 0.1 (193): the home screen's dashboard and days, two corners sideways, three map proposals.
+
+## 2026-10-30 20:22:57 EDT — scribe `9bb5fd57745daf09057bba36f45e55407faf72b0`
+Landing (#1393, #1365): the home screen reads every recording live on any device, the agents' rows and what is due, and the iPhone held sideways keeps its controls in two corners.
+
+## 2026-10-30 17:52:07 EDT — scribe `4ffd02f6aaedec17220601c23ba7dcdfb6b64274`
+Cut (#1393): Scribe 0.1 (190): a screenshot's two times, the floating bar's comb, Answers by thread.
+
+## 2026-10-30 17:09:14 EDT — scribe `25ac280d63335a6f653611b50aa07d26b91d0e21`
+Landing (#1393): a screenshot's two times, the floating bar's comb, Answers by thread.
+
+## 2026-10-30 16:53:52 EDT — scribe `f85201d7b54fab29986fea4d524b7f80fa1084f9`
+Cut (#1393): Scribe 0.1 (189): the frames band's fold, the broadcast menu stays open, playback's live row.
+
+## 2026-10-30 16:52:56 EDT — scribe `a1914452dd4aaad5995f67164361541f0ff18411`
+Landing (#1393): the broadcast menu stays open, playback's live row, the band's close button, scroll tracking.
+
+## 2026-10-30 15:38:21 EDT — scribe `6e6b8b77628dd1f5b9cb578a0f1ba4b5e8f7253b`
+Landing (#1393): the frames band's long press chooses when it folds, synced to every device.
+
 ## 2026-10-30 19:43:41 EDT — scribe `d78cb20150dba640f9dd07ac8a02c1588e146ea9`
 Docs (#1431): the builds skill keeps every installed build's symbols, with their sizes and retention.
 
