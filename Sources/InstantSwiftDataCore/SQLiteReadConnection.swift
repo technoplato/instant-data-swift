@@ -261,6 +261,20 @@ actor SQLiteReadConnection {
     return statement
   }
 
+  /// This connection's `PRAGMA temp_store`: 0 SQLite's build default (a file here), 1 a file, 2 memory (#1504).
+  func temporaryStoreForTesting() throws -> Int64 {
+    var setting: Int64 = -1
+    try readTransaction { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(connection, "PRAGMA temp_store", -1, &statement, nil) == SQLITE_OK, let statement else {
+        throw Self.failure(operation: "prepare a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      defer { sqlite3_finalize(statement) }
+      if sqlite3_step(statement) == SQLITE_ROW { setting = sqlite3_column_int64(statement, 0) }
+    }
+    return setting
+  }
+
   // MARK: - SQLite
 
   /// Runs `body` in one read transaction. A failure closes the connection, so the next read opens the store's file
@@ -300,6 +314,9 @@ actor SQLiteReadConnection {
       try Self.execute("PRAGMA query_only = ON", on: opened)
       // A small page cache: reads here are pages of rows, and the writer keeps its own cache.
       try Self.execute("PRAGMA cache_size = -2048", on: opened)
+      // #1504: a read's sort or DISTINCT past the cache stays in memory, no larger than the rows the read returns,
+      // which its caller decodes anyway; with SQLite's default it went to a file the system writes.
+      try Self.execute("PRAGMA temp_store = MEMORY", on: opened)
     } catch {
       sqlite3_close_v2(opened)
       throw error

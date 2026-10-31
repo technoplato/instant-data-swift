@@ -1157,6 +1157,19 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
     }
   }
 
+  /// A hash of every input of ``optimisticEffectReceiptFingerprint()`` (#1497): equal inputs give the same
+  /// fingerprint, so a store may reuse the one it computed while this hash is the same. Change it with the payload.
+  package var optimisticEffectReceiptFingerprintInputsHash: Int {
+    var hasher = Hasher()
+    hasher.combine(id)
+    hasher.combine(createdAt)
+    hasher.combine(transaction)
+    hasher.combine(rollbackTransaction)
+    hasher.combine(optimisticOverlayState)
+    hasher.combine(optimisticEffectReceiptVersion)
+    return hasher.finalize()
+  }
+
   /// A canonical SHA-256 digest of the admission payload whose transaction,
   /// ordering, rollback, and overlay-state combination Runtime prepared.
   ///
