@@ -1,3 +1,22 @@
+## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
+
+- **Measured:** the 10-24 baseline `287f77d1`, run alone on the Mac mini (release, the recording exercise, 12:44, nothing
+  else in a slot), holds the gate 5.02 ms per transact at steady p50 (write.line 8.45, read.local 23.30). The #1482
+  audit's 1.58 ms for the same commit ran beside a cold build. Its bisect's fast runs all shared the mini with another
+  job and its slow ones ran alone; none of 10-26's code runs in the exercise. Mini jobs run under `taskpolicy -c
+  utility`, nice 10, on 4P+6E cores, and the exercise writes one burst every 667 ms.
+- **Landed with this entry:** runner `a79caca2` + `02944ced` (`scripts/contention-exercises/ab-commits.sh`: several
+  commits in one job, alone and beside N busy loops, plus the tight-loop benchmark); red `efc0656f`; green `02b7cf8a`
+  (a new write's 8 MiB bound reads the stored body's bytes; one sorted-key encode a write instead of two).
+- **Checks:** red fails as expected (10 writes, 20 body encodes); green: 95 tests in 6 suites and 518 tests in 25 suites
+  (#1426, #1435, #1115, #1121 suites) pass on the laptop (debug, Xcode beta), known issues as on main.
+- **Running:** perf-gate-1491-ab2 on the mini: 287f77d1, 4accbf45, main 13cdf499 and green 02b7cf8a, two rounds alone and
+  beside six busy loops, then the cross-SDK benchmark three times each; its lines go on #1491 and in
+  `docs/audits/2026-10-31-transact-hold-1491.md`.
+- **Next:** amendment 1 (`instantSHA256HexDigest`'s 32 `String(format:)` calls a digest, two digests a save): red pins
+  the digest of known inputs and its allocations, green writes the same hex from a byte table. Then READY FOR BUILD on
+  #1482 with the A/B's before and after.
+
 ## 2026-10-31 08:55:00 EDT — sqlite-writes-1426 (#1426): v1.9.56 shipped in Scribe 0.1 (206); the phone's after-numbers wait for a recording
 
 - **Shipped:** Scribe 206 (18ba5013b, the 1.9.56 pin) installed by build.sh's main lane 08:21-08:47: the iPhone at 08:32
