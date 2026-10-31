@@ -3247,6 +3247,7 @@ public final class InstantRuntime: Sendable {
         let plan: InstantServerApplyPlan
         var didChangeOptimisticEffectMetadataDuringPlanning = false
         normalization: while true {
+          recordActorHop(.persistence)
           let load = try await persistence.beginServerApplyPlan(
             id: planID,
             footprint: footprint,
@@ -3267,6 +3268,7 @@ public final class InstantRuntime: Sendable {
               // change that protection, so discard this body-free plan and
               // rebuild the authoritative transaction from a fresh compact
               // snapshot once all bounded normalization work is complete.
+              recordActorHop(.persistence)
               try? await persistence.finishServerApplyPlan(id: readyPlan.id)
               break planning
             }
@@ -3274,12 +3276,16 @@ public final class InstantRuntime: Sendable {
             break normalization
 
           case let .normalizationRequired(firstMutationID):
+            recordActorHop(.persistence)
             let normalized = try await persistence.normalizeOptimisticEffectMetadata(
               startingAtMutationID: firstMutationID
             )
             if !normalized.normalizedMutationIDs.isEmpty {
               didChangeOptimisticEffectMetadataDuringPlanning = true
               continue normalization
+            }
+            if normalized.blockedMutationID == firstMutationID {
+              recordActorHop(.persistence)
             }
             if normalized.blockedMutationID == firstMutationID,
               try await persistence.isolateUnknownServerApplyMutation(
@@ -3304,6 +3310,7 @@ public final class InstantRuntime: Sendable {
           plan.expectedOutboxRevision == compactState.outboxRevision,
           plan.expectedQueryResultRevision == compactState.queryResultRevision
         else {
+          recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
           break planning
         }
@@ -3415,6 +3422,7 @@ public final class InstantRuntime: Sendable {
           reversePosition = page.nextPosition
         }
         if stalePlan {
+          recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
@@ -3614,6 +3622,7 @@ public final class InstantRuntime: Sendable {
             )
             dispositions.append(.update(mutation))
           }
+          recordActorHop(.persistence)
           try await persistence.stageServerApplyBodyPage(
             planID: plan.id,
             dispositions: dispositions
@@ -3624,6 +3633,7 @@ public final class InstantRuntime: Sendable {
         if stalePlan
           || stagedReceiptPatchIDs != Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
         {
+          recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
@@ -3778,6 +3788,7 @@ public final class InstantRuntime: Sendable {
               dispositions.append(.update(mutation))
             }
             if stalePlan { break }
+            recordActorHop(.persistence)
             try await persistence.stageServerApplyBodyPage(
               planID: plan.id,
               dispositions: dispositions
@@ -3820,6 +3831,7 @@ public final class InstantRuntime: Sendable {
             await leaveOperationGate()
             enteredOperationGateForCommit = false
           }
+          recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
@@ -3873,6 +3885,7 @@ public final class InstantRuntime: Sendable {
             await leaveOperationGate()
             enteredOperationGateForCommit = false
           }
+          recordActorHop(.persistence)
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
@@ -3944,6 +3957,7 @@ public final class InstantRuntime: Sendable {
         }
         gateTimeline.patchEndedAt = ContinuousClock.now
         operationGate.markHolderPhase("finish plan")
+        recordActorHop(.persistence)
         try await persistence.finishServerApplyPlan(id: plan.id)
         _ = try? await publishConnectionStatusWithGateHeld(
           pendingMutationCount: commit.pendingMutationCount
@@ -3999,6 +4013,7 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.store)
           _ = await store.publishCommittedChanges(publication)
         }
+        recordActorHop(.persistence)
         try? await persistence.finishServerApplyPlan(id: plan.id)
         throw error
       }

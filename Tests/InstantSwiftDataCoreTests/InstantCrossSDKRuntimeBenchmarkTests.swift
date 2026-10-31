@@ -104,6 +104,61 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
       result.metrics.map { metric in metric.samples.map(\.actorHopCount) },
       [[7, 7], [14, 14], [25, 25]]
     )
+
+    // A server refresh restating a 50-row list (#1494), eight persistence turns: the frame's seed; its plan in three
+    // (the restated result's retractions and saves and the retractions' protection in one read transaction, the
+    // reduction's context, the plan's begin; a plan that holds no pending write reads no body page); then, holding the
+    // gate, the catch-up, the commit, the plan's end and the connection status. The plan took seven: the three reads
+    // one turn each, and an empty body page each way.
+    let refresh = try await Self.serverRefreshHops()
+    expectNoDifference(refresh.breakdown["persistence"], 8, "\(refresh.breakdown)")
+  }
+
+  /// The actor hops of one refresh-ok restating a 50-row todos list that the store already holds, one row changed.
+  static func serverRefreshHops() async throws -> InstantActorHopSummary {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantCrossSDKRuntimeBenchmarkServerRefresh-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recorder = InstantActorHopRecorder()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "cross-sdk-runtime-server-refresh",
+      persistenceURL: directory.appendingPathComponent("state.sqlite"),
+      initialAttributes: TodoExample.attributes
+    )
+    configuration.actorHopRecorder = recorder
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    func refresh(_ frame: Int, changedText: String) -> InstantLiveRefreshOK {
+      let createdAt = InstantTimestamp(milliseconds: 1_700_000_494_000)
+      let rows: [InstantLiveJSONValue] = (0..<50).map { row in
+        let id = "refresh-todo-\(row)"
+        let text = row == 0 ? changedText : "row \(row)"
+        func fact(_ attribute: String, _ value: InstantLiveJSONValue) -> InstantLiveJSONValue {
+          .array([.string(id), .string(attribute), value, .number(Double(createdAt.milliseconds + Int64(frame)))])
+        }
+        return .array([
+          fact("server-todos-id", .string(id)),
+          fact("server-todos-text", .string(text)),
+          fact("server-todos-is-completed", .bool(false)),
+          fact("server-todos-created-at", .number(Double(createdAt.milliseconds + Int64(row)))),
+        ])
+      }
+      let result: InstantLiveJSONValue = .object([
+        "data": .object(["datalog-result": .object(["join-rows": .array(rows)])]),
+        "child-nodes": .array([]),
+      ])
+      return InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-refresh-\(frame)",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [.object(["instaql-query": query, "instaql-result": .array([result])])]
+      )
+    }
+    _ = try await runtime.applyLiveRefresh(refresh(1, changedText: "first"))
+    let baseline = recorder.baseline()
+    _ = try await runtime.applyLiveRefresh(refresh(2, changedText: "restated"))
+    return recorder.summary(since: baseline)
   }
 
   @Test
