@@ -1,3 +1,6 @@
+## 2026-10-31 15:06:17 EDT — scribe `b87c51f61a34bf590b9a185e78b5076dfe6585fd`
+Feat (#1510): each minute row of the energy ledger names the store's SQLite pages by table or index (at most 16, each with its three largest store calls) and by write statement (at most 12: shape, runs, rows, pages), counted between two reads of instant-data-swift's write recorder (red 8d0bf7a4, green 2fdd4522; change log 27448522f). Empty until the library tag that carries the recorder is pinned.
+
 ## 2026-10-31 14:54:08 EDT — instant-data-swift `e6e719134d2a754bf08489781ed5052d46642fc9`
 Perf (#1495): an observer keeps the set of ids its result shows, collected once per result and kept while it holds that result, so a publication no longer rebuilds it for every change it judges and again for the splice (red 3cce5ca1, green 9051d75e; a phone-shaped publication fan-out exercise ff8fb803; change log 8ccd5d57). Measured before on the Mac mini (release): a final's publication p50 18.4 ms, of which re-materialization 92%, the id sets about 1%, wasLastHanded's equality about 0.1% (so no fingerprint was added).
 
