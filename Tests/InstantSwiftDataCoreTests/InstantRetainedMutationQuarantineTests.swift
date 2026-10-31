@@ -463,6 +463,8 @@ private func quarantineTestQuery(
       case SQLITE_NULL: value = .null
       case SQLITE_INTEGER: value = .integer(sqlite3_column_int64(statement, column))
       case SQLITE_FLOAT: value = .real(sqlite3_column_double(statement, column))
+      // An outbox body is stored compressed since #1463: compared as its JSON.
+      case SQLITE_BLOB: value = .text(storedOutboxBodyJSON(statement, column) ?? "")
       default: value = .text(String(cString: sqlite3_column_text(statement, column)))
       }
       row.append((name, value))

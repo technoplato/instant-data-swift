@@ -86,6 +86,9 @@
 //   rows by fingerprint, as the save's ownership diff does, and decodes only the rows that leave (#1426).
 // - 2026-10-31: a query-cache row holds its answer's digest and, in columns, the last read's time, revisions and
 //   sequence, which readers lay over its JSON; a read whose answer the row holds updates those columns only (#1498).
+// - 2026-10-31: an outbox body is stored compressed and its lifecycle derived from it, so a live write's cell fits its
+//   leaf; every budget still counts JSON bytes (`encoded_body_bytes`, `lifecycle_bytes`), and an older row's text body
+//   reads as before (#1463, #1510).
 
 import Foundation
 import IssueReporting
@@ -599,8 +602,11 @@ struct InstantMutationLifecycleResolution: Sendable {
 struct InstantOutboxBodyRow: Sendable {
   var mutationID: String
   var createdAtMilliseconds: Int64
-  /// The body as stored (#1435): decode it with ``delivery``.
+  /// The body as stored (#1435): decode it with ``delivery``. Since #1463 a compressed body is inflated here.
   var json: String
+  /// The body exactly as its column holds it (#1463), so a check that the body is unchanged since this read compares
+  /// stored bytes with stored bytes.
+  fileprivate var storedBody: SQLiteBinding
   var optimisticEffectReceiptFingerprint: String?
   var deliveryClaimPayloadFingerprint: String?
   var serverAcceptancePayloadFingerprint: String?
@@ -708,14 +714,15 @@ private struct InstantFailedMutationRetryCandidateRow: Sendable {
 }
 
 private enum InstantFailedMutationRetryDisposition: Sendable {
+  /// `originalBody`: the body as its column held it when read (#1463), which the retry's write proves unchanged.
   case retry(
     candidate: InstantFailedMutationRetryCandidateRow,
-    originalJSON: String,
+    originalBody: SQLiteBinding,
     mutation: PendingMutation
   )
   case isolate(
     candidate: InstantFailedMutationRetryCandidateRow,
-    originalJSON: String,
+    originalBody: SQLiteBinding,
     mutation: PendingMutation,
     reason: String
   )
@@ -736,13 +743,13 @@ private enum InstantFailedMutationRetryDisposition: Sendable {
     }
   }
 
-  var originalJSON: String? {
+  var originalBody: SQLiteBinding? {
     switch self {
-    case let .retry(_, originalJSON, _),
-      let .isolate(_, originalJSON, _, _):
-      originalJSON
+    case let .retry(_, originalBody, _),
+      let .isolate(_, originalBody, _, _):
+      originalBody
     case let .quarantineCorrupt(_, row, _):
-      row.json
+      row.storedBody
     case .quarantineOversized:
       nil
     }
@@ -1581,22 +1588,15 @@ public actor SQLitePersistenceStore {
   }
 
   package func quarantinedOutboxBodyForTesting(id: String) throws -> String? {
-    try selectScalar(
+    try selectOutboxBodyJSON(
       "SELECT quarantine_json FROM instant_outbox_bodies WHERE mutation_id = ? LIMIT 1",
       [.text(id)]
     )
   }
 
+  /// The quarantined body's size in JSON bytes, whether it is stored compressed or as text (#1463).
   package func quarantinedOutboxBodyByteCountForTesting(id: String) throws -> Int {
-    Int(try selectInt64(
-      """
-      SELECT COALESCE(length(CAST(quarantine_json AS BLOB)), 0)
-      FROM instant_outbox_bodies
-      WHERE mutation_id = ?
-      LIMIT 1
-      """,
-      [.text(id)]
-    ))
+    try quarantinedOutboxBodyForTesting(id: id)?.utf8.count ?? 0
   }
 
   package func localMutationQueueWideReadCountForTesting() -> Int {
@@ -2884,6 +2884,9 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try moveOutboxBodiesToTheirOwnTableIfNeeded()
     }
+    try withSQLiteBusyRetry {
+      try ensureOutboxBodyLifecycleBytesColumn()
+    }
     // A restore that rebuilt `instant_outbox` after 0031 ran keeps the claim off a scan too (#1108, #1115).
     try execute(Self.deliveryIndexSQL)
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
@@ -3262,6 +3265,10 @@ public actor SQLitePersistenceStore {
   /// row's first bytes. WITHOUT ROWID, keyed by the mutation id, and deleted with its row: on the phone's body sizes
   /// (6.6 KB live, 19.2 KB refused) a rowid table keyed by an integer held one body a leaf, so every echo emptied a leaf
   /// and rebalanced the tree (9 frames an echo against 7 in a layout check, 2026-10-30).
+  ///
+  /// #1463: `json` holds the body compressed (``InstantOutboxStoredBody``) and `lifecycle_bytes` its lifecycle's size,
+  /// the lifecycle itself derived from the body; `lifecycle_json` is then NULL. A row an older version wrote keeps its
+  /// text until its next change.
   static let outboxBodiesTableSQL = """
     CREATE TABLE instant_outbox_bodies (
       mutation_id TEXT PRIMARY KEY NOT NULL
@@ -3269,7 +3276,8 @@ public actor SQLitePersistenceStore {
       lifecycle_json TEXT,
       json TEXT NOT NULL,
       quarantine_json TEXT,
-      quarantine_lifecycle_json TEXT
+      quarantine_lifecycle_json TEXT,
+      lifecycle_bytes INTEGER
     ) WITHOUT ROWID
     """
 
@@ -3289,10 +3297,14 @@ public actor SQLitePersistenceStore {
     "(SELECT body.json FROM instant_outbox_bodies AS body WHERE body.mutation_id = \(outbox).mutation_id)"
   }
 
-  /// A row's stored body length in bytes, for a statement whose outbox table is named `outbox` (#1435).
+  /// A row's body length in JSON bytes, for a statement whose outbox table is named `outbox` (#1435).
+  ///
+  /// #1463: a compressed body's length is its row's `encoded_body_bytes`, the JSON's size, never the stored length, so
+  /// every budget and every limit this feeds keeps counting what a read decodes; a body an older version stored as text
+  /// is measured as before.
   static func bodyLengthSQL(outbox: String) -> String {
     """
-    (SELECT length(CAST(body.json AS BLOB)) FROM instant_outbox_bodies AS body
+    (SELECT \(bodyJSONBytesSQL(outbox: outbox, body: "body")) FROM instant_outbox_bodies AS body
       WHERE body.mutation_id = \(outbox).mutation_id)
     """
   }
@@ -4317,8 +4329,8 @@ public actor SQLitePersistenceStore {
     if let mutationID {
       sql =
         """
-        SELECT outbox.mutation_id, outbox.created_at_ms, length(CAST(body.json AS BLOB)), body.json,
-               outbox.delivery_started, outbox.confirmation_proven,
+        SELECT outbox.mutation_id, outbox.created_at_ms, \(Self.bodyJSONBytesSQL(outbox: "outbox", body: "body")),
+               body.json, outbox.delivery_started, outbox.confirmation_proven,
                outbox.optimistic_overlay_active,
                outbox.optimistic_effect_receipt_fingerprint,
                outbox.server_acceptance_payload_fingerprint,
@@ -4333,8 +4345,8 @@ public actor SQLitePersistenceStore {
     } else {
       sql =
         """
-        SELECT outbox.mutation_id, outbox.created_at_ms, length(CAST(body.json AS BLOB)), body.json,
-               outbox.delivery_started, outbox.confirmation_proven,
+        SELECT outbox.mutation_id, outbox.created_at_ms, \(Self.bodyJSONBytesSQL(outbox: "outbox", body: "body")),
+               body.json, outbox.delivery_started, outbox.confirmation_proven,
                outbox.optimistic_overlay_active,
                outbox.optimistic_effect_receipt_fingerprint,
                outbox.server_acceptance_payload_fingerprint,
@@ -4353,7 +4365,7 @@ public actor SQLitePersistenceStore {
     if code == SQLITE_DONE { return nil }
     guard code == SQLITE_ROW,
       let mutationIDBytes = sqlite3_column_text(statement, 0),
-      let jsonBytes = sqlite3_column_text(statement, 3)
+      sqlite3_column_type(statement, 3) != SQLITE_NULL
     else {
       throw persistenceError(
         operation: "read local persistence migration outbox row",
@@ -4372,7 +4384,12 @@ public actor SQLitePersistenceStore {
           "Mutation '\(rowMutationID)' exceeds the bounded outbox body limit and cannot be migrated safely."
       )
     }
-    let json = String(cString: jsonBytes)
+    guard let json = try outboxBodyJSON(statement, 3) else {
+      throw persistenceError(
+        operation: "read local persistence migration outbox row",
+        message: "Mutation '\(rowMutationID)' has no body."
+      )
+    }
     guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 9) else {
       throw persistenceError(
         operation: "read local persistence migration outbox row",
@@ -5478,7 +5495,7 @@ public actor SQLitePersistenceStore {
         let idBytes = sqlite3_column_text(statement, 0),
         let reasonBytes = sqlite3_column_text(statement, 1),
         let statusBytes = sqlite3_column_text(statement, 4),
-        let bodyBytes = sqlite3_column_text(statement, 5),
+        let body = quarantinedBodyText(statement, 5),
         let rowBytes = sqlite3_column_text(statement, 6)
       else {
         throw persistenceError(operation: "read quarantined mutations", message: lastErrorMessage())
@@ -5486,7 +5503,6 @@ public actor SQLitePersistenceStore {
       guard let reason = InstantQuarantinedMutation.Reason(rawValue: String(cString: reasonBytes)) else {
         continue
       }
-      let body = String(cString: bodyBytes)
       let status = InstantMutationStatus(rawValue: String(cString: statusBytes))
       var mutation: PendingMutation? = try? decodeOutboxBody(body)
       // Since #1435 a body does not carry its delivery fields: they come from the row the quarantine kept.
@@ -6427,7 +6443,7 @@ public actor SQLitePersistenceStore {
               sqlite3_column_text(statement, 1).map(String.init(cString:)),
               sqlite3_column_text(statement, 2).map(String.init(cString:)),
               sqlite3_column_int64(statement, 3) != 0,
-              sqlite3_column_text(statement, 4).map(String.init(cString:)),
+              try outboxBodyJSON(statement, 4),
               sqlite3_column_int64(statement, 5) != 0,
               sqlite3_column_int64(statement, 6) != 0
             )
@@ -6475,7 +6491,8 @@ public actor SQLitePersistenceStore {
             """
             UPDATE instant_server_apply_rows
             SET staged = 1, staged_delete = 0, staged_json = ?,
-                staged_lifecycle_json = ?, staged_status = ?,
+                staged_lifecycle_json = NULL, staged_body_bytes = ?, staged_lifecycle_bytes = ?,
+                staged_status = ?,
                 staged_delivery_state = ?, staged_transport_step_count = ?,
                 staged_failure_message = ?, staged_confirmation_proven = ?,
                 staged_overlay_active = ?, staged_effect_metadata_version = ?,
@@ -6486,8 +6503,9 @@ public actor SQLitePersistenceStore {
             WHERE plan_id = ? AND mutation_id = ?
             """,
             [
-              .text(body),
-              .text(lifecycle),
+              Self.storedBodyBinding(body),
+              .int(Int64(body.utf8.count)),
+              .int(Int64(lifecycleByteCount)),
               .text(mutation.status.rawValue),
               .text(deliveryState.rawValue),
               .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
@@ -6843,7 +6861,7 @@ public actor SQLitePersistenceStore {
               delivery_state = planned.staged_delivery_state,
               delivery_metadata_version = ?,
               transport_step_count = planned.staged_transport_step_count,
-              encoded_body_bytes = length(CAST(planned.staged_json AS BLOB)),
+              encoded_body_bytes = planned.staged_body_bytes,
               failure_message = planned.staged_failure_message,
               confirmation_proven = planned.staged_confirmation_proven,
               optimistic_overlay_active = planned.staged_overlay_active,
@@ -6870,11 +6888,13 @@ public actor SQLitePersistenceStore {
         try execute(
           """
           UPDATE instant_outbox_bodies AS body
-          SET json = planned.staged_json, lifecycle_json = planned.staged_lifecycle_json
+          SET json = planned.staged_json, lifecycle_json = planned.staged_lifecycle_json,
+              lifecycle_bytes = planned.staged_lifecycle_bytes
           FROM instant_server_apply_rows AS planned
           WHERE planned.plan_id = ? AND planned.staged = 1 AND planned.staged_delete = 0
             AND body.mutation_id = planned.mutation_id
-            AND (planned.staged_json != body.json OR planned.staged_lifecycle_json IS NOT body.lifecycle_json)
+            AND (planned.staged_json != body.json OR planned.staged_lifecycle_json IS NOT body.lifecycle_json
+              OR planned.staged_lifecycle_bytes IS NOT body.lifecycle_bytes)
           """,
           [.text(planID)]
         )
@@ -6986,7 +7006,7 @@ public actor SQLitePersistenceStore {
       """
       SELECT mutation_id, created_at_ms, staged_delete,
              CASE WHEN staged_delete = 1 THEN 0
-                  ELSE length(CAST(staged_lifecycle_json AS BLOB)) END
+                  ELSE COALESCE(staged_lifecycle_bytes, length(CAST(staged_lifecycle_json AS BLOB))) END
       FROM instant_server_apply_rows
       WHERE plan_id = ? AND staged = 1
         AND mutation_id IN (SELECT value FROM json_each(?))
@@ -7058,26 +7078,27 @@ public actor SQLitePersistenceStore {
         removedMutationIDs.append(candidate.mutationID)
         continue
       }
-      // The staged lifecycle is stored without its delivery fields, which the staged columns hold (#1435).
+      // The staged lifecycle is stored without its delivery fields, which the staged columns hold (#1435). Since
+      // #1463 it is derived from the staged body (``outboxBodyJSON(_:_:)``), its size kept in staged_lifecycle_bytes.
       let staged = try loadStoredBodyWithDeliveryWithoutTransaction(
         """
-        SELECT staged_lifecycle_json, staged_status, staged_server_transaction_id, staged_confirmation_source
+        SELECT COALESCE(staged_lifecycle_json, staged_json), staged_status, staged_server_transaction_id,
+               staged_confirmation_source
         FROM instant_server_apply_rows
         WHERE plan_id = ? AND mutation_id = ? AND staged_delete = 0
+          AND COALESCE(staged_lifecycle_bytes, length(CAST(staged_lifecycle_json AS BLOB))) = ?
         LIMIT 1
         """,
-        [.text(planID), .text(candidate.mutationID)]
+        [.text(planID), .text(candidate.mutationID), .int(Int64(candidate.actualLifecycleByteCount))]
       )
-      guard let staged,
-        staged.json.utf8.count == candidate.actualLifecycleByteCount
-      else {
+      guard let staged else {
         throw persistenceError(
           operation: "load bounded server-apply resident patch",
           message:
             "Mutation '\(candidate.mutationID)' changed while loading its compact lifecycle body."
         )
       }
-      let mutation = try decodeOutboxBody(staged.json, delivery: staged.delivery)
+      let mutation = try decodeOutboxBody(staged.json, delivery: staged.delivery).compactedForMemory
       guard mutation.id == candidate.mutationID,
         mutation.createdAt.milliseconds == candidate.position.createdAtMilliseconds
       else {
@@ -8228,8 +8249,9 @@ public actor SQLitePersistenceStore {
 
         if let lifecycleByteCount = candidate.lifecycleByteCount,
           let lifecycle = try loadStoredBodyWithDeliveryWithoutTransaction(
+            // #1463: a row this version wrote derives its lifecycle from its body; compacted below.
             """
-            SELECT body.lifecycle_json, \(InstantOutboxRowDelivery.columns)
+            SELECT COALESCE(body.lifecycle_json, body.json), \(InstantOutboxRowDelivery.columns)
             FROM instant_outbox AS outbox
             JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
             WHERE outbox.mutation_id = ?
@@ -8412,7 +8434,7 @@ public actor SQLitePersistenceStore {
         try plan.dispositions.allSatisfy({ disposition in
           try automaticFailedMutationRetryCandidateStillMatchesWithoutTransaction(
             disposition.candidate,
-            originalJSON: disposition.originalJSON,
+            originalBody: disposition.originalBody,
             expectedAttributeRevision: plan.expectedAttributeRevision
           )
         })
@@ -8425,20 +8447,20 @@ public actor SQLitePersistenceStore {
 
       for disposition in plan.dispositions {
         switch disposition {
-        case let .retry(candidate, originalJSON, mutation):
+        case let .retry(candidate, originalBody, mutation):
           try retryFailedMutationWithoutTransaction(
             mutation,
             candidate: candidate,
-            originalJSON: originalJSON,
+            originalBody: originalBody,
             expectedAttributeRevision: plan.expectedAttributeRevision
           )
           retriedMutations.append(mutation)
 
-        case let .isolate(candidate, originalJSON, mutation, reason):
+        case let .isolate(candidate, originalBody, mutation, reason):
           try isolateAutomaticFailedMutationRetryWithoutTransaction(
             mutation,
             candidate: candidate,
-            originalJSON: originalJSON,
+            originalBody: originalBody,
             reason: reason,
             expectedAttributeRevision: plan.expectedAttributeRevision
           )
@@ -15528,6 +15550,14 @@ public actor SQLitePersistenceStore {
     "emission_sequence INTEGER",
   ]
 
+  /// A store whose bodies table an older version made gets `lifecycle_bytes` (#1463), without rewriting a row: its
+  /// rows keep their text bodies and lifecycles until their next change.
+  private func ensureOutboxBodyLifecycleBytesColumn() throws {
+    let existing = Set(try selectStrings("SELECT name FROM pragma_table_info('instant_outbox_bodies')"))
+    guard !existing.isEmpty, !existing.contains("lifecycle_bytes") else { return }
+    try execute("ALTER TABLE instant_outbox_bodies ADD COLUMN lifecycle_bytes INTEGER")
+  }
+
   /// Adds ``queryCacheAnswerColumns`` to a query cache that lacks them: one made before #1498, or rebuilt in an older
   /// shape by a restore. Its rows have none, read from their JSON alone, and are written whole at their next read.
   private func ensureQueryCacheAnswerColumns() throws {
@@ -16064,6 +16094,9 @@ public actor SQLitePersistenceStore {
         closure_round INTEGER NOT NULL DEFAULT 0,
         staged_json TEXT,
         staged_lifecycle_json TEXT,
+        -- #1463: the staged body is compressed and its lifecycle derived from it; these are their JSON sizes.
+        staged_body_bytes INTEGER,
+        staged_lifecycle_bytes INTEGER,
         PRIMARY KEY (plan_id, mutation_id)
       ) WITHOUT ROWID
       """
@@ -16468,14 +16501,13 @@ public actor SQLitePersistenceStore {
     try prepare(
       """
       SELECT outbox.mutation_id, outbox.created_at_ms,
-             CASE WHEN body.lifecycle_json IS NULL
-               THEN NULL ELSE length(CAST(body.lifecycle_json AS BLOB)) END,
+             \(Self.lifecycleBytesSQL(body: "body")),
              \(Self.storedBodyByteCountSQL(outbox: "outbox")),
              outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
       FROM instant_outbox AS outbox
       LEFT JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
       WHERE outbox.status = ? AND (
-        outbox.delivery_metadata_version < ? OR body.lifecycle_json IS NULL OR
+        outbox.delivery_metadata_version < ? OR (body.lifecycle_json IS NULL AND body.lifecycle_bytes IS NULL) OR
         LOWER(COALESCE(outbox.failure_message, '')) LIKE '%operation timed out%' OR
         LOWER(COALESCE(outbox.failure_message, '')) LIKE '%transaction timed out%' OR
         LOWER(COALESCE(outbox.failure_message, '')) LIKE '%service unavailable%' OR
@@ -16609,7 +16641,7 @@ public actor SQLitePersistenceStore {
           dispositions.append(
             .isolate(
               candidate: candidate,
-              originalJSON: row.json,
+              originalBody: row.storedBody,
               mutation: mutation,
               reason: reason
             )
@@ -16625,7 +16657,7 @@ public actor SQLitePersistenceStore {
         dispositions.append(
           .retry(
             candidate: candidate,
-            originalJSON: row.json,
+            originalBody: row.storedBody,
             mutation: mutation
           )
         )
@@ -16773,10 +16805,10 @@ public actor SQLitePersistenceStore {
 
   private func automaticFailedMutationRetryCandidateStillMatchesWithoutTransaction(
     _ candidate: InstantFailedMutationRetryCandidateRow,
-    originalJSON: String?,
+    originalBody: SQLiteBinding?,
     expectedAttributeRevision: Int64
   ) throws -> Bool {
-    let jsonProofSQL = originalJSON == nil ? "" : "AND \(Self.storedBodySQL(outbox: "instant_outbox")) = ?"
+    let jsonProofSQL = originalBody == nil ? "" : "AND \(Self.storedBodySQL(outbox: "instant_outbox")) = ?"
     let deliveryStateBinding = candidate.deliveryState.map(SQLiteBinding.text) ?? .null
     var bindings: [SQLiteBinding] = [
       .text(candidate.mutationID),
@@ -16786,8 +16818,8 @@ public actor SQLitePersistenceStore {
       .int(Int64(candidate.actualBodyByteCount)),
       .int(expectedAttributeRevision),
     ]
-    if let originalJSON {
-      bindings.append(.text(originalJSON))
+    if let originalBody {
+      bindings.append(originalBody)
     }
     return try selectInt64(
       """
@@ -16809,7 +16841,7 @@ public actor SQLitePersistenceStore {
   private func retryFailedMutationWithoutTransaction(
     _ mutation: PendingMutation,
     candidate: InstantFailedMutationRetryCandidateRow,
-    originalJSON: String,
+    originalBody: SQLiteBinding,
     expectedAttributeRevision: Int64
   ) throws {
     guard let receiptFingerprint = try optimisticEffectFingerprint(of: mutation) else {
@@ -16855,7 +16887,7 @@ public actor SQLitePersistenceStore {
         .int(Int64(candidate.actualBodyByteCount)),
         .text(receiptFingerprint),
         .int(expectedAttributeRevision),
-        .text(originalJSON),
+        originalBody,
       ]
     )
     guard sqlite3_changes(connection.raw) == 1 else {
@@ -16871,7 +16903,7 @@ public actor SQLitePersistenceStore {
   private func isolateAutomaticFailedMutationRetryWithoutTransaction(
     _ mutation: PendingMutation,
     candidate: InstantFailedMutationRetryCandidateRow,
-    originalJSON: String,
+    originalBody: SQLiteBinding,
     reason: String,
     expectedAttributeRevision: Int64
   ) throws {
@@ -16910,7 +16942,7 @@ public actor SQLitePersistenceStore {
         candidate.deliveryState.map(SQLiteBinding.text) ?? .null,
         .int(Int64(candidate.actualBodyByteCount)),
         .int(expectedAttributeRevision),
-        .text(originalJSON),
+        originalBody,
       ]
     )
     guard sqlite3_changes(connection.raw) == 1 else {
@@ -16965,9 +16997,8 @@ public actor SQLitePersistenceStore {
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT outbox.mutation_id, outbox.created_at_ms, outbox.failure_message, body.lifecycle_json,
-             CASE WHEN body.lifecycle_json IS NULL
-               THEN NULL ELSE length(CAST(body.lifecycle_json AS BLOB)) END,
+      SELECT outbox.mutation_id, outbox.created_at_ms, outbox.failure_message,
+             COALESCE(body.lifecycle_json, body.json), \(Self.lifecycleBytesSQL(body: "body")),
              outbox.delivery_metadata_version,
              outbox.optimistic_effect_receipt_fingerprint,
              \(InstantOutboxRowDelivery.columns)
@@ -16999,9 +17030,9 @@ public actor SQLitePersistenceStore {
       == Int64(InstantOutboxDeliveryMetadata.currentVersion),
       let lifecycleByteCount,
       lifecycleByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes,
-      let lifecycleBytes = sqlite3_column_text(statement, 3),
+      let lifecycleJSON = try? outboxBodyJSON(statement, 3),
       let delivery = InstantOutboxRowDelivery(statement: statement, from: 7),
-      let lifecycle = try? decodeOutboxBody(String(cString: lifecycleBytes), delivery: delivery),
+      let lifecycle = try? decodeOutboxBody(lifecycleJSON, delivery: delivery),
       lifecycle.id == mutationID,
       lifecycle.status == .failed
     {
@@ -18037,8 +18068,8 @@ public actor SQLitePersistenceStore {
     try decodeOutboxBody(row.json, delivery: row.delivery)
   }
 
-  /// One stored body or lifecycle and the delivery columns it is decoded with (#1435): `sql` selects the text, then
-  /// the status, the server transaction id and the confirmation source. Nil when no row matches or the text is NULL.
+  /// One stored body or lifecycle and the delivery columns it is decoded with (#1435): `sql` selects the body, then
+  /// the status, the server transaction id and the confirmation source. Nil when no row matches or the body is NULL.
   private func loadStoredBodyWithDeliveryWithoutTransaction(
     _ sql: String,
     _ bindings: [SQLiteBinding]
@@ -18047,14 +18078,79 @@ public actor SQLitePersistenceStore {
     try prepare(sql, statement: &statement)
     defer { finishStatement(statement) }
     try bind(bindings, to: statement)
-    guard sqlite3_step(statement) == SQLITE_ROW, let text = sqlite3_column_text(statement, 0) else { return nil }
+    guard sqlite3_step(statement) == SQLITE_ROW, let json = try outboxBodyJSON(statement, 0) else { return nil }
     guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 1) else {
       throw persistenceError(
         operation: "decode outbox delivery row",
         message: "SQLite returned an outbox status or confirmation source this version does not know."
       )
     }
-    return (String(cString: text), delivery)
+    return (json, delivery)
+  }
+
+  /// A body column's JSON (#1463): a compressed body (a BLOB) inflated, a body an older version stored (TEXT) as it
+  /// is, nil when the column is NULL. Every reader of `instant_outbox_bodies.json`, `quarantine_json`, a plan's staged
+  /// body or a quarantined row's body reads through this.
+  private func outboxBodyJSON(_ statement: OpaquePointer?, _ column: Int32) throws -> String? {
+    switch sqlite3_column_type(statement, column) {
+    case SQLITE_NULL:
+      return nil
+    case SQLITE_BLOB:
+      let bytes = sqlite3_column_blob(statement, column)
+      let count = Int(sqlite3_column_bytes(statement, column))
+      guard let bytes,
+        let json = InstantOutboxStoredBody.json(fromCompressed: UnsafeRawBufferPointer(start: bytes, count: count))
+      else {
+        throw persistenceError(
+          operation: "decode outbox body",
+          message: "SQLite returned an outbox body this version cannot inflate."
+        )
+      }
+      return json
+    default:
+      return sqlite3_column_text(statement, column).map { String(cString: $0) }
+    }
+  }
+
+  /// A quarantined body as text (#1463): a compressed body inflated, text as it is, and a value this version cannot
+  /// inflate as its bytes in hexadecimal, so a quarantine, which exists for bodies that do not decode, never fails to
+  /// list one and a recovery still has every byte.
+  private func quarantinedBodyText(_ statement: OpaquePointer?, _ column: Int32) -> String? {
+    guard sqlite3_column_type(statement, column) == SQLITE_BLOB else {
+      return sqlite3_column_text(statement, column).map { String(cString: $0) }
+    }
+    if let json = try? outboxBodyJSON(statement, column) { return json }
+    let bytes = sqlite3_column_blob(statement, column)
+    let count = Int(sqlite3_column_bytes(statement, column))
+    guard let bytes else { return "" }
+    return UnsafeRawBufferPointer(start: bytes, count: count).map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// What a body column stores for `json` (#1463): the JSON compressed, or the JSON itself when compressing does not
+  /// shorten it. A lifecycle is not stored beside it; ``lifecycleBytesSQL(body:)`` says its size.
+  private static func storedBodyBinding(_ json: String) -> SQLiteBinding {
+    InstantOutboxStoredBody.compressed(json).map(SQLiteBinding.blob) ?? .text(json)
+  }
+
+  /// A row's body size in JSON bytes, for a statement whose outbox row is named `outbox` and its body row `body`
+  /// (#1463): a compressed body's size is its row's `encoded_body_bytes`, which every write of a body sets; a body an
+  /// older version stored as text is measured, as before. Every guard that decides whether a body may be read uses this,
+  /// never the stored length, so a small compressed value never stands for a large body.
+  static func bodyJSONBytesSQL(outbox: String, body: String) -> String {
+    """
+    (CASE WHEN typeof(\(body).json) = 'blob' THEN \(outbox).encoded_body_bytes
+      ELSE length(CAST(\(body).json AS BLOB)) END)
+    """
+  }
+
+  /// A body row's lifecycle size in JSON bytes, for a statement whose `instant_outbox_bodies` is named `body`, NULL when
+  /// the row has no lifecycle (an older version's row before its lifecycle was written, #1435). A row this version
+  /// writes stores its lifecycle's size and derives the lifecycle from its body (#1463).
+  static func lifecycleBytesSQL(body: String) -> String {
+    """
+    COALESCE(\(body).lifecycle_bytes, CASE WHEN \(body).lifecycle_json IS NULL
+      THEN NULL ELSE length(CAST(\(body).lifecycle_json AS BLOB)) END)
+    """
   }
 
   /// A write's body as `instant_outbox_bodies` stores it (#1435): without the fields its row's columns hold (status,
@@ -18075,8 +18171,13 @@ public actor SQLitePersistenceStore {
     return (try encode(body), try encode(body.compactedForMemory))
   }
 
-  /// Writes a write's body and lifecycle when they differ from what its body row holds, or makes the row (#1435). A
-  /// claim and an acknowledgement change only the outbox row's columns, so for them this writes nothing.
+  /// Writes a write's body when it differs from what its body row holds, or makes the row (#1435). A claim and an
+  /// acknowledgement change only the outbox row's columns, so for them this writes nothing.
+  ///
+  /// #1463: the body is stored compressed and its lifecycle is not stored beside it, only its size: on a phone's
+  /// store the cell then fit its leaf for 6 of 8 live writes, where the JSON and its lifecycle took two to four
+  /// overflow pages, allocated at the save and freed at the echo. A row an older version wrote is rewritten so at its
+  /// next change.
   private func saveOutboxBodyWithoutTransaction(
     mutationID: String,
     body: String,
@@ -18084,15 +18185,17 @@ public actor SQLitePersistenceStore {
   ) throws {
     try execute(
       """
-      INSERT INTO instant_outbox_bodies (mutation_id, lifecycle_json, json)
-      VALUES (?, ?, ?)
+      INSERT INTO instant_outbox_bodies (mutation_id, lifecycle_json, json, lifecycle_bytes)
+      VALUES (?, NULL, ?, ?)
       ON CONFLICT(mutation_id) DO UPDATE SET
-        lifecycle_json = excluded.lifecycle_json,
-        json = excluded.json
+        lifecycle_json = NULL,
+        json = excluded.json,
+        lifecycle_bytes = excluded.lifecycle_bytes
       WHERE instant_outbox_bodies.json IS NOT excluded.json
-        OR instant_outbox_bodies.lifecycle_json IS NOT excluded.lifecycle_json
+        OR instant_outbox_bodies.lifecycle_json IS NOT NULL
+        OR instant_outbox_bodies.lifecycle_bytes IS NOT excluded.lifecycle_bytes
       """,
-      [.text(mutationID), .text(lifecycle), .text(body)]
+      [.text(mutationID), Self.storedBodyBinding(body), .int(Int64(lifecycle.utf8.count))]
     )
   }
 
@@ -18173,18 +18276,19 @@ public actor SQLitePersistenceStore {
         .text(id),
       ]
     )
-    // Each right-hand side reads the row as it was, so the quarantine columns get the original body and lifecycle.
+    // Each right-hand side reads the row as it was, so the quarantine columns get the original body and lifecycle
+    // (a compressed body's lifecycle is its body's, #1463). The shell is stored as every body is.
     try execute(
       """
       UPDATE instant_outbox_bodies
       SET quarantine_json = COALESCE(?, json), quarantine_lifecycle_json = lifecycle_json,
-          lifecycle_json = ?, json = ?
+          lifecycle_json = NULL, json = ?, lifecycle_bytes = ?
       WHERE mutation_id = ?
       """,
       [
         originalBody.map(SQLiteBinding.text) ?? .null,
-        .text(encoded.lifecycle),
-        .text(encoded.body),
+        Self.storedBodyBinding(encoded.body),
+        .int(Int64(encoded.lifecycle.utf8.count)),
         .text(id),
       ]
     )
@@ -18798,12 +18902,18 @@ public actor SQLitePersistenceStore {
       }
       guard
         let mutationID = sqlite3_column_text(statement, 0),
-        let json = sqlite3_column_text(statement, 2)
+        let body = try outboxBodyJSON(statement, 2)
       else {
         throw persistenceError(
           operation: "read outbox delivery rows",
           message: "SQLite returned a NULL bounded-delivery column."
         )
+      }
+      let storedBody: SQLiteBinding
+      if sqlite3_column_type(statement, 2) == SQLITE_BLOB, let bytes = sqlite3_column_blob(statement, 2) {
+        storedBody = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 2))))
+      } else {
+        storedBody = .text(body)
       }
       guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 6) else {
         throw persistenceError(
@@ -18811,7 +18921,6 @@ public actor SQLitePersistenceStore {
           message: "SQLite returned an outbox status or confirmation source this version does not know."
         )
       }
-      let body = String(cString: json)
       materializedOutboxBodyCount += 1
       materializedOutboxBodyByteCount += body.utf8.count
       rows.append(
@@ -18819,6 +18928,7 @@ public actor SQLitePersistenceStore {
           mutationID: String(cString: mutationID),
           createdAtMilliseconds: sqlite3_column_int64(statement, 1),
           json: body,
+          storedBody: storedBody,
           optimisticEffectReceiptFingerprint: sqlite3_column_text(statement, 3)
             .map(String.init(cString:)),
           deliveryClaimPayloadFingerprint: sqlite3_column_text(statement, 4)
@@ -18938,10 +19048,20 @@ public actor SQLitePersistenceStore {
       guard code == SQLITE_ROW else {
         throw persistenceError(operation: "read SQL", message: lastErrorMessage())
       }
-      guard let bytes = sqlite3_column_text(statement, 0) else {
+      // #1463: an outbox body is stored compressed; it joins the batch as its JSON.
+      let inflated: String?
+      if sqlite3_column_type(statement, 0) == SQLITE_BLOB {
+        guard let json = try outboxBodyJSON(statement, 0) else {
+          throw persistenceError(operation: "decode row", message: "SQLite returned a NULL JSON row.")
+        }
+        inflated = json
+      } else {
+        inflated = nil
+      }
+      guard inflated != nil || sqlite3_column_text(statement, 0) != nil else {
         throw persistenceError(operation: "decode row", message: "SQLite returned a NULL JSON row.")
       }
-      let byteCount = Int(sqlite3_column_bytes(statement, 0))
+      let byteCount = inflated?.utf8.count ?? Int(sqlite3_column_bytes(statement, 0))
       let separatorByteCount = batchRowCount == 0 ? 0 : 1
       if batchRowCount > 0,
         batchRowCount >= maxRowsPerBatch
@@ -18952,11 +19072,29 @@ public actor SQLitePersistenceStore {
       if batchRowCount > 0 {
         batchData.append(0x2C)
       }
-      batchData.append(bytes, count: byteCount)
+      if let inflated {
+        batchData.append(contentsOf: inflated.utf8)
+      } else if let bytes = sqlite3_column_text(statement, 0) {
+        batchData.append(bytes, count: byteCount)
+      }
       batchRowCount += 1
       totalRowCount += 1
       encodedByteCount += byteCount
     }
+  }
+
+  /// The first row's body column as JSON (#1463): ``outboxBodyJSON(_:_:)`` of column 0.
+  private func selectOutboxBodyJSON(_ sql: String, _ bindings: [SQLiteBinding] = []) throws -> String? {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW else {
+      throw persistenceError(operation: "read SQL", message: lastErrorMessage())
+    }
+    return try outboxBodyJSON(statement, 0)
   }
 
   private func selectScalar(_ sql: String, _ bindings: [SQLiteBinding] = []) throws -> String? {
@@ -19614,9 +19752,13 @@ public actor SQLitePersistenceStore {
     let existingConfirmationSource = hasExisting
       ? sqlite3_column_text(statement, 3).map(String.init(cString:))
       : nil
-    let existingJSON = hasExisting
-      ? sqlite3_column_text(statement, 4).map(String.init(cString:))
-      : nil
+    let existingJSON: String?
+    do {
+      existingJSON = hasExisting ? try outboxBodyJSON(statement, 4) : nil
+    } catch {
+      finishStatement(statement)
+      throw error
+    }
     let existingDeliveryStarted = hasExisting
       ? sqlite3_column_int64(statement, 5) != 0
       : false
@@ -20809,6 +20951,10 @@ public actor SQLitePersistenceStore {
         result = value.withCString {
           sqlite3_bind_text(statement, index, $0, -1, sqliteTransient)
         }
+      case let .blob(value):
+        result = value.withUnsafeBytes {
+          sqlite3_bind_blob(statement, index, $0.baseAddress, Int32($0.count), sqliteTransient)
+        }
       case .null:
         result = sqlite3_bind_null(statement, index)
       }
@@ -20957,6 +21103,8 @@ public actor SQLitePersistenceStore {
 private enum SQLiteBinding: Sendable {
   case int(Int64)
   case text(String)
+  /// A compressed outbox body (#1463).
+  case blob(Data)
   case null
 }
 

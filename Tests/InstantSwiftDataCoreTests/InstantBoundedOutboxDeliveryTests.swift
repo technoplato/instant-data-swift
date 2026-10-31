@@ -6409,14 +6409,15 @@ private func boundedOutboxAuthoritySnapshot(
     let bindResult = id.withCString {
       sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
     }
+    // An outbox body is stored compressed since #1463: the snapshot holds its JSON.
     guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW,
-      let bodyBytes = sqlite3_column_text(statement, 0)
+      let body = storedOutboxBodyJSON(statement, 0)
     else {
       throw boundedOutboxSQLiteError(database, operation: "read authority snapshot")
     }
     return BoundedOutboxAuthorityRowSnapshot(
       mutationID: id,
-      body: String(cString: bodyBytes),
+      body: body,
       encodedBodyBytes: sqlite3_column_type(statement, 1) == SQLITE_NULL
         ? nil
         : sqlite3_column_int64(statement, 1),
@@ -6496,7 +6497,8 @@ private func boundedOutboxRawBody(id: String, cacheURL: URL) throws -> String? {
     if stepResult == SQLITE_DONE { return nil }
     throw boundedOutboxSQLiteError(database, operation: "read raw body")
   }
-  return sqlite3_column_text(statement, 0).map(String.init(cString:))
+  // An outbox body is stored compressed since #1463: its JSON.
+  return storedOutboxBodyJSON(statement, 0)
 }
 
 private func boundedOutboxOptimisticOverlayActive(

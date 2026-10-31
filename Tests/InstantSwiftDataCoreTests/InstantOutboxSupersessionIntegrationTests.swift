@@ -1448,7 +1448,8 @@ private func supersessionOutboxRawRow(
       userInfo: [NSLocalizedDescriptionKey: "Could not read the raw outbox row."]
     )
   }
-  guard let jsonBytes = sqlite3_column_text(statement, 1) else {
+  // An outbox body is stored compressed since #1463: its JSON.
+  guard let json = storedOutboxBodyJSON(statement, 1) else {
     throw NSError(
       domain: "InstantOutboxSupersessionIntegrationTests",
       code: 7,
@@ -1457,7 +1458,7 @@ private func supersessionOutboxRawRow(
   }
   return SupersessionOutboxRawRow(
     encodedBodyByteCount: Int(sqlite3_column_int64(statement, 0)),
-    json: String(cString: jsonBytes)
+    json: json
   )
 }
 

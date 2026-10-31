@@ -22259,7 +22259,8 @@ struct InstantStoreTests {
       var values: [Value] = []
       let decoder = JSONDecoder()
       while sqlite3_step(statement) == SQLITE_ROW {
-        guard let bytes = sqlite3_column_text(statement, 0) else {
+        // An outbox body is stored compressed since #1463.
+        guard let json = storedOutboxBodyJSON(statement, 0) else {
           throw InstantError(
             code: .persistenceFailed,
             operation: "read persistence migration JSON probe",
@@ -22267,7 +22268,7 @@ struct InstantStoreTests {
             recovery: "Check the temporary test database."
           )
         }
-        values.append(try decoder.decode(Value.self, from: Data(String(cString: bytes).utf8)))
+        values.append(try decoder.decode(Value.self, from: Data(json.utf8)))
       }
       guard sqlite3_errcode(connection) == SQLITE_OK
         || sqlite3_errcode(connection) == SQLITE_DONE

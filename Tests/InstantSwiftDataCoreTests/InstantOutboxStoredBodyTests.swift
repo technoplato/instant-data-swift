@@ -233,3 +233,70 @@ private enum StoredBodyFile {
     return try body(connection)
   }
 }
+
+/// A body column's JSON as a test reads it from the file (#1463): a compressed body inflated, text as it is, nil for
+/// NULL or a value that does not inflate.
+func storedOutboxBodyJSON(_ statement: OpaquePointer?, _ column: Int32) -> String? {
+  switch sqlite3_column_type(statement, column) {
+  case SQLITE_NULL:
+    return nil
+  case SQLITE_BLOB:
+    guard let bytes = sqlite3_column_blob(statement, column) else { return nil }
+    let count = Int(sqlite3_column_bytes(statement, column))
+    return InstantOutboxStoredBody.json(fromCompressed: UnsafeRawBufferPointer(start: bytes, count: count))
+  default:
+    return sqlite3_column_text(statement, column).map { String(cString: $0) }
+  }
+}
+
+/// Writes every compressed outbox body in `url` back as its JSON text, with its lifecycle beside it and no
+/// `lifecycle_bytes`: the shape a release before #1463 stores, for fixtures that rebuild an older store.
+func rewriteStoredOutboxBodiesAsText(in url: URL) throws {
+  var connection: OpaquePointer?
+  guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK, let connection else {
+    sqlite3_close_v2(connection)
+    throw StorageIOError("could not open \(url.lastPathComponent)")
+  }
+  defer { sqlite3_close_v2(connection) }
+  sqlite3_busy_timeout(connection, 5_000)
+  func rows(_ sql: String, _ read: (OpaquePointer?) throws -> Void) throws {
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
+      throw StorageIOError("\(sql): \(String(cString: sqlite3_errmsg(connection)))")
+    }
+    defer { sqlite3_finalize(statement) }
+    while sqlite3_step(statement) == SQLITE_ROW { try read(statement) }
+  }
+  var hasLifecycleBytes = false
+  try rows("SELECT name FROM pragma_table_info('instant_outbox_bodies')") { statement in
+    if sqlite3_column_text(statement, 0).map({ String(cString: $0) }) == "lifecycle_bytes" { hasLifecycleBytes = true }
+  }
+  var bodies: [(id: String, json: String)] = []
+  try rows("SELECT mutation_id, json FROM instant_outbox_bodies WHERE typeof(json) = 'blob'") { statement in
+    guard let id = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+      let json = storedOutboxBodyJSON(statement, 1)
+    else { throw StorageIOError("a compressed outbox body did not inflate") }
+    bodies.append((id, json))
+  }
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+  let update = hasLifecycleBytes
+    ? "UPDATE instant_outbox_bodies SET json = ?, lifecycle_json = ?, lifecycle_bytes = NULL WHERE mutation_id = ?"
+    : "UPDATE instant_outbox_bodies SET json = ?, lifecycle_json = ? WHERE mutation_id = ?"
+  for body in bodies {
+    let mutation = try JSONDecoder().decode(PendingMutation.self, from: Data(body.json.utf8))
+    let lifecycle = String(decoding: try encoder.encode(mutation.compactedForMemory), as: UTF8.self)
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(connection, update, -1, &statement, nil) == SQLITE_OK else {
+      throw StorageIOError("\(update): \(String(cString: sqlite3_errmsg(connection)))")
+    }
+    defer { sqlite3_finalize(statement) }
+    for (index, text) in [body.json, lifecycle, body.id].enumerated() {
+      sqlite3_bind_text(statement, Int32(index + 1), text, -1, transient)
+    }
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      throw StorageIOError("\(update): \(String(cString: sqlite3_errmsg(connection)))")
+    }
+  }
+}
