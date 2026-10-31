@@ -79,3 +79,34 @@ InstantSQLiteFileMeter.swift and its test: last claim sqlite-1245 (#1245), lande
 five live claims above name other regions; the statement cache and the transaction wrapper are unclaimed. The one
 line after the writer opens sits near perf-waste-fixes' `temp_store` line: said in their channel and in mine,
 agent-presence/_channels/2026-10-31-perf-writes-1510.md. Rebase onto each landing before a land.
+
+## Amendment 1 (2026-10-31 16:15): a stored body that says each fact once
+
+Measured (13:32 log, build 208): a transcript segment save's body is 11.7-17.9 KB for about 1.3 KB of values; every
+operation repeats its transaction's id and time and wraps each value twice (`{"insert":{"_0":{... "value":{"number":
+{"_0":..}}}}}`), and the rollback doubles it. Past about 1 KB a body spills into overflow pages of this `WITHOUT ROWID`
+table, allocated from the free list (page 1 and its trunk rewritten) at the save and freed at the confirm. perf-send-1492
+handed this region over (16:05): its receipt reuse no longer keys on the stored bytes.
+
+What changes: `instant_outbox_bodies.json` is written in a compact form, version 2: the write's other fields encoded as
+today, and its operations and rollback as short arrays (a tag, the entity, the attribute, the value, and the operation's
+own transaction id and time only where they differ from the write's). A version-1 body still decodes, so a store opened
+by an older build and a row written before stay readable; `lifecycle_json` is unchanged. Decoding a version-2 body gives
+the same `PendingMutation`, field for field (the six fields the receipt reads among them; the receipt's digest and its
+payload do not change).
+
+The one decision, made here: the stored bytes are the write's encoded size everywhere they are counted today
+(`encoded_body_bytes`, the claim's projected bytes, the 8 MiB memory and transport envelope), so a save still encodes its
+body once (#1491's test stays) and every budget measures what is decoded. A write's version-2 size is about half its
+version-1 size, so the envelope admits a write about twice the size it did; said in the release notes, and on #1510.
+
+Steps: red (a round trip of every operation and value kind, version 1 and 2 decoding to the same write, a segment-shaped
+body under 6 KB, a version-1 row still read, the recorder's pages for the body and its overflow in the save exercise);
+green; the recorder's before and after on the recording exercise and the phone-shaped save; Scribe's
+`scripts/recovery/recover-recording-from-outbox.mjs` reads version 2 (a Scribe commit, with its test).
+
+Touching (added): Sources/InstantSwiftDataCore/InstantOutboxBodyCodec.swift (new), SQLitePersistenceStore.swift
+(`encodeOutboxBody`, `decodeOutboxBody`, `storedOutboxBody` only), BoundedOutboxDelivery.swift
+(`encodedProjectedBodyByteCount` only; not `validateNewMutation`, perf-gate-1491's),
+Tests/InstantSwiftDataCoreTests/InstantOutboxBodyCodecTests.swift (new); in Scribe,
+scripts/recovery/recover-recording-from-outbox.mjs and its test.
