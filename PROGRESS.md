@@ -1,3 +1,23 @@
+## 2026-10-31 18:20:12 EDT — perf-send-1492 (#1497, #1496): the receipt memo and one task per frame, measured; landing
+
+- **Branch:** `agent/claude/perf-send-1492` at the merge of main `2d47e165` (#1493, #1495, #1510 in). #1497: red
+  `13699326`, green `a55a0912`, inputs key `ca5c830e`. #1496: red `af675e6b`, bench `7d024be3`, FIFO writer `0a7a9595`
+  (replaced), `4bd0f806`, `66d372e8`, one task per frame `40e83b28`.
+- **Checks (Mac mini, debug, `scripts/known-failing-tests.sh` at `2d47e165`):** 1,644 tests, 2 failing: one listed, and
+  `InstantLiveFrameDecodeTests/aServerResultDecodesAtAFractionOfJSONDecodersCost` (CPU ratio 0.339 against 0.33), which
+  failed in perf-observe-1493's run before this branch and is receive-side. Every criterion test passes, and the two the
+  FIFO writer broke (#461 room leave, #1131 re-registration). Loopback validation: CLI and harness tests pass, `ok: true`.
+- **#1497 measured (recording exercise, main `62c16ebf` against `2d47e165`, interleaved, 2 rounds alone and 2 loaded):**
+  acknowledgement CPU per call 834 -> 506 us alone, 613 -> 419 us loaded; outboxClaim 2,278 -> 2,051 us loaded;
+  localSave 1,733 -> 1,914 us loaded (+10%). The inputs hash costs about a third of a fingerprint and runs about five
+  times a write (save once, claim and acknowledgement about twice each), so the three steps net -5% loaded.
+- **#1496 measured (`measureTheSendPath`, 20,000 transacts, 3 runs alternating with `7d024be3`):** CPU per send 24.58 ->
+  20.69 us, CPU in the 5.5 s after 0.60 -> 0.35 ms, tasks 63,000 -> 21,001.
+- **Evidence:** `~/Sync/audit/perf-send-1492/mini/final-2d47e165/` (bundle, compare, ab-1497, bench-1496.txt, job.log).
+- **Next:** land; ledger; READY FOR BUILD on #1482. Then #1497's follow-up: key the claim's and the acknowledgement's
+  row checks by the SHA-256 of the stored text (hardware, about 15 us a line) with a round-trip pin, pass the
+  acknowledgement's fingerprint to its lifecycle record, and drop the save's inputs hash.
+
 ## 2026-10-31 13:12:00 EDT — perf-send-1492 (#1492, #1497, #1496): one attribute resolver per server schema landed; #1497 red
 
 - **Landed:** plan `90582dbd` (claims), amendment 1 `0cc5e7d6`; #1492 red `8b5a4584`, green `14ee7622`, merged

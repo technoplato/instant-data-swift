@@ -10,6 +10,130 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 6:19:52 p.m. EDT — `40e83b28664e` fix(#1496): each frame is written by one task, and one watcher per socket keeps every deadline; writes stay independent
+
+- **Implementation commit:** `40e83b28664e0795ba815ce8e32159b45b8b9e77`
+- **Change:** fix(#1496): each frame is written by one task, and one watcher per socket keeps every deadline; writes stay independent
+- **Details:**
+  - A browser's ws.send never blocks, so upstream never holds one frame behind another; an awaited Swift send does. Each frame keeps one task of its own (the caller's cancellation does not reach it, library-78; writes stay independent, #461 #1131); instantLiveWithTimeout's work and deadline tasks and its 5 s timer per send go. One watcher per socket sleeps only while a write is in flight, until the earliest deadline.
+  - Measured (Mac mini M4, release, InstantLiveSendPathTests/measureTheSendPath, 20,000 transacts, three runs each alternating with 7d024be3, the old send path): CPU per send 24.58 -> 20.69 us (-16%), wall per send 22.02 -> 18.56 us (-16%), CPU in the 5.5 s after the last send 0.60 -> 0.35 ms (-41%), tasks started 63,000 -> 21,001 (three a send -> one, plus the socket's watcher).
+  - Checks at the merge 2d47e165 (Mac mini, debug, scripts/known-failing-tests.sh run and compare): 1,644 tests, 2 failing, neither on these paths (one listed; InstantLiveFrameDecodeTests' CPU ratio 0.339 against a 0.33 bound, which failed before this branch too); the server transaction loopback validation passes unchanged (its CLI and harness tests, and the validation run itself).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveSocketWriter.swift` — #1496 one task per frame, one deadline watcher per socket
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the history line and the send's comment
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 100 sends start 100 tasks (were 300); a held frame does not hold a later one
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:51 p.m. EDT — `66d372e8d979` fix(#1496): a frame refused because the session let go of its socket does not abort that socket
+
+- **Implementation commit:** `66d372e8d979a2af01caffde5e74d480c9e97bcd`
+- **Change:** fix(#1496): a frame refused because the session let go of its socket does not abort that socket
+- **Details:**
+  - The frame never reached the socket and whatever let go of it closes it, so the send's failure path no longer aborts it: a graceful close with frames queued behind it stays graceful.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the superseded send's own catch
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:51 p.m. EDT — `4bd0f806402a` docs(#1496): a send through a socket the live session let go of fails as superseded instead of writing to it
+
+- **Implementation commit:** `4bd0f806402a60964783eb7edf902376e097e8bc`
+- **Change:** docs(#1496): a send through a socket the live session let go of fails as superseded instead of writing to it
+- **Details:**
+  - Comment only: the old wording claimed the write would have failed too, which a socket still closing gracefully does not guarantee.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the comment on a send through a released socket
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:51 p.m. EDT — `0a7a9595b4a3` fix(#1496): green: one writer task per socket writes its frames in order; one watcher bounds each write at 5 s
+
+- **Implementation commit:** `0a7a9595b4a3c79c6b210f0f31049a66bb719b42`
+- **Change:** fix(#1496): green: one writer task per socket writes its frames in order; one watcher bounds each write at 5 s
+- **Details:**
+  - The audit's design: one task per socket takes the frames in call order, as upstream Reactor.js writes with ws.send. Replaced by 40e83b28: the mini's 494-test run showed a frame held at the socket held every later one (#461, #1131).
+  - Not done as the audit sketched: instantLiveWithTimeout as a two-child task group; a group awaits its children and liveTimeoutDoesNotAwaitCancellationInsensitiveWork requires the timeout to return without the work.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveSocketWriter.swift` — #1496 the socket's writer and deadline watcher
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the writer made with each socket and finished when the session lets go
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 the writer's deadline, finish and cancellation tests
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:50 p.m. EDT — `7d024be32199` test(#1496): the send path's own cost, measured in release with INSTANT_SEND_PATH_BENCH=1
+
+- **Implementation commit:** `7d024be32199ed4b4502f04542c538f7167cf5a6`
+- **Change:** test(#1496): the send path's own cost, measured in release with INSTANT_SEND_PATH_BENCH=1
+- **Details:**
+  - 20,000 transacts through one live session to a socket that takes each at once: CPU and wall time per send, the CPU of the 5.5 s after (cancelled Task.sleep timers still fire), and the send path's task count. Gated; the before-and-after for #1496.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 measureTheSendPath
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:50 p.m. EDT — `af675e6b2417` test(#1496): red: a send starts no task of its own, and frames leave in the order the session sent them
+
+- **Implementation commit:** `af675e6b2417ce08ec8a0a9158b1626ea87a105d`
+- **Change:** test(#1496): red: a send starts no task of its own, and frames leave in the order the session sent them
+- **Details:**
+  - Each send wrapped its socket write in a task around instantLiveWithTimeout, which starts a work task and a deadline task and arms a 5 s timer: 100 sends on one connection start 300 tasks (Mac mini, debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 a test counter of the send path's tasks and in-flight sends
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 the task pin and the order pin
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:50 p.m. EDT — `ca5c830e7727` fix(#1497): the kept receipt fingerprint is keyed by a hash of its inputs, not by the stored body's bytes
+
+- **Implementation commit:** `ca5c830e7727eeae870bc6c9cedd79610a5db7b0`
+- **Change:** fix(#1497): the kept receipt fingerprint is keyed by a hash of its inputs, not by the stored body's bytes
+- **Details:**
+  - Two receipt checks pass an in-memory write (a lifecycle record's, the delivery metadata's), so a key on the stored row's text stood for the row, not the write passed. The fingerprint is a pure function of six inputs; PendingMutation.optimisticEffectReceiptFingerprintInputsHash hashes exactly those (Point-Free G23) and every call site reuses the kept fingerprint when that hash is the same.
+  - Measured (Mac mini M4, release, the recording contention exercise, 60 s and 90 writes a run, main 62c16ebf against 2d47e165 interleaved in one job, two rounds alone and two beside six busy loops, scripts/contention-exercises/ab-commits.sh): acknowledgement CPU per call 834.1 -> 506.3 us alone (-39%), 613.1 -> 418.8 us under load (-32%).
+  - Same runs: outboxClaim CPU per call 2,278 -> 2,051 us under load (-10%; alone 3,982 -> 3,733, inside its spread); localSave 1,733 -> 1,914 us under load (+10%; alone 3,315 -> 3,861, spread 985 us): the save now hashes the write's six inputs once to key the kept fingerprint and the claim and the acknowledgement about twice each, so save, claim and acknowledgement together cost 4,624 -> 4,384 us under load (-5%). Keying the row checks by the stored text is the follow-up.
+  - Checks at the merge 2d47e165 (Mac mini, debug, scripts/known-failing-tests.sh run and compare): 1,644 tests, 2 failing, neither on these paths (one listed; InstantLiveFrameDecodeTests' CPU ratio 0.339 against a 0.33 bound, which failed before this branch too); the server transaction loopback validation passes unchanged (its CLI and harness tests, and the validation run itself).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — #1497 the hash of the receipt fingerprint's inputs
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1497 the kept fingerprint keyed by its inputs, dropped at acceptance, bounded at 512
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1497 changed content is fingerprinted again and quarantined; the same content in another encoding reuses it
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:49 p.m. EDT — `a55a09129f13` fix(#1497): green: the store keeps the receipt fingerprint it computed for each body; the claim and the acknowledgement reuse it
+
+- **Implementation commit:** `a55a09129f133cea1e9aa2bb127e4f6e1935b48d`
+- **Change:** fix(#1497): green: the store keeps the receipt fingerprint it computed for each body; the claim and the acknowledgement reuse it
+- **Details:**
+  - The audit's interim fix (hash the stored body, byte-equal to today's digest) cannot be byte-equal: the receipt digest covers a sorted-keys payload (id, createdAt, transaction, rollback, overlay state, receipt version), not the stored body. The store kept each body's fingerprint under the SHA-256 of its stored text instead; ca5c830e re-keys it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1497 the kept fingerprint, reused by the claim and the acknowledgement
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1497 the earlier-process guard counts the relaunch, the claim and the acknowledgements apart
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:49 p.m. EDT — `13699326091d` test(#1497): red: a live write fingerprints its effect once, at its save; the claim and the acknowledgement reuse it
+
+- **Implementation commit:** `13699326091dc0e9c933fac22d5ce53460bd00d4`
+- **Change:** test(#1497): red: a live write fingerprints its effect once, at its save; the claim and the acknowledgement reuse it
+- **Details:**
+  - The claim and the acknowledgement each fingerprinted a write's effect again from the body the save had just written: a sorted-keys JSON encoding of the transaction and rollback and a SHA-256, about 1.3 ms an acknowledgement for a transcript line on a Mac mini.
+  - Red on the laptop (debug): save 1, claim 1, acknowledgement 1 (wanted 1, 0, 0); ten bodies an earlier process saved cost 22 fingerprints (wanted 10); a body re-encoded after its save cost claim 6, acknowledgement 6 (wanted 1, 0).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1497 the fingerprint pins: a live write, an earlier process's bodies, a re-encoded body
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — #1497 eachStepOfALiveWriteFingerprintsItsEffectOnce pins save 1, claim 0, acknowledgement 0
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 1:08:05 p.m. EDT — `14ee76226d8c` fix(#1492): green: one attribute resolver per server schema, kept across sends
 
 - **Implementation commit:** `14ee76226d8c847c676ed5b012b156596a5f0af9`
