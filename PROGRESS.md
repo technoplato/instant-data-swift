@@ -1,3 +1,26 @@
+## 2026-10-31 15:56:01 EDT — perf-observe-1493 (#1493): a query observation is one stream; 7 library tasks per live FetchAll -> 1
+
+- **Landed:** red `02ef83f5`, green `6256949a`, exercise `c5f7c882`, doc `b00e2d04` (merge `dffd9a06`). No release cut,
+  tagged or installed; "READY FOR BUILD" on #1482.
+- **Change:** the store yields into the observation's output (`InstantObservationOutput`), the stream its consumer
+  reads; a live query's server error writes into the same output under the lock the emissions take (#360's semantics,
+  its suites unchanged); deferred values, a typed subscription's decode and `map` run in the consumer's own pull. The
+  two forwarders, the error stage's three tasks, the decoding bridge and map's task are gone; a compatibility client's
+  bare stream keeps its bridge. A fetch wrapper tells Observation only of the members an emission changed.
+- **Measured (Mac mini M4, release, `scripts/contention-exercises/run-observation-exercise.sh`, 48 live FetchAll, 50
+  rows, 200 writes):** library tasks per open observation 7.00 -> 1.00 (census); the process's alive tasks over the idle
+  window 289-291 -> 49-51 (xctrace Swift Concurrency); publication -> each wrapper's value p50 2,631 -> 681 us, p90
+  4,406 -> 2,581, p99 6,202 -> 3,754, worst 14,722 -> 6,352 (9,600 samples each). Debug pins: raw live 5 -> 0, local
+  2 -> 0, deferred 6 -> 0, typed 6 -> 0, mapped 7 -> 0, FetchAll 7 -> 1.
+- **Checks:** the focused suites on the mini (111 tests, 1 known issue); the whole core bundle against
+  Tests/known-failing.txt on `35651b04` (this and #1494 merged with main): 1,627 tests, 1 failing, a CPU-ratio timing test of the frame decoder (0.339 against its 0.33 bound) in code this change does not touch; the wrapper bundle: only #304 (pre-existing, fails at the
+  base too) beyond two cross-suite flakes that pass alone.
+- **Not done, logged on #1493:** dropping `objectWillChange` (FetchAll.publisher is built on it, and iOS 16's
+  @StateObject has no other signal; Sharing's shape, a proposal); Scribe's own forwarding task around each typed
+  subscription (`InstantRecordingRealtime.swift`, a follow-up for the app: `map` now composes at no task).
+- **Next:** #1494 (a server frame's planning turns 7 -> 3; its A/B of retries per frame is running), then the ship
+  agent's build.
+
 ## 2026-10-31 15:12:10 EDT — perf-ship-2 (#1482): v1.9.58 for Scribe build 210
 
 - **Release:** `docs/releases/v1.9.58.md`, tag `v1.9.58` on this landing's merge. Carries #1495 (merge `e6e71913`):
