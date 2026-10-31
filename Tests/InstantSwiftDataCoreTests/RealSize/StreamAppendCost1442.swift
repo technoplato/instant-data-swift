@@ -1,6 +1,7 @@
 // Research for #1442, kept on its own branch and never on main: what one stream append costs the disk beside one
 // outbox write, on the same store, measured by the storage audit's own counters (#1076).
 
+import Darwin
 import Foundation
 import Testing
 
@@ -94,4 +95,77 @@ struct StreamAppendCost1442 {
     }
     _ = try? await cycle.runtime.closeConnection()
   }
+
+  /// What a reader of a growing stream costs: `observeStreamContent` delivers everything from its byte offset so far,
+  /// so an hour of appends grows every delivery. No server: the writer's own observation, the shape every reader has.
+  @Test
+  func aReaderHoldsTheWholeStream() async throws {
+    let run = try StorageIORun(label: "stream-reader-1442")
+    defer { run.remove() }
+    let configuration = InstantRuntimeConfiguration(
+      appID: "stream-reader-1442",
+      persistenceURL: run.directory.appendingPathComponent("store.sqlite"),
+      initialAttributes: []
+    )
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+    let metadata = try await runtime.createStream(clientID: "reader-1442")
+    let delivered = LockIsolatedCounters()
+    let reads = try await runtime.observeStreamContent(streamID: metadata.id)
+    let reader = Task {
+      for await read in reads {
+        delivered.add(reads: 1, bytes: read.content.utf8.count)
+        await Task.yield()
+      }
+    }
+    var offset: Int64 = 0
+    let startedAt = ContinuousClock.now
+    var lastAt = startedAt
+    func footprintMB() -> Double {
+      var info = rusage_info_v4()
+      let result = withUnsafeMutablePointer(to: &info) { pointer in
+        pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+          proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0)
+        }
+      }
+      return result == 0 ? Double(info.ri_phys_footprint) / 1_048_576 : -1
+    }
+    for tick in 1...3_600 {
+      let appended = try await runtime.appendStreamContent(
+        streamID: metadata.id,
+        content: Self.chunk,
+        expectedOffset: offset
+      )
+      offset += appended.chunk.byteCount
+      if tick % 600 == 0 {
+        try await Task.sleep(for: .milliseconds(50))
+        let now = ContinuousClock.now
+        let (reads, bytes) = delivered.value
+        var line = StorageIOLine("cost1442-reader", "tick\(tick)")
+        line.add("streamMB", Double(offset) / 1_048_576, digits: 2)
+        line.add("reads", reads)
+        line.add("deliveredMB", Double(bytes) / 1_048_576, digits: 1)
+        line.add("footprintMB", footprintMB(), digits: 1)
+        line.add("msPerAppend", Double((now - lastAt).components.seconds) * 1_000 / 600 + Double((now - lastAt).components.attoseconds) / 1e15 / 600, digits: 2)
+        line.print()
+        lastAt = now
+      }
+    }
+    reader.cancel()
+    _ = try? await runtime.closeConnection()
+  }
+}
+
+/// Counts a reader's deliveries from its task.
+final class LockIsolatedCounters: @unchecked Sendable {
+  private let lock = NSLock()
+  private var reads = 0
+  private var bytes = 0
+  func add(reads: Int, bytes: Int) {
+    lock.withLock {
+      self.reads += reads
+      self.bytes += bytes
+    }
+  }
+  var value: (Int, Int) { lock.withLock { (reads, bytes) } }
 }
