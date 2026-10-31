@@ -1,3 +1,9 @@
+## 2026-10-31 00:02:36 EDT — scribe `3831c514f657dab10ccfb92b118566c532604354`
+Fix (#1451): an agent post in a person thread names its recording.
+
+## 2026-10-31 00:02:36 EDT — scribe `550d83f319aa1f16f4ca6c549cac31b405d8c622`
+Fix (#1451): the rules let the owner set move a person thread status, and only that.
+
 ## 2026-10-30 23:49:35 EDT — scribe `e75259261720e4e727612120363fccf74e5d08a1`
 Cut (#1404): Scribe 0.1 (197).
 
