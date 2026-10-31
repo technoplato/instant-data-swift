@@ -1,3 +1,24 @@
+## 2026-10-31 16:50:00 EDT — perf-gate-1491 (#1491): the write's own cost -18% in one job; the outbox tail read next
+
+- **Measured (perf-gate-1491-final, Mac mini M4, release, one job 16:11-16:37):** tight-loop transact p50 (cross-SDK
+  runtime benchmark, 300 transacts, three runs each within 0.011 ms): `13cdf499` 0.476 ms, `02b7cf8a` (one encode)
+  0.452, `aa18c4af` (the hex) 0.411, `4ff5e5c4` (no wire fingerprint for a new row) 0.389: -18%. Reconnect drain 0.88
+  -> 0.79 ms. Recording exercise steady transact hold p50, one round: alone 6.83 / 6.56 / 6.40 / 4.08 ms, beside six
+  busy loops 3.00 / 3.07 / 3.21 / 2.69. Debug suites: 125 tests in 8 suites passed (15 known issues as on main); the
+  wire red fails its count, the green passes. Evidence `~/Sync/audit/perf-gate-1491/mini/ab-1491c/`.
+- **Branch:** `agent/claude/perf-gate-1491` merged main at `94328840` (sources clean); post-merge suites queued as
+  perf-gate-1491-merged (the #1426/#1435/#1115/#1121 criteria suites, the write-path suites, #1510's recorder and
+  #1498's cache tests). Change log recorded for `cd3faf28`, `d564a099`, `aa18c4af`, `4ff5e5c4`, `221573c6`.
+- **Criteria:** the 2.5 ms steady hold target came from the confounded 1.58 ms (F0); alone, every commit holds 4-7 ms,
+  beside load 2.7-3.4 ms; no commit moved it 4.6x (the ab2 table in `docs/audits/2026-10-31-transact-hold-1491.md`).
+- **Amendment 3 (branch `agent/claude/perf-gate-1491-tail`, worktree `~/Sync/worktrees/perf-gate-1491-tail`):** every
+  write's creation-cursor read, and the server apply plan's begin and extend, sort the whole outbox (no index in
+  delivery order): red `e10668ae`, green `e712d3e3` (a creation-order index at open), a guard that no other plan of a
+  live write's statements changes. Queued as perf-gate-1491-tail: the outbox and server-apply suites, red/green, pages
+  per step of a live write at both commits, a two-round A/B and the tight loop.
+- **Next:** when perf-gate-1491-merged passes, `~/Scribe/tools/land` this branch, the ledger with `land --prepend`,
+  READY FOR BUILD on #1482; then the tail slice the same way, merging main first.
+
 ## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
 
 - **Release:** `docs/releases/v1.9.59.md`, tag `v1.9.59` on this release branch's tip, cut from `main` at `81c07e43`.
