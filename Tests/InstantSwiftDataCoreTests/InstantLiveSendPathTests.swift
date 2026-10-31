@@ -3,7 +3,8 @@
 //                    mutation it sent: about 1.2 ms of CPU a send on a Mac mini, 2-3 ms on a phone, on the live session
 //                    actor. The attributes change only with init-ok or a refresh-ok that carries them.
 // 2026-10-31  #1496  A send started three unstructured tasks (its own, and instantLiveWithTimeout's work and deadline)
-//                    and armed a 5 s timer; two sends that overlapped could reach the socket in either order.
+//                    and armed a 5 s timer. A frame is now written by one task, and one watcher per socket keeps the
+//                    deadlines; writes stay independent, as the room and query registration races need.
 
 import CustomDump
 import Foundation
@@ -105,11 +106,11 @@ struct InstantLiveSendPathTests {
     await live.close()
   }
 
-  /// A send starts no task of its own (#1496): the socket's writer and its deadline watcher, started with the socket,
-  /// write every frame. A send started three tasks and armed a 5 s timer, about 270 tasks and 90 timers a minute while
-  /// recording.
+  /// A send starts one task and arms no timer (#1496): the frame's own write, while the socket's one watcher keeps every
+  /// write's deadline. A send started three tasks (its own, and instantLiveWithTimeout's work and deadline) and armed a
+  /// 5 s timer, about 270 tasks and 90 timers a minute while recording.
   @Test
-  func aSendStartsNoTaskOfItsOwn() async throws {
+  func aSendStartsOneTaskAndArmsNoTimer() async throws {
     let wire = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: Self.attributes)])
     let live = InstantRuntimeLiveSession()
     try await live.open(
@@ -129,16 +130,16 @@ struct InstantLiveSendPathTests {
     let transacts = await wire.sentMessages().filter { $0.op == "transact" }
     #expect(transacts.count == 100)
     #expect(startedBySends <= 100, "at most one task a send")
-    #expect(startedBySends == 0)
-    #expect(startedWithTheSocket <= 2)
+    #expect(startedBySends == 100)
+    #expect(startedWithTheSocket == 1, "the socket's deadline watcher")
     await live.close()
   }
 
-  /// Frames leave in the order the session sent them (#1496), as upstream `Reactor.js` writes each with a synchronous
-  /// `ws.send`: a send that begins while an earlier one is still being written goes after it. Each send wrote from its
-  /// own task, so the later one could reach the socket first.
+  /// A frame held at the socket does not hold a later one (#1496): each frame is written by its own task, as each was
+  /// before. The runtime leaves a room while a presence write is stuck (#461), and registers an equivalent query while
+  /// the earlier one's removal is held (#1131); one task writing the frames in order made both wait for the held write.
   @Test
-  func framesLeaveInTheOrderTheSessionSentThem() async throws {
+  func aFrameHeldAtTheSocketDoesNotHoldALaterOne() async throws {
     let wire = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: Self.attributes)])
     let held = InstantLiveHeldWrite(clientEventID: "mutation-0")
     let transport = InstantLiveTransportClient.immediate { _ in
@@ -155,27 +156,21 @@ struct InstantLiveSendPathTests {
     }
     let live = InstantRuntimeLiveSession()
     try await live.open(
-      request: InstantLiveSessionRequest(appID: "live-send-path-order"),
+      request: InstantLiveSessionRequest(appID: "live-send-path-independent"),
       transport: transport,
       makeID: { UUID().uuidString.lowercased() }
     )
 
     let first = Task { try await live.sendMutations([Self.lineWrite(0)], claimToken: nil) }
     await held.waitUntilHolding()
-    let second = Task { try await live.sendMutations([Self.lineWrite(1)], claimToken: nil) }
-    let entered = ContinuousClock.now + InstantTestWait.hang
-    while await live.inFlightSendCountForTesting() < 2, ContinuousClock.now < entered {
-      try await Task.sleep(for: .milliseconds(1))
-    }
-    // A write that does not wait for the one ahead of it reaches the socket now.
-    _ = await held.waitUntilPassed("mutation-1", atMost: .milliseconds(500))
+    _ = try await live.sendMutations([Self.lineWrite(1)], claimToken: nil)
+    let whileHeld = await wire.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
     await held.release()
     _ = try await first.value
-    _ = try await second.value
 
-    let order = await wire.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
-    expectNoDifference(order, ["mutation-0", "mutation-1"])
-    #expect(order == ["mutation-0", "mutation-1"])
+    #expect(whileHeld == ["mutation-1"])
+    let written = await wire.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
+    #expect(written == ["mutation-1", "mutation-0"])
     await live.close()
   }
 
@@ -241,27 +236,22 @@ struct InstantLiveSendPathTests {
     await held.release()
   }
 
-  /// Finishing the writer fails every frame not yet written, and the write in progress still completes (#1496).
+  /// Finishing the writer refuses later frames, and a write in flight still completes (#1496).
   @Test
-  func finishingTheWriterFailsTheFramesNotYetWritten() async throws {
+  func finishingTheWriterRefusesLaterFramesAndLetsWritesInFlightFinish() async throws {
     let held = InstantLiveHeldWrite(clientEventID: "first")
     let sent = InstantLiveSentFrames()
     let writer = InstantLiveSocketWriter(session: Self.socket(holding: held, recording: sent))
     let first = Task { try await writer.write(Self.frame("first")) }
     await held.waitUntilHolding()
-    let second = Task { try await writer.write(Self.frame("second")) }
-    let queued = ContinuousClock.now + InstantTestWait.hang
-    while writer.unwrittenCountForTesting < 1, ContinuousClock.now < queued {
-      try await Task.sleep(for: .milliseconds(1))
-    }
 
     writer.finish()
-    await #expect(throws: InstantSupersededLiveSessionSend.self) { try await second.value }
-    await #expect(throws: InstantSupersededLiveSessionSend.self) { try await writer.write(Self.frame("third")) }
+    await #expect(throws: InstantSupersededLiveSessionSend.self) { try await writer.write(Self.frame("second")) }
     await held.release()
     try await first.value
 
     #expect(await sent.clientEventIDs == ["first"])
+    #expect(writer.inFlightCountForTesting == 0)
   }
 
   /// A caller cancelled while its frame is being written does not stop the write, and returns when the socket took it
@@ -330,24 +320,20 @@ struct InstantLiveSendPathTests {
   }
 }
 
-/// Holds the write of one message until released, and records the client event ids written past it (#1496).
+/// Holds the write of one message until released (#1496).
 actor InstantLiveHeldWrite {
   private let clientEventID: String
   private var isHolding = false
   private var isReleased = false
   private var held: [CheckedContinuation<Void, Never>] = []
   private var holdingWaiters: [CheckedContinuation<Void, Never>] = []
-  private var passed: [String] = []
 
   init(clientEventID: String) {
     self.clientEventID = clientEventID
   }
 
   func pass(_ message: InstantLiveMessage) async {
-    guard message.clientEventID == clientEventID, !isReleased else {
-      if let id = message.clientEventID { passed.append(id) }
-      return
-    }
+    guard message.clientEventID == clientEventID, !isReleased else { return }
     isHolding = true
     let waiters = holdingWaiters
     holdingWaiters = []
@@ -358,15 +344,6 @@ actor InstantLiveHeldWrite {
   func waitUntilHolding() async {
     guard !isHolding else { return }
     await withCheckedContinuation { holdingWaiters.append($0) }
-  }
-
-  /// Whether `clientEventID`'s write went past the hold within `limit`.
-  func waitUntilPassed(_ clientEventID: String, atMost limit: Duration) async -> Bool {
-    let deadline = ContinuousClock.now + limit
-    while !passed.contains(clientEventID), ContinuousClock.now < deadline {
-      try? await Task.sleep(for: .milliseconds(5))
-    }
-    return passed.contains(clientEventID)
   }
 
   /// Whether the held write is waiting for ``release()``.
