@@ -1,5 +1,20 @@
 - 2026-10-31 10:13:50 EDT · realtime-voice · `0b3fac6fd7f2` · #1487: any speech to text runs the full pipeline; Point-Free gets chapters
 
+## 2026-10-31 10:30:48 EDT — scribe `d44a055efb6e9c2b5a7cbb0c9043bc85e8633b43`
+Merge (#1457): the Photos-style design playground, rounds 2 and 3, and the audit with its winners; the playground compiles at the package's iOS 18 floor.
+
+## 2026-10-31 10:30:08 EDT — scribe `8daf8c4bf29cc848b75c23d62cee662106197d35`
+Docs (#1457): audit of four blind-critic design rounds: winners, every score, specs with round 3's corrections, 22 pictures.
+
+## 2026-10-31 10:30:00 EDT — scribe `374ebe4ede50ec623225bd9f1ee3bc229e1a9b88`
+Fix (#1457): playground round 3: list rows keep their own colors; the paused phase symbol holds 4.4:1 in light.
+
+## 2026-10-31 10:30:00 EDT — scribe `2ec2d200dfb5ba27c0efda41762f8353651f7cc2`
+Feat (#1457): playground round 3, every round 2 blocker and high answered; the harness compiles at the iOS 18 floor.
+
+## 2026-10-31 10:30:00 EDT — scribe `18a3dcb400f18a480a61a9ff477fb70e86a07e76`
+Feat (#1457): playground round 2, the round 1 leaders revised; no Show All labels, every tap has its VoiceOver action.
+
 ## 2026-10-31 10:13:56 EDT — scribe `74679e9a9f4e7a500c80fef04fc151aa569b41d0`
 Merge (#1465): the chapters zoom level proven on the simulator, live and in playback, 8 of 8 UI tests; no app code changed.
 
