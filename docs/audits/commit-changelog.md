@@ -1,3 +1,33 @@
+## 2026-10-31 09:51:16 EDT — scribe `cf3193a0fcf344582d7d844dc15b655cc18d5897`
+Merge (#1486): land-1486's presence: ~/Scribe/tools/land installed, 13 hand landing copies forward to it, claims released.
+
+## 2026-10-31 09:51:02 EDT — scribe `35680e99d607689407a483b9cb52c165a06977c5`
+Docs (#1486): the landing audit's install section, its index row and the PROGRESS entry.
+
+## 2026-10-31 09:47:58 EDT — scribe `062f7a347d654a2ba1693d82b5ffb0e5ad2242fb`
+Merge (#1486): land --prepend, one ledger entry on main from one read of it; landed by the tool itself.
+
+## 2026-10-31 09:47:44 EDT — scribe `0fdbd13b5bb8d4a147282aaa70789eed122d3ad5`
+Docs (#1486): land --prepend in AGENTS.md and the audit; about 35 hand scripts read origin/main up to three times.
+
+## 2026-10-31 09:47:01 EDT — scribe `61839ec45ee56c8636d486995d3ce6f7dbb4d01b`
+Fix (#1486): land --prepend on the same loop as a branch's landing: one read of main, a fast-forward push, a retry.
+
+## 2026-10-31 09:45:13 EDT — scribe `8b47b088ddb3e477b12bc76d7f68a37de27f4659`
+Test (#1486): red: an entry above the newest, a landing between its read and its commit survives, two entries racing.
+
+## 2026-10-31 09:40:21 EDT — scribe `cf3bec32c14661883a401e195a51573996fe3209`
+Merge (#1486): a landing never silently undoes another: one read of main, a fast-forward push, a retry; landed by the tool itself.
+
+## 2026-10-31 09:39:41 EDT — scribe `5c06ffeba8b839dae1c28ba4fbfa9244785761dc`
+Docs (#1486): the landing race's audit (one drop in 656 commits, already restored), its index row, and AGENTS.md's rule.
+
+## 2026-10-31 09:38:08 EDT — scribe `77607f8ae6162c4a7ef55d6bb475c71bb6d2759d`
+Fix (#1486): scripts/land/land.py: the merge tree and its first parent from one read of main; never forced; diff3-base unions.
+
+## 2026-10-31 09:26:42 EDT — scribe `ee16b2584cc2baa4a02562cfc7e97c7f847762f3`
+Test (#1486): red: two landings racing on a fake remote lose a file with today's land.sh (7 of 10 fail).
+
 ## 2026-10-31 09:31:46 EDT — scribe `3cee0837c549b8c78ec3c4113dbce168011b9629`
 Cut (#1393, #1465, #1457, #1449, #1469): Scribe 0.1 (207): the Mac View menu moves between lines and chapters, the image viewer title fits, a map applies its first frame at once.
 
