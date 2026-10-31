@@ -1,3 +1,21 @@
+## 2026-10-31 12:25:02 EDT — scribe `b41e6f2a80fea5a22fd01b0735397ed730c8b762`
+Fix (#1489): a library list keeps an episode with no file of its own when its page can be resolved, and an empty list says so.
+
+## 2026-10-31 11:04:21 EDT — scribe `516f163fcd51bd5b0f47720562607b4a6eb38cfd`
+Cut (#1393, #1452): Scribe 0.1 (208): a long press on a picture offers Comment again.
+
+## 2026-10-31 11:03:42 EDT — scribe `c71540072b85c93c126583ed70a5e37319d01e39`
+Feature (#1457): the image viewer follows the newest picture, offers the newest again, and groups its grid by chapter.
+
+## 2026-10-31 11:03:41 EDT — scribe `a7d01c6bbbfe26e54e70dae38b90387fd28f4cc7`
+Test (#1393): 34 layout snapshot references re-recorded after review; 61 repeat with no difference.
+
+## 2026-10-31 11:03:41 EDT — scribe `a8a58df1bdfbdbd07c0b3075b44e63c520c5b94a`
+Fix (#1452, #1466): the Comment item returns to a picture long press, and the surface test accepts the drag before the menu.
+
+## 2026-10-31 11:03:41 EDT — scribe `67bde57f2b61a028c69d216752fef866344c9b44`
+Fix (#1393): a narrow link card stacks its words under its code.
+
 - 2026-10-31 10:13:50 EDT · realtime-voice · `0b3fac6fd7f2` · #1487: any speech to text runs the full pipeline; Point-Free gets chapters
 
 ## 2026-10-31 12:02:29 EDT — scribe `062307a97378ff95013e197a02c33bd27469d331`
