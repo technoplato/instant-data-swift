@@ -10,6 +10,66 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 3:55:51 p.m. EDT — `b00e2d04d74a` docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
+
+- **Implementation commit:** `b00e2d04d74a34ab7d6ddf1bd01af2046938d09e`
+- **Change:** docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
+- **Files:**
+  - `docs/swift-concurrency-guidance.md` — #1493 the one-stream rule
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:51 p.m. EDT — `c5f7c882081e` test(#1493): the observation exercise: 48 live FetchAll observers, the tasks they keep and each write's way to them
+
+- **Implementation commit:** `c5f7c882081e55731b9abf6e2da1bf65e54ea99d`
+- **Change:** test(#1493): the observation exercise: 48 live FetchAll observers, the tasks they keep and each write's way to them
+- **Details:**
+  - An executable target (release), since the wrapper test bundle does not link in release on the macOS 27 SDK.
+- **Files:**
+  - `Sources/InstantObservationExercise/main.swift` — #1493 the exercise
+  - `Package.swift` — #1493 the exercise's executable target
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1493 the publication's start instant
+  - `scripts/contention-exercises/run-observation-exercise.sh` — #1493 the release runner with xctrace
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:50 p.m. EDT — `6256949a59c6` fix(#1493): green: a query observation is one stream, written by the store and the server error, read in its consumer's pull
+
+- **Implementation commit:** `6256949a59c698b37f10e6dd2e917fca8980420b`
+- **Change:** fix(#1493): green: a query observation is one stream, written by the store and the server error, read in its consumer's pull
+- **Details:**
+  - The store yields into the observation's output; a live query's server error writes into it under the same lock (#360 semantics, its tests unchanged); deferred values, the typed decode and map run in the consumer's pull.
+  - Tasks alive per open observation: raw live 5 -> 0, local 2 -> 0, deferred 6 -> 0, typed 6 -> 0, mapped 7 -> 0, FetchAll 7 -> 1 (its own consumer).
+  - A fetch wrapper tells Observation only of the members an emission changed; its per-emission trace metadata is built only when recorded.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantObservationOutput.swift` — #1493 the output: store and server error under one lock
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1493 one lease per observation, deferred values in the pull; forwarders gone
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1493 an observer yields into the runtime's output
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryErrors.swift` — #1493 the registry writes into the outputs
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — #1493 pulled typed subscription, composed map, changed-member publish
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
+## October 31st, 2026 at 3:55:50 p.m. EDT — `02ef83f51a78` test(#1493): red: an open query observation keeps five to seven library tasks; it should keep none of its own
+
+- **Implementation commit:** `02ef83f51a78a2b1ca450455524c422c9935c915`
+- **Change:** test(#1493): red: an open query observation keeps five to seven library tasks; it should keep none of its own
+- **Details:**
+  - A task census (a task-local the observation path's tasks report to) counts the library tasks an open observation keeps.
+  - Red (debug): raw live 5, local 2, live with deferred values 6, typed 6, mapped 7, FetchAll 7; pinned 0, 0, 0, 0, 0 and 1.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantObservationOutput.swift` — #1493 the task census
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1493 the forwarding tasks report to the census
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — #1493 the bridge, map and automatic tasks report to the census
+  - `Tests/InstantSwiftDataCoreTests/InstantObservationTaskCountTests.swift` — #1493 raw, local and deferred-value pins
+  - `Tests/InstantSwiftDataTests/InstantFetchObservationTaskCountTests.swift` — #1493 typed, mapped and FetchAll pins
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-observe-1493@ld); no SpecStory capture
+
 ## October 31st, 2026 at 3:12:28 p.m. EDT — `02566ad49376` release(#1482): v1.9.58: an observer keeps the ids its result shows
 
 - **Implementation commit:** `02566ad49376a94c9cbc3a4993b99f7980b2d25f`
