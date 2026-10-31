@@ -1,3 +1,24 @@
+## 2026-10-30 21:22:20 EDT — scribe `6af4f1e6e972d0920875ff88cb96dfad6822e720`
+Docs (#1427): landing A's What's New story and PROGRESS entry.
+
+## 2026-10-30 21:22:20 EDT — scribe `ce50fb31a66b705e5160dc3eec0034f4e1185831`
+Docs (#1427): the interims audit.
+
+## 2026-10-30 21:22:20 EDT — scribe `f9cbef433429bb4639158eb65449b2aa6f641206`
+Docs (#1427): ADR 0094 amendment A, the line in progress rides the room; landing B as the dispatcher decided.
+
+## 2026-10-30 21:22:20 EDT — scribe `a67b10f131410aaacf9bb573811a31ac43b4e86f`
+Green (#1427 landing A): the recording device publishes each open line in the take's room beside its beat, keyed by segment id; playback on every device reads it beside the rows.
+
+## 2026-10-30 21:22:20 EDT — scribe `d34bfe05930ac1b51ac7d85660717f36633bee1a`
+Mirror (#1427, #1197): the db reads the live rooms as admin; each 5 s presence poll folds the owners' lines in progress in as open lines.
+
+## 2026-10-30 21:22:20 EDT — scribe `388ba28026dd47f98ff5abec90d1fe3b0832d48d`
+Red (#1427, #1197): the mirror reads the room's line in progress, and its db reads rooms.
+
+## 2026-10-30 21:22:20 EDT — scribe `e8e7310ec7a8c67d141eeb79b1d95c9ebb0ab723`
+Red (#1427): the line in progress rides the recording's live room; declarations only, 8 tests fail on their assertions.
+
 ## 2026-10-30 21:04:14 EDT — scribe `94366681cadd78ca00f134c5b35fa4e05264fecd`
 Cut (#1432): Scribe 0.1 (194): a shared file key never writes over a file it could not read, and the setup screen waits for it.
 
