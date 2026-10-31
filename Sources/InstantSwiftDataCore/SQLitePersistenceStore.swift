@@ -8780,7 +8780,7 @@ public actor SQLitePersistenceStore {
       switch invalidTail {
       case let .bounded(row, reason):
         guard
-          try selectScalar(
+          try selectOutboxBodyJSON(
             "SELECT json FROM instant_outbox_bodies WHERE mutation_id = ? LIMIT 1",
             [.text(row.mutationID)]
           ) == row.json

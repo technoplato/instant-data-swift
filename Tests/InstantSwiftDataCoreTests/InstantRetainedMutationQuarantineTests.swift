@@ -545,6 +545,23 @@ private func quarantineTestDecodeRowJSON(_ json: String) throws -> [String: Quar
     case let string as String: return .text(string)
     case let number as NSNumber:
       return CFNumberIsFloatType(number) ? .real(number.doubleValue) : .integer(number.int64Value)
+    // A BLOB column, as the quarantine copies it: its bytes in hexadecimal. An outbox body is stored compressed since
+    // #1463, and compared as its JSON, as `quarantineTestQuery` reads it.
+    case let blob as [String: Any]:
+      guard blob.count == 1, let hex = blob["hex"] as? String, hex.count.isMultiple(of: 2) else {
+        throw QuarantineTestSQLiteError(message: "Unexpected JSON value \(value) in a quarantined row.")
+      }
+      var bytes: [UInt8] = []
+      var index = hex.startIndex
+      while index < hex.endIndex {
+        let next = hex.index(index, offsetBy: 2)
+        guard let byte = UInt8(hex[index..<next], radix: 16) else {
+          throw QuarantineTestSQLiteError(message: "A quarantined BLOB is not hexadecimal.")
+        }
+        bytes.append(byte)
+        index = next
+      }
+      return .text(bytes.withUnsafeBytes { InstantOutboxStoredBody.json(fromCompressed: $0) } ?? hex)
     default:
       throw QuarantineTestSQLiteError(message: "Unexpected JSON value \(value) in a quarantined row.")
     }
