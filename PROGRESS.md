@@ -1,3 +1,26 @@
+## 2026-10-31 18:58:00 EDT — perf-writes-1510 (#1510, #1463): a live write's body compressed in its leaf, its lifecycle derived
+
+- **Why:** on the phone (10-31, build 208) a local save wrote 24.4 log pages, 4.7 of them its body: a `WITHOUT ROWID`
+  cell keeps at most 1,002 bytes on its leaf, so 3.4-12 KB bodies took two to four overflow pages, allocated at the
+  save (page 1 and a free-list trunk rewritten) and freed at the echo. Raw deflate takes the median body 8,389 -> 944 B;
+  without the 346-byte lifecycle beside it, 6 of 8 live cells fit their leaf (docs/audits/2026-10-31-writes-1510.md).
+- **Plan:** `2026-10-31-perf-writes-1510`, amendment 2 (fd035c89, landed 017a5e58). **Commits:** red `ef3862c9`;
+  green `a6debcdf`; fixes `4bb6ddc0`, `9b2b25ce`; docs `71b6dfd6`, `7d976196`.
+- **Change:** `instant_outbox_bodies.json` holds the body's JSON compressed (`InstantOutboxStoredBody`: format byte,
+  length, raw deflate via Apple's Compression), `lifecycle_bytes` the lifecycle's size; readers derive the lifecycle.
+  Budgets count JSON bytes (`bodyLengthSQL`, `bodyJSONBytesSQL`, staged sizes). Text bodies an older version wrote
+  read as before and convert at their next change. Scribe's recovery script inflates them (Scribe 85839caa5).
+- **Measured (StorageIOExercises.aLiveWritesStepsByBTree, 48 overlapping Scribe writes, laptop, debug, one job):**
+  save 16.3 -> 13.2 log frames per write (65.5 -> 53.1 KB), echo 18.9 -> 17.5 (76.1 -> 70.6 KB), claim and ack
+  unchanged. Recorder cost (ab-commits.sh, mini): transact hold +0.2 ms alone (inside the rounds' spread), none under
+  load.
+- **Ruled out with numbers:** deleting the 730 terminal failures' key rows makes saves worse (5.40 -> 6.88 pages);
+  in-memory revisions (#1254) would collide with the query cache's stored `store_revision`; TEMP key rows (#1464)
+  would bring back rows deleted on purpose.
+- **Next:** the whole-bundle gate on the merge with main (perf-writes-1510-body-bundle2), the compressed body's cost
+  A/B (perf-writes-1510-body-cost), land, one "READY FOR BUILD" for the recorder and this; then the phone's numbers
+  through the recorder. Continue from `~/Sync/worktrees/perf-writes-1510`; evidence `~/Sync/audit/perf-writes-1510/`.
+
 ## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
 
 - **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
