@@ -6,6 +6,7 @@
 // 2026-10-31  #1491  The two SHA-256 digests a save writes formatted their bytes with String(format:), 32 strings
 //                    joined, each time; the sample put it at about 0.11 ms a write.
 
+import CryptoKit
 import CustomDump
 import Foundation
 import Testing
@@ -71,7 +72,8 @@ struct InstantLocalWriteEncodeTests {
   }
 
   /// The two digests each save writes (its receipt and its wire intent) are SHA-256 as lowercase hex. Each formatted its
-  /// 32 bytes with `String(format:)`, a string a byte, joined (#1491).
+  /// 32 bytes with `String(format:)`, a string a byte, joined (#1491): 333 allocations a digest, 70 of them the hash's
+  /// own on an M4. The hex now adds only its string.
   @Test
   func aDigestIsLowercaseHexWrittenInOneAllocation() {
     #expect(
@@ -79,8 +81,10 @@ struct InstantLocalWriteEncodeTests {
         == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
     #expect(instantSHA256HexDigest(Data()) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    // The hash's own allocations are SHA-256's, not the hex's: count what the hex adds to them.
     let data = Data(repeating: 0xA5, count: 4_096)
-    let allocations = RefreshCostTests.allocations(iterations: 20) { _ = instantSHA256HexDigest(data) }
-    #expect(allocations <= 2, "a digest allocated \(allocations) times")
+    let hash = RefreshCostTests.allocations(iterations: 20) { _ = SHA256.hash(data: data) }
+    let digest = RefreshCostTests.allocations(iterations: 20) { _ = instantSHA256HexDigest(data) }
+    #expect(digest - hash <= 1, "the hex added \(digest - hash) allocations to the hash's \(hash)")
   }
 }
