@@ -8,6 +8,8 @@
 // 2026-10-25  #1133  `recording-deferred`: the recording with Scribe's transcript text and words deferred, so the
 //                    hydration's re-check under the gate runs, which no exercise drove before.
 // 2026-10-25  #1136  `compaction-main-hop`: the VACUUM with a hold closure that asks a busy main actor.
+// 2026-10-31  #1492  `recording` prints the energy meter's count and CPU of each library operation over its window
+//                    (`energy` lines), so a send path's or an acknowledgement's CPU per call is measured on this exercise.
 
 import CustomDump
 import Foundation
@@ -144,6 +146,7 @@ struct ContentionExercises {
     let probes = harness.startProbes()
     let observer = harness.measureObserverLag(recording)
     let start = ContentionGateTimeline.now()
+    let energyStart = InstantEnergyMeter.snapshot()
     let deadline = ContinuousClock.now + .seconds(seconds)
     let lanes = harness.recordingLanes(workload, recording: recording, scratch: scratch, until: deadline)
 
@@ -157,6 +160,7 @@ struct ContentionExercises {
     let pruneEnd = ContentionGateTimeline.now()
     for lane in lanes { await lane.value }
     let end = ContentionGateTimeline.now()
+    let energy = InstantEnergyMeter.snapshot().subtracting(energyStart)
     observer.cancel()
     await observer.value
     for probe in probes { probe.cancel() }
@@ -174,6 +178,7 @@ struct ContentionExercises {
     harness.reportApplies(exercise, window: start...end)
     harness.reportPrunes(exercise, window: start...end)
     harness.reportErrors(exercise)
+    harness.reportEnergy(exercise, energy)
     for lease in leases { await lease.cancel() }
     await harness.close()
 

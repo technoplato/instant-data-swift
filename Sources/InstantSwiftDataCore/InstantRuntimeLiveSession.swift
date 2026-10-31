@@ -362,6 +362,8 @@ package actor InstantRuntimeLiveSession {
   /// socket, the store holds the server's result for it and every refresh since.
   private var answeredQueryGenerations: [String: Int] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
+  /// How many attribute resolvers this session's sends built (#1492).
+  private var attributeResolverBuildCount = 0
   private var inFlightMutationIDs: Set<String> = []
   private var inFlightMutationStepCounts: [String: Int] = [:]
   /// When each in-flight mutation send began, so an
@@ -1365,6 +1367,10 @@ package actor InstantRuntimeLiveSession {
     serverAttributes
   }
 
+  func attributeResolverBuildCountForTesting() -> Int {
+    attributeResolverBuildCount
+  }
+
   func mutationReservationCountsForTesting() -> (
     ids: Int,
     stepCounts: Int,
@@ -1674,6 +1680,8 @@ package actor InstantRuntimeLiveSession {
       }
       let txSteps: [InstantTransportStep]
       do {
+        // Each call indexes every server attribute (#1492).
+        if !serverAttributes.isEmpty { attributeResolverBuildCount += 1 }
         txSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
           in: mutation.txSteps,
           attrs: serverAttributes
