@@ -1,3 +1,12 @@
+## 2026-10-31 06:51:09 EDT — scribe `e99a8eb59d48e3029609ff676fec553d8c5330c2`
+Fix (#1465, #1459): the voice-command coverage test's reasons for the chapter controls and the drawer's Playground; no behavior change.
+
+## 2026-10-31 06:43:40 EDT — scribe `4c58567e2c950b8dbed8bcefe8ed751852ffd273`
+Fix (#1465): the chapters service asks the model only about recordings the owner's sign-in may write, and keeps a refused write with its reason instead of asking again every scan.
+
+## 2026-10-31 06:42:46 EDT — scribe `fb5583d50666c1c380c7b8ab00fd022f85d4f211`
+Test (#1465): red: the chapters service skips recordings outside the rules' owner set before any question, and remembers a refused write.
+
 ## 2026-10-31 06:32:41 EDT — scribe `60906ef873c02c1f4022628899dd17d7e69c2e6f`
 Fix (#1466): every drag sits inside its row's menu, so a press that moves lifts it; a drag applied after the menu never lifted on iOS.
 
