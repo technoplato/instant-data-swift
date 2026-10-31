@@ -1,3 +1,10 @@
+## 2026-10-31 15:12:10 EDT — perf-ship-2 (#1482): v1.9.58 for Scribe build 210
+
+- **Release:** `docs/releases/v1.9.58.md`, tag `v1.9.58` on this landing's merge. Carries #1495 (merge `e6e71913`):
+  an observer keeps the ids its result shows, collected once per result. No API, storage or conversion change.
+- **After number:** #1495's `perf-read-1495-fanout-after` still queued on the mini; recorded on #1495 when it runs.
+- **Next:** Scribe pins 1.9.58 exactly and cuts 0.1 (210) (#1482).
+
 ## 2026-10-31 14:58:00 EDT — perf-read-1498 (#1495): an observer keeps the ids its result shows
 
 - **Landing:** red `3cce5ca1`, green `9051d75e`, exercise `ff8fb803` (plan `d5fd5466`), branch
