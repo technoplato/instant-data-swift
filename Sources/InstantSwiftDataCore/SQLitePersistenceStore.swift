@@ -1318,6 +1318,8 @@ public actor SQLitePersistenceStore {
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
   private var optimisticEffectFingerprintCount = 0
+  /// How many forward wire-intent fingerprints the outbox row write computed for the mutation it saves (#1491).
+  private var savedWireIntentFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1427,6 +1429,11 @@ public actor SQLitePersistenceStore {
   /// How many optimistic-effect fingerprints this store has computed (#1007).
   package func optimisticEffectFingerprintCountForTesting() -> Int {
     optimisticEffectFingerprintCount
+  }
+
+  /// How many forward wire-intent fingerprints the outbox row write computed for the mutations it saved (#1491).
+  package func savedWireIntentFingerprintCountForTesting() -> Int {
+    savedWireIntentFingerprintCount
   }
 
   /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one encodes the mutation's transaction and
@@ -19393,6 +19400,7 @@ public actor SQLitePersistenceStore {
     encodedBody: (body: String, lifecycle: String)? = nil
   ) throws {
     let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
+    savedWireIntentFingerprintCount += 1
     let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
     let durableMutation = mutation
     var statement: OpaquePointer?
