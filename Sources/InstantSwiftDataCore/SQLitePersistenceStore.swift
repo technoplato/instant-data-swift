@@ -87,6 +87,7 @@
 
 import Foundation
 import IssueReporting
+import os
 import SQLite3
 
 public struct InstantPersistenceSnapshot: Hashable, Codable, Sendable {
@@ -1317,6 +1318,8 @@ public actor SQLitePersistenceStore {
   /// Test-visible count of durable outbox JSON bodies decoded by this actor.
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
+  /// Query-cache answers encoded as JSON (#1498), on this actor or off it: for tests and the release's measurements.
+  private let queryCacheAnswerEncodes = OSAllocatedUnfairLock(initialState: 0)
   private var optimisticEffectFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
@@ -1422,6 +1425,11 @@ public actor SQLitePersistenceStore {
 
   package func currentDecodedOutboxBodyCount() -> Int {
     decodedOutboxBodyCount
+  }
+
+  /// How many query-cache answers have been encoded as JSON (#1498).
+  package nonisolated func queryCacheAnswerEncodeCountForTesting() -> Int {
+    queryCacheAnswerEncodes.withLock { $0 }
   }
 
   /// How many optimistic-effect fingerprints this store has computed (#1007).
@@ -19817,6 +19825,7 @@ public actor SQLitePersistenceStore {
     _ entry: InstantCachedQuery,
     tableName: String = "instant_query_cache"
   ) throws {
+    queryCacheAnswerEncodes.withLock { $0 += 1 }
     try execute(
       """
       INSERT OR REPLACE INTO \(tableName) (cache_key, query_id, json, updated_at_ms)
