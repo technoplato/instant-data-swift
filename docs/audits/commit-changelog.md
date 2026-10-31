@@ -1,3 +1,6 @@
+## 2026-10-31 19:02:52 EDT — instant-data-swift `3374ba97eaf69ab94061a5656f7ad44fdfd7ebde`
+Perf (#1504): every store connection keeps SQLite's temporary structures in memory: the writer from the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and when it reopens, every read connection at open (red 6ec56cba, green a92b8ca4; change log c843402c). A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0. 40 tests in 8 suites pass on the branch merged with main. Plan amendment 3: #1500 waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test confirmed).
+
 ## 2026-10-31 16:08:46 EDT — scribe `655e5f00eb2fe4eff2ab8a0a9bb4059b43520ce2`
 Fix (#1508): the recording Live Activity drops its 60 s keep-alive and its 90 s stale date (Michael chose option 1); new words still go every 5 s behind and 30 s in front and state at once, the clock counts on the device by itself, and about 60 of the 107 updates an hour go away.
 
