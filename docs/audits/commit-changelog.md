@@ -1,3 +1,6 @@
+## 2026-10-31 04:26:19 EDT — scribe `3f93488deab9d6170e248d88161c13914d54d0fe`
+Audit (#1427): the suites at the change and at its base fail the same tests; the change adds none.
+
 ## 2026-10-31 04:16:38 EDT — scribe `d97fb51087f29dce6c2b80701f86174210f90535`
 Test (#1465): the live pass of a recording's chapters, running: a new final line asks at once, nothing asks without one.
 
