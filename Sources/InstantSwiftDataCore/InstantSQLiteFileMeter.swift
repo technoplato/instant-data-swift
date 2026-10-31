@@ -49,7 +49,10 @@ public enum InstantSQLiteFileMeter {
     guard MeteredVFS.install(), let real = MeteredVFS.realVFS else { return nil }
     let capacity = Int(max(real.pointee.mxPathname, 1_024)) + 1
     var buffer = [CChar](repeating: 0, count: capacity)
-    guard real.pointee.xFullPathname(real, path, Int32(capacity), &buffer) == SQLITE_OK else { return nil }
+    // SQLITE_OK_SYMLINK (SQLITE_OK | 2 << 8) when the path crossed a symbolic link (`/var` is one on Apple's systems):
+    // SQLite opens the resolved name then, so that is the name to match.
+    let result = real.pointee.xFullPathname(real, path, Int32(capacity), &buffer)
+    guard result & 0xFF == SQLITE_OK else { return nil }
     return String(cString: buffer)
   }
 

@@ -236,6 +236,10 @@ public struct InstantSQLiteWriteRecord: Sendable, Equatable {
 final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
   let databaseName: String
   private let state = OSAllocatedUnfairLock(initialState: State())
+  /// A read-only connection of the recorder's own, opened at the first `EXPLAIN` and closed at ``detach()``: on the
+  /// store's writer an `EXPLAIN` of a write would reset `sqlite3_changes()`, which the store reads after a statement to
+  /// check what it changed.
+  private let explainer = OSAllocatedUnfairLock<OpaquePointer?>(uncheckedState: nil)
 
   init(databaseName: String) {
     self.databaseName = databaseName
@@ -249,6 +253,10 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
   /// Stops counting this database's new connections; what it counted stays in ``InstantSQLiteWriteRecorder/snapshot()``.
   func detach() {
     InstantSQLiteWriteRecorder.detach(self)
+    explainer.withLockUnchecked { connection in
+      sqlite3_close_v2(connection)
+      connection = nil
+    }
   }
 
   // MARK: The store's side
@@ -296,12 +304,18 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     if let known = state.withLock({ $0.shapeIDs[shape] ?? ($0.hasRoomForShape ? nil : State.otherStatementsID) }) {
       return known
     }
-    let roots = Self.writtenRoots(of: sql, on: sqlite3_db_handle(statement))
-    return state.withLock { $0.addShape(shape, writtenRoots: roots) }
+    let roots = writtenRoots(of: sql)
+    return state.withLock { $0.addShape(shape, sql: sql, writtenRoots: roots) }
   }
 
   /// A write statement of `shape` finished a use: it ran `runs` times and changed `rows` rows.
   func statementFinished(shape: Int32, runs: Int, rows: Int) {
+    // A statement whose table the recorder's connection could not see yet (made in the writer's open transaction) is
+    // explained again at a later use, a few times at most.
+    if let sql = state.withLock({ $0.sqlToExplain(shape: Int(shape)) }) {
+      let roots = writtenRoots(of: sql)
+      state.withLock { $0.explained(shape: Int(shape), writtenRoots: roots) }
+    }
     state.withLock { $0.statementFinished(shape: Int(shape), runs: runs, rows: rows) }
   }
 
@@ -347,17 +361,30 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
   // MARK: SQLite, read directly
 
   /// The `main` b-trees' roots the statement `sql` opens for writing: its `EXPLAIN`'s `OpenWrite`s, its trigger and
-  /// foreign-key programs' included. Empty when it does not explain.
-  private static func writtenRoots(of sql: String, on connection: OpaquePointer?) -> [UInt32] {
-    guard let connection else { return [] }
-    var roots: Set<UInt32> = []
-    query("EXPLAIN " + sql, on: connection) { statement in
-      guard let opcode = sqlite3_column_text(statement, 1), String(cString: opcode) == "OpenWrite" else { return }
-      // P3 is the database (0 is `main`); P5's OPFLAG_P2ISREG (0x02) means P2 names a register, not a root page.
-      guard sqlite3_column_int64(statement, 4) == 0, sqlite3_column_int64(statement, 6) & 0x02 == 0 else { return }
-      roots.insert(UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 3)))
+  /// foreign-key programs' included, on the recorder's own read-only connection. Nil when it does not explain there.
+  private func writtenRoots(of sql: String) -> [UInt32]? {
+    explainer.withLockUnchecked { connection -> [UInt32]? in
+      if connection == nil {
+        var opened: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+        // The system's VFS: the recorder's own reads are not the store's.
+        if sqlite3_open_v2(databaseName, &opened, flags, nil) == SQLITE_OK {
+          connection = opened
+        } else {
+          sqlite3_close_v2(opened)
+          return nil
+        }
+      }
+      guard let connection else { return nil }
+      var roots: Set<UInt32> = []
+      let explained = Self.query("EXPLAIN " + sql, on: connection) { statement in
+        guard let opcode = sqlite3_column_text(statement, 1), String(cString: opcode) == "OpenWrite" else { return }
+        // P3 is the database (0 is `main`); P5's OPFLAG_P2ISREG (0x02) means P2 names a register, not a root page.
+        guard sqlite3_column_int64(statement, 4) == 0, sqlite3_column_int64(statement, 6) & 0x02 == 0 else { return }
+        roots.insert(UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 3)))
+      }
+      return explained ? roots.sorted() : nil
     }
-    return roots.sorted()
   }
 
   private static func integer(_ sql: String, on connection: OpaquePointer) -> Int64 {
@@ -366,14 +393,17 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     return value
   }
 
-  private static func query(_ sql: String, on connection: OpaquePointer, row: (OpaquePointer) -> Void) {
+  /// Runs `sql` on `connection`, each row to `row`; false when it does not prepare.
+  @discardableResult
+  private static func query(_ sql: String, on connection: OpaquePointer, row: (OpaquePointer) -> Void) -> Bool {
     var statement: OpaquePointer?
     guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
       sqlite3_finalize(statement)
-      return
+      return false
     }
     defer { sqlite3_finalize(statement) }
     while sqlite3_step(statement) == SQLITE_ROW { row(statement) }
+    return true
   }
 }
 
@@ -422,6 +452,9 @@ extension InstantSQLiteDatabaseWriteRecorder {
     struct Shape: Sendable {
       var sql: String
       var btreeIDs: [UInt8]
+      /// The statement's own SQL while its b-trees are unknown (it did not explain yet), and the tries left.
+      var unexplainedSQL: String?
+      var explainTriesLeft = 0
       var runs = 0
       var rows = 0
       var soleLogPages = 0
@@ -502,14 +535,36 @@ extension InstantSQLiteDatabaseWriteRecorder {
 
     // MARK: Statements and transactions
 
-    mutating func addShape(_ sql: String, writtenRoots: [UInt32]) -> Int32 {
-      if let known = shapeIDs[sql] { return known }
+    mutating func addShape(_ shape: String, sql: String, writtenRoots: [UInt32]?) -> Int32 {
+      if let known = shapeIDs[shape] { return known }
       guard hasRoomForShape else { return Self.otherStatementsID }
-      let ids = Set(writtenRoots.compactMap { rootIDs[$0] })
       let id = Int32(shapes.count)
-      shapes.append(Shape(sql: sql, btreeIDs: ids.sorted()))
-      shapeIDs[sql] = id
+      shapes.append(Shape(sql: shape, btreeIDs: []))
+      shapeIDs[shape] = id
+      if let writtenRoots {
+        explained(shape: Int(id), writtenRoots: writtenRoots)
+      } else {
+        shapes[Int(id)].unexplainedSQL = sql
+        shapes[Int(id)].explainTriesLeft = 3
+      }
       return id
+    }
+
+    /// The SQL to explain again before this use of `shape` counts, if its b-trees are still unknown.
+    mutating func sqlToExplain(shape: Int) -> String? {
+      guard shapes.indices.contains(shape), let sql = shapes[shape].unexplainedSQL else { return nil }
+      guard shapes[shape].explainTriesLeft > 0 else {
+        shapes[shape].unexplainedSQL = nil
+        return nil
+      }
+      shapes[shape].explainTriesLeft -= 1
+      return sql
+    }
+
+    mutating func explained(shape: Int, writtenRoots: [UInt32]?) {
+      guard shapes.indices.contains(shape), let writtenRoots else { return }
+      shapes[shape].btreeIDs = Set(writtenRoots.compactMap { rootIDs[$0] }).sorted()
+      shapes[shape].unexplainedSQL = nil
     }
 
     mutating func statementFinished(shape: Int, runs: Int, rows: Int) {
