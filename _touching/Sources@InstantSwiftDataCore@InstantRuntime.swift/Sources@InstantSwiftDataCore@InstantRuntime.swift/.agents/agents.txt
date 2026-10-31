@@ -96,3 +96,4 @@ claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower pl
 claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-perf-read-1498 #1498 (materializeLocalQueryOnce and its gated twin's cache write only)
 claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494
 claude-code/perf-gate-1491@ld 2026-10-31T12:34:11-0400 mower plan=2026-10-31-perf-gate-1491 #1491 (transact, performTransact, loadLocalWriteReads, saveLocalMutationReadingConnectionStatus only)
+claude-code/perf-observe-1493@strangelearning 2026-10-31T16:35:57-0400 mower plan=2026-10-31-perf-observe-1493 amendment 1 #1494 (performApplyServerTransaction's passes, plan end, status read and stale stages; reducedServerApplyOperations' context read; recordServerApplyGateTimeline's metadata only)
