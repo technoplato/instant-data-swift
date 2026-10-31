@@ -1,3 +1,6 @@
+## 2026-10-31 13:51:10 EDT — instant-data-swift `4ba76de7f91ae84b30b7a2ccd72bd27b3701d12c`
+Perf (#1492): the live session keeps one attribute resolver per server schema instead of indexing all 2,283 attributes for every mutation it sends (red 8b5a4584, green 14ee7622); mutationEncode CPU per send 2,650.1 -> 14.5 us on the Mac mini (release, recording exercise, 90 sends).
+
 ## 2026-10-31 13:45:14 EDT — instant-data-swift `c9dc143dd60615479083b7a24522c0c5844ba86d`
 Perf (#1498): a one-shot read writes its answer to the query cache only when it changed, and never encodes it on the persistence actor: the row keeps its answer's digest and, in columns, the last read's time, revisions and sequence, which readers lay over its JSON (red 38c426f6, green 2c1c003d; change log f07f53fc). A fresh store's first answer takes one more persistence turn (relaunch pins 14 to 15). Before on the Mac mini (release, the recording exercise sampled 60 s at 1 ms): queryOnce 802 ms of CPU, saveQueryCache 553 of it.
 
