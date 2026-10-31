@@ -555,6 +555,9 @@ public actor InstantStore {
   /// goes when its last observer does.
   private var yieldCountByQueryID: [String: Int] = [:]
   package private(set) var lastPublishMetrics = InstantStorePublishMetrics()
+  /// When the last publication began refreshing its observers: where the observation exercise times a write's way to
+  /// each fetch wrapper from (#1493).
+  package private(set) var lastPublicationStartedAt: ContinuousClock.Instant?
   /// Changes committed with ``commitDeferringPublication(_:installingLiveQueryPageInfo:)`` and not yet published.
   private var pendingPublication: PendingPublication?
   private var nextPublicationID: Int64 = 1
@@ -1873,6 +1876,7 @@ public actor InstantStore {
       }
       return
     }
+    lastPublicationStartedAt = .now
     let refreshed = refreshObservers(
       changedEntityIDs: pending.changedEntityIDs,
       deferredValueChangedEntityIDs: pending.deferredValueChangedEntityIDs,
