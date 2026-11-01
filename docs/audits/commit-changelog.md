@@ -1,3 +1,15 @@
+## 2026-11-01 10:11:15 EST — scribe `2b865af3418857770baafd06430b025126000bac`
+Docs (#1535): build 218's TestFlight Try works for a tester with no recordings yet ("Open a recording, or record for a minute and stop"), and the build skill's rule says a Try must (landed in e4ceba0ec).
+
+## 2026-11-01 10:11:15 EST — scribe `837fbdf3081cffc07f3f6172cb4fe067e914b6a6`
+Docs (#1535): the plain-block rules in scribe-builds and scribe-install, the audit of why the TestFlight page showed build 3's note on 217.1 (a stale page; App Store Connect held 217.1's own), and ADR 0064 section 3's generated file withdrawn by ADR 0114 (landed in c8bedfede).
+
+## 2026-11-01 10:11:15 EST — scribe `01311d61abce03bc52a24be4770ffc562ed51043`
+Feature (#1535): every build's plain block in WHATS-NEW.md (what a tester sees, or that nothing looks different, and what to try), required at the cut before compiling from build 218; TestFlight's What to Test from it as "Vakyume build N" after a guard against names, emails, addresses, links and issue numbers; Instant's copy on builds.whatsNewJSON, shown by What's New over the bundled file (landed in c8bedfede).
+
+## 2026-11-01 10:11:15 EST — scribe `0a15afc96211597407acc20f5e81c63a77ccd4fe`
+Test (#1535): red: a build's plain note in WhatsNewCore, its copy in Instant, and What's New's list of both (landed in c8bedfede).
+
 ## 2026-11-01 09:58:53 EST — foldkit `1e8c5473558e1e8c93a4b1dd7cb7cf8416a8f65b`
 Feature (#1547): siteSourceHeader() on technoplato/foldkit main: books and casino name where their code lives in their first line, and their READMEs link back; casino's live pages carry the line.
 
