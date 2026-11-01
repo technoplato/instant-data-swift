@@ -1,3 +1,18 @@
+## 2026-11-01 12:06:31 EST — scribe `0b743fde8fc2794bee4e6285fa5c287f43a9f067`
+Fix (#1536): an account may write and read the fenceposts of a recording it owns, so a tester's recording stops reading "Not synced".
+
+## 2026-11-01 12:06:31 EST — scribe `745946612c78015b2196602dd8413d3cb73cd21d`
+Fix (#1536): only his identities append to Brandon dot's open log.
+
+## 2026-11-01 12:06:31 EST — scribe `3c8fcc74bc85cd795d993f72c3edefe0b8a41a47`
+Fix (#1536): a refused microphone stops with the Settings notice instead of retrying forever.
+
+## 2026-11-01 12:06:31 EST — scribe `f968600706dcf156be054533789cb9a249b117fd`
+Fix (#1536): the follow-along keeps a room feed's row only when it names the followed recording.
+
+## 2026-11-01 12:06:31 EST — scribe `1862112ff209724033c51ac7bd1e461f311e0ed3`
+Fix (#1536): a device with no account keeps asking for one until it has it, so a first launch with no network recovers.
+
 ## 2026-11-01 12:00:23 EST — scribe `7dc6196d6ac5938b229d00173afa59012e947267`
 Docs (#1546): adversarial pass 3 on the final text: 176 findings applied, no fake authority, 340 authorities cited, 36 questions with age and consent before anything is kept (landed in d27f2b264).
 
