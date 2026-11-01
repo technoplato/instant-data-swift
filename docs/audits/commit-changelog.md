@@ -1,3 +1,6 @@
+## 2026-11-01 11:57:08 EST — scribe `4082fa869d9813fffeb4ae2d1942d73a4e64ed1c`
+Fix (#1535): WHATS-NEW.md ships in every copy of the app, so no story names a private person, and the cut reads every line for an address or a name from the private mapping, refusing by line without saying the word (landed in b452c5ce6, with build 219 and 205 plain-note wording).
+
 ## 2026-11-01 11:20:21 EST — scribe `d815a790eaa5`
 Fix (#1482, #1528): production builds with the released Xcode whatever the caller set; the upload refuses a beta's app before it leaves the Mac, so no number is used.
 
