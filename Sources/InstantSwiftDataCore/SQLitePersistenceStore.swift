@@ -91,6 +91,11 @@
 // - 2026-10-31: the writer keeps SQLite's temporary structures in memory from the end of its bootstrap, after the one-time
 //   migrations and before the server apply's staging tables: a phone wrote 34-37K temporary-file writes an hour of
 //   recording and 470K across one evening's launches (#1504).
+// - 2026-10-31: a server apply's planning reads (its restated results' retractions and saves, the retractions'
+//   protection) are one read transaction in one turn; they were three turns, between which a local write made the
+//   attempt stale (#1494).
+// - 2026-10-31: a server apply's plan can read its first reverse body page in its own transaction, and a body or
+//   resident-patch page says when it held the last row: each pass read an empty page after it (#1494).
 // - 2026-10-31: the outbox's tail, which every local write and every server apply's plan reads, is the last entry of a
 //   creation-order index, where each read sorted every row (#1491).
 
@@ -149,6 +154,16 @@ private enum InstantBoundedLiveQueryResultRow {
 struct InstantLiveQueryReplacementRetractions: Sendable {
   var operations: [InstantTripleOperation]
   var clearedSlots: Set<InstantVisibleWriteKey>
+}
+
+/// What a server apply's planning reads came to, part by part (#1494): each part is nil where it was not read (the
+/// caller had worked it out, or nothing needed it) or went stale, and `isStale` says the attempt must plan again.
+struct InstantServerApplyPlanningReads: Sendable {
+  var retractions: InstantLiveQueryReplacementRetractions?
+  var saves: [InstantPreparedLiveQueryResultSave]?
+  /// The server's operations with the retractions protected, ahead of them, when there were retractions.
+  var protectedRetractions: [InstantTripleOperation]?
+  var isStale = false
 }
 
 struct InstantPersistenceStateLoad: Sendable {
@@ -969,6 +984,14 @@ enum InstantServerApplyReductionLimits {
   static let maximumWritesProvingAnEmptySlot = 64
 }
 
+/// The four revisions a server apply's seed read and its plan records (#1494).
+struct InstantServerApplyRevisions: Sendable, Equatable {
+  var store: Int64
+  var attribute: Int64
+  var outbox: Int64
+  var queryResult: Int64
+}
+
 struct InstantServerApplyPlan: Sendable {
   var id: String
   var expectedStoreRevision: Int64
@@ -1019,6 +1042,9 @@ struct InstantServerApplyBodyPage: Sendable {
   var nextPosition: InstantOutboxDeliveryPosition?
   var decodedBodyByteCount: Int
   var synchronizationBlocker: InstantSynchronizationBlocker? = nil
+  /// The page read the plan's last row in its direction, so no page follows it (#1494). Each pass read one more page
+  /// to learn that, and a page with no rows checks nothing.
+  var isLast = false
 }
 
 enum InstantServerApplyStagedDisposition: Sendable {
@@ -1108,6 +1134,8 @@ struct InstantServerApplyResidentPatchPage: Sendable {
   var removedMutationIDs: [String]
   var replacementMutations: [PendingMutation]
   var nextPosition: InstantOutboxDeliveryPosition?
+  /// The page read the last staged row among the resident ones, so no page follows it (#1494).
+  var isLast = false
 }
 
 private struct InstantServerApplyPlanControl: Sendable {
@@ -5206,12 +5234,40 @@ public actor SQLitePersistenceStore {
     excludesWatermarkRoots: Bool = false,
     receiptPatchMutationIDs: Set<String> = []
   ) throws -> InstantServerApplyPlanLoad {
+    try beginServerApplyPlan(
+      id: planID,
+      footprint: footprint,
+      hasServerOperations: hasServerOperations,
+      processedTransactionID: processedTransactionID,
+      confirmingMutationID: confirmingMutationID,
+      confirmingClaimantID: confirmingClaimantID,
+      excludesWatermarkRoots: excludesWatermarkRoots,
+      receiptPatchMutationIDs: receiptPatchMutationIDs,
+      readingFirstReversePageAt: nil
+    ).load
+  }
+
+  /// Builds the plan as above and, in the same transaction, reads its first reverse body page when the plan holds a
+  /// body and stands on `seedRevisions`, the revisions its apply's seed read (#1494). The reverse pass read that page in
+  /// a turn of its own right after the plan's, and a local write could land between the two. A plan that no longer
+  /// stands on its seed's revisions is discarded, so its page is not read.
+  func beginServerApplyPlan(
+    id planID: String,
+    footprint: InstantServerApplyFootprint,
+    hasServerOperations: Bool,
+    processedTransactionID: String,
+    confirmingMutationID: String?,
+    confirmingClaimantID: String?,
+    excludesWatermarkRoots: Bool = false,
+    receiptPatchMutationIDs: Set<String> = [],
+    readingFirstReversePageAt seedRevisions: InstantServerApplyRevisions?
+  ) throws -> (load: InstantServerApplyPlanLoad, firstReversePage: InstantServerApplyBodyPage?) {
     let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
     precondition(
       (confirmingMutationID == nil) == (confirmingClaimantID == nil),
       "A confirming server apply must identify both its mutation and durable claimant."
     )
-    let result: InstantServerApplyPlanLoad = try transaction {
+    let result: (load: InstantServerApplyPlanLoad, firstReversePage: InstantServerApplyBodyPage?) = try transaction {
       try deleteServerApplyPlanWithoutTransaction(id: planID)
       let expectedStoreRevision = try loadMetadataRevisionWithoutTransaction(
         Self.storeRevisionKey
@@ -5233,7 +5289,7 @@ public actor SQLitePersistenceStore {
       if hasServerOperations,
         let unknownMutationID = try firstUnknownActiveServerApplyMutationIDWithoutTransaction()
       {
-        return .normalizationRequired(firstMutationID: unknownMutationID)
+        return (.normalizationRequired(firstMutationID: unknownMutationID), nil)
       }
 
       try execute(
@@ -5302,22 +5358,44 @@ public actor SQLitePersistenceStore {
         """,
         [.text(planID)]
       ))
-      return .ready(
-        InstantServerApplyPlan(
-          id: planID,
-          expectedStoreRevision: expectedStoreRevision,
-          expectedAttributeRevision: expectedAttributeRevision,
-          expectedOutboxRevision: expectedOutboxRevision,
-          expectedQueryResultRevision: expectedQueryResultRevision,
-          baselineOutboxRowCount: baselineOutboxRowCount,
-          baselineOutboxTail: baselineOutboxTail,
-          plannedBodyCount: bodyCount,
-          plannedBodyByteCount: bodyByteCount,
-          plannedComponentBodyCount: componentBodyCount
-        )
+      let plan = InstantServerApplyPlan(
+        id: planID,
+        expectedStoreRevision: expectedStoreRevision,
+        expectedAttributeRevision: expectedAttributeRevision,
+        expectedOutboxRevision: expectedOutboxRevision,
+        expectedQueryResultRevision: expectedQueryResultRevision,
+        baselineOutboxRowCount: baselineOutboxRowCount,
+        baselineOutboxTail: baselineOutboxTail,
+        plannedBodyCount: bodyCount,
+        plannedBodyByteCount: bodyByteCount,
+        plannedComponentBodyCount: componentBodyCount
+      )
+      let planRevisions = InstantServerApplyRevisions(
+        store: expectedStoreRevision,
+        attribute: expectedAttributeRevision,
+        outbox: expectedOutboxRevision,
+        queryResult: expectedQueryResultRevision
+      )
+      guard bodyCount > 0, let seedRevisions, seedRevisions == planRevisions else { return (.ready(plan), nil) }
+      return (
+        .ready(plan),
+        try loadServerApplyBodyPageWithoutTransaction(planID: planID, direction: .reverse, after: nil)
       )
     }
-    if case let .ready(plan) = result {
+    // As `loadServerApplyBodyPage` does once its transaction has committed: a page that found a body it cannot trust
+    // forgets the cached state (the pass throws its blocker), and only a page it can trust is counted.
+    if let page = result.firstReversePage {
+      if page.synchronizationBlocker != nil {
+        cachedState = nil
+      } else {
+        serverApplyMetrics.recordBodyPage(
+          direction: .reverse,
+          bodyCount: page.entries.count,
+          bodyByteCount: page.decodedBodyByteCount
+        )
+      }
+    }
+    if case let .ready(plan) = result.load {
       serverApplyMetrics.planCount += 1
       serverApplyMetrics.plannedBodyCount += plan.plannedBodyCount
       serverApplyMetrics.plannedComponentBodyCount += plan.plannedComponentBodyCount
@@ -7072,9 +7150,15 @@ public actor SQLitePersistenceStore {
     try bind(bindings, to: statement)
     var candidates: [InstantServerApplyResidentPatchCandidate] = []
     var totalLifecycleByteCount = 0
-    while sqlite3_step(statement) == SQLITE_ROW,
-      candidates.count < InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount
-    {
+    // #1494: SQLite ran out of rows inside this page, so it is the last one.
+    var readLastRow = false
+    while true {
+      let step = sqlite3_step(statement)
+      guard step == SQLITE_ROW else {
+        readLastRow = step == SQLITE_DONE
+        break
+      }
+      guard candidates.count < InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount else { break }
       guard let mutationIDBytes = sqlite3_column_text(statement, 0) else { continue }
       let mutationID = String(cString: mutationIDBytes)
       let isDeletion = sqlite3_column_int64(statement, 2) != 0
@@ -7158,7 +7242,8 @@ public actor SQLitePersistenceStore {
     return InstantServerApplyResidentPatchPage(
       removedMutationIDs: removedMutationIDs,
       replacementMutations: replacementMutations,
-      nextPosition: candidates.last?.position
+      nextPosition: candidates.last?.position,
+      isLast: readLastRow
     )
   }
 
@@ -7645,9 +7730,15 @@ public actor SQLitePersistenceStore {
     var componentFlags: [String: Bool] = [:]
     var totalByteCount = 0
     var oversizedMutationID: String?
-    while sqlite3_step(statement) == SQLITE_ROW,
-      candidates.count < InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount
-    {
+    // #1494: SQLite ran out of rows inside this page, so it is the last one in its direction.
+    var readLastRow = false
+    while true {
+      let step = sqlite3_step(statement)
+      guard step == SQLITE_ROW else {
+        readLastRow = step == SQLITE_DONE
+        break
+      }
+      guard candidates.count < InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount else { break }
       guard let mutationIDBytes = sqlite3_column_text(statement, 0) else { continue }
       let mutationID = String(cString: mutationIDBytes)
       let byteCount = Int(sqlite3_column_int64(statement, 2))
@@ -7776,7 +7867,8 @@ public actor SQLitePersistenceStore {
       isStale: false,
       entries: entries,
       nextPosition: candidates.last?.position,
-      decodedBodyByteCount: totalByteCount
+      decodedBodyByteCount: totalByteCount,
+      isLast: readLastRow
     )
   }
 
@@ -11903,6 +11995,60 @@ public actor SQLitePersistenceStore {
         == expectedQueryResultRevision
       else { return nil }
       return try liveQueryReplacementRetractionsWithoutTransaction(for: replacements)
+    }
+  }
+
+  /// A server apply's planning reads, in one read transaction (#1494): the restated results' retractions and saves,
+  /// each at the query-result revision the commit checks, then the retractions' protection at the outbox revision, as
+  /// the three calls read them. A part the caller already worked out is passed in and not read again; the first stale
+  /// part ends the reads, as each call's nil did, and the parts read before it are kept for the retry (#1128).
+  ///
+  /// - Parameters:
+  ///   - retractions: The retractions the caller worked out at these revisions; nil reads them from `replacements`
+  ///     (none are read when `replacements` is empty).
+  ///   - results: The results whose saves to work out, or nil when the caller worked them out or saves none.
+  func serverApplyPlanningReads(
+    replacements: [InstantLiveQueryResultReplacement],
+    retractions workedOutRetractions: InstantLiveQueryReplacementRetractions?,
+    savingResults results: [InstantPersistedLiveQueryResult]?,
+    expectedQueryResultRevision: Int64,
+    expectedOutboxRevision: Int64,
+    processedTransactionID: String
+  ) throws -> InstantServerApplyPlanningReads {
+    try readTransaction {
+      var reads = InstantServerApplyPlanningReads()
+      var retractions = workedOutRetractions
+      if retractions == nil, !replacements.isEmpty {
+        let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
+        guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
+        else {
+          reads.isStale = true
+          return reads
+        }
+        retractions = try liveQueryReplacementRetractionsWithoutTransaction(for: replacements)
+        reads.retractions = retractions
+      }
+      if let results, !results.isEmpty {
+        let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
+        guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
+        else {
+          reads.isStale = true
+          return reads
+        }
+        reads.saves = try preparedLiveQueryResultSavesWithoutTransaction(results)
+      }
+      if let retractions {
+        guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision else {
+          reads.isStale = true
+          return reads
+        }
+        reads.protectedRetractions = try protectingServerRetractionsWithoutTransaction(
+          retractions.operations,
+          processedTransactionID: processedTransactionID,
+          clearedSlots: retractions.clearedSlots
+        )
+      }
+      return reads
     }
   }
 
@@ -20174,19 +20320,25 @@ public actor SQLitePersistenceStore {
     return try readTransaction {
       guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
       else { return nil }
-      // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
-      var storedFactsByKey: [String: [InstantTriple]] = [:]
-      var saves: [InstantPreparedLiveQueryResultSave] = []
-      for result in results {
-        let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
-          result,
-          previousFacts: storedFactsByKey[result.key]
-        )
-        storedFactsByKey[result.key] = prepared.storedFacts
-        saves.append(prepared.save)
-      }
-      return saves
+      return try preparedLiveQueryResultSavesWithoutTransaction(results)
     }
+  }
+
+  private func preparedLiveQueryResultSavesWithoutTransaction(
+    _ results: [InstantPersistedLiveQueryResult]
+  ) throws -> [InstantPreparedLiveQueryResultSave] {
+    // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
+    var storedFactsByKey: [String: [InstantTriple]] = [:]
+    var saves: [InstantPreparedLiveQueryResultSave] = []
+    for result in results {
+      let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
+        result,
+        previousFacts: storedFactsByKey[result.key]
+      )
+      storedFactsByKey[result.key] = prepared.storedFacts
+      saves.append(prepared.save)
+    }
+    return saves
   }
 
   /// One result's save against the rows `previousFacts` own (an earlier save of the same key in this frame), or the

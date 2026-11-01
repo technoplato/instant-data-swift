@@ -1,3 +1,39 @@
+## 2026-10-31 20:24:11 EDT — perf-observe-1493 (#1494): a server frame plans in two persistence turns after its seed; fewer turns did not mean fewer retries
+
+- **Landed:** part 1 red `b27bca3f`, green `4f2e76e9`; part 2 stale-stage red `47f0573b`, green `3f04436d`, hop-pin red
+  `670758fa`, green `5922e9af`; docs `278806cc`, `26ad0b2c` (merge `c17bf998`). No release cut, tagged or installed;
+  "READY FOR BUILD" on #1482.
+- **Change:** a frame's planning reads (the restated results' retractions and saves, the retractions' protection) and
+  the reduction's context are one persistence turn; the plan's begin reads its first reverse body page (not while a
+  retry holds the gate to plan); a body or resident-patch page says when it held its last row, so no pass reads an
+  empty page; the plan's end and the status read share a turn; the applier admits, records and checks a frame in one
+  live-session turn (four hops a frame to two, read from code). The gate-held event names where each earlier attempt
+  went stale (`staleStages`); the contention exercise's server.apply line counts attempts and stale stages per path.
+- **Measured:** pins (debug): a 50-row server refresh's persistence turns 12 -> 6, over a pending write the plan holds as
+  a body 13 -> 8 (store 4, gate 4, outbox 1, observers 1 unchanged). Mac mini, release, one interleaved job
+  (`ab-commits.sh`, recording + server-apply, 4 runs per commit, main + the diagnostic as the before): attempts per
+  frame 1.116 -> 1.159 (part 1 alone 1.183); stale stages planningReads 65 -> 57, forwardPage 1 -> 22, reductionContext
+  3 -> 0, planRevisions 0 -> 16; library CPU 16,611 -> 16,615 ms; write.line unchanged; server-apply exercise 1.625 ->
+  1.500 a frame (8 frames each). Evidence: ~/Sync/audit/perf-observe-1493/ab-1494-3way/.
+- **Finding (logged on #1494):** fewer turns did not make fewer stale attempts. The planning reads fail on any write
+  since the seed, and a faster plan more often precedes the acceptance of its own pending writes; #1524 carries the fix
+  at the source.
+- **Checks:** the focused suites at the green 5922e9af (laptop, debug): 158 tests in 14 suites with the 3 known issues
+  they had; the landing tree 58523d0f (with main 48283913) on the mini: 169 tests in 16 suites, 5 known issues, and the
+  three timing tests alone (the hub-component gate test held 169 ms, longest local write 105 ms against 2,000); the
+  whole core bundle at 278806cc on the loaded laptop: 1,636 tests, 1 listed failure and 3 timing tests that pass alone
+  on the mini.
+- **Next:** #1524.
+
+## 2026-10-31 20:01:26 EDT — perf-ship-7 (#1482): v1.9.61 for Scribe build 214
+
+- **Release:** `docs/releases/v1.9.61.md`, tag `v1.9.61` on this release branch's tip, cut from `v1.9.60` (`a00c1618`)
+  with the source and test diffs of `main`'s merges `3374ba97` (#1504: temporary structures in memory; 34-37 thousand
+  sqlite.temp writes an hour of recording -> expected 0) and `b60a2c09` (#1497/#1496: acknowledgement CPU 834 -> 506 us a
+  call; one task per frame). No API, storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
+- **Next:** Scribe pins 1.9.61 exactly and cuts 0.1 (214) (#1482).
+
 ## 2026-10-31 19:58:00 EDT — perf-gate-1491 (#1491): amendment 3, the outbox tail is one entry of a creation-order index
 
 - **Why:** every local write's creation cursor, the supersession tail and the server apply plan's begin and extend read
@@ -17,6 +53,7 @@
   every commit here includes main's 13:01-16:19 merges. perf-gate-1491-bench-bisect (queued) runs the tight loop at
   `69f2fe51`, `e6e71913`, `dffd9a06` and `d3b08d41` in one job to say whether one of them moved it.
 - **Next:** land this branch, ledger, READY FOR BUILD on #1482; the bisect's lines on #1491 and #1482; cleanup.
+
 
 ## 2026-10-31 19:33:02 EDT — perf-send-1492 (#1492, #1497, #1496): landed
 

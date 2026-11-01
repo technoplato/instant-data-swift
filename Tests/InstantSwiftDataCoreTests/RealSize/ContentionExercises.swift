@@ -805,10 +805,18 @@ final class ContentionHarness: Sendable {
       let held = stats("heldMilliseconds")
       let planning = stats("planningHeldMilliseconds")
       let retried = records.filter { (Int($0["attempt"] ?? "") ?? 1) > 1 }.count
+      // #1494: every attempt the path's applies made, and where the stale ones went stale, by stage.
+      let attempts = records.reduce(0) { $0 + (Int($1["attempt"] ?? "") ?? 1) }
+      var staleCounts: [String: Int] = [:]
+      for record in records {
+        for stage in (record["staleStages"] ?? "").split(separator: ",") { staleCounts[String(stage), default: 0] += 1 }
+      }
+      let stale = staleCounts.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
       printFields(exercise, "server.apply", [
         ("path", path), ("n", String(held.count)), ("held_p50_ms", ContentionReport.milliseconds(held.median)),
         ("held_p99_ms", ContentionReport.milliseconds(held.p99)), ("held_worst_ms", ContentionReport.milliseconds(held.worst)),
         ("planning_worst_ms", ContentionReport.milliseconds(planning.worst)), ("retried", String(retried)),
+        ("attempts", String(attempts)), ("stale", stale.isEmpty ? "-" : stale),
       ])
     }
   }

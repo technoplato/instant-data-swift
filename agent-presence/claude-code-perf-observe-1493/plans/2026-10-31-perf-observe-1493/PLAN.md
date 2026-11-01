@@ -126,3 +126,7 @@ Touching (amendment 1):
 12. docs/swift-concurrency-guidance.md, Performance Rules: one paragraph, a step's reads share one persistence turn
    and a paged read says when it held its last row (#1494). docs/adr/0018-one-actor-turn-per-step.md: one consequence
    line with #1494's measured turns.
+
+## Status (2026-10-31)
+
+Done: #1493 landed `dffd9a06`, #1494 landed `c17bf998`; follow-up #1524. The claims are finished.
