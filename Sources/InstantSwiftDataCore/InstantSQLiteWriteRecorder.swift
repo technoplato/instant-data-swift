@@ -262,6 +262,11 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     state.withLock { $0.record() }
   }
 
+  /// How many statements this recorder ran an `EXPLAIN` of (#1510).
+  func explainCountForTesting() -> Int {
+    state.withLock { $0.explains }
+  }
+
   /// The bytes the recorder's own collections hold (#1285): its bound, checked by its stress test.
   func retainedBytesForTesting() -> Int {
     state.withLock { $0.retainedBytes }
@@ -321,6 +326,7 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     if let known = state.withLock({ $0.shapeIDs[shape] ?? ($0.hasRoomForShape ? nil : State.otherStatementsID) }) {
       return known
     }
+    state.withLock { $0.explains += 1 }
     let roots = writtenRoots(of: sql)
     return state.withLock { $0.addShape(shape, sql: sql, writtenRoots: roots) }
   }
@@ -551,6 +557,8 @@ extension InstantSQLiteDatabaseWriteRecorder {
     var callPages: [[Int]] = []
     var currentCall: Int?
     var commits = 0
+    /// The statements this recorder has explained (#1510), for tests.
+    var explains = 0
 
     var hasRoomForShape: Bool { shapes.count < InstantSQLiteWriteRecord.statementLimit + 2 }
 

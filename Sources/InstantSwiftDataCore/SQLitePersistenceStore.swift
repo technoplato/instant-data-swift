@@ -21161,6 +21161,11 @@ public actor SQLitePersistenceStore {
     connection.writeRecorder?.record() ?? InstantSQLiteWriteRecord()
   }
 
+  /// How many write statements this store's recorder ran an `EXPLAIN` of (#1510).
+  package func writeRecorderExplainCountForTesting() -> Int {
+    connection.writeRecorder?.explainCountForTesting() ?? 0
+  }
+
   /// How many statements SQLite has prepared on this store's connections (#653).
   package func preparedStatementCountForTesting() -> Int {
     connection.statements.preparedCount
