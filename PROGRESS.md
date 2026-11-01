@@ -1,3 +1,12 @@
+## 2026-10-31 21:01:48 EDT — perf-ship-8 (#1482): v1.9.62 for Scribe build 215
+
+- **Release:** `docs/releases/v1.9.62.md`, tag `v1.9.62` on this release branch's tip, cut from `v1.9.61` (`fb930584`)
+  with the source and test diff of `main`'s merge `c17bf998` (#1494: a server frame's persistence turns 12 -> 6, a
+  retried apply names its stale stages; library CPU unchanged). No API, storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`, +0.26 ms a tight-loop transact); its owner ships it with
+  #1463.
+- **Next:** Scribe pins 1.9.62 exactly and cuts 0.1 (215) (#1482).
+
 ## 2026-10-31 20:01:26 EDT — perf-ship-7 (#1482): v1.9.61 for Scribe build 214
 
 - **Release:** `docs/releases/v1.9.61.md`, tag `v1.9.61` on this release branch's tip, cut from `v1.9.60` (`a00c1618`)
