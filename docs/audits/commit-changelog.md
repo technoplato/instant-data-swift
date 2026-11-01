@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:42 EDT — scribe `087f5468288b6746867c67b6f414d443d63397c9`
+fix(#1515): the board keeps the owner its where names, and names itself a known narrow query; WHATS-NEW for the next build (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:39 EDT — scribe `9b478e04505c75a1e942e1a7541781b78c78a832`
 fix(#1515): the architecture scan reads the list's and the board's selections: named paths and one literal list (landed in 7d9931b6f)
 
