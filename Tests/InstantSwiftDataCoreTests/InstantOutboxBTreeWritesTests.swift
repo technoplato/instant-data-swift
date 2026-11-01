@@ -3,6 +3,8 @@
 //   the outbox b-tree they land on.
 // - 2026-10-25: the rare-state indexes (#1115 slice 2): a live write writes none of the three that find a write in a
 //   rare state, and the outbox takes at most 24 frames per write, the issue's criterion.
+// - 2026-10-31: at most 25 (#1491): the creation-order index costs a save and an echo one frame each, measured 23.0 ->
+//   25.0, for a tail read that no longer sorts the outbox on every write and twice in every server apply's plan.
 
 import CustomDump
 import Foundation
@@ -34,7 +36,9 @@ extension StorageIOExercises {
     // An acknowledgement leaves the write's key rows alone (#1007; WITHOUT ROWID they have no rowid to watch).
     let acknowledged = (measured.frames[.ack] ?? [:]).keys.filter { $0.hasPrefix("instant_outbox_write_keys") }
     #expect(acknowledged.isEmpty, "the acknowledgement wrote the key rows' b-trees: \(acknowledged)")
-    #expect(measured.framesPerWrite <= 24, "outbox frames per write \(measured.framesPerWrite): \(measured)")
+    // #1115's 24, plus the creation-order index (#1491): a save and an echo each write one page of it (23.0 -> 25.0
+    // frames a write), where every write's tail read and the server apply's two scanned and sorted the whole outbox.
+    #expect(measured.framesPerWrite <= 25, "outbox frames per write \(measured.framesPerWrite): \(measured)")
   }
 
   /// Three outbox indexes exist to find a write in a rare state (#1115): an active overlay with no receipt (the
