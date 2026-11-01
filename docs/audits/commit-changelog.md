@@ -1,3 +1,6 @@
+## 2026-11-01 11:20:09 EST — scribe `d7a53eedd32bd7cd9185ea322c0ae23f9e50eb68`
+Docs (#1535): the plain build notes reworded after a stranger's reading (1 clear of 15 before, 5 after, all 15 say what to look for), the rules and the cut's refusal say what it taught, and the audit says why build 218 never reached TestFlight.
+
 ## 2026-11-01 10:58:01 EST — scribe `137035fa1349292152bee363135edec22467167b`
 Docs (#1546): adversarial pass 2 applied: one lawful-as-possible forfeit design, 70 authority fixes, 167 sentence fixes, #1549's market read against the memo (landed in 46cad73ec).
 
