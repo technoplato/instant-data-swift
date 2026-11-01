@@ -1,3 +1,6 @@
+## 2026-11-01 17:43:10 EST — scribe `1d751a0974f9e845cc4da04434c7c1edb7dc3723`
+Docs (#1578): the iPhone Duo layouts audit, each of his friend's build 217 screenshots read against the code, and 28 ASCII designs for every pose posted to the Playground for his pick; no app code changed.
+
 ## 2026-11-01 17:34:31 EST — scribe `91d64379c13b6a99164fc451605be1f5288db1e4`
 Release (#1482, #1528, #1536): Scribe 0.1 (221) cut; testers' first recordings stop showing Not Synced (a fencepost waits up to a minute for its recording's row) and a new person's Vocabulary starts empty.
 
