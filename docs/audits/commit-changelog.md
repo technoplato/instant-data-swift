@@ -1,3 +1,6 @@
+## 2026-11-01 10:13:10 EST — scribe `4bf299df7242644389840ae6abba94812ae1ef11`
+Fix (#1545): the Durable Object chain listener keeps one reconnect pending per network (heartbeats and failures had multiplied retry chains against providers refusing Cloudflare egress) and no longer hears a socket it dropped (landed in 719596202).
+
 ## 2026-11-01 10:11:15 EST — scribe `2b865af3418857770baafd06430b025126000bac`
 Docs (#1535): build 218's TestFlight Try works for a tester with no recordings yet ("Open a recording, or record for a minute and stop"), and the build skill's rule says a Try must (landed in e4ceba0ec).
 
