@@ -1,3 +1,6 @@
+## 2026-11-01 08:41:09 EST — scribe `60d364949dff22feb81398aa39707858c0a8551b`
+Feature (#1530): public link previews at og.pisspoursoftware.xyz, a Worker with no secret and no outbound call; cards only from shares the scrubber passed, a generic card otherwise; every other path a bare 404.
+
 ## 2026-11-01 08:08:17 EST — scribe `140f665d502d8eba34aeb794c9c610c5be17d001`
 Fix (#1536): the media-plays projector catalogs only his owner set's YouTube plays; a TestFlight tester's play no longer downloads into his library.
 
