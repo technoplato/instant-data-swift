@@ -1,3 +1,25 @@
+## 2026-10-31 22:14:00 EDT — perf-writes-1510 (#1510): the compressed outbox body and the recorder's cost fix landed; READY FOR BUILD
+
+- **Landed:** `cb95ef5d` (#1463: a live write's outbox body compressed in its leaf, its lifecycle derived; change log
+  `5778f111`, ledger `ba6064b4`) and `9922c9bd` (the write recorder explains a statement shape once a process for each
+  schema, not once a store; red `7495e6aa`, green `f63de075`, switches `527b6b8d`; change log `a25055f7`, ledger
+  `4b85f463`). "READY FOR BUILD: 9922c9bd" posted on #1482; the ship agent merges Scribe's bridge branch
+  `agent/claude/perf-writes-1510-bridge` (`0fc60774`, pushed) with the pin bump.
+- **Measured:** a local save 16.3 -> 13.2 log frames (65.5 -> 53.1 KB), an echo 18.9 -> 17.5
+  (StorageIOExercises.aLiveWritesStepsByBTree, one job). The recorder's own cost (perf-gate-1491's bisect, +0.26 ms on
+  the cross-SDK runtime benchmark's write) was all its per-store EXPLAINs: a store's first write 0.645 -> 0.459 ms (0.384
+  with it off), relaunch 1.41 -> 1.26, drain 0.90 -> 0.81 (mini, release, three rounds).
+- **Scribe:** `85839caa5` (a spool compaction's bytes under diagnostics.spool, #1507 a; the outbox recovery inflates
+  compressed bodies), change log `e335051c6`, ledger `52feabfc`.
+- **Criteria of #1510, not met yet:** (1) a save under 20 KB: the phone's 24.4 pages should drop to about 20 with this
+  build; the rest needs the architecture levers in docs/audits/2026-10-31-writes-1510.md (the optimistic overlay kept
+  out of `instant_triples`, the outbox's derived rows in memory once #1464's invariant is proven, time-ordered mutation
+  ids for the echo's 2.69 leaves). (2) the launch's 7 GB: about 5.9 GB is Core ML recompiling after installs (#1429).
+  (3) unattributed writes: the spool compaction (1.29 MB a minute) is now named; File Activity's remaining unnamed
+  writers are compressed-audio segment files and writes with no app frame.
+- **Next:** the phone's numbers through the recorder after the build (`disk.tables`, `disk.statements`); then the
+  next lever. Evidence: `~/Sync/audit/perf-writes-1510/`.
+
 ## 2026-10-31 21:53:02 EDT — perf-ship-9 (#1482): v1.9.63 for Scribe build 216
 
 - **Release:** `docs/releases/v1.9.63.md`, tag `v1.9.63` on this release branch's tip, cut from `v1.9.62` (`c85a9531`)
