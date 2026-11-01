@@ -1,3 +1,6 @@
+## 2026-11-01 12:54:52 EST — scribe `824dfda4918a5662dac9cda5b92033b05b66a1d1`
+Fix (#1528): the TestFlight export runs in the release lane, so it no longer waits in the shared queue.
+
 ## 2026-11-01 12:54:03 EST — scribe `e5519a536bea3416a88dabdfda12299a97f63274`
 Docs (#1566): the publishing skill follows his decisions on public routes and shares.
 
