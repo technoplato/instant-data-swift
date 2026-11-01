@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:24 EDT — scribe `c1e177162d10413eaad85f42bb7acb2be855c91d`
+mirror(#1515): green: the mirror reads a recording's clipboard rows beside its window, and shows each copy once (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:22 EDT — scribe `d54939aaaefc748cd6ed38981323ba359d12f68e`
 schema(#1515): green: recordingClipboardEntries, a copy a row, and its backfill from the recording row's window (landed in 7d9931b6f)
 
