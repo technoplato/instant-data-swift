@@ -1,3 +1,45 @@
+## 2026-11-01 10:19:40 EST — scribe `3c1225ac824a07edde2e90549afc46e4caf24392`
+Merge (#1549): proof of now landed on main: Scribe's recursive frames as a protocol a stranger can check (ADR 0117, docs/proof-of-now/, scripts/proof-of-now/, 48 tests); no app code, schema or FEATURES.md change.
+
+## 2026-11-01 10:18:19 EST — scribe `19976dae220c8ffe815ef3768c75edf8ebcc3591`
+Docs (#1549): ADR 0117 and the pon/0 format: spec, threat model as eight user stories, challenges ranked, a live game end to end, the market (design only), and the audit of every measurement (landed in 3c1225ac8).
+
+## 2026-11-01 10:12:10 EST — scribe `cc88a59c1dc3d3dd3b663455d4f33bca1d440c64`
+Fix (#1549): rung 4 only from a checked App Attest attestation and an assertion over every link; the first checker read the bundle's own attested flag (landed in 3c1225ac8).
+
+## 2026-11-01 10:08:56 EST — scribe `c8176e13866c4499a6a328060458e4b720d4f4b3`
+Feature (#1549): witnesses cite each other's real links both ways, and a market's window policy fails a late commit by name (landed in 3c1225ac8).
+
+## 2026-11-01 10:05:17 EST — scribe `79aef277a922617e2e9dd5d23a2cb6fa7aa494be`
+Feature (#1549): a public run, frames drawn with Solana mainnet blocks (read only) and batches logged in Sigstore's staging Rekor, passes a stranger's checker at rung 3 (landed in 3c1225ac8).
+
+## 2026-11-01 10:00:55 EST — scribe `bc0cbee0a57fa8fdd440922f90e237905f6634fe`
+Feature (#1549): a transparency log as the public commit (Rekor entries checked offline against the pinned key) and moments on two clocks (landed in 3c1225ac8).
+
+## 2026-11-01 09:56:01 EST — scribe `dea0d3c2a0c833843dd51a280cebb1b2c216db44`
+Feature (#1549): a recording's audio clock through its capture gaps, and two witnesses of one room measured (audio r 0.964, words 93.2%, against low controls) (landed in 3c1225ac8).
+
+## 2026-11-01 09:35:04 EST — scribe `9ed80484bd7744d97d823d9fc84ad18c23823b92`
+Feature (#1549): App Attest checked offline with Node crypto only; Apple's sample attestation verifies at its own time against the pinned root (landed in 3c1225ac8).
+
+## 2026-11-01 09:31:30 EST — scribe `cf7073a74acfadd4340d78638ab436316b47ceba`
+Feature (#1549): verify a whole moment, the stranger's CLI, and a live interlock run (landed in 3c1225ac8).
+
+## 2026-11-01 09:27:56 EST — scribe `02a79287818ac2a4d628154aa9b9bcd1de1b71a8`
+Feature (#1549): Solana as the public clock: the newest block as the beacon, a hand-built memo as the commit, mainnet writes refused (landed in 3c1225ac8).
+
+## 2026-11-01 09:26:08 EST — scribe `0922ff3eed7a4082de261c66732c6acc125cfaa2`
+Feature (#1549): the coded border measured on Recording 337's 144 real frames: a 2 px ring reads back with 0 errors (landed in 3c1225ac8).
+
+## 2026-11-01 09:16:22 EST — scribe `9715ca5eb150119c69f655f0e6c4d456bb43f30b`
+Feature (#1549): the coded border, a 256-bit challenge as a ring of colored cells (landed in 3c1225ac8).
+
+## 2026-11-01 09:14:59 EST — scribe `2c3ff5a53bf30b66e79f9705e5675d970bfc89c9`
+Feature (#1549): Recording 337's real frames chained and attacked seven ways, each caught (landed in 3c1225ac8).
+
+## 2026-11-01 09:12:46 EST — scribe `12d09152db932425cd8fad0158869f09bd2b8a9d`
+Feature (#1549): the proof-of-now core: links, chain, RFC 9162 Merkle, commit-reveal, color challenge, interlock, confidence ladder (landed in 3c1225ac8).
+
 ## 2026-11-01 10:12:43 EST — scribe `3a138d9cb066626c7cfd4bdf1886bbaa270fc12a`
 Docs (#1544): scribe-agent-faq's filing step says to give every --segment line its recording (a bare line is read in the live recording, #1553) and that unlabeled or "speaker N" lines need --voice-reading.
 
