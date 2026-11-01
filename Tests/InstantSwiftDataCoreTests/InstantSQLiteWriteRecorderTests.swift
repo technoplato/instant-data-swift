@@ -257,9 +257,11 @@ struct InstantSQLiteWriteRecorderTests {
     }
     thread.stackSize = 256 * 1_024
     thread.start()
-    let deadline = Date().addingTimeInterval(120)
+    // The deadline only guards a hang; the bound below is on CPU time. At a 5-min load of 215 (the whole bundle on a
+    // shared laptop, 2026-10-31) the thread got too little CPU to finish in 120 s.
+    let deadline = Date().addingTimeInterval(600)
     while elapsed.get() == nil, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-    let seconds = try #require(elapsed.get(), "the million frames did not finish in 120 s")
+    let seconds = try #require(elapsed.get(), "the million frames did not finish in 600 s")
 
     // A debug build: 12.7 us a frame alone. The bound catches a recursion or a cost that grows with the frames; the
     // release cost is the recording exercise's (ab-commits.sh).
