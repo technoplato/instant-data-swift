@@ -1,3 +1,6 @@
+## 2026-11-01 09:51:15 EST — scribe `11c4583b209c66dbd052b9128a1a3eb41cc111e9`
+Fix (#1545): the chain listener makes a Solana subscription again when publicnode ends it ("Subscription timed out") and backfills that address from its cursor; Ethereum reconnects. The code the 24-hour run measures (landed in 4ec1d95d1).
+
 ## 2026-11-01 09:31:33 EST — scribe `2236752e7d0870a452776f31894698d1ee580770`
 Test (#1545): a Durable Object as the always-on chain listener, first pass: its own Worker (scribe-chain-do) and the same listener on the mini; an always-on object is billed 60 s a minute (11,059 GB-s of 13,000 a day), deploys reach it after 300 s, the Solana Foundation RPC answers Workers 403 and publicnode rate-limits them; ten live defects fixed; 24-hour run under way.
 
