@@ -1,3 +1,58 @@
+## 2026-10-31 21:12:00 EDT — perf-gate-1491 (#1491): done; both landings, the criteria's evidence, three findings for other lanes
+
+- **Landed:** `99a46951` (a digest's hex in one string; no wire fingerprint for a new write; the runner; the audit note;
+  ledger `adb71f8d`) and `15629f06` (amendment 3, the outbox tail index; ledger `d6c26413`), after `1e1ba548` earlier.
+  READY FOR BUILD on #1482: `99a46951` 0.476 -> 0.389 ms (tight-loop transact, pre-recorder base) and `15629f06` 2.70 ->
+  2.60 ms (steady transact hold beside load). v1.9.60 already shipped the first in Scribe 212.
+- **Criteria (#1491):** evidence logged, neither marked satisfied. The 2.5 ms target came from F0's confounded 1.58 ms;
+  no commit moved the hold 4.6x (one-job A/B), and alone the same save takes about 2.1x the CPU time (energy lines).
+  Proposed restatement left for the owner: the write's own cost and the beside-load hold at or below the 10-24 baseline
+  in one job (both met).
+- **For other lanes:** #1517 (the claim re-encodes each write; #1497's memo now covers its receipt part); #1510's write
+  recorder costs a tight-loop transact +0.26 ms (+58%, `dffd9a06` 0.449 -> `d3b08d41` 0.712 ms, one job), logged on
+  #1510 and #1482 under #1285; the WAL auto-checkpoint's F_FULLFSYNC runs inline in whichever call commits past the
+  threshold (#1076/#1118), the likely 84.8 ms worst transact hold; #1514 (build.sh's QoS confound).
+- **Evidence:** `~/Sync/audit/perf-gate-1491/` (mini/ab-1491b..f, laptop/, logs/, scripts/), `docs/audits/2026-10-31-
+  transact-hold-1491.md`.
+- **Cleaned:** the tail worktree and its `.build` (5.3 GB), this worktree's `.build` (6.4 GB), `/tmp/perf-gate-1491`
+  (12 MB, logs and scripts kept in the audit folder); no simulators, no mini trees left; branches stay on origin.
+
+## 2026-10-31 21:01:48 EDT — perf-ship-8 (#1482): v1.9.62 for Scribe build 215
+
+- **Release:** `docs/releases/v1.9.62.md`, tag `v1.9.62` on this release branch's tip, cut from `v1.9.61` (`fb930584`)
+  with the source and test diff of `main`'s merge `c17bf998` (#1494: a server frame's persistence turns 12 -> 6, a
+  retried apply names its stale stages; library CPU unchanged). No API, storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`, +0.26 ms a tight-loop transact); its owner ships it with
+  #1463.
+- **Next:** Scribe pins 1.9.62 exactly and cuts 0.1 (215) (#1482).
+
+## 2026-10-31 20:24:11 EDT — perf-observe-1493 (#1494): a server frame plans in two persistence turns after its seed; fewer turns did not mean fewer retries
+
+- **Landed:** part 1 red `b27bca3f`, green `4f2e76e9`; part 2 stale-stage red `47f0573b`, green `3f04436d`, hop-pin red
+  `670758fa`, green `5922e9af`; docs `278806cc`, `26ad0b2c` (merge `c17bf998`). No release cut, tagged or installed;
+  "READY FOR BUILD" on #1482.
+- **Change:** a frame's planning reads (the restated results' retractions and saves, the retractions' protection) and
+  the reduction's context are one persistence turn; the plan's begin reads its first reverse body page (not while a
+  retry holds the gate to plan); a body or resident-patch page says when it held its last row, so no pass reads an
+  empty page; the plan's end and the status read share a turn; the applier admits, records and checks a frame in one
+  live-session turn (four hops a frame to two, read from code). The gate-held event names where each earlier attempt
+  went stale (`staleStages`); the contention exercise's server.apply line counts attempts and stale stages per path.
+- **Measured:** pins (debug): a 50-row server refresh's persistence turns 12 -> 6, over a pending write the plan holds as
+  a body 13 -> 8 (store 4, gate 4, outbox 1, observers 1 unchanged). Mac mini, release, one interleaved job
+  (`ab-commits.sh`, recording + server-apply, 4 runs per commit, main + the diagnostic as the before): attempts per
+  frame 1.116 -> 1.159 (part 1 alone 1.183); stale stages planningReads 65 -> 57, forwardPage 1 -> 22, reductionContext
+  3 -> 0, planRevisions 0 -> 16; library CPU 16,611 -> 16,615 ms; write.line unchanged; server-apply exercise 1.625 ->
+  1.500 a frame (8 frames each). Evidence: ~/Sync/audit/perf-observe-1493/ab-1494-3way/.
+- **Finding (logged on #1494):** fewer turns did not make fewer stale attempts. The planning reads fail on any write
+  since the seed, and a faster plan more often precedes the acceptance of its own pending writes; #1524 carries the fix
+  at the source.
+- **Checks:** the focused suites at the green 5922e9af (laptop, debug): 158 tests in 14 suites with the 3 known issues
+  they had; the landing tree 58523d0f (with main 48283913) on the mini: 169 tests in 16 suites, 5 known issues, and the
+  three timing tests alone (the hub-component gate test held 169 ms, longest local write 105 ms against 2,000); the
+  whole core bundle at 278806cc on the loaded laptop: 1,636 tests, 1 listed failure and 3 timing tests that pass alone
+  on the mini.
+- **Next:** #1524.
+
 ## 2026-10-31 20:01:26 EDT — perf-ship-7 (#1482): v1.9.61 for Scribe build 214
 
 - **Release:** `docs/releases/v1.9.61.md`, tag `v1.9.61` on this release branch's tip, cut from `v1.9.60` (`a00c1618`)
@@ -6,6 +61,27 @@
   call; one task per frame). No API, storage or conversion change.
 - **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
 - **Next:** Scribe pins 1.9.61 exactly and cuts 0.1 (214) (#1482).
+
+## 2026-10-31 19:58:00 EDT — perf-gate-1491 (#1491): amendment 3, the outbox tail is one entry of a creation-order index
+
+- **Why:** every local write's creation cursor, the supersession tail and the server apply plan's begin and extend read
+  the outbox's newest row in delivery order; no index held that order, so each scanned the global-effect index whole
+  and sorted (291 us at the phone-shaped store's 700 rows, 2.25 ms at 5,400; laptop, the outbox's schema; M6: 39 samples
+  a minute, 18 inside the transact's hold).
+- **Commits:** plan `7887351d` (landed `61e20540`), red `e10668ae`, green `e712d3e3`, guard `bf8748e0` + `7a67778d`,
+  runner `d8185dde` (packages resolved one tree at a time after a SwiftPM clone race; a failed build stops the job),
+  plan note `8cb1d994`, change log `1c8a539e`.
+- **Measured (one job, Mac mini, release, perf-gate-1491-tail-ab 19:25-19:43, before `e10668ae`, after `d8185dde`):**
+  beside load, transact hold 2.70 -> 2.60 ms, write.line 3.38 -> 3.08, plan hold 1.35 -> 1.04 (means of two rounds);
+  serverApplyPlan CPU a call alone 852 -> 807 us. Pages a step: save 16.79 -> 17.79, claim 2, ack 4, echo 19.97 ->
+  20.97. Red fails, green passes in release; the fixed suites pass in debug (26 tests in 3 suites).
+- **Cost accepted:** #1115's budget of 24 outbox frames a write is 25 (23.0 -> 25.0, the index's page on the save and
+  the echo); perf-writes-1510's amendment 2 (-4 a save, -2 an echo) is told on the channel.
+- **Open:** the tight-loop transact read 0.68 ms in this job at both commits, 0.389 ms at `4ff5e5c4` in the 16:11 job;
+  every commit here includes main's 13:01-16:19 merges. perf-gate-1491-bench-bisect (queued) runs the tight loop at
+  `69f2fe51`, `e6e71913`, `dffd9a06` and `d3b08d41` in one job to say whether one of them moved it.
+- **Next:** land this branch, ledger, READY FOR BUILD on #1482; the bisect's lines on #1491 and #1482; cleanup.
+
 
 ## 2026-10-31 19:33:02 EDT — perf-send-1492 (#1492, #1497, #1496): landed
 
@@ -19,6 +95,20 @@
   numbers and design on the issue; coordinate with perf-writes-1510's compressed body).
 - **Ownership:** none; the plan's claims are finished (channel `2026-10-31-perf-send-1492`). Worktrees removed after
   this landing; evidence stays in `~/Sync/audit/perf-send-1492/`.
+
+## 2026-10-31 18:45 EDT — #1504: every store connection keeps SQLite's temporary structures in memory
+
+- **Built:** red 6ec56cba (PRAGMA temp_store 0 on the writer, a read connection and a reopened writer, expected 2),
+  green a92b8ca4: the writer sets `temp_store = MEMORY` at the end of its bootstrap (after the one-time migrations,
+  before the server apply's staging tables) and when it reopens; every read connection at open. Merged with main at
+  31569b58 (only the file's history block conflicted).
+- **Measured before:** a device's energy ledger counted 34,124-36,677 temporary-file writes an hour of recording
+  (19-49 MB/h) and 470,007 (166 MB/h) across eight launches. **Expected after:** 0; the device's ledger after the next
+  release measures it, and its memory footprint (the app's #1507 minute field) is the check on the other side.
+- **Tests:** 17 tests in 5 suites pass on the branch (pwf-1504-redgreen); re-run on the merged branch (31569b58): 40 tests in 8 suites pass, the write
+  recorder's, the registration gate's and the prune's among them (pwf-1504-merged, 19:01).
+- **#1500:** waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test
+  confirmed), plan amendment 3.
 
 ## 2026-10-31 18:20:12 EDT — perf-send-1492 (#1497, #1496): the receipt memo and one task per frame, measured; landing
 
@@ -39,6 +129,15 @@
 - **Next:** land; ledger; READY FOR BUILD on #1482. Then #1497's follow-up: key the claim's and the acknowledgement's
   row checks by the SHA-256 of the stored text (hardware, about 15 us a line) with a round-trip pin, pass the
   acknowledgement's fingerprint to its lifecycle record, and drop the save's inputs hash.
+
+## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
+
+- **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
+  with #1491's four commits cherry-picked from `main` (merge `99a46951`): a digest's hex in one string; a new local
+  write computes no wire-intent fingerprint. Tight-loop transact p50 0.476 -> 0.389 ms (Mac mini M4, release). No API,
+  storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
+- **Next:** Scribe pins 1.9.60 exactly and cuts 0.1 (212) (#1482).
 
 ## 2026-10-31 13:12:00 EDT — perf-send-1492 (#1492, #1497, #1496): one attribute resolver per server schema landed; #1497 red
 

@@ -1,3 +1,21 @@
+## 2026-10-31 21:05:06 EDT — scribe `dae81af750452d32ac5942b1e7cf89121a3457d9`
+Release (#1482): Scribe 0.1 (215): instant-data-swift pinned exactly at 1.9.62 (plan 7387dbacf, pin d6e5f9a0a, cut 052c2b7c2, change log 6c79ab166), carrying #1494; #1515 and #1525 on main ride along.
+
+## 2026-10-31 21:05:06 EDT — instant-data-swift `1432f5cc5495eeeb7325109f4ec93813754856b2`
+Release (#1482): v1.9.62 tagged on c85a9531 (perf e2fb5be2, release document ff86efd1, change log c85a9531), a release branch off v1.9.61 with the source and test diff of main's c17bf998 (#1494: a server frame plans in fewer persistence turns, 12 -> 6 for a 50-row refresh; a retried apply names its stale stages) applied, merged here. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change.
+
+## 2026-10-31 21:03:54 EDT — instant-data-swift `15629f06d86a0a95fc630203fd656b3a7b43c881`
+Perf (#1491 amendment 3): the outbox tail, which every local write reads inside the operation gate and every server apply's plan reads twice, is the last entry of a creation-order index instead of a scan and sort of every outbox row (red e10668ae, green e712d3e3); the plan guard (no statement a live write runs reads more of the outbox) and #1115's frame budget 24 -> 25 for the index's page on the save and the echo (7a67778d); ab-commits.sh resolves its trees one at a time (d8185dde). One job on the Mac mini (release): beside load the transact hold 2.70 -> 2.60 ms and the plan's 1.35 -> 1.04 ms; the plan's CPU a call alone 852 -> 807 us. After merging main: 236 tests in 23 suites passed (laptop, debug, 17 known issues).
+
+## 2026-10-31 20:54:23 EDT — scribe `43d47ca00a0022b32e66181e01c6cc06aab443ec`
+Release (#1482): Scribe 0.1 (214): instant-data-swift pinned exactly at 1.9.61 (plan 199c87bd9, pin 78f05acb2, cut 335d40599, change log e460ce467), carrying #1504, #1497 and #1496; #1515 on main rides along.
+
+## 2026-10-31 20:54:23 EDT — instant-data-swift `73a28f2b4ab34f09733c6513481f92313ff54e9f`
+Release (#1482): v1.9.61 tagged on fb930584 (release document ee13ba65, change log fb930584), a release branch off v1.9.60 with the source and test diffs of main's 3374ba97 (#1504: temporary structures in memory) and b60a2c09 (#1497/#1496: the kept receipt fingerprint, one task per frame) applied, merged here. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change; 32 tests in 6 suites pass on the release tree.
+
+## 2026-10-31 20:24:31 EDT — instant-data-swift `c17bf9980adf56b3c076fb0719c4bc0f1a27f025`
+Perf (#1494): a server frame plans in two persistence turns after its seed (the planning reads with the reduction's context in one turn, the plan's begin with its first reverse body page, no empty trailing pages, the plan's end with the status read) and a retried apply names where each earlier attempt went stale (part 1 red b27bca3f, green 4f2e76e9; stale stages red 47f0573b, green 3f04436d; turns red 670758fa, green 5922e9af; docs 278806cc, 26ad0b2c; change log 73738de5): a 50-row refresh's persistence turns 12 -> 6, over a pending write 13 -> 8; Mac mini, release, interleaved: library CPU and write latency unchanged, attempts per frame 1.116 -> 1.159, whose sources are #1524.
+
 ## 2026-10-31 19:31:14 EDT — instant-data-swift `b60a2c093ac47ef23378dfa75444f1769bb8e764`
 Perf (#1497, #1496): the delivery claim and the acknowledgement reuse the receipt fingerprint the save computed, keyed by a hash of its six inputs (red 13699326, green a55a0912, inputs key ca5c830e), and a send starts one task where it started three, with one deadline watcher per socket and no timer per send (red af675e6b, bench 7d024be3, writer 0a7a9595, 4bd0f806, 66d372e8, 40e83b28; change log 848d72e9). Mac mini, release: acknowledgement CPU per call 834 -> 506 us alone and 613 -> 419 us loaded, outboxClaim 2,278 -> 2,051 us loaded, localSave 1,733 -> 1,914 us loaded (the key's hash; #1523 carries the rest), save, claim and acknowledgement together -5% loaded (recording exercise against main 62c16ebf, interleaved in one job); CPU per send 24.58 -> 20.69 us, tasks 63,000 -> 21,001 for 21,000 sends, the 5.5 s timer tail 0.60 -> 0.35 ms (measureTheSendPath against 7d024be3).
 
