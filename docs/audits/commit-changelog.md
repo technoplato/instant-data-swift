@@ -1,3 +1,6 @@
+## 2026-11-01 10:30:11 EST — scribe `01c49b76033f246765c33fcc03a4ef966b09757d`
+Fix (#1536): a recording's lines, lines in progress and attachments are written only by its owner set and shared writers; any signed-in account could write them under another person's recording id.
+
 ## 2026-11-01 10:34:02 EST — scribe `91560bc823652e1dc5898ebd8ac23e36371d6b8a`
 Merge (#1530): og.pisspoursoftware.xyz carries every protected words, tracker and books path with a wordless card; his passed shares are public scrubbed pages (indexed, sitemap, IndexNow, 410 when unshared) kept in step by the card service (a 2 s look, a 10-minute sweep, a second leak check); a sealed line left the page 0.7 s after the seal on the throwaway proof.
 
