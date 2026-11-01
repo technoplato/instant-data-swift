@@ -1,3 +1,6 @@
+## 2026-11-01 09:31:33 EST — scribe `2236752e7d0870a452776f31894698d1ee580770`
+Test (#1545): a Durable Object as the always-on chain listener, first pass: its own Worker (scribe-chain-do) and the same listener on the mini; an always-on object is billed 60 s a minute (11,059 GB-s of 13,000 a day), deploys reach it after 300 s, the Solana Foundation RPC answers Workers 403 and publicnode rate-limits them; ten live defects fixed; 24-hour run under way.
+
 ## 2026-11-01 09:19:00 EST — scribe `7c5306015199118793e0d9dafb0a8c5e7dd77aac`
 Schema (#1543): purposes, what he wants his life and work to be, his words or a reading he confirms, owner-only and never deleted; sourceMoments gains the subject purpose and the role wanted, one gold-star moment per line. Pushed to production under his standing approval, drift 0; ADR 0115 (landed in c12fd4b01).
 
