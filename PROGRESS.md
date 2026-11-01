@@ -1,3 +1,12 @@
+## 2026-10-31 20:01:26 EDT — perf-ship-7 (#1482): v1.9.61 for Scribe build 214
+
+- **Release:** `docs/releases/v1.9.61.md`, tag `v1.9.61` on this release branch's tip, cut from `v1.9.60` (`a00c1618`)
+  with the source and test diffs of `main`'s merges `3374ba97` (#1504: temporary structures in memory; 34-37 thousand
+  sqlite.temp writes an hour of recording -> expected 0) and `b60a2c09` (#1497/#1496: acknowledgement CPU 834 -> 506 us a
+  call; one task per frame). No API, storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
+- **Next:** Scribe pins 1.9.61 exactly and cuts 0.1 (214) (#1482).
+
 ## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
 
 - **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
