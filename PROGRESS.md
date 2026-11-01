@@ -1,3 +1,13 @@
+## 2026-10-31 21:53:02 EDT — perf-ship-9 (#1482): v1.9.63 for Scribe build 216
+
+- **Release:** `docs/releases/v1.9.63.md`, tag `v1.9.63` on this release branch's tip, cut from `v1.9.62` (`c85a9531`)
+  with the source and test diff of `main`'s merge `15629f06` (#1491 amendment 3: the outbox tail is one entry of a
+  creation-order index; transact hold p50 2.70 -> 2.60 ms, plan hold 1.35 -> 1.04 ms). No API or conversion change;
+  the store gains one index on open.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`, +0.26 ms a tight-loop transact) and the compressed outbox
+  body (`cb95ef5d`); neither is marked ready.
+- **Next:** Scribe pins 1.9.63 exactly and cuts 0.1 (216) (#1482).
+
 ## 2026-10-31 21:01:48 EDT — perf-ship-8 (#1482): v1.9.62 for Scribe build 215
 
 - **Release:** `docs/releases/v1.9.62.md`, tag `v1.9.62` on this release branch's tip, cut from `v1.9.61` (`fb930584`)
