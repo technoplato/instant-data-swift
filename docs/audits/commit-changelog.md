@@ -1,3 +1,6 @@
+## 2026-11-01 07:48:31 EST — scribe `47067e96ede7634d6dc141f0d6055aa1dd24f58c`
+TestFlight (#1528): the upload works end to end: own App Store profiles with manual signing, a stripped upload copy that fits Apple's 75 MB Watch limit, and N.1 after a refused number.
+
 ## 2026-11-01 00:46:24 EDT — scribe `a354854e028b03060578bbea73b01d59e734d6b4`
 Feature (#1528): each production iPhone install also uploads that build to TestFlight in the background; blocked until a distribution certificate exists.
 
