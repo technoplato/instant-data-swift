@@ -10,6 +10,102 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 8:23:59 p.m. EDT — `26ad0b2cde89` docs(#1494): ADR 0018's consequences: a server frame's turns, and what fewer turns did not buy
+
+- **Implementation commit:** `26ad0b2cde89fb630a30363f2681c11190825510`
+- **Change:** docs(#1494): ADR 0018's consequences: a server frame's turns, and what fewer turns did not buy
+- **Files:**
+  - `docs/adr/0018-one-actor-turn-per-step.md` — #1494 one consequence line
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:59 p.m. EDT — `278806cc2232` docs(#1494): the concurrency guidance's Performance Rules: a step's reads share one turn, and a paged read says when it held its last row
+
+- **Implementation commit:** `278806cc2232dd5518855759d73e409a20e0ee95`
+- **Change:** docs(#1494): the concurrency guidance's Performance Rules: a step's reads share one turn, and a paged read says when it held its last row
+- **Files:**
+  - `docs/swift-concurrency-guidance.md` — #1494 one paragraph
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:58 p.m. EDT — `5922e9af193c` fix(#1494): green: a server frame plans in two persistence turns after its seed, and no pass reads an empty page
+
+- **Implementation commit:** `5922e9af193c79634715bfcd7959178c143fcf58`
+- **Change:** fix(#1494): green: a server frame plans in two persistence turns after its seed, and no pass reads an empty page
+- **Details:**
+  - The plan's begin reads its first reverse body page; pages say when they held the last row; the reduction's context in the planning turn; the plan's end and the status read in one turn.
+  - Server refresh of a 50-row list: persistence turns 12 -> 6; over a pending write the plan holds as a body 13 -> 8. Recording exercise (mini, release, 4 interleaved runs each): attempts per frame 1.116 -> 1.159 (part 1 alone 1.183), library CPU unchanged; follow-up #1524.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1494 the begin's first page; isLast on body and resident-patch pages
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 the planning turn with the reduction's context; the passes stop at the last page; the plan's end with the status read
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:58 p.m. EDT — `670758faaf1f` test(#1494): red: a server refresh plans in six persistence turns, and over a pending write in eight
+
+- **Implementation commit:** `670758faaf1f251d713bb9683e658b44ab4fd599`
+- **Change:** test(#1494): red: a server refresh plans in six persistence turns, and over a pending write in eight
+- **Details:**
+  - Red (debug): persistence 8 and 13, the rest of each breakdown as pinned.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — #1494 whole-breakdown pins, the body workload
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:58 p.m. EDT — `3f04436dcadb` feat(#1494): green: a retried server apply names where each earlier attempt went stale
+
+- **Implementation commit:** `3f04436dcadb55e9319a8c8fef24f727869a7dad`
+- **Change:** feat(#1494): green: a retried server apply names where each earlier attempt went stale
+- **Details:**
+  - staleStages on server-apply.operation-gate-held and the exclusive fallback; the contention exercise's server.apply line adds attempts and stale stages.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 InstantServerApplyStaleStage and its record sites
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — #1494 attempts and stale stages per path
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:57 p.m. EDT — `47f0573b86ca` test(#1494): red: a retried server apply does not say where its earlier attempt went stale
+
+- **Implementation commit:** `47f0573b86ca31109b907ed341b27b4bebdc6159`
+- **Change:** test(#1494): red: a retried server apply does not say where its earlier attempt went stale
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift` — #1494 the stale stage of a restated and a plain frame
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:57 p.m. EDT — `4f2e76e98359` fix(#1494): green: a server frame plans in three persistence turns, and the applier admits a frame in one live-session turn
+
+- **Implementation commit:** `4f2e76e98359aeed8e1681018d5ec135b09d0dd9`
+- **Change:** fix(#1494): green: a server frame plans in three persistence turns, and the applier admits a frame in one live-session turn
+- **Details:**
+  - Planning reads in one read transaction; no body page when the plan holds no body; admit, record and check a frame in one live-session turn (4 hops a frame -> 2, read from code).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1494 serverApplyPlanningReads
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 one planning turn; no empty body pages
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1494 admitFrame
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:57 p.m. EDT — `b27bca3f9f47` test(#1494): red: a server refresh restating a 50-row list takes twelve persistence turns; it should take eight
+
+- **Implementation commit:** `b27bca3f9f47e8e4952283ec48fc7625a3836b38`
+- **Change:** test(#1494): red: a server refresh restating a 50-row list takes twelve persistence turns; it should take eight
+- **Details:**
+  - Every persistence call of the server apply reports to the hop recorder; runtimeWorkloadsPinEveryActorHop gains a server-refresh workload.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 every server-apply persistence call counted
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — #1494 the server-refresh workload and its pin
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 8:01:36 p.m. EDT — `ee13ba651d50` release(#1482): v1.9.61: temporary structures in memory, a cheaper acknowledgement
 
 - **Implementation commit:** `ee13ba651d50586fe552071b806bd5b22289985d`
