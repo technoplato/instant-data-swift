@@ -1,3 +1,10 @@
+## 2026-10-31 22:54:46 EDT — perf-ship-10 (#1482): v1.9.64 for Scribe build 217
+
+- Tagged from main (b2156d7d plus the release record): #1510 / #1463 the compressed outbox body (cb95ef5d; a save 16.3
+  -> 13.2 log frames, 65.5 -> 53.1 KB, harness) and #1510's write recorder with its cost fixed (9922c9bd; a store's
+  first write 0.645 -> 0.459 ms, 0.384 with it off). Forward-only storage: an older version cannot read a compressed
+  body. Release document: docs/releases/v1.9.64.md. Scribe pins it exactly for build 217.
+
 ## 2026-10-31 22:14:00 EDT — perf-writes-1510 (#1510): the compressed outbox body and the recorder's cost fix landed; READY FOR BUILD
 
 - **Landed:** `cb95ef5d` (#1463: a live write's outbox body compressed in its leaf, its lifecycle derived; change log
