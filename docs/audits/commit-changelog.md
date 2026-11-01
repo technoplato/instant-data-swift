@@ -1,3 +1,9 @@
+## 2026-11-01 12:00:23 EST — scribe `7dc6196d6ac5938b229d00173afa59012e947267`
+Docs (#1546): adversarial pass 3 on the final text: 176 findings applied, no fake authority, 340 authorities cited, 36 questions with age and consent before anything is kept (landed in d27f2b264).
+
+## 2026-11-01 12:00:23 EST — scribe `e0eae438501cacaa4dc026bc742215d274cba09e`
+Docs (#1546): a final read against the brief: 18 authorities added or newly cited (landed in d27f2b264).
+
 ## 2026-11-01 11:57:08 EST — scribe `4082fa869d9813fffeb4ae2d1942d73a4e64ed1c`
 Fix (#1535): WHATS-NEW.md ships in every copy of the app, so no story names a private person, and the cut reads every line for an address or a name from the private mapping, refusing by line without saying the word (landed in b452c5ce6, with build 219 and 205 plain-note wording).
 
