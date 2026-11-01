@@ -1,3 +1,39 @@
+## 2026-11-01 10:58:01 EST — scribe `137035fa1349292152bee363135edec22467167b`
+Docs (#1546): adversarial pass 2 applied: one lawful-as-possible forfeit design, 70 authority fixes, 167 sentence fixes, #1549's market read against the memo (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `4b7b808ca88cdf4edd1ef39441c40e7e5c486792`
+Docs (#1546): first reviewer fixes; every onboarding question says why, what a no does, and how it is recorded (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `416048a3dea4062da134b0ff7fc977fbf77ebf9c`
+Docs (#1546): ELI5 names the law behind each worry; a stake is a pledge, never a "bond" (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `582af9a7d7d09a3993ab28f5188065672cee2805`
+Docs (#1546): legal memo, onboarding, rules draft and ELI5, with 296 verified authorities (checkpoint before adversarial pass 2) (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `3cce1ee10b27699b02e8b3719d7babad72888252`
+Feature (#1546): legal. site: an authority cited for several points shows each pinpoint, quote and use (green) (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `e36679e0f8094b9dc84de4c83eff835ec46129a0`
+Test (#1546): legal. site: an authority cited for several points shows each pinpoint, quote and use (red) (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `cc6bbbed8a97cd1850348ae85b5aac156dedaee4`
+Feature (#1546): legal. site: a citation placeholder left in a page stops the build (green) (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `8e0f11c1e5e45106843602ac831f94f7a5d766d0`
+Test (#1546): legal. site: a citation placeholder left in a page stops the build (red); docs/legal README (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `76003966ae9606723757fa111a6765eae3a5c984`
+Feature (#1546): legal. site: links to a missing section or page stop the build (green) (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `09e78b889fba5547f5fe3aba0ad8761a02bf9a64`
+Test (#1546): legal. site: a link to a missing section or page stops the build (red); deploy script and README (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `64661219c3850ddf4d1b3ffe41acb43e8e1c0ffd`
+Feature (#1546): legal. site builder and loopback server (green) (landed in 46cad73ec).
+
+## 2026-11-01 10:58:01 EST — scribe `58cef87a79f28c41d64da9a648c399af65f6186b`
+Test (#1546): legal. site: the source header, the draft notice on every page, references, privacy stops and the loopback server (red) (landed in 46cad73ec).
+
 ## 2026-11-01 10:53:23 EST — scribe `875dbd7bdbb4663b6f9c1b253c1f7e93ad049a96`
 Fix (#1536): a companion request names a recording its writer owns, so no stranger can put one into his follow-along's feed.
 
