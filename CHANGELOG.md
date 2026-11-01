@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 8:01:36 p.m. EDT — `ee13ba651d50` release(#1482): v1.9.61: temporary structures in memory, a cheaper acknowledgement
+
+- **Implementation commit:** `ee13ba651d50586fe552071b806bd5b22289985d`
+- **Change:** release(#1482): v1.9.61: temporary structures in memory, a cheaper acknowledgement
+- **Details:**
+  - The release document for v1.9.61, branched from v1.9.60 (a00c1618) with the source and test diffs of main's merges 3374ba97 (#1504) and b60a2c09 (#1497, #1496), for Scribe build 214.
+  - No API, storage or conversion change. The #1510 write recorder (d3b08d41) is not in it: its owner has not marked it ready.
+- **Files:**
+  - `docs/releases/v1.9.61.md` — #1482 the release: what #1504, #1497 and #1496 change and what they measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-7@ld); no SpecStory capture
+
 ## October 31st, 2026 at 6:19:52 p.m. EDT — `40e83b28664e` fix(#1496): each frame is written by one task, and one watcher per socket keeps every deadline; writes stay independent
 
 - **Implementation commit:** `40e83b28664e0795ba815ce8e32159b45b8b9e77`
