@@ -156,6 +156,50 @@
   `scripts/contention-exercises/ab-commits.sh`; then #1496 (one writer task per socket). READY FOR BUILD on #1482 per
   landing.
 
+## 2026-10-31 18:45 EDT — #1504: every store connection keeps SQLite's temporary structures in memory
+
+- **Built:** red 6ec56cba (PRAGMA temp_store 0 on the writer, a read connection and a reopened writer, expected 2),
+  green a92b8ca4: the writer sets `temp_store = MEMORY` at the end of its bootstrap (after the one-time migrations,
+  before the server apply's staging tables) and when it reopens; every read connection at open. Merged with main at
+  31569b58 (only the file's history block conflicted).
+- **Measured before:** a device's energy ledger counted 34,124-36,677 temporary-file writes an hour of recording
+  (19-49 MB/h) and 470,007 (166 MB/h) across eight launches. **Expected after:** 0; the device's ledger after the next
+  release measures it, and its memory footprint (the app's #1507 minute field) is the check on the other side.
+- **Tests:** 17 tests in 5 suites pass on the branch (pwf-1504-redgreen); re-run on the merged branch (31569b58): 40 tests in 8 suites pass, the write
+  recorder's, the registration gate's and the prune's among them (pwf-1504-merged, 19:01).
+- **#1500:** waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test
+  confirmed), plan amendment 3.
+## 2026-10-31 18:58:00 EDT — perf-writes-1510 (#1510, #1463): a live write's body compressed in its leaf, its lifecycle derived
+
+- **Why:** on the phone (10-31, build 208) a local save wrote 24.4 log pages, 4.7 of them its body: a `WITHOUT ROWID`
+  cell keeps at most 1,002 bytes on its leaf, so 3.4-12 KB bodies took two to four overflow pages, allocated at the
+  save (page 1 and a free-list trunk rewritten) and freed at the echo. Raw deflate takes the median body 8,389 -> 944 B;
+  without the 346-byte lifecycle beside it, 6 of 8 live cells fit their leaf (docs/audits/2026-10-31-writes-1510.md).
+- **Plan:** `2026-10-31-perf-writes-1510`, amendment 2 (fd035c89, landed 017a5e58). **Commits:** red `ef3862c9`;
+  green `a6debcdf`; fixes `4bb6ddc0`, `9b2b25ce`; docs `71b6dfd6`, `7d976196`.
+- **Change:** `instant_outbox_bodies.json` holds the body's JSON compressed (`InstantOutboxStoredBody`: format byte,
+  length, raw deflate via Apple's Compression), `lifecycle_bytes` the lifecycle's size; readers derive the lifecycle.
+  Budgets count JSON bytes (`bodyLengthSQL`, `bodyJSONBytesSQL`, staged sizes). Text bodies an older version wrote
+  read as before and convert at their next change. Scribe's recovery script inflates them (Scribe 85839caa5).
+- **Measured (StorageIOExercises.aLiveWritesStepsByBTree, 48 overlapping Scribe writes, laptop, debug, one job):**
+  save 16.3 -> 13.2 log frames per write (65.5 -> 53.1 KB), echo 18.9 -> 17.5 (76.1 -> 70.6 KB), claim and ack
+  unchanged. Recorder cost (ab-commits.sh, mini): transact hold +0.2 ms alone (inside the rounds' spread), none under
+  load.
+- **Ruled out with numbers:** deleting the 730 terminal failures' key rows makes saves worse (5.40 -> 6.88 pages);
+  in-memory revisions (#1254) would collide with the query cache's stored `store_revision`; TEMP key rows (#1464)
+  would bring back rows deleted on purpose.
+- **Next:** the whole-bundle gate on the merge with main (perf-writes-1510-body-bundle2), the compressed body's cost
+  A/B (perf-writes-1510-body-cost), land, one "READY FOR BUILD" for the recorder and this; then the phone's numbers
+  through the recorder. Continue from `~/Sync/worktrees/perf-writes-1510`; evidence `~/Sync/audit/perf-writes-1510/`.
+
+## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
+
+- **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
+  with #1491's four commits cherry-picked from `main` (merge `99a46951`): a digest's hex in one string; a new local
+  write computes no wire-intent fingerprint. Tight-loop transact p50 0.476 -> 0.389 ms (Mac mini M4, release). No API,
+  storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
+- **Next:** Scribe pins 1.9.60 exactly and cuts 0.1 (212) (#1482).
 
 ## 2026-10-31 16:50:00 EDT — perf-gate-1491 (#1491): the write's own cost -18% in one job; the outbox tail read next
 

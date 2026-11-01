@@ -275,6 +275,8 @@ enum OutboxConversion {
       url, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'instant_outbox_bodies'"
     ).isEmpty == false
     guard hasBodies else { return }
+    // A body is stored compressed since #1463; the older layout held its JSON text and its lifecycle.
+    try rewriteStoredOutboxBodiesAsText(in: url)
     let definitions = try strings(
       url,
       """

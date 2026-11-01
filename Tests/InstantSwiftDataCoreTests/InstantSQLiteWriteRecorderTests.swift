@@ -248,21 +248,24 @@ struct InstantSQLiteWriteRecorderTests {
   func aMillionFramesAtAConstantStackAndBoundedMemory() throws {
     let recorder = InstantSQLiteDatabaseWriteRecorder(databaseName: "/stress/\(UUID().uuidString).sqlite")
     let elapsed = LockedValue<Double?>(nil)
+    // The thread's own CPU time, not the wall clock: on a loaded machine (a 5-min load of 134, 2026-10-31) the wall
+    // clock counted the time the thread waited for a core, 102 us a frame against 12.7 alone.
     let thread = Thread {
-      let started = ContinuousClock.now
+      let started = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
       LogFrames.writeSynthetic(frames: 1_000_000, to: recorder)
-      let duration = ContinuousClock.now - started
-      elapsed.set(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)
+      elapsed.set(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - started) / 1e9)
     }
     thread.stackSize = 256 * 1_024
     thread.start()
-    let deadline = Date().addingTimeInterval(120)
+    // The deadline only guards a hang; the bound below is on CPU time. At a 5-min load of 215 (the whole bundle on a
+    // shared laptop, 2026-10-31) the thread got too little CPU to finish in 120 s.
+    let deadline = Date().addingTimeInterval(600)
     while elapsed.get() == nil, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-    let seconds = try #require(elapsed.get(), "the million frames did not finish in 120 s")
+    let seconds = try #require(elapsed.get(), "the million frames did not finish in 600 s")
 
-    // A debug build beside the bundle's other suites: 12.7 us a frame alone, 32.6 beside them. The bound catches a
-    // recursion or a cost that grows with the frames; the release cost is the recording exercise's (ab-commits.sh).
-    #expect(seconds / 1_000_000 < 100e-6, "seconds a frame: \(seconds / 1_000_000)")
+    // A debug build: 12.7 us a frame alone. The bound catches a recursion or a cost that grows with the frames; the
+    // release cost is the recording exercise's (ab-commits.sh).
+    #expect(seconds / 1_000_000 < 100e-6, "CPU seconds a frame: \(seconds / 1_000_000)")
     #expect(recorder.retainedBytesForTesting() < 1_024 * 1_024, "retained: \(recorder.retainedBytesForTesting())")
     #expect(recorder.record().logPages == 1_000_000)
   }

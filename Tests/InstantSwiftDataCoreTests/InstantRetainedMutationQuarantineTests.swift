@@ -463,6 +463,8 @@ private func quarantineTestQuery(
       case SQLITE_NULL: value = .null
       case SQLITE_INTEGER: value = .integer(sqlite3_column_int64(statement, column))
       case SQLITE_FLOAT: value = .real(sqlite3_column_double(statement, column))
+      // An outbox body is stored compressed since #1463: compared as its JSON.
+      case SQLITE_BLOB: value = .text(storedOutboxBodyJSON(statement, column) ?? "")
       default: value = .text(String(cString: sqlite3_column_text(statement, column)))
       }
       row.append((name, value))
@@ -478,9 +480,10 @@ private func quarantineTestOutboxRows(in cacheURL: URL, ids: [String]) throws ->
     guard
       let row = try quarantineTestQuery(
         database,
-        // The row and its body row (#1435), the columns the quarantine keeps.
+        // The row and its body row (#1435), the columns the quarantine keeps; lifecycle_bytes since #1463.
         """
-        SELECT outbox.*, body.lifecycle_json, body.json, body.quarantine_json, body.quarantine_lifecycle_json
+        SELECT outbox.*, body.lifecycle_json, body.json, body.quarantine_json, body.quarantine_lifecycle_json,
+               body.lifecycle_bytes
         FROM instant_outbox AS outbox JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
         WHERE outbox.mutation_id = ?
         """,
@@ -543,6 +546,23 @@ private func quarantineTestDecodeRowJSON(_ json: String) throws -> [String: Quar
     case let string as String: return .text(string)
     case let number as NSNumber:
       return CFNumberIsFloatType(number) ? .real(number.doubleValue) : .integer(number.int64Value)
+    // A BLOB column, as the quarantine copies it: its bytes in hexadecimal. An outbox body is stored compressed since
+    // #1463, and compared as its JSON, as `quarantineTestQuery` reads it.
+    case let blob as [String: Any]:
+      guard blob.count == 1, let hex = blob["hex"] as? String, hex.count.isMultiple(of: 2) else {
+        throw QuarantineTestSQLiteError(message: "Unexpected JSON value \(value) in a quarantined row.")
+      }
+      var bytes: [UInt8] = []
+      var index = hex.startIndex
+      while index < hex.endIndex {
+        let next = hex.index(index, offsetBy: 2)
+        guard let byte = UInt8(hex[index..<next], radix: 16) else {
+          throw QuarantineTestSQLiteError(message: "A quarantined BLOB is not hexadecimal.")
+        }
+        bytes.append(byte)
+        index = next
+      }
+      return .text(bytes.withUnsafeBytes { InstantOutboxStoredBody.json(fromCompressed: $0) } ?? hex)
     default:
       throw QuarantineTestSQLiteError(message: "Unexpected JSON value \(value) in a quarantined row.")
     }
