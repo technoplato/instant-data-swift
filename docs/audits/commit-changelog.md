@@ -1,3 +1,6 @@
+## 2026-11-01 16:17:24 EST — scribe `249dc8508059b4ac6235fd57e3cb7d8716d5f402`
+Fix (#1536): a fencepost waits up to a minute, since a first recording's row waits on the permission prompts.
+
 ## 2026-11-01 15:09:22 EST — scribe `dd1fe9d680fd989091d3fbbd74f25eb6b2c16c32`
 Fix (#1536): a fencepost waits for its recording's row, so a tester's recording stops reading "Not Synced".
 
