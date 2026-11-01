@@ -1,3 +1,12 @@
+## 2026-11-01 18:51:07 EST — scribe `f67df399fd5e2b3229a21881bab5907110ffd8ec`
+Fix (#1588): a short clip's library item, made before its words and with no show, is written with its show before its link to the show; Instant checks a link from a row that exists against both rows as they were before the transaction, so the words of three short videos from new channels had never landed (landed in 31824f780).
+
+## 2026-11-01 18:46:24 EST — scribe `e83af706a24c253928fcf8e5b7ddd64014f29852`
+Docs (#1588): ADR 0123 amendment A and one sentence on FEATURES item 36: an uploaded broadcast plays inside Scribe Playback, still unlisted (landed in 57e15c6aa).
+
+## 2026-11-01 18:32:59 EST — scribe `c5c4395bee3a82327025a0e191064e1289d93b06`
+Fix (#1588): uploaded broadcasts are embeddable, through one status part for the upload and the takedown, so they play in Scribe Playback's YouTube player; privacy stays unlisted (landed in 57e15c6aa).
+
 ## 2026-11-01 18:38:05 EST — scribe `53432385b1820ba2692813b9f4f20ecf7b03a592`
 Feature (#1576): spotter's publisher can push to GitHub, but only as the PissPour account, from its own gh folder or a token he made; never this Mac's usual login, through which every agent pushes Scribe. Tag, release files, then main, then the tap; it refuses a public history that names anyone else (landed in 44ed59d84).
 
