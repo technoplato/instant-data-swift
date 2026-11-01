@@ -96,6 +96,8 @@
 //   attempt stale (#1494).
 // - 2026-10-31: a server apply's plan can read its first reverse body page in its own transaction, and a body or
 //   resident-patch page says when it held the last row: each pass read an empty page after it (#1494).
+// - 2026-10-31: the outbox's tail, which every local write and every server apply's plan reads, is the last entry of a
+//   creation-order index, where each read sorted every row (#1491).
 
 import Foundation
 import IssueReporting
@@ -2964,6 +2966,8 @@ public actor SQLitePersistenceStore {
     }
     // A restore that rebuilt `instant_outbox` after 0031 ran keeps the claim off a scan too (#1108, #1115).
     try execute(Self.deliveryIndexSQL)
+    // Every store, whatever built its outbox, reads the tail from an index instead of sorting every row (#1491).
+    try execute(Self.creationOrderIndexSQL)
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -8666,15 +8670,17 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The id of the outbox's newest row in delivery order, which a write that supersedes the tail must still find there.
+  package static let outboxTailIDSQL =
+    """
+    SELECT mutation_id
+    FROM instant_outbox
+    ORDER BY created_at_ms DESC, mutation_id DESC
+    LIMIT 1
+    """
+
   private func immediateOutboxTailIDWithoutTransaction() throws -> String? {
-    try selectScalar(
-      """
-      SELECT mutation_id
-      FROM instant_outbox
-      ORDER BY created_at_ms DESC, mutation_id DESC
-      LIMIT 1
-      """
-    )
+    try selectScalar(Self.outboxTailIDSQL)
   }
 
   /// Reproves the scalar ordering/claim boundary before quarantining a tail.
@@ -16542,6 +16548,18 @@ public actor SQLitePersistenceStore {
       (delivery_claim_state, delivery_state, delivery_claim_deadline_ms, created_at_ms, mutation_id)
     """
 
+  /// Every outbox row in delivery order, so the tail (``outboxTailPositionSQL``, ``outboxTailIDSQL``) is its last entry
+  /// (#1491). Every local write reads the tail inside the operation gate and a server apply's plan reads it twice; with
+  /// no index in this order SQLite scanned the global-effect index whole and kept the newest row in a temporary b-tree,
+  /// 291 us a read on the phone-shaped store's 700 rows against 29 us here (laptop), and 2.25 ms at 5,400 rows, an hour
+  /// of lines written offline. A claim and an acknowledgement never set its columns, so they write none of it; a statement
+  /// that inserts, re-saves or deletes a row writes a page of it.
+  static let creationOrderIndexSQL =
+    """
+    CREATE INDEX IF NOT EXISTS instant_outbox_creation_order_idx
+    ON instant_outbox (created_at_ms, mutation_id)
+    """
+
   /// Puts each of ``rareStateIndexes`` in place as it is defined (#1115): built when a store has none, or has the full
   /// index an older version made, or a partial one naming another version, which a query forcing the index would fail
   /// on. SQLite keeps an index's CREATE text without its `IF NOT EXISTS`, so the stored text is compared whole: three
@@ -17346,19 +17364,21 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// The outbox's newest row in delivery order: the creation cursor every local write follows, and the tail a server
+  /// apply's plan starts from.
+  package static let outboxTailPositionSQL =
+    """
+    SELECT created_at_ms, mutation_id
+    FROM instant_outbox
+    ORDER BY created_at_ms DESC, mutation_id DESC
+    LIMIT 1
+    """
+
   private func latestOutboxPositionWithoutTransaction()
     throws -> InstantOutboxDeliveryPosition?
   {
     var statement: OpaquePointer?
-    try prepare(
-      """
-      SELECT created_at_ms, mutation_id
-      FROM instant_outbox
-      ORDER BY created_at_ms DESC, mutation_id DESC
-      LIMIT 1
-      """,
-      statement: &statement
-    )
+    try prepare(Self.outboxTailPositionSQL, statement: &statement)
     defer { finishStatement(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW,
       let mutationID = sqlite3_column_text(statement, 1)

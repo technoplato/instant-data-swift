@@ -134,6 +134,98 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > get the performance wins onto his devices
 - **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-7@ld); no SpecStory capture
 
+## October 31st, 2026 at 7:46:47 p.m. EDT — `d8185dde610b` test(#1491): ab-commits.sh resolves each tree's packages one at a time and stops when a tree does not build
+
+- **Implementation commit:** `d8185dde610b0e3a0b70ba74b0f901b3b5cdcb69`
+- **Change:** test(#1491): ab-commits.sh resolves each tree's packages one at a time and stops when a tree does not build
+- **Details:**
+  - Two cold trees built side by side cloned into the mini's shared SwiftPM cache at once; HEAD's build failed and the job ran the red tree alone. Simulated with a stub swift; the next A/B resolved and built both trees.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 serial package resolution, a dropped clone retried, a failed build stops the job
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:46 p.m. EDT — `7a67778d8ffb` test(#1491): the plan guard fails a plan that reads more of the outbox; #1115's frame budget is 25 with the index
+
+- **Implementation commit:** `7a67778d8ffbc0f6a82536126fe350df34c86232`
+- **Change:** test(#1491): the plan guard fails a plan that reads more of the outbox; #1115's frame budget is 25 with the index
+- **Details:**
+  - The first debug run (perf-gate-1491-tail, Mac mini, 1,079 tests in 74 suites) found the guard too strict (two server-apply catch-up counts changed plan for the better) and #1115's budget of 24 outbox frames a write at 25.0 (23.0 without the index).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard's rule
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` — #1491 the frames-per-write budget, 24 -> 25
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:46 p.m. EDT — `bf8748e05552` test(#1491): the plan guard reloads the store connection's schema after dropping the index
+
+- **Implementation commit:** `bf8748e05552206d1d1d5948fcaad2eb2ba87161`
+- **Change:** test(#1491): the plan guard reloads the store connection's schema after dropping the index
+- **Details:**
+  - EXPLAIN QUERY PLAN plans on a connection's cached schema; the guard runs one store read after the drop and requires the tail to plan without the index before comparing.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard's schema reload
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:45 p.m. EDT — `e712d3e331ad` perf(#1491): green: the outbox tail is the last entry of a creation-order index, not a sort of every row
+
+- **Implementation commit:** `e712d3e331adebd90a7e44d219972ea2ede9060c`
+- **Change:** perf(#1491): green: the outbox tail is the last entry of a creation-order index, not a sort of every row
+- **Details:**
+  - A full index on (created_at_ms, mutation_id), put in place at every open beside deliveryIndexSQL; the SQL is unchanged. Before: 291 us a tail read at the phone-shaped store's 700 rows, 2.25 ms at 5,400 (laptop, Python sqlite3); M6 put 39 samples a minute in it, 18 inside the transact's hold. Cost: WAL frames a step on the outbox's schema (700 rows, 50 cycles) save 4 -> 5, acknowledgement 5 -> 5, the confirm's delete 4 -> 5.
+  - Verified on the Mac mini: in release the red e10668ae fails all three tail reads (a sort, no index) and d8185dde passes (perf-gate-1491-tail-ab, 19:25-19:43); the fixed suites pass in debug, 26 tests in 3 suites (perf-gate-1491-tail-tests). One job, the recording exercise on the real-size store, steady p50 beside six busy loops: transact hold 2.70 -> 2.60 ms, write.line 3.38 -> 3.08 ms, plan server apply hold 1.35 -> 1.04 ms (means of two rounds); serverApplyPlan CPU a call alone 852 -> 807 us. Pages a step (120 writes): save 16.79 -> 17.79, claim 2.00 and acknowledgement 4.00 unchanged, echo 19.97 -> 20.97.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 creationOrderIndexSQL and its line in bootstrap
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard: no other plan of a live write's statements changes
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:45 p.m. EDT — `e10668ae84dc` test(#1491): red: the outbox tail a write reads is one entry of an index in delivery order (today a sort of every row)
+
+- **Implementation commit:** `e10668ae84dcdcd843678286e35386231088052d`
+- **Change:** test(#1491): red: the outbox tail a write reads is one entry of an index in delivery order (today a sort of every row)
+- **Details:**
+  - Plans the three tail reads (the creation cursor, the supersession tail's id, the supersession tail) as the library runs them on a bootstrapped store: each scanned the global-effect index whole and kept the newest row in a temporary b-tree. The two inline queries became package constants with the same text.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 outboxTailPositionSQL and outboxTailIDSQL, the same SQL
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the tail reads' plans
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:45:23 p.m. EDT — `a92b8ca44d05` fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
+
+- **Implementation commit:** `a92b8ca44d0580ce31d7a70aca04fc1844234d17`
+- **Change:** fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
+- **Details:**
+  - The writer sets temp_store = MEMORY at the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and again when it reopens; every read connection at open. A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0 after. Green: 17 tests in 5 suites (pwf-1504-redgreen 17:20).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 the writer's temp_store, at bootstrap and on reopen
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 each read connection's temp_store
+- **User context (verbatim):**
+  > No feature compromises. Just fixing at the source
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:45:23 p.m. EDT — `6ec56cba96ab` test(#1504): red: every store connection keeps SQLite's temporary structures in memory
+
+- **Implementation commit:** `6ec56cba96ab77d3dd57e8c3ae3dd30f6f567577`
+- **Change:** test(#1504): red: every store connection keeps SQLite's temporary structures in memory
+- **Details:**
+  - PRAGMA temp_store read on the writer after bootstrap, on a read connection and on a reopened writer: 0 (a file) on all three, expected 2 (memory). Two guards: a recording exercise and closing a 300-todo query write no temporary file. Red by build.sh pwf-1504-redgreen 17:12.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantTemporaryStoreTests.swift` — #1504 the setting on every connection, and two guards
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 temporaryStoreForTesting
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 temporaryStoreForTesting
+- **User context (verbatim):**
+  > No feature compromises. Just fixing at the source
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
+
+
 ## October 31st, 2026 at 6:19:52 p.m. EDT — `40e83b28664e` fix(#1496): each frame is written by one task, and one watcher per socket keeps every deadline; writes stay independent
 
 - **Implementation commit:** `40e83b28664e0795ba815ce8e32159b45b8b9e77`
@@ -258,6 +350,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
 - **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
 
+## October 31st, 2026 at 5:44:09 p.m. EDT — `cbda8b883012` release(#1482): v1.9.60: a local write does less hashing
+
+- **Implementation commit:** `cbda8b883012f115b2df6783ea6d071bc3e33de4`
+- **Change:** release(#1482): v1.9.60: a local write does less hashing
+- **Details:**
+  - The release document for v1.9.60, branched from v1.9.59 (1d9ba2ba) with #1491's four commits cherry-picked from main (99a46951), for Scribe build 212.
+  - No API, storage or conversion change. The #1510 write recorder (d3b08d41) is not in it: its owner has not marked it ready.
+- **Files:**
+  - `docs/releases/v1.9.60.md` — #1482 the release: what #1491 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-5@ld); no SpecStory capture
+
 ## October 31st, 2026 at 1:08:05 p.m. EDT — `14ee76226d8c` fix(#1492): green: one attribute resolver per server schema, kept across sends
 
 - **Implementation commit:** `14ee76226d8c847c676ed5b012b156596a5f0af9`
@@ -289,46 +395,6 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > let's postpone other work to let performance focus and get those wins in.
 - **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1492@ld); no SpecStory capture
 
-## October 31st, 2026 at 6:45:23 p.m. EDT — `a92b8ca44d05` fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
-
-- **Implementation commit:** `a92b8ca44d0580ce31d7a70aca04fc1844234d17`
-- **Change:** fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
-- **Details:**
-  - The writer sets temp_store = MEMORY at the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and again when it reopens; every read connection at open. A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0 after. Green: 17 tests in 5 suites (pwf-1504-redgreen 17:20).
-- **Files:**
-  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 the writer's temp_store, at bootstrap and on reopen
-  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 each read connection's temp_store
-- **User context (verbatim):**
-  > No feature compromises. Just fixing at the source
-- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
-
-## October 31st, 2026 at 6:45:23 p.m. EDT — `6ec56cba96ab` test(#1504): red: every store connection keeps SQLite's temporary structures in memory
-
-- **Implementation commit:** `6ec56cba96ab77d3dd57e8c3ae3dd30f6f567577`
-- **Change:** test(#1504): red: every store connection keeps SQLite's temporary structures in memory
-- **Details:**
-  - PRAGMA temp_store read on the writer after bootstrap, on a read connection and on a reopened writer: 0 (a file) on all three, expected 2 (memory). Two guards: a recording exercise and closing a 300-todo query write no temporary file. Red by build.sh pwf-1504-redgreen 17:12.
-- **Files:**
-  - `Tests/InstantSwiftDataCoreTests/InstantTemporaryStoreTests.swift` — #1504 the setting on every connection, and two guards
-  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 temporaryStoreForTesting
-  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 temporaryStoreForTesting
-- **User context (verbatim):**
-  > No feature compromises. Just fixing at the source
-- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
-
-## October 31st, 2026 at 5:44:09 p.m. EDT — `cbda8b883012` release(#1482): v1.9.60: a local write does less hashing
-
-- **Implementation commit:** `cbda8b883012f115b2df6783ea6d071bc3e33de4`
-- **Change:** release(#1482): v1.9.60: a local write does less hashing
-- **Details:**
-  - The release document for v1.9.60, branched from v1.9.59 (1d9ba2ba) with #1491's four commits cherry-picked from main (99a46951), for Scribe build 212.
-  - No API, storage or conversion change. The #1510 write recorder (d3b08d41) is not in it: its owner has not marked it ready.
-- **Files:**
-  - `docs/releases/v1.9.60.md` — #1482 the release: what #1491 changes and what it measured
-  - `PROGRESS.md` — #1482 the release checkpoint
-- **User context (verbatim):**
-  > get the performance wins onto his devices
-- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-5@ld); no SpecStory capture
 
 ## October 31st, 2026 at 4:42:37 p.m. EDT — `221573c63b06` test(#1491): ab-commits.sh builds its trees side by side and runs a test filter at each commit (--test-filter)
 
