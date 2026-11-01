@@ -178,6 +178,48 @@ struct InstantSQLiteWriteRecorderTests {
     #expect(writeKeys.value.btrees.contains("instant_outbox_write_keys_lookup_idx"), "\(writeKeys)")
   }
 
+  /// A second store of the same schema explains no statement the first one explained (#1510). Each store's recorder ran
+  /// an `EXPLAIN` of every write statement at its first use, the first of them on a connection it opened for that:
+  /// perf-gate-1491's bisect put it at +0.26 ms on a store's first write (the cross-SDK runtime benchmark, a new store
+  /// each iteration: 0.449 -> 0.712 ms), and turning the recorder's statement counting off took it all back.
+  @Test
+  func aSecondStoreOfTheSameSchemaExplainsNoStatementTheFirstOneExplained() async throws {
+    let directory = try Self.temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    func write(in name: String) async throws -> (explains: Int, record: InstantSQLiteWriteRecord) {
+      let runtime = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "write-recorder-explain-1510",
+          persistenceURL: directory.appendingPathComponent(name),
+          initialAttributes: TodoExample.attributes
+        )
+      )
+      let before = await runtime.persistence.writeRecordForTesting()
+      let explainsBefore = await runtime.persistence.writeRecorderExplainCountForTesting()
+      _ = try await runtime.transact(
+        operations: TodoExample.createOperations(
+          id: "todo-\(name)",
+          text: "a line for \(name)",
+          createdAt: InstantTimestamp(milliseconds: 1_793_467_733_514),
+          transactionID: "tx-\(name)"
+        )
+      )
+      let explains = await runtime.persistence.writeRecorderExplainCountForTesting() - explainsBefore
+      let record = await runtime.persistence.writeRecordForTesting().subtracting(before)
+      _ = try? await runtime.closeConnection()
+      return (explains, record)
+    }
+    _ = try await write(in: "first.sqlite")
+    let second = try await write(in: "second.sqlite")
+
+    #expect(second.explains == 0, "the second store explained \(second.explains) statements")
+    let insert = try #require(
+      second.record.statements.first { $0.key.contains("INSERT") && $0.key.contains("instant_triples") },
+      "statements: \(second.record.statements.keys.sorted())"
+    )
+    #expect(insert.value.btrees.contains("instant_triples"), "\(insert)")
+  }
+
   /// A statement built for a batch of any size is one shape: its placeholder lists collapse.
   @Test
   func aStatementBuiltForABatchIsOneShape() {

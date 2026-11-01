@@ -6,6 +6,9 @@ import os
 // - 2026-10-31: the pages each table, index and statement writes, minute by minute (#1510). A phone's local save wrote
 //   102 KB and the store's meters said only which store call wrote it; the write-ahead log, read page by page on a
 //   copy, put the save at 24.4 pages across 17 b-trees. This records the same reading in the running app.
+// - 2026-10-31: a statement shape's written b-trees are explained once a process for each schema, not once a store: every
+//   store explained its statements again, the first on a connection it opened, +0.26 ms on a store's first write in
+//   the cross-SDK runtime benchmark (perf-gate-1491's bisect). Switches turn the recorder or a part of it off (#1510).
 
 /// What a store's SQLite wrote, page by page: by b-tree (a table, an index, or SQLite's own pages), by write statement,
 /// and by the store call that committed it (#1510).
@@ -21,6 +24,18 @@ import os
 ///     // ... a minute of writes
 ///     let minute = InstantSQLiteWriteRecorder.snapshot().subtracting(before)
 ///     minute.btrees["instant_outbox_write_keys_lookup_idx"]?.logPages
+/// Switches that turn the recorder, or one of its parts, off, to measure what each part costs a write (#1510:
+/// perf-gate-1491's bisect put the recorder at +0.26 ms a write in the tight loop). Read once, from the environment:
+/// `INSTANT_SQLITE_WRITE_RECORDER=0` attaches none; `..._READS=0` learns nothing from the pages SQLite reads;
+/// `..._STATEMENTS=0` counts no write statement; `..._WRITES=0` names no page the log takes.
+enum InstantSQLiteWriteRecorderSwitches {
+  private static let environment = ProcessInfo.processInfo.environment
+  static let isOn = environment["INSTANT_SQLITE_WRITE_RECORDER"] != "0"
+  static let learnsFromReads = environment["INSTANT_SQLITE_WRITE_RECORDER_READS"] != "0"
+  static let countsStatements = environment["INSTANT_SQLITE_WRITE_RECORDER_STATEMENTS"] != "0"
+  static let namesWrites = environment["INSTANT_SQLITE_WRITE_RECORDER_WRITES"] != "0"
+}
+
 public enum InstantSQLiteWriteRecorder {
   /// Every store's counts since the process started, a closed store's included.
   public static func snapshot() -> InstantSQLiteWriteRecord {
@@ -32,7 +47,7 @@ public enum InstantSQLiteWriteRecorder {
   /// reports to, its log included. Attach before the first connection opens; ``InstantSQLiteDatabaseWriteRecorder/
   /// detach()`` when the store closes. Nil when the meter's VFS is unavailable.
   static func attach(databaseAt path: String) -> InstantSQLiteDatabaseWriteRecorder? {
-    guard InstantSQLiteFileMeter.registeredVFSName() != nil else { return nil }
+    guard InstantSQLiteWriteRecorderSwitches.isOn, InstantSQLiteFileMeter.registeredVFSName() != nil else { return nil }
     let name = InstantSQLiteFileMeter.fullPathname(path) ?? path
     let recorder = InstantSQLiteDatabaseWriteRecorder(databaseName: name)
     registry.withLock { $0.recorders[name] = recorder }
@@ -250,6 +265,11 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     state.withLock { $0.record() }
   }
 
+  /// How many statements this recorder ran an `EXPLAIN` of (#1510).
+  func explainCountForTesting() -> Int {
+    state.withLock { $0.explains }
+  }
+
   /// The bytes the recorder's own collections hold (#1285): its bound, checked by its stress test.
   func retainedBytesForTesting() -> Int {
     state.withLock { $0.retainedBytes }
@@ -273,7 +293,7 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
     guard state.withLock({ $0.schemaVersion != version }) else { return }
     var rows: [State.SchemaRow] = []
     Self.query(
-      "SELECT name, tbl_name, type, rootpage FROM main.sqlite_schema WHERE rootpage > 0",
+      "SELECT name, tbl_name, type, rootpage, sql FROM main.sqlite_schema WHERE rootpage > 0",
       on: connection
     ) { statement in
       guard let name = sqlite3_column_text(statement, 0), let table = sqlite3_column_text(statement, 1),
@@ -284,7 +304,8 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
           name: String(cString: name),
           table: String(cString: table),
           isIndex: String(cString: type) == "index",
-          rootPage: UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 3))
+          rootPage: UInt32(truncatingIfNeeded: sqlite3_column_int64(statement, 3)),
+          sql: sqlite3_column_text(statement, 4).map { String(cString: $0) }
         )
       )
     }
@@ -306,12 +327,33 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
   /// read from its `EXPLAIN` the first time a shape is seen.
   func shape(forSQL sql: String, statement: OpaquePointer) -> Int32 {
     let shape = InstantSQLiteWriteRecord.shape(of: sql)
-    if let known = state.withLock({ $0.shapeIDs[shape] ?? ($0.hasRoomForShape ? nil : State.otherStatementsID) }) {
-      return known
+    let lookup = state.withLock { state -> (known: Int32?, signature: Int) in
+      (state.shapeIDs[shape] ?? (state.hasRoomForShape ? nil : State.otherStatementsID), state.schemaSignature)
     }
+    if let known = lookup.known { return known }
+    // #1510: every store explained its statements again, the first on a connection it opened for that: +0.26 ms on a
+    // store's first write (perf-gate-1491's bisect). A shape a store of the same schema explained is reused by name.
+    let key = lookup.signature == 0 ? nil : "\(lookup.signature):\(shape)"
+    if let key, let names = Self.explainedShapes.withLock({ $0[key] }) {
+      return state.withLock { $0.addShape(shape, writtenNames: names) }
+    }
+    state.withLock { $0.explains += 1 }
     let roots = writtenRoots(of: sql)
-    return state.withLock { $0.addShape(shape, sql: sql, writtenRoots: roots) }
+    let (id, names) = state.withLock { state -> (Int32, [String]?) in
+      (state.addShape(shape, sql: sql, writtenRoots: roots), roots.map { state.names(ofRoots: $0) })
+    }
+    if let key, let names {
+      Self.explainedShapes.withLock { known in
+        if known.count < Self.explainedShapeLimit { known[key] = names }
+      }
+    }
+    return id
   }
+
+  /// The b-trees each statement shape writes, by name, keyed by the schema's signature and the shape, as any store in
+  /// this process explained them (#1510). Bounded: past its limit a shape is explained by each store again.
+  private static let explainedShapes = OSAllocatedUnfairLock<[String: [String]]>(initialState: [:])
+  private static let explainedShapeLimit = 4_096
 
   /// A write statement of `shape` finished a use: it ran `runs` times and changed `rows` rows.
   func statementFinished(shape: Int32, runs: Int, rows: Int) {
@@ -328,12 +370,14 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
 
   /// SQLite wrote `count` bytes at `offset` of the database's log.
   func logWrite(_ bytes: UnsafeRawPointer, count: Int, offset: Int64) {
+    guard InstantSQLiteWriteRecorderSwitches.namesWrites else { return }
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
     state.withLockUnchecked { $0.logWrite(buffer, offset: Int(offset)) }
   }
 
   /// SQLite read `count` bytes at `offset` of the database's log, through `file`.
   func logRead(_ bytes: UnsafeRawPointer, count: Int, offset: Int64, file: UnsafeMutablePointer<sqlite3_file>) {
+    guard InstantSQLiteWriteRecorderSwitches.learnsFromReads else { return }
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
     // #1510: a leaf, an overflow page or a free page read teaches nothing the commit that writes it will not; only an
     // interior page (its children), page 1 and the log's header are worth the lock. Checked before taking it.
@@ -357,6 +401,7 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
 
   /// SQLite read `count` bytes at `offset` of the database file (from the file, or mapped).
   func databaseRead(_ bytes: UnsafeRawPointer, count: Int, offset: Int64) {
+    guard InstantSQLiteWriteRecorderSwitches.learnsFromReads else { return }
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
     guard offset == 0 || Self.isWorthLearning(buffer, offset: offset) else { return }
     state.withLockUnchecked { $0.databaseRead(buffer, offset: Int(offset)) }
@@ -462,6 +507,8 @@ extension InstantSQLiteDatabaseWriteRecorder {
       var table: String
       var isIndex: Bool
       var rootPage: UInt32
+      /// The row's `CREATE` statement; nil for an automatic index (#1510's schema signature).
+      var sql: String? = nil
     }
 
     struct BTree: Sendable {
@@ -536,6 +583,10 @@ extension InstantSQLiteDatabaseWriteRecorder {
     var callPages: [[Int]] = []
     var currentCall: Int?
     var commits = 0
+    /// The statements this recorder has explained (#1510), for tests.
+    var explains = 0
+    /// The schema's signature (``loadSchema(_:version:)``); 0 until a schema is loaded.
+    var schemaSignature = 0
 
     var hasRoomForShape: Bool { shapes.count < InstantSQLiteWriteRecord.statementLimit + 2 }
 
@@ -553,6 +604,16 @@ extension InstantSQLiteDatabaseWriteRecorder {
 
     mutating func loadSchema(_ rows: [SchemaRow], version: Int64) {
       schemaVersion = version
+      // #1510: two stores whose schemas say the same b-trees with the same definitions write the same b-trees for the
+      // same statement, whatever their root pages; the signature keys the statements explained in either.
+      var hasher = Hasher()
+      for row in rows.sorted(by: { $0.name < $1.name }) {
+        hasher.combine(row.name)
+        hasher.combine(row.table)
+        hasher.combine(row.isIndex)
+        hasher.combine(row.sql)
+      }
+      schemaSignature = rows.isEmpty ? 0 : hasher.finalize() | 1
       rootIDs.removeAll(keepingCapacity: true)
       for row in rows where row.rootPage > 1 {
         var id = btreeIDs[row.name]
@@ -582,6 +643,21 @@ extension InstantSQLiteDatabaseWriteRecorder {
         shapes[Int(id)].explainTriesLeft = 3
       }
       return id
+    }
+
+    /// A shape whose written b-trees another store of the same schema explained (#1510), by name.
+    mutating func addShape(_ shape: String, writtenNames: [String]) -> Int32 {
+      if let known = shapeIDs[shape] { return known }
+      guard hasRoomForShape else { return Self.otherStatementsID }
+      let id = Int32(shapes.count)
+      shapes.append(Shape(sql: shape, btreeIDs: Set(writtenNames.compactMap { btreeIDs[$0] }).sorted()))
+      shapeIDs[shape] = id
+      return id
+    }
+
+    /// The names of the b-trees whose root pages are `roots`.
+    func names(ofRoots roots: [UInt32]) -> [String] {
+      roots.compactMap { rootIDs[$0] }.map { btrees[Int($0)].name }
     }
 
     /// The SQL to explain again before this use of `shape` counts, if its b-trees are still unknown.

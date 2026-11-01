@@ -21161,6 +21161,11 @@ public actor SQLitePersistenceStore {
     connection.writeRecorder?.record() ?? InstantSQLiteWriteRecord()
   }
 
+  /// How many write statements this store's recorder ran an `EXPLAIN` of (#1510).
+  package func writeRecorderExplainCountForTesting() -> Int {
+    connection.writeRecorder?.explainCountForTesting() ?? 0
+  }
+
   /// How many statements SQLite has prepared on this store's connections (#653).
   package func preparedStatementCountForTesting() -> Int {
     connection.statements.preparedCount
@@ -21526,7 +21531,7 @@ struct SQLiteStatementCache {
   /// use's statement that comes back while the first one is already idle again is finalized.
   mutating func checkIn(_ statement: OpaquePointer?) {
     guard let statement else { return }
-    if let recorder {
+    if let recorder, InstantSQLiteWriteRecorderSwitches.countsStatements {
       recordUse(of: statement, to: recorder)
     }
     // #1245: what this use did, read and reset, so the statement's next use counts from zero.
