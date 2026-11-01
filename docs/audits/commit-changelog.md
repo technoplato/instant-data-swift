@@ -1,3 +1,6 @@
+## 2026-11-01 17:28:30 EST — scribe `84316ed9bfaa82762553da09747dc8184bcc250e`
+Feature (#1577): recording_frames.py puts a screen recording's frames into one of his recordings as screen frames at their times; TJ's call video is 720 frames of Watch Voice Memo 441, aligned by TJ's on-screen clock since the video has no sound (landed in 194ae1c89).
+
 ## 2026-11-01 17:09:48 EST — scribe `c3806fe02e831bb8891ff2cb8ec7e9e287f24efd`
 Fix (#1535): What's New reads Instant's list on the Mac too: the Mac's own composition root never set the reader, so build 219's Mac app showed its bundled file and said nothing (landed in 616919d01).
 
