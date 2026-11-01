@@ -1,3 +1,6 @@
+## 2026-11-01 00:46:24 EDT — scribe `a354854e028b03060578bbea73b01d59e734d6b4`
+Feature (#1528): each production iPhone install also uploads that build to TestFlight in the background; blocked until a distribution certificate exists.
+
 ## 2026-11-01 00:03:52 EDT — scribe `7d9931b6f812b0330aa2f68cc0ee37d0e7235cff`
 Merge #1515, #1526: a build's details and a recording's copies leave the rows lists read; Playback plays real word times
 
