@@ -1,3 +1,22 @@
+## 2026-10-31 21:12:00 EDT — perf-gate-1491 (#1491): done; both landings, the criteria's evidence, three findings for other lanes
+
+- **Landed:** `99a46951` (a digest's hex in one string; no wire fingerprint for a new write; the runner; the audit note;
+  ledger `adb71f8d`) and `15629f06` (amendment 3, the outbox tail index; ledger `d6c26413`), after `1e1ba548` earlier.
+  READY FOR BUILD on #1482: `99a46951` 0.476 -> 0.389 ms (tight-loop transact, pre-recorder base) and `15629f06` 2.70 ->
+  2.60 ms (steady transact hold beside load). v1.9.60 already shipped the first in Scribe 212.
+- **Criteria (#1491):** evidence logged, neither marked satisfied. The 2.5 ms target came from F0's confounded 1.58 ms;
+  no commit moved the hold 4.6x (one-job A/B), and alone the same save takes about 2.1x the CPU time (energy lines).
+  Proposed restatement left for the owner: the write's own cost and the beside-load hold at or below the 10-24 baseline
+  in one job (both met).
+- **For other lanes:** #1517 (the claim re-encodes each write; #1497's memo now covers its receipt part); #1510's write
+  recorder costs a tight-loop transact +0.26 ms (+58%, `dffd9a06` 0.449 -> `d3b08d41` 0.712 ms, one job), logged on
+  #1510 and #1482 under #1285; the WAL auto-checkpoint's F_FULLFSYNC runs inline in whichever call commits past the
+  threshold (#1076/#1118), the likely 84.8 ms worst transact hold; #1514 (build.sh's QoS confound).
+- **Evidence:** `~/Sync/audit/perf-gate-1491/` (mini/ab-1491b..f, laptop/, logs/, scripts/), `docs/audits/2026-10-31-
+  transact-hold-1491.md`.
+- **Cleaned:** the tail worktree and its `.build` (5.3 GB), this worktree's `.build` (6.4 GB), `/tmp/perf-gate-1491`
+  (12 MB, logs and scripts kept in the audit folder); no simulators, no mini trees left; branches stay on origin.
+
 ## 2026-10-31 21:01:48 EDT — perf-ship-8 (#1482): v1.9.62 for Scribe build 215
 
 - **Release:** `docs/releases/v1.9.62.md`, tag `v1.9.62` on this release branch's tip, cut from `v1.9.61` (`fb930584`)
