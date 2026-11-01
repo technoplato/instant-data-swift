@@ -10,6 +10,45 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 10:04:21 p.m. EDT — `f63de075cafd` perf(#1510): green: a statement shape's written b-trees are explained once a process for each schema, not once a store
+
+- **Implementation commit:** `f63de075cafdf381bcaf59639e3512f4a51c641a`
+- **Change:** perf(#1510): green: a statement shape's written b-trees are explained once a process for each schema, not once a store
+- **Details:**
+  - A store's first write 0.645 -> 0.459 ms (0.384 with the recorder off), relaunch 1.41 -> 1.26, drain 0.90 -> 0.81 (mini, release, three rounds).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — the process-wide memo by schema signature
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 10:04:20 p.m. EDT — `7495e6aad3e2` test(#1510): red: a second store of the same schema explains no statement the first one explained
+
+- **Implementation commit:** `7495e6aad3e2376521ee6ff45ddb759c7a5e11fa`
+- **Change:** test(#1510): red: a second store of the same schema explains no statement the first one explained
+- **Details:**
+  - An EXPLAIN count for tests; before the fix a second store explained its statements again.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — the explain count
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — its accessor for tests
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — the red test
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 10:04:20 p.m. EDT — `527b6b8df550` measure(#1510): environment switches turn the write recorder, or its reads, statements or writes, off
+
+- **Implementation commit:** `527b6b8df550113119db013b2460549f18140088`
+- **Change:** measure(#1510): environment switches turn the write recorder, or its reads, statements or writes, off
+- **Details:**
+  - INSTANT_SQLITE_WRITE_RECORDER=0 and _READS, _STATEMENTS, _WRITES; read once, on by default. They found the recorder's whole +0.26 ms in its statement counting.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — the switches
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the statement cache honors the statements switch
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
 ## October 31st, 2026 at 9:53:15 p.m. EDT — `4cc67655b35d` release(#1482): v1.9.63: the outbox tail is one index entry, not a sort of every row
 
 - **Implementation commit:** `4cc67655b35da48d9503159485871d16cc366e83`
