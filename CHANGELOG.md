@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 9:01:54 p.m. EDT — `ff86efd1121d` release(#1482): v1.9.62: a server frame plans in fewer persistence turns
+
+- **Implementation commit:** `ff86efd1121d030adc71aa840d28dbe7bde84fec`
+- **Change:** release(#1482): v1.9.62: a server frame plans in fewer persistence turns
+- **Details:**
+  - The release document for v1.9.62, branched from v1.9.61 (fb930584) with the source and test diff of main's merge c17bf998 (#1494), for Scribe build 215.
+  - No API, storage or conversion change. The #1510 write recorder (d3b08d41) is not in it: its owner has not marked it ready, and it costs +0.26 ms a tight-loop transact.
+- **Files:**
+  - `docs/releases/v1.9.62.md` — #1482 the release: what #1494 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-8@ld); no SpecStory capture
+
 ## October 31st, 2026 at 8:23:59 p.m. EDT — `26ad0b2cde89` docs(#1494): ADR 0018's consequences: a server frame's turns, and what fewer turns did not buy
 
 - **Implementation commit:** `26ad0b2cde89fb630a30363f2681c11190825510`
