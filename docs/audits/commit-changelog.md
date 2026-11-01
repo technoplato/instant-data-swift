@@ -1,3 +1,6 @@
+## 2026-11-01 09:19:00 EST — scribe `7c5306015199118793e0d9dafb0a8c5e7dd77aac`
+Schema (#1543): purposes, what he wants his life and work to be, his words or a reading he confirms, owner-only and never deleted; sourceMoments gains the subject purpose and the role wanted, one gold-star moment per line. Pushed to production under his standing approval, drift 0; ADR 0115 (landed in c12fd4b01).
+
 ## 2026-11-01 08:50:42 EST — scribe `cada3ce515d42fab56fb90d094b269d073e2b2bd`
 Docs (#1537): the audit of reviewing Point-Free's Designing for Isolation episodes (ep380-384) against the pointfree-isolation skill: 16 candidate rules, 16 Swift 6.4 probes, an independent adversarial review; 4 kept, 12 rejected with reasons (landed in 25c6d3ff3).
 
