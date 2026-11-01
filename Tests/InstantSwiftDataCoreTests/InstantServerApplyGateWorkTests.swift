@@ -278,6 +278,62 @@ struct InstantServerApplyGateWorkTests {
     #expect(ownership.contains(["listed-0", "items/value", #"{"string":{"_0":"changed"}}"#]))
     #expect(!ownership.contains { $0.first == "listed-299" })
   }
+
+  /// A retried apply's event names where each earlier attempt went stale (#1494). The exercises counted the frames that
+  /// retried, not why, so a change to the turns a frame plans in could not be judged by its stale attempts. A local
+  /// write after the seed moves the outbox revision: a frame that restates a result finds it at the retractions'
+  /// protection, among the planning reads; a frame that restates none, at its plan's revisions.
+  @Test
+  func aRetriedApplyNamesWhereItsEarlierAttemptWentStale() async throws {
+    let events = ServerApplyGateEvents()
+    events.start()
+    defer { events.stop() }
+
+    let restatingWrites = GateWorkWrites()
+    let restating = try await GateWorkFixture.make(suffix: "stale-restating", chainLength: 1) { configuration in
+      configuration.onServerApplySeedLoadedForTesting = { operationGateHeld in
+        await restatingWrites.writeAfterSeed(operationGateHeld: operationGateHeld)
+      }
+    }
+    let key = #"{"items":{}}"#
+    let listed = (0..<3).map { index in
+      gateWorkTriple(entityID: "listed-\(index)", value: "v\(index)", transactionID: "listed", milliseconds: 50)
+    }
+    func restate(_ triples: [InstantTriple], frame: Int) async throws {
+      _ = try await restating.runtime.applyServerTransactionMergingAttributesForTesting(
+        InstantStoreTransaction(id: "stale-stage-\(frame)", operations: triples.map(InstantTripleOperation.insert)),
+        attributesToMerge: [],
+        liveQueryResultReplacements: [InstantLiveQueryResultReplacement(key: key, triples: triples, pageInfo: nil)],
+        receivedAt: InstantTimestamp(milliseconds: 1_000 + Int64(frame) * 10_000)
+      )
+    }
+    try await restate(listed, frame: 0)
+    await restatingWrites.attach(restating.runtime)
+    try await restate(Array(listed.dropLast()), frame: 1)
+    await restatingWrites.finish()
+
+    let plainWrites = GateWorkWrites()
+    let plain = try await GateWorkFixture.make(suffix: "stale-plain", chainLength: 3) { configuration in
+      configuration.onServerApplySeedLoadedForTesting = { operationGateHeld in
+        await plainWrites.writeAfterSeed(operationGateHeld: operationGateHeld)
+      }
+    }
+    await plainWrites.attach(plain.runtime)
+    _ = try await plain.runtime.applyServerTransaction(plain.serverWrite(value: "stale-plain"))
+    await plainWrites.finish()
+
+    let first = try #require(events.events(processedTransactionID: "stale-stage-0").last)
+    let restated = try #require(events.events(processedTransactionID: "stale-stage-1").last)
+    let plainEvent = try #require(events.events(processedTransactionID: "gate-work-server-stale-plain").last)
+    expectNoDifference(
+      [
+        [first["attempt"], first["staleStages"]],
+        [restated["attempt"], restated["staleStages"]],
+        [plainEvent["attempt"], plainEvent["staleStages"]],
+      ],
+      [["1", nil], ["2", "planningReads"], ["2", "planRevisions"]]
+    )
+  }
 }
 
 /// A local write after each server-apply seed: awaited when the gate is free (the attempt then goes stale), started

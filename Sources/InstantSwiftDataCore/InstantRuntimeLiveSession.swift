@@ -5,6 +5,8 @@
 //   rebuilt for every mutation sent (#1492).
 // - 2026-10-31: a frame is written by one task, and one watcher per socket bounds every write at 5 s; a send started
 //   three tasks and armed a timer (#1496).
+// - 2026-10-31: the applier admits, records and checks each frame in one turn on this actor and finishes it in a second;
+//   it hopped here four times a frame (#1494).
 
 import Foundation
 import IssueReporting
@@ -1031,27 +1033,13 @@ package actor InstantRuntimeLiveSession {
             try Task.checkCancellation()
             let event = InstantLiveServerEvent(message: message)
             guard
-              try await self?.applierMayApplyNextFrame(
-                generation: generation,
-                session: session
-              ) == true
-            else {
-              break
-            }
-            guard
-              let recorded = try await self?.record(
+              let recorded = try await self?.admitFrame(
                 event,
                 generation: generation,
+                session: session,
                 onEventAcquired: onEventAcquired
               )
             else {
-              break
-            }
-            try Task.checkCancellation()
-            guard await self?.canDeliverReceiverEvent(
-              generation: generation,
-              session: session
-            ) == true else {
               break
             }
             try await onEvent(
@@ -2065,6 +2053,25 @@ package actor InstantRuntimeLiveSession {
       ?? registration.queuedBroadcasts.endIndex
     registration.queuedBroadcasts.insert(broadcast, at: index)
     registeredRooms[room] = registration
+  }
+
+  /// One frame's way in, in one turn on this actor (#1494): whether the applier may apply it, its record, and whether it
+  /// may still be delivered, with the checks, in the order, the applier made in three turns of its own. Only a turn that
+  /// suspends inside the record (a stream reader's receive, the test hook) lets another turn change what the last check
+  /// reads; the check runs either way.
+  private func admitFrame(
+    _ event: InstantLiveServerEvent,
+    generation: Int,
+    session: InstantLiveWebSocketSession,
+    onEventAcquired: (@Sendable () async -> Void)?
+  ) async throws -> (attributes: [InstantLiveJSONValue], mutationClaimToken: String?)? {
+    guard try applierMayApplyNextFrame(generation: generation, session: session) else { return nil }
+    guard let recorded = try await record(event, generation: generation, onEventAcquired: onEventAcquired) else {
+      return nil
+    }
+    try Task.checkCancellation()
+    guard canDeliverReceiverEvent(generation: generation, session: session) else { return nil }
+    return recorded
   }
 
   private func record(

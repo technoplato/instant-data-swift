@@ -216,6 +216,13 @@ every count (2,487 to 0, 119 frames, 17 rebases, 26,288 bodies, 2,384 accepted, 
   persistence actor no longer encodes JSON while every other caller waits behind it (431 ms of CPU a minute for 60
   unchanged reads in the #1482 audit's sample). The relaunch, whose query is a fresh store's first, makes 15 calls
   (persistence 7); `query-materialization.todos` makes 6 (persistence 3).
+- 2026-10-31 (#1494): a server frame's planning reads and the reduction's context are one persistence turn, the plan's
+  begin reads its first reverse body page, no pass reads the empty page after its last row, and the plan's end shares
+  a turn with the status read. A refresh restating a 50-row list makes 6 persistence calls (from 12), the same refresh
+  over a pending write the plan holds as a body 8 (from 13); the frame applier enters the live session twice a frame
+  (from four). Measured on the recording exercise (Mac mini, release): CPU unchanged, and stale attempts did not fall
+  (1.116 to 1.159 a frame): the planning reads fail on any write since the seed, and a faster plan more often precedes
+  an acceptance of its own pending writes. Fewer retries need a change to what makes an attempt stale (#1524).
 
 ## Decisions and open questions
 
