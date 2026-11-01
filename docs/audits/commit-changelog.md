@@ -1,3 +1,6 @@
+## 2026-11-01 14:26:13 EST — scribe `7d907c39620e31f63cba6f6ffd7b8cd403691c65`
+Feature (#1559, #1573): when a broadcast ends, the Mac uploads its scrubbed frames and sound to his YouTube channel unlisted, with every line deep linked, captions and the link back in Scribe; only the one picture plan's scrub counts; the audio check mutes what it heard and hears again. Proved on his newest broadcast.
+
 ## 2026-11-01 13:18:38 EST — scribe `b065ff541`
 Feature (#1565): one picture path for shares and the private stream; a screen shows only what a rule let through, the output is read again, and scribe stream private shows his broadcast on the Mac mini to him alone.
 
