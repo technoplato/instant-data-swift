@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:19 EDT — scribe `6eeb9ed22834df53a7a3f101113d7fd5626dde8d`
+fix(#1515): green: the home board selects what its rows decode, and Playback's and Recently Deleted's transcription rows too (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:16 EDT — scribe `14bfa3b509bd9c205950cf05964f4846e9359000`
 feat(#1515): green: a recording's create is the one write that names its build; lines, the list and the recording's own queries carry none (landed in 7d9931b6f)
 
