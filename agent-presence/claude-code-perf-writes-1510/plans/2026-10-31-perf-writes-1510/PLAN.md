@@ -79,3 +79,86 @@ InstantSQLiteFileMeter.swift and its test: last claim sqlite-1245 (#1245), lande
 five live claims above name other regions; the statement cache and the transaction wrapper are unclaimed. The one
 line after the writer opens sits near perf-waste-fixes' `temp_store` line: said in their channel and in mine,
 agent-presence/_channels/2026-10-31-perf-writes-1510.md. Rebase onto each landing before a land.
+
+## Amendment 1 (2026-10-31 16:15): a stored body that says each fact once
+
+Measured (13:32 log, build 208): a transcript segment save's body is 11.7-17.9 KB for about 1.3 KB of values; every
+operation repeats its transaction's id and time and wraps each value twice (`{"insert":{"_0":{... "value":{"number":
+{"_0":..}}}}}`), and the rollback doubles it. Past about 1 KB a body spills into overflow pages of this `WITHOUT ROWID`
+table, allocated from the free list (page 1 and its trunk rewritten) at the save and freed at the confirm. perf-send-1492
+handed this region over (16:05): its receipt reuse no longer keys on the stored bytes.
+
+What changes: `instant_outbox_bodies.json` is written in a compact form, version 2: the write's other fields encoded as
+today, and its operations and rollback as short arrays (a tag, the entity, the attribute, the value, and the operation's
+own transaction id and time only where they differ from the write's). A version-1 body still decodes, so a store opened
+by an older build and a row written before stay readable; `lifecycle_json` is unchanged. Decoding a version-2 body gives
+the same `PendingMutation`, field for field (the six fields the receipt reads among them; the receipt's digest and its
+payload do not change).
+
+The one decision, made here: the stored bytes are the write's encoded size everywhere they are counted today
+(`encoded_body_bytes`, the claim's projected bytes, the 8 MiB memory and transport envelope), so a save still encodes its
+body once (#1491's test stays) and every budget measures what is decoded. A write's version-2 size is about half its
+version-1 size, so the envelope admits a write about twice the size it did; said in the release notes, and on #1510.
+
+Steps: red (a round trip of every operation and value kind, version 1 and 2 decoding to the same write, a segment-shaped
+body under 6 KB, a version-1 row still read, the recorder's pages for the body and its overflow in the save exercise);
+green; the recorder's before and after on the recording exercise and the phone-shaped save; Scribe's
+`scripts/recovery/recover-recording-from-outbox.mjs` reads version 2 (a Scribe commit, with its test).
+
+Touching (added): Sources/InstantSwiftDataCore/InstantOutboxBodyCodec.swift (new), SQLitePersistenceStore.swift
+(`encodeOutboxBody`, `decodeOutboxBody`, `storedOutboxBody` only), BoundedOutboxDelivery.swift
+(`encodedProjectedBodyByteCount` only; not `validateNewMutation`, perf-gate-1491's),
+Tests/InstantSwiftDataCoreTests/InstantOutboxBodyCodecTests.swift (new); in Scribe,
+scripts/recovery/recover-recording-from-outbox.mjs and its test.
+
+## Amendment 2 (2026-10-31 16:50): a live write's body kept in its leaf, compressed; its lifecycle derived from it (#1463)
+
+Replaces amendment 1's compact re-encoding, which measured too small: on the pulled store's 738 bodies it takes the
+median from 8,389 B to 2,595 B and leaves every live body in overflow, where raw deflate alone takes it to 944 B. A
+`WITHOUT ROWID` cell keeps at most 1,002 bytes on its leaf, and the cell also holds the body's lifecycle (346 B for a live
+write), so a compressed body fits only without it: median cell 856 B, 6 of 8 live bodies and 371 of 738 in their leaf
+(docs/audits/2026-10-31-writes-1510.md, "Which levers hold"). A lifecycle is exactly the body with its operations emptied
+(`encodeOutboxBody` writes `encode(body.compactedForMemory)`), so a reader can derive it.
+
+What changes, in `instant_outbox_bodies` only:
+
+- `json` holds the stored body's JSON compressed (raw deflate, Apple's Compression framework, `COMPRESSION_ZLIB`) as a
+  BLOB. A TEXT value is a body an older version wrote, read as today, and rewritten compressed at its next change.
+- `lifecycle_json` is NULL for a compressed body, and a new `lifecycle_bytes` column holds the lifecycle's JSON size; a
+  reader of a lifecycle decodes the body and empties its operations. "No lifecycle" (the legacy row a failed-lifecycle
+  pass picks up) stays `lifecycle_json IS NULL AND lifecycle_bytes IS NULL`.
+- Every budget keeps counting JSON bytes, as today: `encoded_body_bytes`, a lifecycle's bytes, a plan row's staged
+  bytes, the claim's projected bytes and the 8 MiB envelope admit exactly the writes they admit today. Only the stored
+  length shrinks.
+- A comparison of stored bodies compares stored bytes with stored bytes (the same encoder writes both); a check that a
+  body is unchanged since it was read binds what was read.
+
+Nothing else changes: the same rows, the same JSON inside them, the same write contract (a save is local materialize and
+durable outbox; the compressed body is in the same transaction).
+
+Steps:
+
+1. Red (`InstantOutboxStoredBodyTests`): a live write's save writes no overflow page of `instant_outbox_bodies`, no page 1
+   and no free-list page, and its echo frees none (StorageIOWriteCycle, pages by b-tree); a compressed body and its
+   derived lifecycle decode to the same write, field for field, for every operation and value kind, a rollback and a
+   failure; a TEXT body and lifecycle written by an older version read the same and are rewritten compressed at their
+   next change; the claim's projected bytes, the lifecycle admission bytes and `encoded_body_bytes` equal today's.
+2. Green: the stored-body codec (new file), one reader for a body column (TEXT as today, BLOB inflated), the writers,
+   the sizes, the migration (`ALTER TABLE ... ADD COLUMN lifecycle_bytes`; no rewrite of existing rows).
+3. Measure: StorageIOWriteCycle's save and echo frames by b-tree, and the recording exercise (ab-commits.sh, main
+   against this branch, one job) for the hold and CPU per write; on the phone after its release, the recorder's
+   `instant_outbox_bodies`, page 1 and free-list pages per save.
+4. Scribe: `scripts/recovery/recover-recording-from-outbox.mjs` inflates a BLOB body (Node's `zlib.inflateRawSync`),
+   with its test; `scripts/perf/query-plans.py` unchanged (it reads plans, not bodies).
+
+Touching (added): Sources/InstantSwiftDataCore/InstantOutboxStoredBody.swift (new); SQLitePersistenceStore.swift: the
+body codec (`encodeOutboxBody`, `decodeOutboxBody`, `loadStoredBodyWithDeliveryWithoutTransaction`,
+`saveOutboxBodyWithoutTransaction`), every statement that reads or writes `instant_outbox_bodies.json`,
+`lifecycle_json` or a body's length (about 45 lines across the store), the server apply's staged body columns
+(`staged_json`, `staged_lifecycle_json`: perf-observe-1493's region, said in their channel), one migration;
+Tests/InstantSwiftDataCoreTests/InstantOutboxStoredBodyTests.swift (new). Amendment 1's touching list is withdrawn.
+
+Findings recorded on their issues, not built here: the revision counters (#1254) cannot move into memory as filed,
+because `instant_query_cache` keeps each answer's `store_revision` across launches; the key rows and effect entities
+(#1464) cannot move into `TEMP` tables until every path that deletes them on purpose is an invariant on the row; the
+terminal failures' key rows cost disk space, not log pages.

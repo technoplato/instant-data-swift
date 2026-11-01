@@ -24,6 +24,58 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > get the performance wins onto his devices
 - **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-9@ld); no SpecStory capture
 
+## October 31st, 2026 at 9:19:15 p.m. EDT — `7d9761965a74` docs(#1510): amendment 2 measured: a save 16.3 -> 13.2 log frames, an echo 18.9 -> 17.5 (the body's overflow and page 1)
+
+- **Implementation commit:** `7d9761965a74839e158794fb759b2249cb0f8dd9`
+- **Change:** docs(#1510): amendment 2 measured: a save 16.3 -> 13.2 log frames, an echo 18.9 -> 17.5
+- **Details:**
+  - StorageIOExercises.aLiveWritesStepsByBTree, 48 overlapping Scribe writes, before 31e98a43 and after a6debcdf in one job.
+- **Files:**
+  - `docs/audits/2026-10-31-writes-1510.md` — the before and after
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 9:19:14 p.m. EDT — `4bb6ddc04c87` fix(#1510): the immediate tail's quarantine compares the body it read as JSON; tests read a quarantined BLOB and CPU time
+
+- **Implementation commit:** `4bb6ddc04c87964f82b395c76e78ea465f85c7da`
+- **Change:** fix(#1510): the immediate tail's quarantine compares the body it read as JSON; tests read a quarantined BLOB and CPU time
+- **Details:**
+  - The tail quarantine compared raw column bytes with JSON, so a save retried until the store changed repeatedly; a quarantine test decoder reads BLOB columns; the recorder's stress test measures thread CPU time.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — selectOutboxBodyJSON in the tail quarantine
+  - `Tests/InstantSwiftDataCoreTests/InstantRetainedMutationQuarantineTests.swift` — BLOB columns read as JSON
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — thread CPU time
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 9:19:14 p.m. EDT — `a6debcdf4669` perf(#1510): green: a live write's body is stored compressed in its leaf, its lifecycle derived from it (#1463)
+
+- **Implementation commit:** `a6debcdf466912677d495906577926c13e44ba39`
+- **Change:** perf(#1510): green: a live write's body is stored compressed in its leaf, its lifecycle derived from it (#1463)
+- **Details:**
+  - Compressed bodies (format byte, length, raw deflate), lifecycle_bytes, JSON-byte budgets, stored-byte retry proofs; tests that read bodies from the file inflate them. Save 16.3 -> 13.2 log frames, echo 18.9 -> 17.5 (harness, one job).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantOutboxStoredBody.swift` — the stored body's codec
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — compressed writes, one reader, JSON-byte budgets, lifecycle_bytes
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxStoredBodyTests.swift` — helpers that inflate and rewrite as text
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 9:19:13 p.m. EDT — `ef3862c916c3` test(#1510): red: a live write's body stored compressed in its leaf, its lifecycle derived, budgets in JSON bytes (#1463)
+
+- **Implementation commit:** `ef3862c916c3099d664d109cbf3eca681231e20b`
+- **Change:** test(#1510): red: a live write's body stored compressed in its leaf, its lifecycle derived, budgets in JSON bytes (#1463)
+- **Details:**
+  - Fails where intended before the change (no lifecycle_bytes, text bodies, 20 overflow pages after two Scribe lines); its relaunch and text-body guards pass before and after.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxStoredBodyTests.swift` — the red tests and guards
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
 ## October 31st, 2026 at 9:01:54 p.m. EDT — `ff86efd1121d` release(#1482): v1.9.62: a server frame plans in fewer persistence turns
 
 - **Implementation commit:** `ff86efd1121d030adc71aa840d28dbe7bde84fec`
@@ -37,6 +89,102 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > get the performance wins onto his devices
 - **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-8@ld); no SpecStory capture
+
+## October 31st, 2026 at 8:23:59 p.m. EDT — `26ad0b2cde89` docs(#1494): ADR 0018's consequences: a server frame's turns, and what fewer turns did not buy
+
+- **Implementation commit:** `26ad0b2cde89fb630a30363f2681c11190825510`
+- **Change:** docs(#1494): ADR 0018's consequences: a server frame's turns, and what fewer turns did not buy
+- **Files:**
+  - `docs/adr/0018-one-actor-turn-per-step.md` — #1494 one consequence line
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:59 p.m. EDT — `278806cc2232` docs(#1494): the concurrency guidance's Performance Rules: a step's reads share one turn, and a paged read says when it held its last row
+
+- **Implementation commit:** `278806cc2232dd5518855759d73e409a20e0ee95`
+- **Change:** docs(#1494): the concurrency guidance's Performance Rules: a step's reads share one turn, and a paged read says when it held its last row
+- **Files:**
+  - `docs/swift-concurrency-guidance.md` — #1494 one paragraph
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:58 p.m. EDT — `5922e9af193c` fix(#1494): green: a server frame plans in two persistence turns after its seed, and no pass reads an empty page
+
+- **Implementation commit:** `5922e9af193c79634715bfcd7959178c143fcf58`
+- **Change:** fix(#1494): green: a server frame plans in two persistence turns after its seed, and no pass reads an empty page
+- **Details:**
+  - The plan's begin reads its first reverse body page; pages say when they held the last row; the reduction's context in the planning turn; the plan's end and the status read in one turn.
+  - Server refresh of a 50-row list: persistence turns 12 -> 6; over a pending write the plan holds as a body 13 -> 8. Recording exercise (mini, release, 4 interleaved runs each): attempts per frame 1.116 -> 1.159 (part 1 alone 1.183), library CPU unchanged; follow-up #1524.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1494 the begin's first page; isLast on body and resident-patch pages
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 the planning turn with the reduction's context; the passes stop at the last page; the plan's end with the status read
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:58 p.m. EDT — `670758faaf1f` test(#1494): red: a server refresh plans in six persistence turns, and over a pending write in eight
+
+- **Implementation commit:** `670758faaf1f251d713bb9683e658b44ab4fd599`
+- **Change:** test(#1494): red: a server refresh plans in six persistence turns, and over a pending write in eight
+- **Details:**
+  - Red (debug): persistence 8 and 13, the rest of each breakdown as pinned.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — #1494 whole-breakdown pins, the body workload
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:58 p.m. EDT — `3f04436dcadb` feat(#1494): green: a retried server apply names where each earlier attempt went stale
+
+- **Implementation commit:** `3f04436dcadb55e9319a8c8fef24f727869a7dad`
+- **Change:** feat(#1494): green: a retried server apply names where each earlier attempt went stale
+- **Details:**
+  - staleStages on server-apply.operation-gate-held and the exclusive fallback; the contention exercise's server.apply line adds attempts and stale stages.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 InstantServerApplyStaleStage and its record sites
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — #1494 attempts and stale stages per path
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:57 p.m. EDT — `47f0573b86ca` test(#1494): red: a retried server apply does not say where its earlier attempt went stale
+
+- **Implementation commit:** `47f0573b86ca31109b907ed341b27b4bebdc6159`
+- **Change:** test(#1494): red: a retried server apply does not say where its earlier attempt went stale
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift` — #1494 the stale stage of a restated and a plain frame
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:57 p.m. EDT — `4f2e76e98359` fix(#1494): green: a server frame plans in three persistence turns, and the applier admits a frame in one live-session turn
+
+- **Implementation commit:** `4f2e76e98359aeed8e1681018d5ec135b09d0dd9`
+- **Change:** fix(#1494): green: a server frame plans in three persistence turns, and the applier admits a frame in one live-session turn
+- **Details:**
+  - Planning reads in one read transaction; no body page when the plan holds no body; admit, record and check a frame in one live-session turn (4 hops a frame -> 2, read from code).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1494 serverApplyPlanningReads
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 one planning turn; no empty body pages
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1494 admitFrame
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 8:23:57 p.m. EDT — `b27bca3f9f47` test(#1494): red: a server refresh restating a 50-row list takes twelve persistence turns; it should take eight
+
+- **Implementation commit:** `b27bca3f9f47e8e4952283ec48fc7625a3836b38`
+- **Change:** test(#1494): red: a server refresh restating a 50-row list takes twelve persistence turns; it should take eight
+- **Details:**
+  - Every persistence call of the server apply reports to the hop recorder; runtimeWorkloadsPinEveryActorHop gains a server-refresh workload.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1494 every server-apply persistence call counted
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — #1494 the server-refresh workload and its pin
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable: headless claude -p run (tools/agent-run, perf-observe-1493 on ld then strangelearning); no SpecStory capture
 
 ## October 31st, 2026 at 8:01:36 p.m. EDT — `ee13ba651d50` release(#1482): v1.9.61: temporary structures in memory, a cheaper acknowledgement
 
@@ -52,6 +200,222 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > get the performance wins onto his devices
 - **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-7@ld); no SpecStory capture
 
+## October 31st, 2026 at 7:46:47 p.m. EDT — `d8185dde610b` test(#1491): ab-commits.sh resolves each tree's packages one at a time and stops when a tree does not build
+
+- **Implementation commit:** `d8185dde610b0e3a0b70ba74b0f901b3b5cdcb69`
+- **Change:** test(#1491): ab-commits.sh resolves each tree's packages one at a time and stops when a tree does not build
+- **Details:**
+  - Two cold trees built side by side cloned into the mini's shared SwiftPM cache at once; HEAD's build failed and the job ran the red tree alone. Simulated with a stub swift; the next A/B resolved and built both trees.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 serial package resolution, a dropped clone retried, a failed build stops the job
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:46 p.m. EDT — `7a67778d8ffb` test(#1491): the plan guard fails a plan that reads more of the outbox; #1115's frame budget is 25 with the index
+
+- **Implementation commit:** `7a67778d8ffbc0f6a82536126fe350df34c86232`
+- **Change:** test(#1491): the plan guard fails a plan that reads more of the outbox; #1115's frame budget is 25 with the index
+- **Details:**
+  - The first debug run (perf-gate-1491-tail, Mac mini, 1,079 tests in 74 suites) found the guard too strict (two server-apply catch-up counts changed plan for the better) and #1115's budget of 24 outbox frames a write at 25.0 (23.0 without the index).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard's rule
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift` — #1491 the frames-per-write budget, 24 -> 25
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:46 p.m. EDT — `bf8748e05552` test(#1491): the plan guard reloads the store connection's schema after dropping the index
+
+- **Implementation commit:** `bf8748e05552206d1d1d5948fcaad2eb2ba87161`
+- **Change:** test(#1491): the plan guard reloads the store connection's schema after dropping the index
+- **Details:**
+  - EXPLAIN QUERY PLAN plans on a connection's cached schema; the guard runs one store read after the drop and requires the tail to plan without the index before comparing.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard's schema reload
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:45 p.m. EDT — `e712d3e331ad` perf(#1491): green: the outbox tail is the last entry of a creation-order index, not a sort of every row
+
+- **Implementation commit:** `e712d3e331adebd90a7e44d219972ea2ede9060c`
+- **Change:** perf(#1491): green: the outbox tail is the last entry of a creation-order index, not a sort of every row
+- **Details:**
+  - A full index on (created_at_ms, mutation_id), put in place at every open beside deliveryIndexSQL; the SQL is unchanged. Before: 291 us a tail read at the phone-shaped store's 700 rows, 2.25 ms at 5,400 (laptop, Python sqlite3); M6 put 39 samples a minute in it, 18 inside the transact's hold. Cost: WAL frames a step on the outbox's schema (700 rows, 50 cycles) save 4 -> 5, acknowledgement 5 -> 5, the confirm's delete 4 -> 5.
+  - Verified on the Mac mini: in release the red e10668ae fails all three tail reads (a sort, no index) and d8185dde passes (perf-gate-1491-tail-ab, 19:25-19:43); the fixed suites pass in debug, 26 tests in 3 suites (perf-gate-1491-tail-tests). One job, the recording exercise on the real-size store, steady p50 beside six busy loops: transact hold 2.70 -> 2.60 ms, write.line 3.38 -> 3.08 ms, plan server apply hold 1.35 -> 1.04 ms (means of two rounds); serverApplyPlan CPU a call alone 852 -> 807 us. Pages a step (120 writes): save 16.79 -> 17.79, claim 2.00 and acknowledgement 4.00 unchanged, echo 19.97 -> 20.97.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 creationOrderIndexSQL and its line in bootstrap
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the guard: no other plan of a live write's statements changes
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 7:46:45 p.m. EDT — `e10668ae84dc` test(#1491): red: the outbox tail a write reads is one entry of an index in delivery order (today a sort of every row)
+
+- **Implementation commit:** `e10668ae84dcdcd843678286e35386231088052d`
+- **Change:** test(#1491): red: the outbox tail a write reads is one entry of an index in delivery order (today a sort of every row)
+- **Details:**
+  - Plans the three tail reads (the creation cursor, the supersession tail's id, the supersession tail) as the library runs them on a bootstrapped store: each scanned the global-effect index whole and kept the newest row in a temporary b-tree. The two inline queries became package constants with the same text.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 outboxTailPositionSQL and outboxTailIDSQL, the same SQL
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift` — #1491 the tail reads' plans
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:45:23 p.m. EDT — `a92b8ca44d05` fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
+
+- **Implementation commit:** `a92b8ca44d0580ce31d7a70aca04fc1844234d17`
+- **Change:** fix(#1504): green: every store connection keeps SQLite's temporary structures in memory
+- **Details:**
+  - The writer sets temp_store = MEMORY at the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and again when it reopens; every read connection at open. A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0 after. Green: 17 tests in 5 suites (pwf-1504-redgreen 17:20).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 the writer's temp_store, at bootstrap and on reopen
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 each read connection's temp_store
+- **User context (verbatim):**
+  > No feature compromises. Just fixing at the source
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:45:23 p.m. EDT — `6ec56cba96ab` test(#1504): red: every store connection keeps SQLite's temporary structures in memory
+
+- **Implementation commit:** `6ec56cba96ab77d3dd57e8c3ae3dd30f6f567577`
+- **Change:** test(#1504): red: every store connection keeps SQLite's temporary structures in memory
+- **Details:**
+  - PRAGMA temp_store read on the writer after bootstrap, on a read connection and on a reopened writer: 0 (a file) on all three, expected 2 (memory). Two guards: a recording exercise and closing a 300-todo query write no temporary file. Red by build.sh pwf-1504-redgreen 17:12.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantTemporaryStoreTests.swift` — #1504 the setting on every connection, and two guards
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1504 temporaryStoreForTesting
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1504 temporaryStoreForTesting
+- **User context (verbatim):**
+  > No feature compromises. Just fixing at the source
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-waste-fixes@strangelearning); no SpecStory capture
+
+
+## October 31st, 2026 at 6:19:52 p.m. EDT — `40e83b28664e` fix(#1496): each frame is written by one task, and one watcher per socket keeps every deadline; writes stay independent
+
+- **Implementation commit:** `40e83b28664e0795ba815ce8e32159b45b8b9e77`
+- **Change:** fix(#1496): each frame is written by one task, and one watcher per socket keeps every deadline; writes stay independent
+- **Details:**
+  - A browser's ws.send never blocks, so upstream never holds one frame behind another; an awaited Swift send does. Each frame keeps one task of its own (the caller's cancellation does not reach it, library-78; writes stay independent, #461 #1131); instantLiveWithTimeout's work and deadline tasks and its 5 s timer per send go. One watcher per socket sleeps only while a write is in flight, until the earliest deadline.
+  - Measured (Mac mini M4, release, InstantLiveSendPathTests/measureTheSendPath, 20,000 transacts, three runs each alternating with 7d024be3, the old send path): CPU per send 24.58 -> 20.69 us (-16%), wall per send 22.02 -> 18.56 us (-16%), CPU in the 5.5 s after the last send 0.60 -> 0.35 ms (-41%), tasks started 63,000 -> 21,001 (three a send -> one, plus the socket's watcher).
+  - Checks at the merge 2d47e165 (Mac mini, debug, scripts/known-failing-tests.sh run and compare): 1,644 tests, 2 failing, neither on these paths (one listed; InstantLiveFrameDecodeTests' CPU ratio 0.339 against a 0.33 bound, which failed before this branch too); the server transaction loopback validation passes unchanged (its CLI and harness tests, and the validation run itself).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveSocketWriter.swift` — #1496 one task per frame, one deadline watcher per socket
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the history line and the send's comment
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 100 sends start 100 tasks (were 300); a held frame does not hold a later one
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:51 p.m. EDT — `66d372e8d979` fix(#1496): a frame refused because the session let go of its socket does not abort that socket
+
+- **Implementation commit:** `66d372e8d979a2af01caffde5e74d480c9e97bcd`
+- **Change:** fix(#1496): a frame refused because the session let go of its socket does not abort that socket
+- **Details:**
+  - The frame never reached the socket and whatever let go of it closes it, so the send's failure path no longer aborts it: a graceful close with frames queued behind it stays graceful.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the superseded send's own catch
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:51 p.m. EDT — `4bd0f806402a` docs(#1496): a send through a socket the live session let go of fails as superseded instead of writing to it
+
+- **Implementation commit:** `4bd0f806402a60964783eb7edf902376e097e8bc`
+- **Change:** docs(#1496): a send through a socket the live session let go of fails as superseded instead of writing to it
+- **Details:**
+  - Comment only: the old wording claimed the write would have failed too, which a socket still closing gracefully does not guarantee.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the comment on a send through a released socket
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:51 p.m. EDT — `0a7a9595b4a3` fix(#1496): green: one writer task per socket writes its frames in order; one watcher bounds each write at 5 s
+
+- **Implementation commit:** `0a7a9595b4a3c79c6b210f0f31049a66bb719b42`
+- **Change:** fix(#1496): green: one writer task per socket writes its frames in order; one watcher bounds each write at 5 s
+- **Details:**
+  - The audit's design: one task per socket takes the frames in call order, as upstream Reactor.js writes with ws.send. Replaced by 40e83b28: the mini's 494-test run showed a frame held at the socket held every later one (#461, #1131).
+  - Not done as the audit sketched: instantLiveWithTimeout as a two-child task group; a group awaits its children and liveTimeoutDoesNotAwaitCancellationInsensitiveWork requires the timeout to return without the work.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveSocketWriter.swift` — #1496 the socket's writer and deadline watcher
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 the writer made with each socket and finished when the session lets go
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 the writer's deadline, finish and cancellation tests
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:50 p.m. EDT — `7d024be32199` test(#1496): the send path's own cost, measured in release with INSTANT_SEND_PATH_BENCH=1
+
+- **Implementation commit:** `7d024be32199ed4b4502f04542c538f7167cf5a6`
+- **Change:** test(#1496): the send path's own cost, measured in release with INSTANT_SEND_PATH_BENCH=1
+- **Details:**
+  - 20,000 transacts through one live session to a socket that takes each at once: CPU and wall time per send, the CPU of the 5.5 s after (cancelled Task.sleep timers still fire), and the send path's task count. Gated; the before-and-after for #1496.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 measureTheSendPath
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:50 p.m. EDT — `af675e6b2417` test(#1496): red: a send starts no task of its own, and frames leave in the order the session sent them
+
+- **Implementation commit:** `af675e6b2417ce08ec8a0a9158b1626ea87a105d`
+- **Change:** test(#1496): red: a send starts no task of its own, and frames leave in the order the session sent them
+- **Details:**
+  - Each send wrapped its socket write in a task around instantLiveWithTimeout, which starts a work task and a deadline task and arms a 5 s timer: 100 sends on one connection start 300 tasks (Mac mini, debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1496 a test counter of the send path's tasks and in-flight sends
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1496 the task pin and the order pin
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:50 p.m. EDT — `ca5c830e7727` fix(#1497): the kept receipt fingerprint is keyed by a hash of its inputs, not by the stored body's bytes
+
+- **Implementation commit:** `ca5c830e7727eeae870bc6c9cedd79610a5db7b0`
+- **Change:** fix(#1497): the kept receipt fingerprint is keyed by a hash of its inputs, not by the stored body's bytes
+- **Details:**
+  - Two receipt checks pass an in-memory write (a lifecycle record's, the delivery metadata's), so a key on the stored row's text stood for the row, not the write passed. The fingerprint is a pure function of six inputs; PendingMutation.optimisticEffectReceiptFingerprintInputsHash hashes exactly those (Point-Free G23) and every call site reuses the kept fingerprint when that hash is the same.
+  - Measured (Mac mini M4, release, the recording contention exercise, 60 s and 90 writes a run, main 62c16ebf against 2d47e165 interleaved in one job, two rounds alone and two beside six busy loops, scripts/contention-exercises/ab-commits.sh): acknowledgement CPU per call 834.1 -> 506.3 us alone (-39%), 613.1 -> 418.8 us under load (-32%).
+  - Same runs: outboxClaim CPU per call 2,278 -> 2,051 us under load (-10%; alone 3,982 -> 3,733, inside its spread); localSave 1,733 -> 1,914 us under load (+10%; alone 3,315 -> 3,861, spread 985 us): the save now hashes the write's six inputs once to key the kept fingerprint and the claim and the acknowledgement about twice each, so save, claim and acknowledgement together cost 4,624 -> 4,384 us under load (-5%). Keying the row checks by the stored text is the follow-up.
+  - Checks at the merge 2d47e165 (Mac mini, debug, scripts/known-failing-tests.sh run and compare): 1,644 tests, 2 failing, neither on these paths (one listed; InstantLiveFrameDecodeTests' CPU ratio 0.339 against a 0.33 bound, which failed before this branch too); the server transaction loopback validation passes unchanged (its CLI and harness tests, and the validation run itself).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — #1497 the hash of the receipt fingerprint's inputs
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1497 the kept fingerprint keyed by its inputs, dropped at acceptance, bounded at 512
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1497 changed content is fingerprinted again and quarantined; the same content in another encoding reuses it
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:49 p.m. EDT — `a55a09129f13` fix(#1497): green: the store keeps the receipt fingerprint it computed for each body; the claim and the acknowledgement reuse it
+
+- **Implementation commit:** `a55a09129f133cea1e9aa2bb127e4f6e1935b48d`
+- **Change:** fix(#1497): green: the store keeps the receipt fingerprint it computed for each body; the claim and the acknowledgement reuse it
+- **Details:**
+  - The audit's interim fix (hash the stored body, byte-equal to today's digest) cannot be byte-equal: the receipt digest covers a sorted-keys payload (id, createdAt, transaction, rollback, overlay state, receipt version), not the stored body. The store kept each body's fingerprint under the SHA-256 of its stored text instead; ca5c830e re-keys it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1497 the kept fingerprint, reused by the claim and the acknowledgement
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1497 the earlier-process guard counts the relaunch, the claim and the acknowledgements apart
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 6:19:49 p.m. EDT — `13699326091d` test(#1497): red: a live write fingerprints its effect once, at its save; the claim and the acknowledgement reuse it
+
+- **Implementation commit:** `13699326091dc0e9c933fac22d5ce53460bd00d4`
+- **Change:** test(#1497): red: a live write fingerprints its effect once, at its save; the claim and the acknowledgement reuse it
+- **Details:**
+  - The claim and the acknowledgement each fingerprinted a write's effect again from the body the save had just written: a sorted-keys JSON encoding of the transaction and rollback and a SHA-256, about 1.3 ms an acknowledgement for a transcript line on a Mac mini.
+  - Red on the laptop (debug): save 1, claim 1, acknowledgement 1 (wanted 1, 0, 0); ten bodies an earlier process saved cost 22 fingerprints (wanted 10); a body re-encoded after its save cost claim 6, acknowledgement 6 (wanted 1, 0).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1497 the fingerprint pins: a live write, an earlier process's bodies, a re-encoded body
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — #1497 eachStepOfALiveWriteFingerprintsItsEffectOnce pins save 1, claim 0, acknowledgement 0
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in. Work designed and planned by fable should have issues and be done by opus 5 5 max
+- **SpecStory:** unavailable — unavailable — headless claude -p runs (tools/agent-run, perf-send-1492 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 5:44:09 p.m. EDT — `cbda8b883012` release(#1482): v1.9.60: a local write does less hashing
 
 - **Implementation commit:** `cbda8b883012f115b2df6783ea6d071bc3e33de4`
@@ -66,6 +430,102 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > get the performance wins onto his devices
 - **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-5@ld); no SpecStory capture
 
+## October 31st, 2026 at 1:08:05 p.m. EDT — `14ee76226d8c` fix(#1492): green: one attribute resolver per server schema, kept across sends
+
+- **Implementation commit:** `14ee76226d8c847c676ed5b012b156596a5f0af9`
+- **Change:** fix(#1492): green: one attribute resolver per server schema, kept across sends
+- **Details:**
+  - The live session keeps the attribute resolver beside serverAttributes; any assignment drops it and the next send builds it once. Same frames: the resolution code is unchanged.
+  - Measured (Mac mini M4, release, recording contention exercise, 60 s, 90 sends, one run each, same machine and hour): mutationEncode CPU per send 2,650.1 -> 14.5 us; 238.5 -> 1.3 ms of CPU a minute on the live session actor. write.accepted p50 35.3 -> 35.3 ms. Before at 8b5a4584 (pinned worktree), after at 14ee7622's tree.
+  - Tests: 100 sends build 1 resolver (was 100); a refresh-ok that carries a new attribute rebuilds it for the next send; 166 live transport and reactor parity tests pass, 3 known issues unchanged.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1492 the resolver kept beside serverAttributes, dropped in its didSet
+  - `Sources/InstantSwiftDataCore/InstantLiveMutation.swift` — #1492 the resolver is a value the session keeps; resolveAttributeIDs(in:resolver:)
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1492 a refresh-ok with new attributes rebuilds the resolver
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1492@ld); no SpecStory capture
+
+## October 31st, 2026 at 1:08:05 p.m. EDT — `8b5a4584f766` test(#1492): red: a connection builds its attribute resolver once for every send; the recording exercise prints the energy meter
+
+- **Implementation commit:** `8b5a4584f76617b7a18f2e30162066198766df92`
+- **Change:** test(#1492): red: a connection builds its attribute resolver once for every send; the recording exercise prints the energy meter
+- **Details:**
+  - Red on main 5d772e41 + plan (laptop debug): 100 sends on one connection with 2,283 generated attributes; the wire is right (100 transacts, server attribute ids) and the resolver is built 100 times, expected 1.
+  - The recording contention exercise prints each library operation's count and CPU from the energy meter over its window (CONTENTION recording energy), the before/after line for #1492 and #1497.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveSendPathTests.swift` — #1492 the resolver build pin; the exercise's energy report
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — #1492 the recording exercise snapshots the energy meter over its window
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1492 a resolver build counter for tests
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1492@ld); no SpecStory capture
+
+
+## October 31st, 2026 at 4:42:37 p.m. EDT — `221573c63b06` test(#1491): ab-commits.sh builds its trees side by side and runs a test filter at each commit (--test-filter)
+
+- **Implementation commit:** `221573c63b06dc6f098d6700577611ddaf9ecc0d`
+- **Change:** test(#1491): ab-commits.sh builds its trees side by side and runs a test filter at each commit (--test-filter)
+- **Details:**
+  - 1e822082 before it: arithmetic loops, since macOS's seq 1 0 prints 1 and 0.
+- **Files:**
+  - `scripts/contention-exercises/ab-commits.sh` — #1491 parallel builds, --test-filter, arithmetic loops
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:37 p.m. EDT — `4ff5e5c49161` perf(#1491): green: a row write fingerprints the forward wire intent only for a row that holds an acceptance or was offered
+
+- **Implementation commit:** `4ff5e5c49161852ad87e445a872b179d790ade3f`
+- **Change:** perf(#1491): green: a row write fingerprints the forward wire intent only for a row that holds an acceptance or was offered
+- **Details:**
+  - The candidate's wire-intent fingerprint decides only a row holding a server acceptance or offered to delivery; for any other row both checks pass as before. The stored body's decode is unchanged, so a corrupt stored body fails the save as before.
+  - Verified on the Mac mini in one job (perf-gate-1491-final, release, 16:11-16:37 EDT): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path, supersession and encode suites, 125 tests in 8 suites passed with 15 known issues as on main; the wire red aa18c4af fails its count and 4ff5e5c4 passes. Tight-loop transact p50 (cross-SDK runtime benchmark, 300 transacts, three runs): 13cdf499 0.476 ms, 02b7cf8a 0.452, aa18c4af 0.411, 4ff5e5c4 0.389 (-18%).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 saveOutboxMutationWithoutTransaction computes the candidate's wire intent lazily
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:36 p.m. EDT — `aa18c4af005c` test(#1491): red: a new local write's row write fingerprints no wire intent (today one a write, never read)
+
+- **Implementation commit:** `aa18c4af005c42d67512e18d2c1869c27c38f82d`
+- **Change:** test(#1491): red: a new local write's row write fingerprints no wire intent (today one a write, never read)
+- **Details:**
+  - A store counter beside optimisticEffectFingerprintCountForTesting; 10 new writes computed 10 wire-intent fingerprints.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1491 savedWireIntentFingerprintCountForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 a new write fingerprints no wire intent
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:35 p.m. EDT — `d564a099ed75` perf(#1491): green: a SHA-256 digest's hex is written into its string's storage, not formatted a byte at a time
+
+- **Implementation commit:** `d564a099ed75e2e809f7c0a2727232e81e668c10`
+- **Change:** perf(#1491): green: a SHA-256 digest's hex is written into its string's storage, not formatted a byte at a time
+- **Details:**
+  - The digest's bytes are read in place and their lowercase hex written into one string; the same text. The test counts what the hex adds to the hash's own allocations (about 70, CryptoKit's).
+  - Verified on the Mac mini in one job (perf-gate-1491-final, release, 16:11-16:37 EDT): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path, supersession and encode suites, 125 tests in 8 suites passed with 15 known issues as on main; the wire red aa18c4af fails its count and 4ff5e5c4 passes. Tight-loop transact p50 (cross-SDK runtime benchmark, 300 transacts, three runs): 13cdf499 0.476 ms, 02b7cf8a 0.452, aa18c4af 0.411, 4ff5e5c4 0.389 (-18%).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — #1491 instantSHA256HexDigest without String(format:)
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 the hex's allocations beyond the hash's
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:42:35 p.m. EDT — `cd3faf28030f` test(#1491): red: a SHA-256 digest is its lowercase hex written in one allocation (today 32 String(format:) strings joined)
+
+- **Implementation commit:** `cd3faf28030f1d6358f0736ad6109d4247d39677`
+- **Change:** test(#1491): red: a SHA-256 digest is its lowercase hex written in one allocation (today 32 String(format:) strings joined)
+- **Details:**
+  - Red on the laptop (debug, Xcode beta; the green's commit message says the Mac mini, which is wrong): one digest made 333 allocations; the digests of two known inputs already matched.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift` — #1491 the digest's text and its allocations
+- **User context (verbatim):**
+  > let's postpone other work to let performance focus and get those wins in.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-gate-1491 on claude/ld, continued on claude/strangelearning); no SpecStory capture
+
 ## October 31st, 2026 at 4:16:17 p.m. EDT — `0d24c6261b5f` release(#1482): v1.9.59: a query observation is one stream
 
 - **Implementation commit:** `0d24c6261b5f4cfa7f756bd2ec5e4d0e75a1f423`
@@ -79,6 +539,85 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > get the performance wins onto his devices
 - **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-ship-3@strangelearning); no SpecStory capture
+
+## October 31st, 2026 at 4:12:21 p.m. EDT — `9d965199b4f8` docs(#1510): what a phone's save writes, page by page, and the recorder's progress
+
+- **Implementation commit:** `9d965199b4f8e59cf4dd6b4b38be0aa0e1ec9cbe`
+- **Change:** docs(#1510): what a phone's save writes, page by page
+- **Details:**
+  - The phone's log frame by frame, File Activity, the launch catch-up and Core ML, saves by kind, the levers for a save under 20 KB.
+- **Files:**
+  - `docs/audits/2026-10-31-writes-1510.md` — #1510 the audit
+  - `PROGRESS.md` — #1510 the recorder's progress
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `be77145336bf` perf(#1510): the recorder learns from a page SQLite reads only when it is an interior page or page 1, checked before its lock
+
+- **Implementation commit:** `be77145336bf00506be195c34f8af308778dc3a1`
+- **Change:** perf(#1510): the recorder learns from a read page only when it is an interior page or page 1, checked before its lock
+- **Details:**
+  - InstantPruneCostTests failed (40K-fact prune 2.26x the 4K one, bound 2): every leaf read was parsed; now a leaf read is one byte compare and no lock; the gate passes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 reads teach only interior pages and page 1
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the stress bound 100 us a frame in debug
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `14da2b5b68ff` test(#1510): the recorder's stress test bounds its own collections, and a recorded statement leaves the connection's change count
+
+- **Implementation commit:** `14da2b5b68ff018b4ae3cf5bf200d15d520fa00f`
+- **Change:** test(#1510): the stress test bounds the recorder's own collections; a recorded statement leaves the change count
+- **Details:**
+  - The process footprint grew 110 MB beside the outbox suites; the recorder's own collections stay under 1 MB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 retainedBytesForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the bound and the change-count test
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:20 p.m. EDT — `071560016750` fix(#1510): green: the recorder matches the name SQLite opens a file by when its path crosses a symbolic link, and explains statements on a connection of its own
+
+- **Implementation commit:** `0715600167501ad612719e891e4dfa73b4485168`
+- **Change:** fix(#1510): green: the recorder matches the name SQLite opens a file by through a symlink, and explains on a connection of its own
+- **Details:**
+  - SQLITE_OK_SYMLINK meant no file found its recorder; EXPLAIN on the writer reset sqlite3_changes() and the outbox quarantined first claims (InstantBoundedOutboxDeliveryTests).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — #1510 the full pathname through a symlink
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 EXPLAIN on a read-only connection of its own
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:19 p.m. EDT — `cb989369cdf3` feat(#1510): green: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees, each checkpoint copy and store call
+
+- **Implementation commit:** `cb989369cdf3660430ab34b44db922f1bc9b91f1`
+- **Change:** feat(#1510): green: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees
+- **Details:**
+  - Page owners learned from the pages SQLite reads and writes; each commit's pages placed together, its own links first; statements by change count and EXPLAIN once per shape.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 page owners, commits, statements, store calls, the record
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
+
+## October 31st, 2026 at 4:12:19 p.m. EDT — `6434d6e26dc2` test(#1510): red: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees, each checkpoint copy and store call
+
+- **Implementation commit:** `6434d6e26dc29c9afea03847af8c69e307e82a14`
+- **Change:** test(#1510): red: the write recorder names every page the log takes by its b-tree, each write statement by its rows and b-trees
+- **Details:**
+  - The recorder's types, registry and hooks wired (VFS, statement cache, transaction); counting stubbed, so the tests fail (Mac mini: red exit 1).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — #1510 the recorder's tests against the log file and dbstat
+  - `Sources/InstantSwiftDataCore/InstantSQLiteWriteRecorder.swift` — #1510 the public record, the registry, the hooks
+  - `Sources/InstantSwiftDataCore/InstantSQLiteFileMeter.swift` — #1510 the VFS hands pages to a database's recorder
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1510 the statement cache, the transaction and the writer's open call the recorder
+- **User context (verbatim):**
+  > a snapshot does not show how the database evolves or the query structure (Michael, typed 2026-10-31 13:30, on #1510)
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-writes-1510@ld); no SpecStory capture
 
 ## October 31st, 2026 at 3:55:51 p.m. EDT — `b00e2d04d74a` docs(#1493): the concurrency guidance's Query Observation section states the one-stream rule
 

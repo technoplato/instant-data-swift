@@ -79,3 +79,54 @@ Main at 7d54c13a. perf-send-1492 owns the live session's send path and left `sta
 type of `StoreObserver.continuation` and the two lines that yield through it, so the two meet on `StoreObserver`'s
 field list only. perf-gate-1491 (#1491) edits the transact path: disjoint. Channel:
 agent-presence/_channels/2026-10-31-perf-observe-1493.md. Rebase onto each landing before a land.
+
+## Amendment 1 (2026-10-31, claude-code/perf-observe-1493@strangelearning): #1494 part 2
+
+Why: #1494's first green (4f2e76e9) did F3's steps 1 and 3. Step 2, the plan's begin with its first body page in one
+turn, became "no body page when the plan holds no body", which leaves a plan that holds a body as it was. Reading the
+passes for step 2 shows more of the same split: each body pass reads one more page after its last row (a page reports
+its last row's position, not whether it was the last, and a page with no rows checks nothing), the resident patch pass
+does the same under the operation gate, the reduction's context is a store-free planning read in a turn of its own
+after the other three, and the plan's end and the connection status read are two gate-held turns after the commit.
+The exercises report which frames retried but not where their attempts went stale, so a before and after cannot say
+whether fewer turns meant fewer stale attempts.
+
+Steps (no code here):
+
+7. Red: a server apply's gate-held event names the stage at which each earlier attempt went stale; a focused test makes
+   the first attempt stale with a local write after its seed and expects the stage.
+8. Green: the stage names in that event and in the exclusive fallback's; the contention exercise's server.apply line
+   counts them per path.
+9. Red: `runtimeWorkloadsPinEveryActorHop`: the server-refresh workload pinned at six persistence turns (the seed; the
+   planning reads with the reduction's context; the plan's begin; the catch-up; the commit; the plan's end with the
+   status read), and the same refresh over a pending local write in its component pinned at its target.
+10. Green: the reduction's context read rides the planning reads' turn; the plan's begin returns its first reverse body
+   page when the plan holds a body and its revisions are the seed's; a body or resident-patch page that read its last
+   row says so and no pass reads past it; the plan's end and the status read share one turn. The same reads less the
+   empty pages, in the same order, with the same revision and row checks.
+11. Measured on the mini, one interleaved job (before #1494, part 1, part 2): attempts per frame, the stale stages, the
+   gate holds and write.line, recorded on #1494; then land, ledger, READY FOR BUILD on #1482.
+
+Touching (amendment 1):
+
+- Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift: `beginServerApplyPlan`'s first page,
+  `loadServerApplyBodyPage(WithoutTransaction)`, `loadServerApplyResidentPatchPage` and the last-page flag of their
+  page types only
+- Sources/InstantSwiftDataCore/InstantRuntime.swift: `performApplyServerTransaction` (its passes, the plan's end and
+  status read, the stale stages), `reducedServerApplyOperations`' context read, `recordServerApplyGateTimeline`'s
+  metadata only
+- Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift: `reportApplies`' stale stages only (perf-send-1492
+  holds the recording exercise's energy line; disjoint)
+- Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift: one test, the stale stage
+- Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift and InstantEnergyMeterTests.swift: call
+  sites of the plan's begin only, if its result's shape changes
+
+## Amendment 2 (2026-10-31, claude-code/perf-observe-1493@strangelearning): #1494's docs
+
+12. docs/swift-concurrency-guidance.md, Performance Rules: one paragraph, a step's reads share one persistence turn
+   and a paged read says when it held its last row (#1494). docs/adr/0018-one-actor-turn-per-step.md: one consequence
+   line with #1494's measured turns.
+
+## Status (2026-10-31)
+
+Done: #1493 landed `dffd9a06`, #1494 landed `c17bf998`; follow-up #1524. The claims are finished.

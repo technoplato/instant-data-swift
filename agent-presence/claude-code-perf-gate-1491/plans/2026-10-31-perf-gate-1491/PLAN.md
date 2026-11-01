@@ -44,6 +44,24 @@ receipt fingerprint).
    or was offered to delivery; a new write computes them and reads neither. Red pins the count of wire fingerprints a
    new write computes (0); green computes them only for such a row; same checks, same errors.
 7. After each green: land, ledger with land --prepend, "READY FOR BUILD" on #1482. No build cut, tagged or installed.
+8. Amendment 3 (perf-gate-1491@strangelearning, 16:40; the M6 sample and a plan read on a real store's schema): every
+   local write reads the outbox's newest row in delivery order (`latestOutboxPositionWithoutTransaction`, the creation
+   cursor), and a server apply's plan reads it twice (`beginServerApplyPlan`, `extendServerApplyPlan...`). No index
+   holds every row in that order, so SQLite scans the whole global-effect index and keeps the newest in a temporary
+   b-tree: `SCAN ... USE TEMP B-TREE FOR ORDER BY`. M6: 39 samples a minute, 18 inside the transact's gate hold, 34% of
+   `beginServerApplyPlan` and 59% of the extend. Laptop, Python sqlite3, the outbox's schema: 291 us a read at the
+   fixture's 700 rows (663 refused writes) against 29 us with an index, 2.25 ms at 5,400 rows (an hour of offline
+   lines). Red: the three tail reads, as the library runs them, plan without a temporary b-tree. Green: a full index on
+   (`created_at_ms`, `mutation_id`), put in place at every open beside `deliveryIndexSQL`; the SQL is unchanged. Its
+   keys never change, so an acknowledgement and a claim write none of it; a save writes one page of it and the confirm
+   that deletes the row one (#1510's save is 24.4 pages). A guard test plans every statement a live write runs with the
+   index and without it: only the tail reads may change. Measured with ab-commits.sh (this green against the branch
+   before it, same job) and the tight-loop benchmark.
+   Its first run (perf-gate-1491-tail, 18:15): the outbox took 25.0 frames a write against 23.0 (the index's page on the
+   save and on the echo, as predicted), over #1115's budget of 24, which becomes 25 with the reason beside it; and two
+   more plans changed for the better (the catch-up's whole count scans the smaller index; its count of the writes
+   appended after the plan's tail searches it instead of scanning the outbox), so the guard fails a plan only when it
+   sorts or scans more, or trades another index's search for this one.
 
 Write contract unchanged: transact/save is local materialize and durable outbox only. Nothing is batched, delayed,
 throttled, sampled, dropped or limited.
@@ -58,6 +76,12 @@ throttled, sampled, dropped or limited.
   `acceptOutboxMutation` or the receipt digest, which perf-send-1492 owns, nor the query cache or the server apply)
 - Sources/InstantSwiftDataCore/InstantRuntime.swift (`transact`, `performTransact`, `loadLocalWriteReads`,
   `saveLocalMutationReadingConnectionStatus` only)
+- Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift, amendment 3: `latestOutboxPositionWithoutTransaction` and
+  `immediateOutboxTailIDWithoutTransaction` (their SQL as constants, unchanged) and one line in `bootstrap` beside
+  `try execute(Self.deliveryIndexSQL)`; not `beginServerApplyPlan` or the extend (perf-observe-1493's), whose tail read
+  only changes plan
+- Tests/InstantSwiftDataCoreTests/InstantOutboxTailReadTests.swift (new, amendment 3)
+- Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeWritesTests.swift (amendment 3: the frames-per-write budget line)
 - Sources/InstantSwiftDataCore/InstantModels.swift (amendment 1: `instantSHA256HexDigest` only; not
   `optimisticEffectReceiptFingerprint`, which perf-send-1492 owns)
 - Tests/InstantSwiftDataCoreTests/InstantLocalWriteEncodeTests.swift (new)

@@ -44,7 +44,83 @@ Sources/InstantSwiftDataCore/SQLiteReadConnection.swift (its open settings only)
 Tests/InstantSwiftDataCoreTests/InstantTemporaryStoreTests.swift (new), CHANGELOG.md, PROGRESS.md,
 docs/audits/commit-changelog.md (through land --prepend).
 
-## Conflict check (origin/main 2026-10-31 13:20 EDT)
+## Amendment 1 (2026-10-31): #1500's design, measured before code
+
+What the store copy (10-30 17:15, read only, counts and lengths) says closes and reopens: 90 transcriptionSegments/256
+pages (80 MB, 359,181 facts: a timeline's pages, the offline scroll-back cache of docs/FEATURES.md item 3), 28
+whole-recording segment results (30 MB), 50 + 32 list pages (40 MB), and five copies of one voice-learner query
+(`lineSpeakers/265000` to `/285000`, 2.6 MB each: its key changes with every new recording, an app-side source filed on
+#1506). A page's close and reopen today writes about 7 MB, estimated from the ledger's averages per call (its 0.9 MB
+JSON copy, four release chunks of 0.94 MB, two reload chunks of 1.2 MB); 308 MB/h on 10-31 is about forty such cycles
+an hour.
+
+The design (upstream's shape: `PersistedObject.unloadKey` keeps the persisted copy as it is and the next subscription
+reads it, Reactor.js 463-485 and 1252):
+1. A closed result keeps its header, its ownership rows and its facts. The header gains `closed_at_ms` (NULL while a
+   query holds it; ALTER TABLE ADD COLUMN, no rewrite). Closing is one header update. Its facts leave the hot store
+   (memory) when no open result owns them, and stay in SQLite.
+2. Reopening finds the header closed, clears it, and loads the result's entities into the hot store from SQLite, a
+   bounded chunk at a time as the reload does now (#1131): reads, no ownership or fact writes.
+3. The policy (upstream's 1 year, 1,000 entries, 1,000,000 facts) collects closed results oldest first: the header, its
+   ownership rows (released-row chunks for a large one, #1129) and the facts no stored result owns. That is today's
+   release, run only past the policy.
+4. Bootstrap loads the entities of open results and of the outbox's effects only.
+5. `instant_unloaded_live_query_results` takes no new row. A legacy row reloads through today's path once (becoming
+   rows) and the policy collects the rest as now, so the 207 MB drains without a migration's write burst at launch.
+6. Expect: the unload, release and reload writers (145-308 MB/h) fall to the policy's collections; a page's reopen reads
+   about 1 MB instead of writing about 7 MB; offline reopening answers from the same rows (Scribe FEATURES 3 and 7).
+
+Red tests when it is built: a 4,000-fact result's close and reopen writes at most a few pages; after close its facts are
+out of the hot store and still in SQLite, after reopen back in it; an offline reopen answers from the store before any
+server frame; the policy past its limits releases the oldest closed result's facts. #1006's, #1131's, #1129's and
+#1319's tests that assert the unloaded table or released facts change with it.
+
+Not built in this session: it changes the prune, the registration, the bootstrap's residency and about forty tests in
+SQLitePersistenceStore.swift while four lanes (#1491 #1492 #1493 #1498) edit that file. It is the next library step
+after their landings, on this plan, by one agent in this worktree.
+
+## Amendment 2 (2026-10-31): #1504 as built
+
+- Where: the writer sets `PRAGMA temp_store = MEMORY` at the end of `bootstrap()`, after the one-time migrations (one
+  copies every fact's key into a temporary table: 647,723 keys on the 10-30 iPhone store, which stay on SQLite's file)
+  and before `ensureServerApplyStagingSchema()`, because a change of the setting drops every temporary table that
+  exists. A writer that reopens its connection sets it again (today only a test closes the writer). Every read
+  connection sets it at open, beside its 2 MiB cache.
+- Red: `InstantTemporaryStoreTests.everyConnectionKeepsItsTemporaryStructuresInMemory` reads `PRAGMA temp_store` on the
+  writer, on a read connection and on the writer after it reopens (two test accessors, `temporaryStoreForTesting()`):
+  0 (a file) on all three before the fix (build.sh pwf-1504-redgreen, 2026-10-31 17:12). Two behavioral tests stay as guards
+  (the recording exercise, and closing a 300-todo query): both wrote no temporary file before the fix either, because
+  their statement journals stay under SQLite's 64 KiB in-memory limit; which phone statement spills is not reproduced
+  at test sizes, so the phone's ledger after the build is the measure (`sqlite.temp` expected 0).
+- Claims: SQLitePersistenceStore.swift also gets one test accessor beside `releasedLiveQueryResultCountForTesting`.
+
+## Amendment 3 (2026-10-31, perf-waste-fixes): #1500 waits for #1165; the write path first
+
+The code map of library main 1b256d1a (`~/Sync/audit/perf-waste-fixes-1481/1500-code-map.md`, read only) corrects
+amendment 1's premises and finds its blocker.
+
+- Closing writes nothing today. The unload happens in the cadence prune (every 64th refresh frame that restates
+  results): every stored result no open or registering query holds gets its JSON copy built inside SQLite, its header
+  deleted (or renamed `released-result:` past a batch), its ownership rows released and the facts no other result owns
+  deleted from `instant_triples` and from memory. Reopening is not a read: it rewrites the header, the ownership rows,
+  and any facts SQLite lost.
+- The blocker. A local write to an entity that is on disk but not in memory is handled whole, as a new entity
+  (`InstantStore` `usesWholeEntityScope`: no slots in memory), and the save's diff reads every row of the entity from
+  SQLite and deletes each row the write did not restate (`saveChangedEntityFactsWithoutTransaction`,
+  `saveTripleDiffWithoutTransaction`). Amendment 1's closed results would keep facts on disk only, so the next local
+  write to one of their entities would erase the rest of it on this device. The same gap exists today for the
+  disk-only entities a relaunch leaves (#1165: strict writes throw there; non-strict ones erase).
+- Order of work: (1) #1165: a write loads a non-resident entity's facts from SQLite before it prepares, as it hydrates
+  deferred values, so its before-image is the entity's own and strict checks see it; red test ready
+  (`InstantNonResidentWriteTests.aWriteToALineKeptOnDiskKeepsItsOtherFacts`: three lines, one owned, a one-attribute
+  write to a disk-only line keeps its id, recording and text). (2) Then amendment 1's design, with its red tests and one
+  more: a local write to a closed result's entity keeps that entity's disk-only facts.
+
+Touching when built: Tests/InstantSwiftDataCoreTests/InstantNonResidentWriteTests.swift (new); InstantRuntime.swift's
+write preparation and InstantStore.swift's scope decision for #1165, claimed in that issue's own plan; the #1500 files
+as amendment 1 lists.
+
+## Conflict check (origin/main 2026-10-31 13:13 EDT; the first version of this line said 13:20, a typed clock time)
 
 SQLitePersistenceStore.swift is claimed by perf-send-1492 (acceptOutboxMutation, the receipt digest), perf-read-1498
 (the query cache), perf-observe-1493 and perf-gate-1491 (saveLocalMutation, the admission bound): none touches the

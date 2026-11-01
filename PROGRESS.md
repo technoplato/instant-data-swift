@@ -8,6 +8,25 @@
   body (`cb95ef5d`); neither is marked ready.
 - **Next:** Scribe pins 1.9.63 exactly and cuts 0.1 (216) (#1482).
 
+## 2026-10-31 21:12:00 EDT — perf-gate-1491 (#1491): done; both landings, the criteria's evidence, three findings for other lanes
+
+- **Landed:** `99a46951` (a digest's hex in one string; no wire fingerprint for a new write; the runner; the audit note;
+  ledger `adb71f8d`) and `15629f06` (amendment 3, the outbox tail index; ledger `d6c26413`), after `1e1ba548` earlier.
+  READY FOR BUILD on #1482: `99a46951` 0.476 -> 0.389 ms (tight-loop transact, pre-recorder base) and `15629f06` 2.70 ->
+  2.60 ms (steady transact hold beside load). v1.9.60 already shipped the first in Scribe 212.
+- **Criteria (#1491):** evidence logged, neither marked satisfied. The 2.5 ms target came from F0's confounded 1.58 ms;
+  no commit moved the hold 4.6x (one-job A/B), and alone the same save takes about 2.1x the CPU time (energy lines).
+  Proposed restatement left for the owner: the write's own cost and the beside-load hold at or below the 10-24 baseline
+  in one job (both met).
+- **For other lanes:** #1517 (the claim re-encodes each write; #1497's memo now covers its receipt part); #1510's write
+  recorder costs a tight-loop transact +0.26 ms (+58%, `dffd9a06` 0.449 -> `d3b08d41` 0.712 ms, one job), logged on
+  #1510 and #1482 under #1285; the WAL auto-checkpoint's F_FULLFSYNC runs inline in whichever call commits past the
+  threshold (#1076/#1118), the likely 84.8 ms worst transact hold; #1514 (build.sh's QoS confound).
+- **Evidence:** `~/Sync/audit/perf-gate-1491/` (mini/ab-1491b..f, laptop/, logs/, scripts/), `docs/audits/2026-10-31-
+  transact-hold-1491.md`.
+- **Cleaned:** the tail worktree and its `.build` (5.3 GB), this worktree's `.build` (6.4 GB), `/tmp/perf-gate-1491`
+  (12 MB, logs and scripts kept in the audit folder); no simulators, no mini trees left; branches stay on origin.
+
 ## 2026-10-31 21:01:48 EDT — perf-ship-8 (#1482): v1.9.62 for Scribe build 215
 
 - **Release:** `docs/releases/v1.9.62.md`, tag `v1.9.62` on this release branch's tip, cut from `v1.9.61` (`fb930584`)
@@ -16,6 +35,33 @@
 - **Not in it:** the #1510 write recorder (merge `d3b08d41`, +0.26 ms a tight-loop transact); its owner ships it with
   #1463.
 - **Next:** Scribe pins 1.9.62 exactly and cuts 0.1 (215) (#1482).
+
+## 2026-10-31 20:24:11 EDT — perf-observe-1493 (#1494): a server frame plans in two persistence turns after its seed; fewer turns did not mean fewer retries
+
+- **Landed:** part 1 red `b27bca3f`, green `4f2e76e9`; part 2 stale-stage red `47f0573b`, green `3f04436d`, hop-pin red
+  `670758fa`, green `5922e9af`; docs `278806cc`, `26ad0b2c` (merge `c17bf998`). No release cut, tagged or installed;
+  "READY FOR BUILD" on #1482.
+- **Change:** a frame's planning reads (the restated results' retractions and saves, the retractions' protection) and
+  the reduction's context are one persistence turn; the plan's begin reads its first reverse body page (not while a
+  retry holds the gate to plan); a body or resident-patch page says when it held its last row, so no pass reads an
+  empty page; the plan's end and the status read share a turn; the applier admits, records and checks a frame in one
+  live-session turn (four hops a frame to two, read from code). The gate-held event names where each earlier attempt
+  went stale (`staleStages`); the contention exercise's server.apply line counts attempts and stale stages per path.
+- **Measured:** pins (debug): a 50-row server refresh's persistence turns 12 -> 6, over a pending write the plan holds as
+  a body 13 -> 8 (store 4, gate 4, outbox 1, observers 1 unchanged). Mac mini, release, one interleaved job
+  (`ab-commits.sh`, recording + server-apply, 4 runs per commit, main + the diagnostic as the before): attempts per
+  frame 1.116 -> 1.159 (part 1 alone 1.183); stale stages planningReads 65 -> 57, forwardPage 1 -> 22, reductionContext
+  3 -> 0, planRevisions 0 -> 16; library CPU 16,611 -> 16,615 ms; write.line unchanged; server-apply exercise 1.625 ->
+  1.500 a frame (8 frames each). Evidence: ~/Sync/audit/perf-observe-1493/ab-1494-3way/.
+- **Finding (logged on #1494):** fewer turns did not make fewer stale attempts. The planning reads fail on any write
+  since the seed, and a faster plan more often precedes the acceptance of its own pending writes; #1524 carries the fix
+  at the source.
+- **Checks:** the focused suites at the green 5922e9af (laptop, debug): 158 tests in 14 suites with the 3 known issues
+  they had; the landing tree 58523d0f (with main 48283913) on the mini: 169 tests in 16 suites, 5 known issues, and the
+  three timing tests alone (the hub-component gate test held 169 ms, longest local write 105 ms against 2,000); the
+  whole core bundle at 278806cc on the loaded laptop: 1,636 tests, 1 listed failure and 3 timing tests that pass alone
+  on the mini.
+- **Next:** #1524.
 
 ## 2026-10-31 20:01:26 EDT — perf-ship-7 (#1482): v1.9.61 for Scribe build 214
 
@@ -26,6 +72,74 @@
 - **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
 - **Next:** Scribe pins 1.9.61 exactly and cuts 0.1 (214) (#1482).
 
+## 2026-10-31 19:58:00 EDT — perf-gate-1491 (#1491): amendment 3, the outbox tail is one entry of a creation-order index
+
+- **Why:** every local write's creation cursor, the supersession tail and the server apply plan's begin and extend read
+  the outbox's newest row in delivery order; no index held that order, so each scanned the global-effect index whole
+  and sorted (291 us at the phone-shaped store's 700 rows, 2.25 ms at 5,400; laptop, the outbox's schema; M6: 39 samples
+  a minute, 18 inside the transact's hold).
+- **Commits:** plan `7887351d` (landed `61e20540`), red `e10668ae`, green `e712d3e3`, guard `bf8748e0` + `7a67778d`,
+  runner `d8185dde` (packages resolved one tree at a time after a SwiftPM clone race; a failed build stops the job),
+  plan note `8cb1d994`, change log `1c8a539e`.
+- **Measured (one job, Mac mini, release, perf-gate-1491-tail-ab 19:25-19:43, before `e10668ae`, after `d8185dde`):**
+  beside load, transact hold 2.70 -> 2.60 ms, write.line 3.38 -> 3.08, plan hold 1.35 -> 1.04 (means of two rounds);
+  serverApplyPlan CPU a call alone 852 -> 807 us. Pages a step: save 16.79 -> 17.79, claim 2, ack 4, echo 19.97 ->
+  20.97. Red fails, green passes in release; the fixed suites pass in debug (26 tests in 3 suites).
+- **Cost accepted:** #1115's budget of 24 outbox frames a write is 25 (23.0 -> 25.0, the index's page on the save and
+  the echo); perf-writes-1510's amendment 2 (-4 a save, -2 an echo) is told on the channel.
+- **Open:** the tight-loop transact read 0.68 ms in this job at both commits, 0.389 ms at `4ff5e5c4` in the 16:11 job;
+  every commit here includes main's 13:01-16:19 merges. perf-gate-1491-bench-bisect (queued) runs the tight loop at
+  `69f2fe51`, `e6e71913`, `dffd9a06` and `d3b08d41` in one job to say whether one of them moved it.
+- **Next:** land this branch, ledger, READY FOR BUILD on #1482; the bisect's lines on #1491 and #1482; cleanup.
+
+
+## 2026-10-31 19:33:02 EDT — perf-send-1492 (#1492, #1497, #1496): landed
+
+- **Landed:** #1492 `4ba76de7` (ledger `0dae49b9`); #1497 and #1496 merge `b60a2c09` (change log `848d72e9`, ledger
+  `d42734df`). READY FOR BUILD posted on #1482 for both landings. All three issues VerificationNeeded, every success
+  criterion satisfied with its evidence on the issue.
+- **Last checks:** core bundle at the merge `2d47e165` (Mac mini, debug, 1,644 tests, nothing new on these paths); the
+  four focused suites at `a6418534` after main's #1491 (laptop, 29 tests pass); `7d023177` added only #1504, whose one
+  conflict was the persistence store's history block.
+- **Open, not this lane's:** #1523 (the receipt key's hash, about 180 us at each of save, claim and acknowledgement;
+  numbers and design on the issue; coordinate with perf-writes-1510's compressed body).
+- **Ownership:** none; the plan's claims are finished (channel `2026-10-31-perf-send-1492`). Worktrees removed after
+  this landing; evidence stays in `~/Sync/audit/perf-send-1492/`.
+
+## 2026-10-31 18:45 EDT — #1504: every store connection keeps SQLite's temporary structures in memory
+
+- **Built:** red 6ec56cba (PRAGMA temp_store 0 on the writer, a read connection and a reopened writer, expected 2),
+  green a92b8ca4: the writer sets `temp_store = MEMORY` at the end of its bootstrap (after the one-time migrations,
+  before the server apply's staging tables) and when it reopens; every read connection at open. Merged with main at
+  31569b58 (only the file's history block conflicted).
+- **Measured before:** a device's energy ledger counted 34,124-36,677 temporary-file writes an hour of recording
+  (19-49 MB/h) and 470,007 (166 MB/h) across eight launches. **Expected after:** 0; the device's ledger after the next
+  release measures it, and its memory footprint (the app's #1507 minute field) is the check on the other side.
+- **Tests:** 17 tests in 5 suites pass on the branch (pwf-1504-redgreen); re-run on the merged branch (31569b58): 40 tests in 8 suites pass, the write
+  recorder's, the registration gate's and the prune's among them (pwf-1504-merged, 19:01).
+- **#1500:** waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test
+  confirmed), plan amendment 3.
+
+## 2026-10-31 18:20:12 EDT — perf-send-1492 (#1497, #1496): the receipt memo and one task per frame, measured; landing
+
+- **Branch:** `agent/claude/perf-send-1492` at the merge of main `2d47e165` (#1493, #1495, #1510 in). #1497: red
+  `13699326`, green `a55a0912`, inputs key `ca5c830e`. #1496: red `af675e6b`, bench `7d024be3`, FIFO writer `0a7a9595`
+  (replaced), `4bd0f806`, `66d372e8`, one task per frame `40e83b28`.
+- **Checks (Mac mini, debug, `scripts/known-failing-tests.sh` at `2d47e165`):** 1,644 tests, 2 failing: one listed, and
+  `InstantLiveFrameDecodeTests/aServerResultDecodesAtAFractionOfJSONDecodersCost` (CPU ratio 0.339 against 0.33), which
+  failed in perf-observe-1493's run before this branch and is receive-side. Every criterion test passes, and the two the
+  FIFO writer broke (#461 room leave, #1131 re-registration). Loopback validation: CLI and harness tests pass, `ok: true`.
+- **#1497 measured (recording exercise, main `62c16ebf` against `2d47e165`, interleaved, 2 rounds alone and 2 loaded):**
+  acknowledgement CPU per call 834 -> 506 us alone, 613 -> 419 us loaded; outboxClaim 2,278 -> 2,051 us loaded;
+  localSave 1,733 -> 1,914 us loaded (+10%). The inputs hash costs about a third of a fingerprint and runs about five
+  times a write (save once, claim and acknowledgement about twice each), so the three steps net -5% loaded.
+- **#1496 measured (`measureTheSendPath`, 20,000 transacts, 3 runs alternating with `7d024be3`):** CPU per send 24.58 ->
+  20.69 us, CPU in the 5.5 s after 0.60 -> 0.35 ms, tasks 63,000 -> 21,001.
+- **Evidence:** `~/Sync/audit/perf-send-1492/mini/final-2d47e165/` (bundle, compare, ab-1497, bench-1496.txt, job.log).
+- **Next:** land; ledger; READY FOR BUILD on #1482. Then #1497's follow-up: key the claim's and the acknowledgement's
+  row checks by the SHA-256 of the stored text (hardware, about 15 us a line) with a round-trip pin, pass the
+  acknowledgement's fingerprint to its lifecycle record, and drop the save's inputs hash.
+
 ## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
 
 - **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
@@ -34,6 +148,120 @@
   storage or conversion change.
 - **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
 - **Next:** Scribe pins 1.9.60 exactly and cuts 0.1 (212) (#1482).
+
+## 2026-10-31 13:12:00 EDT — perf-send-1492 (#1492, #1497, #1496): one attribute resolver per server schema landed; #1497 red
+
+- **Landed:** plan `90582dbd` (claims), amendment 1 `0cc5e7d6`; #1492 red `8b5a4584`, green `14ee7622`, merged
+  `4ba76de7`. The live session keeps the attribute resolver beside `serverAttributes` (dropped in its `didSet`, built by
+  the next send); same frames.
+- **Measured (#1492):** Mac mini M4, release, the recording contention exercise (60 s, 90 sends), one run each in a
+  pinned worktree: mutationEncode CPU per send 2,650.1 -> 14.5 us (238.5 -> 1.3 ms a minute). Lines in
+  `~/Sync/audit/perf-send-1492/mini/recording-before-8b5a4584.txt` and `recording-after-1492-14ee7622.txt`; the
+  exercise prints `CONTENTION recording energy` lines since `8b5a4584`.
+- **#1497:** the audit's interim fix cannot be byte-equal (the receipt digest covers a sorted-keys payload, not the
+  stored body). The store keeps the fingerprint it computed for each body, keyed by the SHA-256 of the stored text; the
+  claim and the acknowledgement reuse it. Red `13699326` (pin 1/1/1 -> 1/0/0; 10 earlier-process bodies cost 22
+  fingerprints; a re-encoded body costs 6 and 6). Green in the worktree, under test.
+- **Next:** #1497 green, merge main (perf-gate-1491 changed `saveOutboxMutationWithoutTransaction`), A/B with
+  `scripts/contention-exercises/ab-commits.sh`; then #1496 (one writer task per socket). READY FOR BUILD on #1482 per
+  landing.
+
+## 2026-10-31 18:45 EDT — #1504: every store connection keeps SQLite's temporary structures in memory
+
+- **Built:** red 6ec56cba (PRAGMA temp_store 0 on the writer, a read connection and a reopened writer, expected 2),
+  green a92b8ca4: the writer sets `temp_store = MEMORY` at the end of its bootstrap (after the one-time migrations,
+  before the server apply's staging tables) and when it reopens; every read connection at open. Merged with main at
+  31569b58 (only the file's history block conflicted).
+- **Measured before:** a device's energy ledger counted 34,124-36,677 temporary-file writes an hour of recording
+  (19-49 MB/h) and 470,007 (166 MB/h) across eight launches. **Expected after:** 0; the device's ledger after the next
+  release measures it, and its memory footprint (the app's #1507 minute field) is the check on the other side.
+- **Tests:** 17 tests in 5 suites pass on the branch (pwf-1504-redgreen); re-run on the merged branch (31569b58): 40 tests in 8 suites pass, the write
+  recorder's, the registration gate's and the prune's among them (pwf-1504-merged, 19:01).
+- **#1500:** waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test
+  confirmed), plan amendment 3.
+## 2026-10-31 18:58:00 EDT — perf-writes-1510 (#1510, #1463): a live write's body compressed in its leaf, its lifecycle derived
+
+- **Why:** on the phone (10-31, build 208) a local save wrote 24.4 log pages, 4.7 of them its body: a `WITHOUT ROWID`
+  cell keeps at most 1,002 bytes on its leaf, so 3.4-12 KB bodies took two to four overflow pages, allocated at the
+  save (page 1 and a free-list trunk rewritten) and freed at the echo. Raw deflate takes the median body 8,389 -> 944 B;
+  without the 346-byte lifecycle beside it, 6 of 8 live cells fit their leaf (docs/audits/2026-10-31-writes-1510.md).
+- **Plan:** `2026-10-31-perf-writes-1510`, amendment 2 (fd035c89, landed 017a5e58). **Commits:** red `ef3862c9`;
+  green `a6debcdf`; fixes `4bb6ddc0`, `9b2b25ce`; docs `71b6dfd6`, `7d976196`.
+- **Change:** `instant_outbox_bodies.json` holds the body's JSON compressed (`InstantOutboxStoredBody`: format byte,
+  length, raw deflate via Apple's Compression), `lifecycle_bytes` the lifecycle's size; readers derive the lifecycle.
+  Budgets count JSON bytes (`bodyLengthSQL`, `bodyJSONBytesSQL`, staged sizes). Text bodies an older version wrote
+  read as before and convert at their next change. Scribe's recovery script inflates them (Scribe 85839caa5).
+- **Measured (StorageIOExercises.aLiveWritesStepsByBTree, 48 overlapping Scribe writes, laptop, debug, one job):**
+  save 16.3 -> 13.2 log frames per write (65.5 -> 53.1 KB), echo 18.9 -> 17.5 (76.1 -> 70.6 KB), claim and ack
+  unchanged. Recorder cost (ab-commits.sh, mini): transact hold +0.2 ms alone (inside the rounds' spread), none under
+  load.
+- **Ruled out with numbers:** deleting the 730 terminal failures' key rows makes saves worse (5.40 -> 6.88 pages);
+  in-memory revisions (#1254) would collide with the query cache's stored `store_revision`; TEMP key rows (#1464)
+  would bring back rows deleted on purpose.
+- **Next:** the whole-bundle gate on the merge with main (perf-writes-1510-body-bundle2), the compressed body's cost
+  A/B (perf-writes-1510-body-cost), land, one "READY FOR BUILD" for the recorder and this; then the phone's numbers
+  through the recorder. Continue from `~/Sync/worktrees/perf-writes-1510`; evidence `~/Sync/audit/perf-writes-1510/`.
+
+## 2026-10-31 17:43:56 EDT — perf-ship-5 (#1482): v1.9.60 for Scribe build 212
+
+- **Release:** `docs/releases/v1.9.60.md`, tag `v1.9.60` on this release branch's tip, cut from `v1.9.59` (`1d9ba2ba`)
+  with #1491's four commits cherry-picked from `main` (merge `99a46951`): a digest's hex in one string; a new local
+  write computes no wire-intent fingerprint. Tight-loop transact p50 0.476 -> 0.389 ms (Mac mini M4, release). No API,
+  storage or conversion change.
+- **Not in it:** the #1510 write recorder (merge `d3b08d41`); its owner ships it with #1463.
+- **Next:** Scribe pins 1.9.60 exactly and cuts 0.1 (212) (#1482).
+
+## 2026-10-31 16:50:00 EDT — perf-gate-1491 (#1491): the write's own cost -18% in one job; the outbox tail read next
+
+- **Measured (perf-gate-1491-final, Mac mini M4, release, one job 16:11-16:37):** tight-loop transact p50 (cross-SDK
+  runtime benchmark, 300 transacts, three runs each within 0.011 ms): `13cdf499` 0.476 ms, `02b7cf8a` (one encode)
+  0.452, `aa18c4af` (the hex) 0.411, `4ff5e5c4` (no wire fingerprint for a new row) 0.389: -18%. Reconnect drain 0.88
+  -> 0.79 ms. Recording exercise steady transact hold p50, one round: alone 6.83 / 6.56 / 6.40 / 4.08 ms, beside six
+  busy loops 3.00 / 3.07 / 3.21 / 2.69. Debug suites: 125 tests in 8 suites passed (15 known issues as on main); the
+  wire red fails its count, the green passes. Evidence `~/Sync/audit/perf-gate-1491/mini/ab-1491c/`.
+- **Branch:** `agent/claude/perf-gate-1491` merged main at `94328840` (sources clean); post-merge suites queued as
+  perf-gate-1491-merged (the #1426/#1435/#1115/#1121 criteria suites, the write-path suites, #1510's recorder and
+  #1498's cache tests). Change log recorded for `cd3faf28`, `d564a099`, `aa18c4af`, `4ff5e5c4`, `221573c6`.
+- **Criteria:** the 2.5 ms steady hold target came from the confounded 1.58 ms (F0); alone, every commit holds 4-7 ms,
+  beside load 2.7-3.4 ms; no commit moved it 4.6x (the ab2 table in `docs/audits/2026-10-31-transact-hold-1491.md`).
+- **Amendment 3 (branch `agent/claude/perf-gate-1491-tail`, worktree `~/Sync/worktrees/perf-gate-1491-tail`):** every
+  write's creation-cursor read, and the server apply plan's begin and extend, sort the whole outbox (no index in
+  delivery order): red `e10668ae`, green `e712d3e3` (a creation-order index at open), a guard that no other plan of a
+  live write's statements changes. Queued as perf-gate-1491-tail: the outbox and server-apply suites, red/green, pages
+  per step of a live write at both commits, a two-round A/B and the tight loop.
+- **Next:** when perf-gate-1491-merged passes, `~/Scribe/tools/land` this branch, the ledger with `land --prepend`,
+  READY FOR BUILD on #1482; then the tail slice the same way, merging main first.
+
+## 2026-10-31 17:31:11 EDT — perf-read-1498 (#1498, #1495): both after numbers, measured on the Mac mini
+
+- **#1498 after (M6: the recording exercise, Mac mini M4, release, `sample` 60 s at 1 ms,
+  `scripts/contention-exercises/profile-recording-1482.sh`; before main `7f0595b8` at 12:52, after `3cce5ca1` at 14:44,
+  which is #1498's green plus #1495's red, a counter only):** `queryOnce` CPU 802 -> 299 ms a minute (-63%); the
+  query-cache write 553 -> 43 ms (`saveQueryCache` before; `InstantQueryAnswerDigest` 37 + `confirmQueryCacheAnswer` 6
+  after); the persistence actor's JSON encode (`SQLitePersistenceStore.encode`) 541 -> 44 ms; `sqlite3_step`
+  1,260 -> 1,273 (unchanged); `read.queryOnce` wall p50 101 -> 90 ms. Evidence: `~/Sync/audit/perf-read-1498/m6-before`
+  and `m6-after`.
+- **#1495 after (the 48-observer fan-out exercise, Mac mini M4, release, one job 17:13-17:27: red `3cce5ca1` with the
+  landed exercise laid over it against `9051d75e` + `ff8fb803`, both built in the job, 4 rounds alternating which side
+  runs first, 2,000 writes a run; the order-balanced mean of the 4 paired differences):** the app's write shape (interims
+  as unlinked live rows): a duration write's publication p50 840 -> 721 us (-14%, lower in 4 of 4 rounds); a final's
+  18.76 -> 18.73 ms (unchanged); an interim's 52.9 -> 53.4 us (+0.5 us, higher in 3 of 4 rounds, equal in 1); all 2,000
+  publications 6,820.6 -> 6,823.7 ms (+0.04%). The linked-interim stress shape: interims -5.9%, durations -15.7%, all
+  publications 11,460 -> 11,090 ms (-3.2%), each lower in 4 of 4 rounds. Id sets per 2,000 writes 6,350 -> 5,150
+  (stress 11,600 -> 4,800); materialized snapshots identical, so the same hand-overs. Evidence:
+  `~/Sync/audit/perf-read-1498/fanout-ab.txt` and `fanout-ab-summary.txt`; the script is `bin/fanout-ab-1495.sh` there.
+- **Found:** the finals' +2% between the separate before and after jobs (14:47 and 15:36) was the machine's state: in
+  one job the second run of a round is 1.6-1.8% faster on finals on average (up to 3% in one pair of rounds),
+  whichever side it is. Finals are 96% of the app shape's publication time, and their cost is re-materialization
+  (#1513). The interims' +0.5 us is small and consistent; its
+  cause is not measured (a likely one: each observer copied out of the store's dictionary per publication now carries
+  two more references).
+- **Merged tree:** `perf-read-1498-main-check` (laptop, debug, `e6e71913`, which holds #1491, #1492, #1498 and #1495):
+  20 tests in 5 suites pass.
+- **State:** #1498 and #1495 are VerificationNeeded with every criterion satisfied; READY FOR BUILD is on #1482 for both
+  (#1498 shipped in v1.9.57 and Scribe 209, #1495 in v1.9.58 and Scribe 210). This lane cut, tagged and installed
+  nothing.
+- **Next:** nothing in this lane; the publication's remaining cost is #1513.
 
 ## 2026-10-31 16:16:09 EDT — perf-ship-3 (#1482): v1.9.59 for Scribe build 211
 
@@ -67,12 +295,54 @@
 - **Next:** #1494 (a server frame's planning turns 7 -> 3; its A/B of retries per frame is running), then the ship
   agent's build.
 
+## 2026-10-31 15:35:00 EDT — perf-writes-1510 (#1510): a recorder that names the pages each table, index and write statement writes
+
+- **Why:** a phone's local save wrote 102 KB and the store's meters named only the store call. Read page by page (two
+  USB pulls, 13:21 and 13:32, build 208 recording), a save is 24.4 pages across 17 b-trees and a server confirm 35.5;
+  a transcript segment save 32.6 pages (131 KB) with an 11.7-17.9 KB body for about 1.3 KB of values. Michael, typed
+  13:30 on #1510: first a recorder in the library, per statement and per table, over time, read from the ledger.
+  Evidence and method: `docs/audits/2026-10-31-writes-1510.md`.
+- **Plan:** `2026-10-31-perf-writes-1510` (bd868c21). **Commits:** red `6434d6e2`; green `cb989369`, fix `07156001`
+  (SQLite opens a path through a symlink by its resolved name, `SQLITE_OK_SYMLINK`; `EXPLAIN` on the writer reset
+  `sqlite3_changes()` and the outbox quarantined claims, so it runs on a connection of the recorder's own), test
+  `14da2b5b`, perf `be771453` (a read teaches only interior pages and page 1: the prune gate test).
+- **What it is:** `InstantSQLiteWriteRecorder.snapshot()`, read once a minute like the store's other meters: each
+  b-tree's log pages (overflow apart) and checkpoint copies, each write statement's runs, rows and pages with the
+  b-trees its `EXPLAIN` opens for writing, and each store call's pages by b-tree. Learned from the pages SQLite already
+  reads and writes through the file meter's VFS; one byte a page, bounded collections, nothing recursive.
+- **Checks (Mac mini, debug):** red fails as expected; green: `InstantSQLiteWriteRecorderTests` 8/8, including a run
+  checked frame by frame against the log file and `dbstat`; whole bundle (known-failing compare) 1,630 tests, one new
+  failure, `InstantLiveFrameDecodeTests`' decode-speed ratio (0.370, bound 0.33; no SQLite in its path), checked on main.
+- **Scribe:** the minute row's `disk.tables` and `disk.statements` landed (scribe `b87c51f61`); the bridge that reads
+  the recorder is branch `agent/claude/perf-writes-1510-bridge` (`0fc60774`), to merge with the pin's bump.
+- **Next:** the recorder's own cost (ab-commits.sh, main against this branch), then land and READY FOR BUILD on #1482;
+  then amendments: a compact stored body (perf-send-1492 handed it over), write keys and effect entities as one b-tree
+  each, #1254's revision counters. Continue from `~/Sync/worktrees/perf-writes-1510`; evidence in
+  `~/Sync/audit/perf-writes-1510/`.
+
+
 ## 2026-10-31 15:12:10 EDT — perf-ship-2 (#1482): v1.9.58 for Scribe build 210
 
 - **Release:** `docs/releases/v1.9.58.md`, tag `v1.9.58` on this landing's merge. Carries #1495 (merge `e6e71913`):
   an observer keeps the ids its result shows, collected once per result. No API, storage or conversion change.
 - **After number:** #1495's `perf-read-1495-fanout-after` still queued on the mini; recorded on #1495 when it runs.
 - **Next:** Scribe pins 1.9.58 exactly and cuts 0.1 (210) (#1482).
+
+## 2026-10-31 15:05:00 EDT — perf-gate-1491 (#1491): the one-job A/B says no commit moved the write's hold; three write costs removed
+
+- **Measured (perf-gate-1491-ab2, Mac mini, release, one job 13:13-13:45):** steady transact hold p50 alone / beside six
+  busy loops: `287f77d1` 5.04, 4.90 / 3.40, 3.21 ms; `4accbf45` 5.76, 4.12 / 3.32, 3.29; main `13cdf499` 6.81, 5.95 /
+  2.80, 3.19; `02b7cf8a` 5.40, 6.62 / 3.13, 2.88. Tight loop (300 transacts, p50 of three runs): 0.434, 0.438, 0.457,
+  0.434 ms. F0's 1.58 -> 7.22 compared a run beside a cold build with runs alone; #1514 files the tooling cause.
+- **Landed:** `1e1ba548` (a new write encodes its body once), ledger `69f2fe51`; READY FOR BUILD posted on #1482.
+- **On the branch, not landed:** hex red `cd3faf28` / green `d564a099` (333 allocations a digest on the laptop, debug;
+  the hex now adds its string only), wire red `aa18c4af` / green `4ff5e5c4` (a new write fingerprints no wire intent),
+  runner `1e822082`, `221573c6`, the note `docs/audits/2026-10-31-transact-hold-1491.md`.
+- **Running:** perf-gate-1491-final (mini): debug runs of the acceptance, lifecycle, bounded outbox, retry, write-path
+  and supersession suites; my suite at `13cdf499`, `02b7cf8a`, `aa18c4af` (the wire red) and `4ff5e5c4`; one exercise
+  round alone and beside load; the tight-loop benchmark x3.
+- **Next:** if green, record the change log (`/tmp/perf-gate-1491/record-final.sh` drafts it), land, ledger, READY FOR
+  BUILD with the benchmark's before and after; remove `.build/ab-trees` in the mini's slot 1 and this worktree.
 
 ## 2026-10-31 14:58:00 EDT — perf-read-1498 (#1495): an observer keeps the ids its result shows
 
@@ -92,6 +362,7 @@
   full equality on every match (the unchanged case), so it is not added. The publication's cost is the
   re-materialization of the pages a final shifts and of the list whose preview changes: a lever of its own.
 - **Next:** the after run; READY FOR BUILD on #1482; a follow-up issue for the re-materialization with these numbers.
+
 
 ## 2026-10-31 13:56:58 EDT — perf-ship-1 (#1482): v1.9.57, the three landed performance fixes for Scribe 209
 
@@ -121,6 +392,7 @@
   `perf-read-1498-m6-after` at `3cce5ca1`; recorded on #1498 and here when it lands.
 - **Next:** #1495 (red `3cce5ca1`; green in the worktree, tests queued); the fan-out exercise before and after.
   Continue from `~/Sync/worktrees/perf-read-1498`; evidence in `~/Sync/audit/perf-read-1498/`.
+
 
 ## 2026-10-31 13:02:00 EDT — perf-gate-1491 (#1491): F0's 4.6x is the Mac mini's state, not a commit; a write encodes its body once
 

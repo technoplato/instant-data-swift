@@ -340,6 +340,15 @@ persistence actor or a custom serial executor. Do not block the main actor, and
 do not put long blocking I/O on actors that need to remain responsive for query
 observation or transport.
 
+Read what one step decides from in one actor turn, and check its revisions where
+the step acts. A server frame's planning reads (its restated results'
+retractions and saves, the retractions' protection, the reduction's context) are
+one persistence turn at the seed's revisions, and the plan's begin reads its
+first body page (#1494): each turn boundary was a place for a local write to
+land, which made the attempt stale and planned it again holding the operation
+gate. A paged read says when it held its last row, so no pass reads an empty
+page to learn that it has ended.
+
 ## Validation Requirements
 
 Concurrency compliance is part of acceptance. Add tests and validation scripts

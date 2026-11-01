@@ -1,3 +1,63 @@
+## 2026-10-31 21:19:30 EDT — instant-data-swift `cb95ef5dceafd0cc6aba71ddc350a324880243cd`
+Perf (#1510, #1463): a live write's outbox body is stored compressed in its leaf (a format byte, its JSON's length, raw deflate) and its lifecycle derived from it, so on the phone's 10-31 store 6 of 8 live cells fit the 1,002-byte leaf where each took two to four overflow pages (red ef3862c9, green a6debcdf, fixes 4bb6ddc0 9b2b25ce 6efccd91; change log 5778f111). StorageIOExercises.aLiveWritesStepsByBTree (48 overlapping Scribe writes, one job): a save 16.3 -> 13.2 log frames (65.5 -> 53.1 KB), an echo 18.9 -> 17.5 (76.1 -> 70.6 KB). Budgets count JSON bytes; text bodies still read. Whole bundle on the merge with main: 1,641 tests, only load-timing failures, each passing alone on the mini; 154 tests in 10 suites at the final merge. Cost A/B (mini): transact hold within noise. An older build cannot read a compressed body.
+
+## 2026-10-31 21:05:06 EDT — scribe `dae81af750452d32ac5942b1e7cf89121a3457d9`
+Release (#1482): Scribe 0.1 (215): instant-data-swift pinned exactly at 1.9.62 (plan 7387dbacf, pin d6e5f9a0a, cut 052c2b7c2, change log 6c79ab166), carrying #1494; #1515 and #1525 on main ride along.
+
+## 2026-10-31 21:05:06 EDT — instant-data-swift `1432f5cc5495eeeb7325109f4ec93813754856b2`
+Release (#1482): v1.9.62 tagged on c85a9531 (perf e2fb5be2, release document ff86efd1, change log c85a9531), a release branch off v1.9.61 with the source and test diff of main's c17bf998 (#1494: a server frame plans in fewer persistence turns, 12 -> 6 for a 50-row refresh; a retried apply names its stale stages) applied, merged here. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change.
+
+## 2026-10-31 21:03:54 EDT — instant-data-swift `15629f06d86a0a95fc630203fd656b3a7b43c881`
+Perf (#1491 amendment 3): the outbox tail, which every local write reads inside the operation gate and every server apply's plan reads twice, is the last entry of a creation-order index instead of a scan and sort of every outbox row (red e10668ae, green e712d3e3); the plan guard (no statement a live write runs reads more of the outbox) and #1115's frame budget 24 -> 25 for the index's page on the save and the echo (7a67778d); ab-commits.sh resolves its trees one at a time (d8185dde). One job on the Mac mini (release): beside load the transact hold 2.70 -> 2.60 ms and the plan's 1.35 -> 1.04 ms; the plan's CPU a call alone 852 -> 807 us. After merging main: 236 tests in 23 suites passed (laptop, debug, 17 known issues).
+
+## 2026-10-31 20:54:23 EDT — scribe `43d47ca00a0022b32e66181e01c6cc06aab443ec`
+Release (#1482): Scribe 0.1 (214): instant-data-swift pinned exactly at 1.9.61 (plan 199c87bd9, pin 78f05acb2, cut 335d40599, change log e460ce467), carrying #1504, #1497 and #1496; #1515 on main rides along.
+
+## 2026-10-31 20:54:23 EDT — instant-data-swift `73a28f2b4ab34f09733c6513481f92313ff54e9f`
+Release (#1482): v1.9.61 tagged on fb930584 (release document ee13ba65, change log fb930584), a release branch off v1.9.60 with the source and test diffs of main's 3374ba97 (#1504: temporary structures in memory) and b60a2c09 (#1497/#1496: the kept receipt fingerprint, one task per frame) applied, merged here. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change; 32 tests in 6 suites pass on the release tree.
+
+## 2026-10-31 20:24:31 EDT — instant-data-swift `c17bf9980adf56b3c076fb0719c4bc0f1a27f025`
+Perf (#1494): a server frame plans in two persistence turns after its seed (the planning reads with the reduction's context in one turn, the plan's begin with its first reverse body page, no empty trailing pages, the plan's end with the status read) and a retried apply names where each earlier attempt went stale (part 1 red b27bca3f, green 4f2e76e9; stale stages red 47f0573b, green 3f04436d; turns red 670758fa, green 5922e9af; docs 278806cc, 26ad0b2c; change log 73738de5): a 50-row refresh's persistence turns 12 -> 6, over a pending write 13 -> 8; Mac mini, release, interleaved: library CPU and write latency unchanged, attempts per frame 1.116 -> 1.159, whose sources are #1524.
+
+## 2026-10-31 19:31:14 EDT — instant-data-swift `b60a2c093ac47ef23378dfa75444f1769bb8e764`
+Perf (#1497, #1496): the delivery claim and the acknowledgement reuse the receipt fingerprint the save computed, keyed by a hash of its six inputs (red 13699326, green a55a0912, inputs key ca5c830e), and a send starts one task where it started three, with one deadline watcher per socket and no timer per send (red af675e6b, bench 7d024be3, writer 0a7a9595, 4bd0f806, 66d372e8, 40e83b28; change log 848d72e9). Mac mini, release: acknowledgement CPU per call 834 -> 506 us alone and 613 -> 419 us loaded, outboxClaim 2,278 -> 2,051 us loaded, localSave 1,733 -> 1,914 us loaded (the key's hash; #1523 carries the rest), save, claim and acknowledgement together -5% loaded (recording exercise against main 62c16ebf, interleaved in one job); CPU per send 24.58 -> 20.69 us, tasks 63,000 -> 21,001 for 21,000 sends, the 5.5 s timer tail 0.60 -> 0.35 ms (measureTheSendPath against 7d024be3).
+
+## 2026-10-31 19:08:57 EDT — scribe `e14305ded95347015e7136a6d1cd8a240092e790`
+Schema (#1515): buildDetails, one immutable row per owner and content hash, linked from recordings, transcriptions and sharedRecordings (ADR 0109).
+
+## 2026-10-31 19:03:07 EDT — scribe `2cb05b71e53b4c732aa6361cc9c85088215ece38`
+Release (#1482): Scribe 0.1 (213) cut from main 97fb01384 (plan dfb5695b0, cut 83dc64994, change log 3869847b5), carrying #1503, #1506 (landing 1), #1508 and #1507/#1510's Scribe side; instant-data-swift stays pinned exactly at 1.9.60 (no library fix after it has a READY FOR BUILD line).
+
+## 2026-10-31 19:02:52 EDT — instant-data-swift `3374ba97eaf69ab94061a5656f7ad44fdfd7ebde`
+Perf (#1504): every store connection keeps SQLite's temporary structures in memory: the writer from the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and when it reopens, every read connection at open (red 6ec56cba, green a92b8ca4; change log c843402c). A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0. 40 tests in 8 suites pass on the branch merged with main. Plan amendment 3: #1500 waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test confirmed).
+
+## 2026-10-31 16:08:46 EDT — scribe `655e5f00eb2fe4eff2ab8a0a9bb4059b43520ce2`
+Fix (#1508): the recording Live Activity drops its 60 s keep-alive and its 90 s stale date (Michael chose option 1); new words still go every 5 s behind and 30 s in front and state at once, the clock counts on the device by itself, and about 60 of the 107 updates an hour go away.
+
+## 2026-10-31 18:34:51 EDT — scribe `85839caa580e8b53eaa0b6b08984543dfbd42391`
+Telemetry (#1507 a) and recovery (#1510, #1463): a diagnostics spool's compaction counts the bytes it rewrites under diagnostics.spool in the energy ledger (red 1b9914513, green 2b5961326; on build 208 the collector lane's compactions wrote 1.29 MB a minute that no writer named), and scripts/recovery/recover-recording-from-outbox.mjs inflates a body instant-data-swift stores compressed, text bodies still read (red c070c27b4, green 6ade1b1c9). Change log e335051c6.
+
+## 2026-10-31 17:58:36 EDT — scribe `334c150a2256dff65a8d82e71d3d1d9a4350c4ef`
+Perf (#1503, #1506): landing 1 of perf-waste-fixes. Each audio chunk sent and each server message on the live transcription socket is counted in the energy ledger (speech.stream-send, speech.stream-receive) instead of a device-log line: 82% and 8.4% of the phone's 10-31 log, 63-70 MB an hour of recording (red 682941c7d, green 10fa5b026). The chapters query filters retiredAtMs null on the server, 225 KB -> 25 KB a restated frame for the recording chaptered live, and a held audio-keeper pass reads no audio rows (red c21743187, green b5e8b37bd). #1507 (e) documented (dcb21c180).
+
+## 2026-10-31 17:48:43 EDT — scribe `046ce3d54fc28b6875c485e70f2bf81131241649`
+Release (#1482): Scribe 0.1 (212): instant-data-swift pinned exactly at 1.9.60 (pin 8a137eb52, cut 1489bdecd, change log 4c18f316a), carrying #1491; What's New 210 gets #1495's interleaved A/B.
+
+## 2026-10-31 17:48:43 EDT — instant-data-swift `26c43bccc99b246b4a015f2d1b37be9b0f64b186`
+Release (#1482): v1.9.60 tagged on a00c1618 (release document cbda8b88, change log a00c1618), a release branch off v1.9.59 with #1491's four commits cherry-picked from main (99a46951), merged here: a local write does less hashing, tight-loop transact p50 0.476 -> 0.389 ms. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change.
+
+## 2026-10-31 17:39:13 EDT — instant-data-swift `99a46951afc3d9e270e679190f6a6358a5cdf889`
+Perf (#1491): a save's two SHA-256 digests write their hex into one string (red cd3faf28, green d564a099), and a new write's row write no longer computes a forward wire-intent fingerprint it never reads (red aa18c4af, green 4ff5e5c4); ab-commits.sh builds its trees side by side and runs a test filter at each commit; docs/audits/2026-10-31-transact-hold-1491.md. One job on the Mac mini (release): tight-loop transact 0.476 -> 0.389 ms (-18%); after merging main, 638 tests in 31 suites passed (laptop, debug, 20 known issues).
+
+## 2026-10-31 16:18:36 EDT — scribe `bf0364538cb2998fb275d337b48b62bb10477475`
+Release (#1482): Scribe 0.1 (211): instant-data-swift pinned exactly at 1.9.59 (pin db21c0a90, cut d8f028b3f, change log d40dc5a42), carrying #1493; with #1501 since 210.
+
+## 2026-10-31 16:16:26 EDT — instant-data-swift `62c16ebf20eb70958de2263cd23ae4da63a178cd`
+Release (#1482): v1.9.59 tagged on 1d9ba2ba (release document 0d24c626, change log 1d9ba2ba), cut from main at 81c07e43 and merged here: #1493, a query observation is one stream. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change.
+
+## 2026-10-31 16:12:31 EDT — instant-data-swift `d3b08d41fe307215643f74463b1a3b857d01c213`
+Feat (#1510): the write recorder, InstantSQLiteWriteRecorder: every page the store's log takes and every checkpoint copy, by table or index, by write statement (runs, rows, pages, the b-trees it writes) and by store call, over time, learned from the pages SQLite already reads and writes (red 6434d6e2, green cb989369, fixes 07156001 be771453). Mac mini: its tests 8/8, one checked frame by frame against the log file and dbstat; the audit docs/audits/2026-10-31-writes-1510.md (a save 24.4 pages across 17 b-trees). Its own cost is queued; READY FOR BUILD waits for it.
+
 ## 2026-10-31 15:56:21 EDT — instant-data-swift `dffd9a0629b07bf718c467f175203083fde4606e`
 Perf (#1493): a query observation is one stream, written by the store and the live query's server error under one lock and read in its consumer's own pull (red 02ef83f5, green 6256949a, exercise c5f7c882, doc b00e2d04; change log b6a3274e): library tasks per open live FetchAll 7 -> 1, the process's alive tasks with 48 live observers 290 -> 50 (xctrace), publication -> wrapper value p50 2,631 -> 681 us (Mac mini, release).
 
