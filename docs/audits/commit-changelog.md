@@ -1,3 +1,9 @@
+## 2026-11-01 17:09:48 EST — scribe `c3806fe02e831bb8891ff2cb8ec7e9e287f24efd`
+Fix (#1535): What's New reads Instant's list on the Mac too: the Mac's own composition root never set the reader, so build 219's Mac app showed its bundled file and said nothing (landed in 616919d01).
+
+## 2026-11-01 17:09:48 EST — scribe `7cd843bbfefcedd5280abd284fd1f5f42bff1cf1`
+Fix (#1535): an upload failure that wrote nothing says how it ended: build 219's first export was killed in the queue and journaled an empty reason (landed in 616919d01).
+
 ## 2026-11-01 16:17:24 EST — scribe `249dc8508059b4ac6235fd57e3cb7d8716d5f402`
 Fix (#1536): a fencepost waits up to a minute, since a first recording's row waits on the permission prompts.
 
