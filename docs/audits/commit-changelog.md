@@ -1,3 +1,6 @@
+## 2026-11-01 13:18:38 EST — scribe `b065ff541`
+Feature (#1565): one picture path for shares and the private stream; a screen shows only what a rule let through, the output is read again, and scribe stream private shows his broadcast on the Mac mini to him alone.
+
 ## 2026-11-01 13:12:20 EST — scribe `a495cf9b12b09f270e37abce6b1e8aee2132f728`
 Fix (#1482, #1528): with the iPhone away from a whole run, the iPad's install starts the TestFlight upload and What's New, so a phone off home Wi-Fi never holds testers.
 
