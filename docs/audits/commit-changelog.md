@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:27 EDT — scribe `73fa2abff9d02948419eb71fff98b2dd904123f3`
+feat(#1515): green: a copy writes a row of its own, the list reads no copy, and Playback and follow-along read the rows and the window (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:24 EDT — scribe `c1e177162d10413eaad85f42bb7acb2be855c91d`
 mirror(#1515): green: the mirror reads a recording's clipboard rows beside its window, and shows each copy once (landed in 7d9931b6f)
 
