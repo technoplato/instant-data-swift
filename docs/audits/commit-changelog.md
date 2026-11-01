@@ -1,3 +1,6 @@
+## 2026-11-01 10:52:43 EST — scribe `ca8ba1d6745f0031a5ab24d47bc4b4bec98edf16`
+Merge (#1530): scribe share shares lines in one action (the app's own row, a named state for every wait, the card the moment it passes, the og link; no link for a share that cannot pass), proved on 10 of his real lines (family names, the client's name, addresses, a phone number, spoken emails all scrubbed); a guard on protected links in scripts; the audit.
+
 ## 2026-11-01 10:47:31 EST — scribe `6d4a095503889540d112f1d73cb91bc4dc7d2783`
 Docs (#1544): scribe-agent-faq's open questions quote his 08:53 word sending securities and betting to the law agent (#1546); the classification still waits for its memo and his ruling.
 
