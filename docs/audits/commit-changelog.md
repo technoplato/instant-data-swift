@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:16 EDT — scribe `14bfa3b509bd9c205950cf05964f4846e9359000`
+feat(#1515): green: a recording's create is the one write that names its build; lines, the list and the recording's own queries carry none (landed in 7d9931b6f)
+
 ## 2026-10-31 22:57:37 EDT — scribe `96a09bf420ba7c0e62653e8134eef20366e576d5`
 Release (#1482): Scribe 0.1 (217): instant-data-swift pinned exactly at 1.9.64 (plan 067c58e95, #1510 bridge 526dfad7d, pin 95e2ab528, cut 5f2cb7814, change log 8ee334f52), carrying #1510/#1463's compressed outbox body and #1510's write recorder; #1507 (b, c) and #1506 line labels ride along from main.
 
