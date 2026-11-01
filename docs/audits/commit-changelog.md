@@ -1,3 +1,6 @@
+## 2026-11-01 08:42:46 EST — scribe `882efc58c027943ba3d03950e5ccd70fdbf53550`
+Fix (#1536): the follow-along's live window asks only for allowlisted owners, so TestFlight testers' recordings cannot push his live one out of its newest eight.
+
 ## 2026-11-01 08:41:09 EST — scribe `60d364949dff22feb81398aa39707858c0a8551b`
 Feature (#1530): public link previews at og.pisspoursoftware.xyz, a Worker with no secret and no outbound call; cards only from shares the scrubber passed, a generic card otherwise; every other path a bare 404.
 
