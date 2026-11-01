@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:39 EDT — scribe `9b478e04505c75a1e942e1a7541781b78c78a832`
+fix(#1515): the architecture scan reads the list's and the board's selections: named paths and one literal list (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:36 EDT — scribe `dfdfd52241049527898ea17738d3d856cc55fe33`
 fix(#1515): a window's entry keeps its own id; only the comparison with a row's folds case (landed in 7d9931b6f)
 
