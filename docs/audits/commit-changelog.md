@@ -1,3 +1,12 @@
+## 2026-11-01 18:32:17 EST — scribe `8f77f3c6ed65d8a9c3fc1065fefcadba4db29ed7`
+Fix (#1538): an agent's files start the agents graph sync alone (com.scribe.graph-sync-agents, about 2 s of CPU a run) and origin/main starts the full one; a run that finds the other's lock waits up to 2 minutes instead of skipping its change. One job watching everything had run back to back at 6 s of CPU a run (landed in 6b43b0ae8).
+
+## 2026-11-01 18:20:43 EST — scribe `5257187d5659d878e6a75957bd218b24441d81c5`
+Docs (#1538): the issues site audit and ADR 0121 section 9 record what the adversarial review proved and what was fixed: Issue writes name the read they were based on, and no Instant rule is a lock (landed in ba4c6390c).
+
+## 2026-11-01 18:20:43 EST — scribe `c85e5e641045ac022e520f2737dad4331123eb4e`
+Feature (#1538): graph rows start when a file their syncs read changes (launchd WatchPaths), not only every 5 minutes; findings in work logs and the product catalog still wait for the 5-minute run (landed in ba4c6390c).
+
 ## 2026-11-01 18:20:36 EST — scribe `5d4c6f61d841df6c08ff162f3339c3ff71571d06`
 Fix (#1586): a name nothing serves on pisspoursoftware.xyz or knophy.com answers a small PissPour Software page, "This name is not set up yet", still 404, instead of "unknown knophy host" (the Mac mini router's catch-all, router commit 720cebd; the sweep's fixture carries it; landed in 520c8e22f).
 
