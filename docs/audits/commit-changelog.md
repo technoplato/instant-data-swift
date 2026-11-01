@@ -1,3 +1,6 @@
+## 2026-11-01 10:47:31 EST — scribe `6d4a095503889540d112f1d73cb91bc4dc7d2783`
+Docs (#1544): scribe-agent-faq's open questions quote his 08:53 word sending securities and betting to the law agent (#1546); the classification still waits for its memo and his ruling.
+
 ## 2026-11-01 10:43:15 EST — scribe `5e345d87888d41f6a839771ad4a1cda1eedc5df5`
 Fix (#1542): the emoji sale's Solana memo is 24 hex characters, because the old memo cost 36,695 compute units where the reference x402 client gives a whole payment 20,000; proved end to end on a local validator (agent and person, one transfer of exactly 14280000 per sale) and redeployed.
 
