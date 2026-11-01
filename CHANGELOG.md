@@ -10,6 +10,58 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 9:19:15 p.m. EDT — `7d9761965a74` docs(#1510): amendment 2 measured: a save 16.3 -> 13.2 log frames, an echo 18.9 -> 17.5 (the body's overflow and page 1)
+
+- **Implementation commit:** `7d9761965a74839e158794fb759b2249cb0f8dd9`
+- **Change:** docs(#1510): amendment 2 measured: a save 16.3 -> 13.2 log frames, an echo 18.9 -> 17.5
+- **Details:**
+  - StorageIOExercises.aLiveWritesStepsByBTree, 48 overlapping Scribe writes, before 31e98a43 and after a6debcdf in one job.
+- **Files:**
+  - `docs/audits/2026-10-31-writes-1510.md` — the before and after
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 9:19:14 p.m. EDT — `4bb6ddc04c87` fix(#1510): the immediate tail's quarantine compares the body it read as JSON; tests read a quarantined BLOB and CPU time
+
+- **Implementation commit:** `4bb6ddc04c87964f82b395c76e78ea465f85c7da`
+- **Change:** fix(#1510): the immediate tail's quarantine compares the body it read as JSON; tests read a quarantined BLOB and CPU time
+- **Details:**
+  - The tail quarantine compared raw column bytes with JSON, so a save retried until the store changed repeatedly; a quarantine test decoder reads BLOB columns; the recorder's stress test measures thread CPU time.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — selectOutboxBodyJSON in the tail quarantine
+  - `Tests/InstantSwiftDataCoreTests/InstantRetainedMutationQuarantineTests.swift` — BLOB columns read as JSON
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteWriteRecorderTests.swift` — thread CPU time
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 9:19:14 p.m. EDT — `a6debcdf4669` perf(#1510): green: a live write's body is stored compressed in its leaf, its lifecycle derived from it (#1463)
+
+- **Implementation commit:** `a6debcdf466912677d495906577926c13e44ba39`
+- **Change:** perf(#1510): green: a live write's body is stored compressed in its leaf, its lifecycle derived from it (#1463)
+- **Details:**
+  - Compressed bodies (format byte, length, raw deflate), lifecycle_bytes, JSON-byte budgets, stored-byte retry proofs; tests that read bodies from the file inflate them. Save 16.3 -> 13.2 log frames, echo 18.9 -> 17.5 (harness, one job).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantOutboxStoredBody.swift` — the stored body's codec
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — compressed writes, one reader, JSON-byte budgets, lifecycle_bytes
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxStoredBodyTests.swift` — helpers that inflate and rewrite as text
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
+## October 31st, 2026 at 9:19:13 p.m. EDT — `ef3862c916c3` test(#1510): red: a live write's body stored compressed in its leaf, its lifecycle derived, budgets in JSON bytes (#1463)
+
+- **Implementation commit:** `ef3862c916c3099d664d109cbf3eca681231e20b`
+- **Change:** test(#1510): red: a live write's body stored compressed in its leaf, its lifecycle derived, budgets in JSON bytes (#1463)
+- **Details:**
+  - Fails where intended before the change (no lifecycle_bytes, text bodies, 20 overflow pages after two Scribe lines); its relaunch and text-body guards pass before and after.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxStoredBodyTests.swift` — the red tests and guards
+- **User context (verbatim):**
+  > we really need to get those writes down and keep the same functionality
+- **SpecStory:** unavailable — Headless claude -p run started by tools/agent-run (perf-writes-1510); no SpecStory capture exists for it.
+
 ## October 31st, 2026 at 9:01:54 p.m. EDT — `ff86efd1121d` release(#1482): v1.9.62: a server frame plans in fewer persistence turns
 
 - **Implementation commit:** `ff86efd1121d030adc71aa840d28dbe7bde84fec`
