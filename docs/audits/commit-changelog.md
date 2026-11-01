@@ -1,3 +1,6 @@
+## 2026-11-01 09:55:55 EST — scribe `5d2e851075959fb57bbf938cdffa6654715e8a53`
+Fix (#1545): the Durable Object chain listener backs off properly from providers that refuse Cloudflare egress: one backfill retry per address, and the reconnect backoff starts over only after a socket holds its subscriptions 60 s (it had opened 209 sockets in 20 minutes) (landed in d12bcce76).
+
 ## 2026-11-01 09:51:15 EST — scribe `11c4583b209c66dbd052b9128a1a3eb41cc111e9`
 Fix (#1545): the chain listener makes a Solana subscription again when publicnode ends it ("Subscription timed out") and backfills that address from its cursor; Ethereum reconnects. The code the 24-hour run measures (landed in 4ec1d95d1).
 
