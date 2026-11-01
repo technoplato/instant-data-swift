@@ -1,3 +1,9 @@
+## 2026-11-01 08:50:42 EST — scribe `cada3ce515d42fab56fb90d094b269d073e2b2bd`
+Docs (#1537): the audit of reviewing Point-Free's Designing for Isolation episodes (ep380-384) against the pointfree-isolation skill: 16 candidate rules, 16 Swift 6.4 probes, an independent adversarial review; 4 kept, 12 rejected with reasons (landed in 25c6d3ff3).
+
+## 2026-11-01 08:47:57 EST — pointfree-research `dc2dae1f171ff8d71715c4f16d9b0a76bb6478de`
+Skill (#1537): pointfree-isolation v2: a Task {} made in a nonisolated(nonsending) function does not inherit the caller's actor (capture isolation: isolated (any Actor)? = #isolation); start a Task.immediate after the state change it shares; store the actor, never an UnownedSerialExecutor; a test of an isolation mechanism needs work that really suspends. pfpipe points preview-only episodes at the full transcripts.
+
 ## 2026-11-01 08:42:46 EST — scribe `882efc58c027943ba3d03950e5ccd70fdbf53550`
 Fix (#1536): the follow-along's live window asks only for allowlisted owners, so TestFlight testers' recordings cannot push his live one out of its newest eight.
 
