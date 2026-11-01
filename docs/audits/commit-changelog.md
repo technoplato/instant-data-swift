@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:52 EDT — scribe `7d9931b6f812b0330aa2f68cc0ee37d0e7235cff`
+Merge #1515, #1526: a build's details and a recording's copies leave the rows lists read; Playback plays real word times
+
 ## 2026-11-01 00:03:49 EDT — scribe `ee055c94cff692933fc81432ef09493cea1b1c29`
 test(#1515, #1506): the scan lists the line labels' narrow query, which fails on main (landed in 7d9931b6f)
 
