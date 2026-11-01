@@ -1,3 +1,6 @@
+## 2026-11-01 12:54:03 EST — scribe `e5519a536bea3416a88dabdfda12299a97f63274`
+Docs (#1566): the publishing skill follows his decisions on public routes and shares.
+
 ## 2026-11-01 12:49:17 EST — scribe `ad5358af91e98fdd59dc8dd6e83b1d051557e348`
 Feature (#1566): scribe-publish, a skill that turns his lines into a post, a thread and audio with gaps proved silent, public only on his go for that exact draft and only under PissPour Software accounts.
 
