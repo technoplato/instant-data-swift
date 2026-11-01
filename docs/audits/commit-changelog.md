@@ -1,3 +1,6 @@
+## 2026-11-01 10:32:25 EST — scribe `08f9b40becc7243b40adf53567105b5513b291d4`
+Merge (#1551): the Vakyume install page drafted behind Cloudflare Access at vakyume.pisspoursoftware.xyz (a KeepAlive page server on the mini, his login only; the #1547 header sweep passes; nothing public); implementation 385ef98c0.
+
 ## 2026-11-01 10:29:20 EST — scribe `d731041f717bf2963f90d9b0ea481811aefc5d2e`
 Merge (#1551): why a stranger installs Vakyume ("did you say that?", from the Halloween party's own words), the first run walked from the TestFlight link (3 to 6 minutes, estimated), a draft install page with the #1547 header, and Health's heart-rate sheet skipped on an iPhone with no Apple Watch paired (red then green on the mini; What's New 219); implementation def69348c, 29f1d0ad4, baa91b482, 0759940c7.
 
