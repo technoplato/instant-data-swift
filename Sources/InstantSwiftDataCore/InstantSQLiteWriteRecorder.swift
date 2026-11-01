@@ -21,6 +21,18 @@ import os
 ///     // ... a minute of writes
 ///     let minute = InstantSQLiteWriteRecorder.snapshot().subtracting(before)
 ///     minute.btrees["instant_outbox_write_keys_lookup_idx"]?.logPages
+/// Switches that turn the recorder, or one of its parts, off, to measure what each part costs a write (#1510:
+/// perf-gate-1491's bisect put the recorder at +0.26 ms a write in the tight loop). Read once, from the environment:
+/// `INSTANT_SQLITE_WRITE_RECORDER=0` attaches none; `..._READS=0` learns nothing from the pages SQLite reads;
+/// `..._STATEMENTS=0` counts no write statement; `..._WRITES=0` names no page the log takes.
+enum InstantSQLiteWriteRecorderSwitches {
+  private static let environment = ProcessInfo.processInfo.environment
+  static let isOn = environment["INSTANT_SQLITE_WRITE_RECORDER"] != "0"
+  static let learnsFromReads = environment["INSTANT_SQLITE_WRITE_RECORDER_READS"] != "0"
+  static let countsStatements = environment["INSTANT_SQLITE_WRITE_RECORDER_STATEMENTS"] != "0"
+  static let namesWrites = environment["INSTANT_SQLITE_WRITE_RECORDER_WRITES"] != "0"
+}
+
 public enum InstantSQLiteWriteRecorder {
   /// Every store's counts since the process started, a closed store's included.
   public static func snapshot() -> InstantSQLiteWriteRecord {
@@ -32,7 +44,7 @@ public enum InstantSQLiteWriteRecorder {
   /// reports to, its log included. Attach before the first connection opens; ``InstantSQLiteDatabaseWriteRecorder/
   /// detach()`` when the store closes. Nil when the meter's VFS is unavailable.
   static func attach(databaseAt path: String) -> InstantSQLiteDatabaseWriteRecorder? {
-    guard InstantSQLiteFileMeter.registeredVFSName() != nil else { return nil }
+    guard InstantSQLiteWriteRecorderSwitches.isOn, InstantSQLiteFileMeter.registeredVFSName() != nil else { return nil }
     let name = InstantSQLiteFileMeter.fullPathname(path) ?? path
     let recorder = InstantSQLiteDatabaseWriteRecorder(databaseName: name)
     registry.withLock { $0.recorders[name] = recorder }
@@ -328,12 +340,14 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
 
   /// SQLite wrote `count` bytes at `offset` of the database's log.
   func logWrite(_ bytes: UnsafeRawPointer, count: Int, offset: Int64) {
+    guard InstantSQLiteWriteRecorderSwitches.namesWrites else { return }
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
     state.withLockUnchecked { $0.logWrite(buffer, offset: Int(offset)) }
   }
 
   /// SQLite read `count` bytes at `offset` of the database's log, through `file`.
   func logRead(_ bytes: UnsafeRawPointer, count: Int, offset: Int64, file: UnsafeMutablePointer<sqlite3_file>) {
+    guard InstantSQLiteWriteRecorderSwitches.learnsFromReads else { return }
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
     // #1510: a leaf, an overflow page or a free page read teaches nothing the commit that writes it will not; only an
     // interior page (its children), page 1 and the log's header are worth the lock. Checked before taking it.
@@ -357,6 +371,7 @@ final class InstantSQLiteDatabaseWriteRecorder: @unchecked Sendable {
 
   /// SQLite read `count` bytes at `offset` of the database file (from the file, or mapped).
   func databaseRead(_ bytes: UnsafeRawPointer, count: Int, offset: Int64) {
+    guard InstantSQLiteWriteRecorderSwitches.learnsFromReads else { return }
     let buffer = UnsafeRawBufferPointer(start: bytes, count: max(0, count))
     guard offset == 0 || Self.isWorthLearning(buffer, offset: offset) else { return }
     state.withLockUnchecked { $0.databaseRead(buffer, offset: Int(offset)) }

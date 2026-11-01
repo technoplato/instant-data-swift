@@ -21526,7 +21526,7 @@ struct SQLiteStatementCache {
   /// use's statement that comes back while the first one is already idle again is finalized.
   mutating func checkIn(_ statement: OpaquePointer?) {
     guard let statement else { return }
-    if let recorder {
+    if let recorder, InstantSQLiteWriteRecorderSwitches.countsStatements {
       recordUse(of: statement, to: recorder)
     }
     // #1245: what this use did, read and reset, so the statement's next use counts from zero.
