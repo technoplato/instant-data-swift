@@ -1,3 +1,6 @@
+## 2026-11-01 10:43:15 EST — scribe `5e345d87888d41f6a839771ad4a1cda1eedc5df5`
+Fix (#1542): the emoji sale's Solana memo is 24 hex characters, because the old memo cost 36,695 compute units where the reference x402 client gives a whole payment 20,000; proved end to end on a local validator (agent and person, one transfer of exactly 14280000 per sale) and redeployed.
+
 ## 2026-11-01 10:41:24 EST — scribe `0e84e9f67dd771fbae0cbd993dd08ce925989ac3`
 Fix (#1535): the cut's What's New check refuses the cut cleanly when it hangs instead of raising a traceback, and its 30 s bound carries its measured reason (0.25 to 2.1 s at load 230-270 under utility QoS and nice 10) (landed in 30e0c16fc).
 
