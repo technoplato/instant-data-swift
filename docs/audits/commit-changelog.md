@@ -1,3 +1,6 @@
+## 2026-11-01 10:29:20 EST — scribe `d731041f717bf2963f90d9b0ea481811aefc5d2e`
+Merge (#1551): why a stranger installs Vakyume ("did you say that?", from the Halloween party's own words), the first run walked from the TestFlight link (3 to 6 minutes, estimated), a draft install page with the #1547 header, and Health's heart-rate sheet skipped on an iPhone with no Apple Watch paired (red then green on the mini; What's New 219); implementation def69348c, 29f1d0ad4, baa91b482, 0759940c7.
+
 ## 2026-11-01 10:24:38 EST — scribe `a703524c47a710627bac8472c05f6024880d3829`
 Feature (#1542): sell an emoji for exactly $14.28 over x402 from a Cloudflare Worker (devnet and Base Sepolia; mainnet shut), the emoji schema in production, and a reconciler that writes each sale to Instant only after its own chain read; 512e43550 lands its lazy schema import.
 
