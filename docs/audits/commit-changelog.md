@@ -1,3 +1,6 @@
+## 2026-11-01 18:20:36 EST — scribe `5d4c6f61d841df6c08ff162f3339c3ff71571d06`
+Fix (#1586): a name nothing serves on pisspoursoftware.xyz or knophy.com answers a small PissPour Software page, "This name is not set up yet", still 404, instead of "unknown knophy host" (the Mac mini router's catch-all, router commit 720cebd; the sweep's fixture carries it; landed in 520c8e22f).
+
 ## 2026-11-01 17:54:53 EST — scribe `fdb62c378e97c9216f813850173497e75b10bd0c`
 The watcher (#1576): a tool anyone can install to follow and answer their own recording with their own sign-in, on main as a prototype; a snapshot publisher that keeps this repository's history out of the public one; nothing published.
 
