@@ -1,3 +1,6 @@
+## 2026-11-01 12:38:07 EST — scribe `bdaa25573039e08b907ab1cb4b8f40ac89b7522c`
+Fix (#1545): the chain listener hears Solana through Vibe Station, a canary catches a deaf socket, a 10-minute read backs up the push, and backfill stops at its cursor without until.
+
 ## 2026-11-01 12:26:21 EST — scribe `afd28dc3ca295ceddd27d6b9844a854be17475d7`
 Docs (#1546): pass 4 on what the fixes broke: 42 findings applied, no fake authority, onboarding paths hold for agents, companies and minors (landed in 0e977b6c5).
 
