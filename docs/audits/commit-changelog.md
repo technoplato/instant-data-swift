@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:30 EDT — scribe `6fc802e49315b7057004f39541f35ee77dc6fa56`
+fix(#1526): green: a finished recording plays from its lines' own word times (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:27 EDT — scribe `73fa2abff9d02948419eb71fff98b2dd904123f3`
 feat(#1515): green: a copy writes a row of its own, the list reads no copy, and Playback and follow-along read the rows and the window (landed in 7d9931b6f)
 
