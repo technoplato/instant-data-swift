@@ -1,3 +1,6 @@
+## 2026-11-01 12:26:21 EST — scribe `afd28dc3ca295ceddd27d6b9844a854be17475d7`
+Docs (#1546): pass 4 on what the fixes broke: 42 findings applied, no fake authority, onboarding paths hold for agents, companies and minors (landed in 0e977b6c5).
+
 ## 2026-11-01 12:06:31 EST — scribe `0b743fde8fc2794bee4e6285fa5c287f43a9f067`
 Fix (#1536): an account may write and read the fenceposts of a recording it owns, so a tester's recording stops reading "Not synced".
 
