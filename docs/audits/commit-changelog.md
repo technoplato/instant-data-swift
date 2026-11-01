@@ -1,3 +1,6 @@
+## 2026-11-01 13:12:20 EST — scribe `a495cf9b12b09f270e37abce6b1e8aee2132f728`
+Fix (#1482, #1528): with the iPhone away from a whole run, the iPad's install starts the TestFlight upload and What's New, so a phone off home Wi-Fi never holds testers.
+
 ## 2026-11-01 12:54:52 EST — scribe `824dfda4918a5662dac9cda5b92033b05b66a1d1`
 Fix (#1528): the TestFlight export runs in the release lane, so it no longer waits in the shared queue.
 
