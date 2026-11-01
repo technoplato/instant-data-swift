@@ -1,3 +1,6 @@
+## 2026-11-01 08:08:17 EST — scribe `140f665d502d8eba34aeb794c9c610c5be17d001`
+Fix (#1536): the media-plays projector catalogs only his owner set's YouTube plays; a TestFlight tester's play no longer downloads into his library.
+
 ## 2026-11-01 07:48:31 EST — scribe `47067e96ede7634d6dc141f0d6055aa1dd24f58c`
 TestFlight (#1528): the upload works end to end: own App Store profiles with manual signing, a stripped upload copy that fits Apple's 75 MB Watch limit, and N.1 after a refused number.
 
