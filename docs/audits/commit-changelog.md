@@ -1,3 +1,9 @@
+## 2026-10-31 20:54:23 EDT — scribe `43d47ca00a0022b32e66181e01c6cc06aab443ec`
+Release (#1482): Scribe 0.1 (214): instant-data-swift pinned exactly at 1.9.61 (plan 199c87bd9, pin 78f05acb2, cut 335d40599, change log e460ce467), carrying #1504, #1497 and #1496; #1515 on main rides along.
+
+## 2026-10-31 20:54:23 EDT — instant-data-swift `73a28f2b4ab34f09733c6513481f92313ff54e9f`
+Release (#1482): v1.9.61 tagged on fb930584 (release document ee13ba65, change log fb930584), a release branch off v1.9.60 with the source and test diffs of main's 3374ba97 (#1504: temporary structures in memory) and b60a2c09 (#1497/#1496: the kept receipt fingerprint, one task per frame) applied, merged here. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change; 32 tests in 6 suites pass on the release tree.
+
 ## 2026-10-31 20:24:31 EDT — instant-data-swift `c17bf9980adf56b3c076fb0719c4bc0f1a27f025`
 Perf (#1494): a server frame plans in two persistence turns after its seed (the planning reads with the reduction's context in one turn, the plan's begin with its first reverse body page, no empty trailing pages, the plan's end with the status read) and a retried apply names where each earlier attempt went stale (part 1 red b27bca3f, green 4f2e76e9; stale stages red 47f0573b, green 3f04436d; turns red 670758fa, green 5922e9af; docs 278806cc, 26ad0b2c; change log 73738de5): a 50-row refresh's persistence turns 12 -> 6, over a pending write 13 -> 8; Mac mini, release, interleaved: library CPU and write latency unchanged, attempts per frame 1.116 -> 1.159, whose sources are #1524.
 
