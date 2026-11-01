@@ -1,3 +1,18 @@
+## 2026-11-01 10:12:43 EST — scribe `3a138d9cb066626c7cfd4bdf1886bbaa270fc12a`
+Docs (#1544): scribe-agent-faq's filing step says to give every --segment line its recording (a bare line is read in the live recording, #1553) and that unlabeled or "speaker N" lines need --voice-reading.
+
+## 2026-11-01 10:09:43 EST — scribe `44b7197a91906a8c7591fb3b5d7d380931936e9b`
+Fix (#1544): scribe faq finds an entry by its key: agents copy keys from the list and the pre-plan pointer, and the BM25 scorer read a hyphenated key as one word no entry holds.
+
+## 2026-11-01 09:18:31 EST — scribe `c40c14475468badd8ece3a234618b03fbe085bd8`
+Fix (#1544): scribe faq names its reader the way the mirror's socket accepts (1 to 40 letters, digits, spaces, dots, dashes).
+
+## 2026-11-01 09:17:41 EST — scribe `e9058629ad185e2d0ee8fdf9f96c04568b8ef3f3`
+Docs (#1544): the scribe-agent-faq skill, the core guide's "Look here first" pointer, ADR 0116 (the FAQ derived from the decision log and the feedback store, readings in the row's note, no schema push), his words in the feedback history.
+
+## 2026-11-01 09:13:03 EST — scribe `459d3dd0c07d0ae4a7ba2bf6f650032d3a7c830f`
+Feature (#1544): scribe faq, the agent FAQ: what agents flag to Michael and how he answered, read from the decision log and the feedback store (ask, list, show, add, check, export); the 5-minute round writes ~/Scribe/faq/index.md; pre-plan verdicts end with the consult line.
+
 ## 2026-11-01 10:13:10 EST — scribe `4bf299df7242644389840ae6abba94812ae1ef11`
 Fix (#1545): the Durable Object chain listener keeps one reconnect pending per network (heartbeats and failures had multiplied retry chains against providers refusing Cloudflare egress) and no longer hears a socket it dropped (landed in 719596202).
 
