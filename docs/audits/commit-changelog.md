@@ -1,3 +1,9 @@
+## 2026-11-01 17:34:31 EST — scribe `91d64379c13b6a99164fc451605be1f5288db1e4`
+Release (#1482, #1528, #1536): Scribe 0.1 (221) cut; testers' first recordings stop showing Not Synced (a fencepost waits up to a minute for its recording's row) and a new person's Vocabulary starts empty.
+
+## 2026-11-01 17:34:31 EST — scribe `573ece144ae0cfda378257d199a4603daecd0034`
+Fix (#1482, #1538): landings lists its ids in bounded pages, so the upload's own landings run finishes at high load (it timed out on 219 and 220).
+
 ## 2026-11-01 17:28:30 EST — scribe `84316ed9bfaa82762553da09747dc8184bcc250e`
 Feature (#1577): recording_frames.py puts a screen recording's frames into one of his recordings as screen frames at their times; TJ's call video is 720 frames of Watch Voice Memo 441, aligned by TJ's on-screen clock since the video has no sound (landed in 194ae1c89).
 
