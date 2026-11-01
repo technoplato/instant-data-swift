@@ -1,3 +1,6 @@
+## 2026-10-31 22:04:26 EDT — instant-data-swift `9922c9bded0c9811866e47bc855c1fc96d9cb61d`
+Perf (#1510, #1285): the write recorder explains a statement shape once a process for each schema signature, not once a store (red 7495e6aa, green f63de075; switches 527b6b8d). perf-gate-1491's bisect had put the recorder at +0.26 ms on the cross-SDK runtime benchmark's write (a new store each iteration); switches found all of it in the statement counting's per-store EXPLAINs. Mini, release, three rounds, on against off: a store's first write 0.645 -> 0.459 ms (0.384 off), relaunch 1.41 -> 1.26 (1.14), reconnect drain 0.90 -> 0.81 (0.76). Ready for a build with the compressed outbox body (cb95ef5d).
+
 ## 2026-10-31 21:58:17 EDT — scribe `ddf8cc6f7dee449fa27238aa5d5e61293fba4514`
 Release (#1482): Scribe 0.1 (216): instant-data-swift pinned exactly at 1.9.63 (plan c3cea8acb, pin 3bb2d2eb1, cut d7e938345, change log fff6a628a), carrying #1491 amendment 3; nothing else on Scribe main since 215.
 
