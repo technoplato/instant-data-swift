@@ -1,3 +1,9 @@
+## 2026-10-31 21:05:06 EDT — scribe `dae81af750452d32ac5942b1e7cf89121a3457d9`
+Release (#1482): Scribe 0.1 (215): instant-data-swift pinned exactly at 1.9.62 (plan 7387dbacf, pin d6e5f9a0a, cut 052c2b7c2, change log 6c79ab166), carrying #1494; #1515 and #1525 on main ride along.
+
+## 2026-10-31 21:05:06 EDT — instant-data-swift `1432f5cc5495eeeb7325109f4ec93813754856b2`
+Release (#1482): v1.9.62 tagged on c85a9531 (perf e2fb5be2, release document ff86efd1, change log c85a9531), a release branch off v1.9.61 with the source and test diff of main's c17bf998 (#1494: a server frame plans in fewer persistence turns, 12 -> 6 for a 50-row refresh; a retried apply names its stale stages) applied, merged here. Leaves out the #1510 write recorder (d3b08d41). No API, storage or conversion change.
+
 ## 2026-10-31 21:03:54 EDT — instant-data-swift `15629f06d86a0a95fc630203fd656b3a7b43c881`
 Perf (#1491 amendment 3): the outbox tail, which every local write reads inside the operation gate and every server apply's plan reads twice, is the last entry of a creation-order index instead of a scan and sort of every outbox row (red e10668ae, green e712d3e3); the plan guard (no statement a live write runs reads more of the outbox) and #1115's frame budget 24 -> 25 for the index's page on the save and the echo (7a67778d); ab-commits.sh resolves its trees one at a time (d8185dde). One job on the Mac mini (release): beside load the transact hold 2.70 -> 2.60 ms and the plan's 1.35 -> 1.04 ms; the plan's CPU a call alone 852 -> 807 us. After merging main: 236 tests in 23 suites passed (laptop, debug, 17 known issues).
 
