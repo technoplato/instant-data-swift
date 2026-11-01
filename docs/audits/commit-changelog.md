@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:49 EDT — scribe `ee055c94cff692933fc81432ef09493cea1b1c29`
+test(#1515, #1506): the scan lists the line labels' narrow query, which fails on main (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:46 EDT — scribe `afb997beecd383d778665bdbb5f410ab79ff1cf9`
 fix(#1515): every reader reports an older build's recording; a damaged copy costs only that copy (landed in 7d9931b6f)
 
