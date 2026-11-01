@@ -1,3 +1,6 @@
+## 2026-11-01 12:50:39 EST — scribe `64a8e05f5b5fc4533b8d2400c4774cf0dacc2ce9`
+Docs (#1535): build 219's TestFlight note reworded after three cold reads, the audit's correction that 219 carries the scrub, and Instant's whole list of 129 sections (landed in 63b6803d3).
+
 ## 2026-11-01 12:38:07 EST — scribe `bdaa25573039e08b907ab1cb4b8f40ac89b7522c`
 Fix (#1545): the chain listener hears Solana through Vibe Station, a canary catches a deaf socket, a 10-minute read backs up the push, and backfill stops at its cursor without until.
 
