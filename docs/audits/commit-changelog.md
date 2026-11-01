@@ -1,3 +1,9 @@
+## 2026-11-01 11:20:21 EST — scribe `d815a790eaa5`
+Fix (#1482, #1528): production builds with the released Xcode whatever the caller set; the upload refuses a beta's app before it leaves the Mac, so no number is used.
+
+## 2026-11-01 11:20:21 EST — scribe `8e57ba98276c`
+Cut (#1482, #1528): Scribe 0.1 (219), the first build from the install lane with the released Xcode.
+
 ## 2026-11-01 11:20:09 EST — scribe `d7a53eedd32bd7cd9185ea322c0ae23f9e50eb68`
 Docs (#1535): the plain build notes reworded after a stranger's reading (1 clear of 15 before, 5 after, all 15 say what to look for), the rules and the cut's refusal say what it taught, and the audit says why build 218 never reached TestFlight.
 
