@@ -1,3 +1,6 @@
+## 2026-10-31 21:19:30 EDT — instant-data-swift `cb95ef5dceafd0cc6aba71ddc350a324880243cd`
+Perf (#1510, #1463): a live write's outbox body is stored compressed in its leaf (a format byte, its JSON's length, raw deflate) and its lifecycle derived from it, so on the phone's 10-31 store 6 of 8 live cells fit the 1,002-byte leaf where each took two to four overflow pages (red ef3862c9, green a6debcdf, fixes 4bb6ddc0 9b2b25ce 6efccd91; change log 5778f111). StorageIOExercises.aLiveWritesStepsByBTree (48 overlapping Scribe writes, one job): a save 16.3 -> 13.2 log frames (65.5 -> 53.1 KB), an echo 18.9 -> 17.5 (76.1 -> 70.6 KB). Budgets count JSON bytes; text bodies still read. Whole bundle on the merge with main: 1,641 tests, only load-timing failures, each passing alone on the mini; 154 tests in 10 suites at the final merge. Cost A/B (mini): transact hold within noise. An older build cannot read a compressed body.
+
 ## 2026-10-31 21:05:06 EDT — scribe `dae81af750452d32ac5942b1e7cf89121a3457d9`
 Release (#1482): Scribe 0.1 (215): instant-data-swift pinned exactly at 1.9.62 (plan 7387dbacf, pin d6e5f9a0a, cut 052c2b7c2, change log 6c79ab166), carrying #1494; #1515 and #1525 on main ride along.
 
