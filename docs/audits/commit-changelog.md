@@ -1,3 +1,12 @@
+## 2026-11-01 15:09:22 EST — scribe `dd1fe9d680fd989091d3fbbd74f25eb6b2c16c32`
+Fix (#1536): a fencepost waits for its recording's row, so a tester's recording stops reading "Not Synced".
+
+## 2026-11-01 15:09:22 EST — scribe `a46dbb0339426f87029668db17cc0557b65a3337`
+Fix (#1536): a person with no list starts with no words, so nobody's family or developer words are anyone's default.
+
+## 2026-11-01 15:09:22 EST — scribe `e1728726b7609e9994d83b3808b46102cb0d43db`
+Fix (#1536): transcriptions and transcriptionWords take the recording-child rule, so nobody but a recording's owners and shared writers writes them.
+
 ## 2026-11-01 15:00:48 EST — scribe `e2112b43a743770eb5efb35602ef7ca197303f1c`
 Release (#1482, #1528): Scribe 0.1 (220), the first TestFlight upload started by the install itself (from the iPad, the iPhone away); VALID, Internal and Friends, note guarded; 219's clearer notes bundled.
 
