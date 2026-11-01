@@ -1,3 +1,6 @@
+## 2026-11-01 10:40:03 EST — scribe `985fd2a35d0235959ff7378dd8f8d31bf01dfb64`
+Decisions (#1550, ADR 0118): no agent changes what he decided. A doubt is a question for him with his words, argued against by an independent model first; one list of what waits on his answer (the asks entity, live in production), one notice carrying its question id, his answer applied in his words, and a forged tap changes nothing.
+
 ## 2026-11-01 10:30:11 EST — scribe `01c49b76033f246765c33fcc03a4ef966b09757d`
 Fix (#1536): a recording's lines, lines in progress and attachments are written only by its owner set and shared writers; any signed-in account could write them under another person's recording id.
 
