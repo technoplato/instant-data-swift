@@ -1,3 +1,6 @@
+## 2026-11-01 10:41:24 EST — scribe `0e84e9f67dd771fbae0cbd993dd08ce925989ac3`
+Fix (#1535): the cut's What's New check refuses the cut cleanly when it hangs instead of raising a traceback, and its 30 s bound carries its measured reason (0.25 to 2.1 s at load 230-270 under utility QoS and nice 10) (landed in 30e0c16fc).
+
 ## 2026-11-01 10:40:03 EST — scribe `985fd2a35d0235959ff7378dd8f8d31bf01dfb64`
 Decisions (#1550, ADR 0118): no agent changes what he decided. A doubt is a question for him with his words, argued against by an independent model first; one list of what waits on his answer (the asks entity, live in production), one notice carrying its question id, his answer applied in his words, and a forged tap changes nothing.
 
