@@ -1,3 +1,6 @@
+## 2026-11-01 15:00:48 EST — scribe `e2112b43a743770eb5efb35602ef7ca197303f1c`
+Release (#1482, #1528): Scribe 0.1 (220), the first TestFlight upload started by the install itself (from the iPad, the iPhone away); VALID, Internal and Friends, note guarded; 219's clearer notes bundled.
+
 ## 2026-11-01 14:26:13 EST — scribe `7d907c39620e31f63cba6f6ffd7b8cd403691c65`
 Feature (#1559, #1573): when a broadcast ends, the Mac uploads its scrubbed frames and sound to his YouTube channel unlisted, with every line deep linked, captions and the link back in Scribe; only the one picture plan's scrub counts; the audio check mutes what it heard and hears again. Proved on his newest broadcast.
 
