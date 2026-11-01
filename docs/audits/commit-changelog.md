@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:22 EDT — scribe `d54939aaaefc748cd6ed38981323ba359d12f68e`
+schema(#1515): green: recordingClipboardEntries, a copy a row, and its backfill from the recording row's window (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:19 EDT — scribe `6eeb9ed22834df53a7a3f101113d7fd5626dde8d`
 fix(#1515): green: the home board selects what its rows decode, and Playback's and Recently Deleted's transcription rows too (landed in 7d9931b6f)
 
