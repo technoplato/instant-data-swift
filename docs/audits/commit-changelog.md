@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:46 EDT — scribe `afb997beecd383d778665bdbb5f410ab79ff1cf9`
+fix(#1515): every reader reports an older build's recording; a damaged copy costs only that copy (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:42 EDT — scribe `087f5468288b6746867c67b6f414d443d63397c9`
 fix(#1515): the board keeps the owner its where names, and names itself a known narrow query; WHATS-NEW for the next build (landed in 7d9931b6f)
 
