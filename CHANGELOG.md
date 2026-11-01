@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 10:54:56 p.m. EDT — `faae749d19b9` release(#1482): v1.9.64: a live write's outbox body stored compressed; the write recorder with its cost fixed
+
+- **Implementation commit:** `faae749d19b9aee408c0945a986fad2405782f9a`
+- **Change:** release(#1482): v1.9.64: a live write's outbox body stored compressed; the write recorder with its cost fixed
+- **Details:**
+  - The release document for v1.9.64, tagged from main (b2156d7d) for Scribe build 217: #1510/#1463 compressed outbox body (cb95ef5d) and #1510 write recorder with its cost fixed (9922c9bd), both READY FOR BUILD on #1482.
+  - Forward-only storage: an older version cannot read a compressed body; no API change.
+- **Files:**
+  - `docs/releases/v1.9.64.md` — #1482 the release: what the compressed body and the recorder change and what they measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-10@ld); no SpecStory capture
+
 ## October 31st, 2026 at 10:04:21 p.m. EDT — `f63de075cafd` perf(#1510): green: a statement shape's written b-trees are explained once a process for each schema, not once a store
 
 - **Implementation commit:** `f63de075cafdf381bcaf59639e3512f4a51c641a`
