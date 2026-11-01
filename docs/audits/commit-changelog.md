@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:34 EDT — scribe `bf0f68757961c29430effe80b6011cdf9e066c18`
+audit(#1515): every attribute measured from production, what lists and live queries send, the fixes and what is left (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:30 EDT — scribe `6fc802e49315b7057004f39541f35ee77dc6fa56`
 fix(#1526): green: a finished recording plays from its lines' own word times (landed in 7d9931b6f)
 
