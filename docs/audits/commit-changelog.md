@@ -1,3 +1,6 @@
+## 2026-11-01 10:53:23 EST — scribe `875dbd7bdbb4663b6f9c1b253c1f7e93ad049a96`
+Fix (#1536): a companion request names a recording its writer owns, so no stranger can put one into his follow-along's feed.
+
 ## 2026-11-01 10:52:43 EST — scribe `ca8ba1d6745f0031a5ab24d47bc4b4bec98edf16`
 Merge (#1530): scribe share shares lines in one action (the app's own row, a named state for every wait, the card the moment it passes, the og link; no link for a share that cannot pass), proved on 10 of his real lines (family names, the client's name, addresses, a phone number, spoken emails all scrubbed); a guard on protected links in scripts; the audit.
 
