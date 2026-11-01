@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 31st, 2026 at 9:53:15 p.m. EDT — `4cc67655b35d` release(#1482): v1.9.63: the outbox tail is one index entry, not a sort of every row
+
+- **Implementation commit:** `4cc67655b35da48d9503159485871d16cc366e83`
+- **Change:** release(#1482): v1.9.63: the outbox tail is one index entry, not a sort of every row
+- **Details:**
+  - The release document for v1.9.63, branched from v1.9.62 (c85a9531) with the source and test diff of main's merge 15629f06 (#1491 amendment 3, applied as dcbdc3b3), for Scribe build 216.
+  - No API or conversion change; opening a store adds instant_outbox_creation_order_idx when missing. The #1510 write recorder (d3b08d41, +0.26 ms a tight-loop transact) and compressed body (cb95ef5d) are not in it: neither is marked ready.
+- **Files:**
+  - `docs/releases/v1.9.63.md` — #1482 the release: what #1491 amendment 3 changes and what it measured
+  - `PROGRESS.md` — #1482 the release checkpoint
+- **User context (verbatim):**
+  > get the performance wins onto his devices
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-ship-9@ld); no SpecStory capture
+
 ## October 31st, 2026 at 9:19:15 p.m. EDT — `7d9761965a74` docs(#1510): amendment 2 measured: a save 16.3 -> 13.2 log frames, an echo 18.9 -> 17.5 (the body's overflow and page 1)
 
 - **Implementation commit:** `7d9761965a74839e158794fb759b2249cb0f8dd9`

@@ -1,3 +1,12 @@
+## 2026-10-31 21:58:17 EDT — scribe `ddf8cc6f7dee449fa27238aa5d5e61293fba4514`
+Release (#1482): Scribe 0.1 (216): instant-data-swift pinned exactly at 1.9.63 (plan c3cea8acb, pin 3bb2d2eb1, cut d7e938345, change log fff6a628a), carrying #1491 amendment 3; nothing else on Scribe main since 215.
+
+## 2026-10-31 21:58:17 EDT — instant-data-swift `b92da3bdd82601d9862ac174b9ac090bddc97739`
+Release (#1482): v1.9.63 tagged on ae52f3d7 (perf dcbdc3b3, release document 4cc67655, change log ae52f3d7), a release branch off v1.9.62 with the source and test diff of main's 15629f06 (#1491 amendment 3: the outbox tail is one entry of a creation-order index, not a sort of every row; transact hold p50 2.70 -> 2.60 ms, plan hold 1.35 -> 1.04 ms) applied, merged here (main's code kept over cb95ef5d). Leaves out the #1510 write recorder (d3b08d41) and compressed body (cb95ef5d). No API or conversion change; the store adds one index on open.
+
+## 2026-10-31 21:19:30 EDT — instant-data-swift `cb95ef5dceafd0cc6aba71ddc350a324880243cd`
+Perf (#1510, #1463): a live write's outbox body is stored compressed in its leaf (a format byte, its JSON's length, raw deflate) and its lifecycle derived from it, so on the phone's 10-31 store 6 of 8 live cells fit the 1,002-byte leaf where each took two to four overflow pages (red ef3862c9, green a6debcdf, fixes 4bb6ddc0 9b2b25ce 6efccd91; change log 5778f111). StorageIOExercises.aLiveWritesStepsByBTree (48 overlapping Scribe writes, one job): a save 16.3 -> 13.2 log frames (65.5 -> 53.1 KB), an echo 18.9 -> 17.5 (76.1 -> 70.6 KB). Budgets count JSON bytes; text bodies still read. Whole bundle on the merge with main: 1,641 tests, only load-timing failures, each passing alone on the mini; 154 tests in 10 suites at the final merge. Cost A/B (mini): transact hold within noise. An older build cannot read a compressed body.
+
 ## 2026-10-31 21:05:06 EDT — scribe `dae81af750452d32ac5942b1e7cf89121a3457d9`
 Release (#1482): Scribe 0.1 (215): instant-data-swift pinned exactly at 1.9.62 (plan 7387dbacf, pin d6e5f9a0a, cut 052c2b7c2, change log 6c79ab166), carrying #1494; #1515 and #1525 on main ride along.
 
