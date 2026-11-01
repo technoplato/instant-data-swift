@@ -1,3 +1,6 @@
+## 2026-11-01 10:34:02 EST — scribe `91560bc823652e1dc5898ebd8ac23e36371d6b8a`
+Merge (#1530): og.pisspoursoftware.xyz carries every protected words, tracker and books path with a wordless card; his passed shares are public scrubbed pages (indexed, sitemap, IndexNow, 410 when unshared) kept in step by the card service (a 2 s look, a 10-minute sweep, a second leak check); a sealed line left the page 0.7 s after the seal on the throwaway proof.
+
 ## 2026-11-01 10:32:25 EST — scribe `08f9b40becc7243b40adf53567105b5513b291d4`
 Merge (#1551): the Vakyume install page drafted behind Cloudflare Access at vakyume.pisspoursoftware.xyz (a KeepAlive page server on the mini, his login only; the #1547 header sweep passes; nothing public); implementation 385ef98c0.
 
