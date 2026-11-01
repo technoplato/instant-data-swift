@@ -1,3 +1,6 @@
+## 2026-11-01 00:03:36 EDT — scribe `dfdfd52241049527898ea17738d3d856cc55fe33`
+fix(#1515): a window's entry keeps its own id; only the comparison with a row's folds case (landed in 7d9931b6f)
+
 ## 2026-11-01 00:03:34 EDT — scribe `bf0f68757961c29430effe80b6011cdf9e066c18`
 audit(#1515): every attribute measured from production, what lists and live queries send, the fixes and what is left (landed in 7d9931b6f)
 
