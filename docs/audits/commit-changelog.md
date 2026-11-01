@@ -1,3 +1,9 @@
+## 2026-10-31 22:57:37 EDT — scribe `96a09bf420ba7c0e62653e8134eef20366e576d5`
+Release (#1482): Scribe 0.1 (217): instant-data-swift pinned exactly at 1.9.64 (plan 067c58e95, #1510 bridge 526dfad7d, pin 95e2ab528, cut 5f2cb7814, change log 8ee334f52), carrying #1510/#1463's compressed outbox body and #1510's write recorder; #1507 (b, c) and #1506 line labels ride along from main.
+
+## 2026-10-31 22:57:37 EDT — instant-data-swift `477797eeeeba61750257d4b94e09256503b5a85f`
+Release (#1482): v1.9.64 tagged on 5067e0fe (release document faae749d, change log 5067e0fe), from main b2156d7d: #1510/#1463 compressed outbox body (cb95ef5d) and #1510's write recorder with its cost fixed (9922c9bd). Forward-only storage; no API change. Focused suites: 139 tests in 10 suites passed (mini).
+
 ## 2026-10-31 22:46:10 EDT — scribe `d5a41fff48a6b3b73930e03732788282368df84e`
 Perf (#1507, #1506): landing 2 of perf-waste-fixes. Every energy-ledger minute row carries the process's memory (footprint, lifetime peak, Neural Engine footprint) from the proc_pid_rusage read it already makes; the interface bytes come from the kernel's 64-bit counters with each interface's index, so a VPN tunnel made again counts from zero (55,128 of the VPN's 58,119 MB on the 10-31 pull were 18 such restarts read as 32-bit wraps) (red f7aa36d60, green ef4ac5b34, test fix 5398cf32b). A recording's line labels select what a chip reads, 186 of 423 bytes a row (red 3d2e6aeda, green 1fe01dd57). The wasted-work audit's addendum (7db8fc4c0). 168 + 16 tests pass on the merged branch.
 
