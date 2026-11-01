@@ -1,3 +1,12 @@
+## 2026-11-01 18:38:05 EST — scribe `53432385b1820ba2692813b9f4f20ecf7b03a592`
+Feature (#1576): spotter's publisher can push to GitHub, but only as the PissPour account, from its own gh folder or a token he made; never this Mac's usual login, through which every agent pushes Scribe. Tag, release files, then main, then the tap; it refuses a public history that names anyone else (landed in 44ed59d84).
+
+## 2026-11-01 18:30:12 EST — scribe `08d499efca083f15a89695212454e1a54dd0be24`
+Feature (#1576): spotter's page and install redirect as a Worker with no binding and no fetch, deployed so the public bypass is created only after the name points at the Worker, and a before/after of every setting and name a stranger can reach (landed in d2822f37d).
+
+## 2026-11-01 18:24:47 EST — scribe `fab90b90ba4b58b5cd22db5442936f93e252404f`
+Rename (#1576): the watcher prototype is spotter, his name for it; every name in one file, and answers' ids under a namespace that never follows a later rename (landed in d2822f37d).
+
 ## 2026-11-01 18:32:17 EST — scribe `8f77f3c6ed65d8a9c3fc1065fefcadba4db29ed7`
 Fix (#1538): an agent's files start the agents graph sync alone (com.scribe.graph-sync-agents, about 2 s of CPU a run) and origin/main starts the full one; a run that finds the other's lock waits up to 2 minutes instead of skipping its change. One job watching everything had run back to back at 6 s of CPU a run (landed in 6b43b0ae8).
 
