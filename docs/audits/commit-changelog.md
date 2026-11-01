@@ -1,3 +1,9 @@
+## 2026-11-01 09:58:53 EST — foldkit `1e8c5473558e1e8c93a4b1dd7cb7cf8416a8f65b`
+Feature (#1547): siteSourceHeader() on technoplato/foldkit main: books and casino name where their code lives in their first line, and their READMEs link back; casino's live pages carry the line.
+
+## 2026-11-01 09:58:53 EST — scribe `b3c8b90228f31637612309dc7c1dc83e831da8b0`
+Fix (#1547): the daily site-headers sweep runs under launchd (tunnels from plists, children at application policy, a slow gh read retried once and never read as a missing README); 4 sites pass, issues. pending #1538 (landed in 93248126a and fae2a5ae4).
+
 ## 2026-11-01 09:55:55 EST — scribe `5d2e851075959fb57bbf938cdffa6654715e8a53`
 Fix (#1545): the Durable Object chain listener backs off properly from providers that refuse Cloudflare egress: one backfill retry per address, and the reconnect backoff starts over only after a socket holds its subscriptions 60 s (it had opened 209 sockets in 20 minutes) (landed in d12bcce76).
 
