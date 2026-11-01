@@ -1,3 +1,6 @@
+## 2026-11-01 10:24:38 EST — scribe `a703524c47a710627bac8472c05f6024880d3829`
+Feature (#1542): sell an emoji for exactly $14.28 over x402 from a Cloudflare Worker (devnet and Base Sepolia; mainnet shut), the emoji schema in production, and a reconciler that writes each sale to Instant only after its own chain read; 512e43550 lands its lazy schema import.
+
 ## 2026-11-01 10:19:40 EST — scribe `3c1225ac824a07edde2e90549afc46e4caf24392`
 Merge (#1549): proof of now landed on main: Scribe's recursive frames as a protocol a stranger can check (ADR 0117, docs/proof-of-now/, scripts/proof-of-now/, 48 tests); no app code, schema or FEATURES.md change.
 
