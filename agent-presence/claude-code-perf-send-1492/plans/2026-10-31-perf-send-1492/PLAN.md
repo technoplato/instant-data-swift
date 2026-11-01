@@ -67,3 +67,14 @@ of the stored text. The claim and the acknowledgement reuse it when the stored b
 it as before when they do not (a body written by an earlier process or changed since). Touching adds
 Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift (`eachStepOfALiveWriteFingerprintsItsEffectOnce`'s
 pin only).
+
+## Amendment 2 (#1497, #1496)
+
+#1497: the kept fingerprint is keyed by a hash of its six inputs (id, createdAt, transaction, rollback, overlay state,
+receipt version), not by the stored body's SHA-256: two receipt checks pass an in-memory write, not one decoded from
+the row, and the inputs key is exact for every caller with no assumption that a body decodes back to the inputs it was
+encoded from (ca5c830e after a55a0912).
+
+#1496: `instantLiveWithTimeout` stays as it is for its once-per-connection callers: a two-child task group awaits its
+children, and `liveTimeoutDoesNotAwaitCancellationInsensitiveWork` requires the timeout to return without the work.
+The send path's pin lives in InstantLiveSendPathTests, since InstantFastDrainTests never sends on a socket.

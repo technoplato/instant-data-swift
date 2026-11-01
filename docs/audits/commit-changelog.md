@@ -1,3 +1,15 @@
+## 2026-10-31 19:31:14 EDT — instant-data-swift `b60a2c093ac47ef23378dfa75444f1769bb8e764`
+Perf (#1497, #1496): the delivery claim and the acknowledgement reuse the receipt fingerprint the save computed, keyed by a hash of its six inputs (red 13699326, green a55a0912, inputs key ca5c830e), and a send starts one task where it started three, with one deadline watcher per socket and no timer per send (red af675e6b, bench 7d024be3, writer 0a7a9595, 4bd0f806, 66d372e8, 40e83b28; change log 848d72e9). Mac mini, release: acknowledgement CPU per call 834 -> 506 us alone and 613 -> 419 us loaded, outboxClaim 2,278 -> 2,051 us loaded, localSave 1,733 -> 1,914 us loaded (the key's hash; #1523 carries the rest), save, claim and acknowledgement together -5% loaded (recording exercise against main 62c16ebf, interleaved in one job); CPU per send 24.58 -> 20.69 us, tasks 63,000 -> 21,001 for 21,000 sends, the 5.5 s timer tail 0.60 -> 0.35 ms (measureTheSendPath against 7d024be3).
+
+## 2026-10-31 19:08:57 EDT — scribe `e14305ded95347015e7136a6d1cd8a240092e790`
+Schema (#1515): buildDetails, one immutable row per owner and content hash, linked from recordings, transcriptions and sharedRecordings (ADR 0109).
+
+## 2026-10-31 19:03:07 EDT — scribe `2cb05b71e53b4c732aa6361cc9c85088215ece38`
+Release (#1482): Scribe 0.1 (213) cut from main 97fb01384 (plan dfb5695b0, cut 83dc64994, change log 3869847b5), carrying #1503, #1506 (landing 1), #1508 and #1507/#1510's Scribe side; instant-data-swift stays pinned exactly at 1.9.60 (no library fix after it has a READY FOR BUILD line).
+
+## 2026-10-31 19:02:52 EDT — instant-data-swift `3374ba97eaf69ab94061a5656f7ad44fdfd7ebde`
+Perf (#1504): every store connection keeps SQLite's temporary structures in memory: the writer from the end of its bootstrap (after the one-time migrations, before the server apply's staging tables) and when it reopens, every read connection at open (red 6ec56cba, green a92b8ca4; change log c843402c). A device's ledger counted 34,124-36,677 temporary-file writes an hour of recording (19-49 MB/h) and 470,007 across eight launches; expected 0. 40 tests in 8 suites pass on the branch merged with main. Plan amendment 3: #1500 waits for #1165 (a local write to an entity on disk but not in memory erases its other facts; red test confirmed).
+
 ## 2026-10-31 16:08:46 EDT — scribe `655e5f00eb2fe4eff2ab8a0a9bb4059b43520ce2`
 Fix (#1508): the recording Live Activity drops its 60 s keep-alive and its 90 s stale date (Michael chose option 1); new words still go every 5 s behind and 30 s in front and state at once, the clock counts on the device by itself, and about 60 of the 107 updates an hour go away.
 
