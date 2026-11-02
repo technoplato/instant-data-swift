@@ -1,3 +1,6 @@
+## 2026-11-01 22:22:29 EST — scribe `b7d966e70b4862e77037a846ee45514a72c400a8`
+Fix (#478): a held osascript waits out a napping Safari instead of killing it at 30 s, because a kill started macOS's check over and added work for a starved Safari.
+
 ## 2026-11-01 22:20:32 EST — scribe `60a685ab1e56b7b3881fa1e11e92f41cc3e8c252`
 Measure (#1596): tail_cost.py reads a rotating listener's chain of session files as one (the listener now clears itself into a new session at about 120K tokens), so the before and after of the listener's watch are measured the same way.
 
