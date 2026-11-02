@@ -1,3 +1,6 @@
+## 2026-11-01 19:08:37 EST — scribe `ba33e02af003fd4fef0ff2f75b005284725a4da5`
+Fix (#1535): InstantBuildNotes lists the 8 attributes #1538 added to builds, so the schema-match test passes again (landed in e9761a6aa).
+
 ## 2026-11-01 18:51:07 EST — scribe `f67df399fd5e2b3229a21881bab5907110ffd8ec`
 Fix (#1588): a short clip's library item, made before its words and with no show, is written with its show before its link to the show; Instant checks a link from a row that exists against both rows as they were before the transaction, so the words of three short videos from new channels had never landed (landed in 31824f780).
 
