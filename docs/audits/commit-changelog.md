@@ -1,3 +1,6 @@
+## 2026-11-01 21:52:29 EST — scribe `e51dba1e046af7d3f67374aad5d5f74b1e3b2ab1`
+Feature (#1598): the listener clears and rereads at 120K tokens instead of growing to 966K, with a lease so there is never a second listener.
+
 ## 2026-11-01 21:52:12 EST — scribe `e17b711b261231a99b9fb7939bc15fb6bd64fba5`
 Feature (#1530): every link the app hands out is on og.pisspoursoftware.xyz, a share's link waits on the privacy check and its preview, and an og link opens the app at its moment, proved on an iOS simulator.
 
