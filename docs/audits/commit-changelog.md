@@ -1,3 +1,6 @@
+## 2026-11-01 19:15:08 EST — scribe `1f97f77570301a0ea08969520c09924de756bbc1`
+Feature (#1235): the iPhone's live stream to Your Mac travels as Opus, AudioToolbox's on both ends, at 48 kHz and 50 kbps (about 20 MB an hour instead of 345.6; gold WER +0.20, AMI -0.11, voice prints within 0.008), fed as Float32 so nothing waits past a capture buffer; the server takes encoding=opus and keeps linear16; each KeepAlive pings the Mac and no pong in 5 s ends the stream. Server 34bb4754f deployed on the mini.
+
 ## 2026-11-01 19:08:37 EST — scribe `ba33e02af003fd4fef0ff2f75b005284725a4da5`
 Fix (#1535): InstantBuildNotes lists the 8 attributes #1538 added to builds, so the schema-match test passes again (landed in e9761a6aa).
 
