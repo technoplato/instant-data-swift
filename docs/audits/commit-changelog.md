@@ -1,3 +1,9 @@
+## 2026-11-01 22:20:32 EST — scribe `60a685ab1e56b7b3881fa1e11e92f41cc3e8c252`
+Measure (#1596): tail_cost.py reads a rotating listener's chain of session files as one (the listener now clears itself into a new session at about 120K tokens), so the before and after of the listener's watch are measured the same way.
+
+## 2026-11-01 22:20:32 EST — scribe `12aaf935a0460f6e18296588d029919a61e63f5f`
+Fix (#1596): the daemon's status row says a listener stopped reading, not that its process ended, while that process still runs; on 2026-11-01 at 18:59 it had said process 10675 ended while it ran. Live at the mirror's next start.
+
 ## 2026-11-01 22:13:53 EST — scribe `4764dc9455d2ee2535aeeb65cf91bc11f59dc91e`
 Feature (#1596): the listener's one watch, `scribe capture watch --mode listener`: every line as it lands (p50 0.09 s after the mirror vs 7.67 s, side by side on 39 lines), his typed messages and photos from every recording in the same stream, its own cursors, evidence through a cache instead of a per-batch scan of every session log, and a wait between recordings that wakes only for something new; push from the file system, not a 500 ms poll; the mirror untouched.
 
