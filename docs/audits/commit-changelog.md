@@ -1,3 +1,6 @@
+## 2026-11-02 00:12:34 EST — scribe `24b3b2afc3a62daf7b424997842bd485d181439c`
+Audit (#1601): NVIDIA NemotronLabs RE-USE (9.6M, OpenMDW-1.1, bidirectional) measured as a speech cleanup option on his audio, with a checked Apple-silicon port (PyTorch + Metal kernels, 4.1e-7 vs NVIDIA's code) and the prototype stage in scripts/speech-cleanup; PESQ 1.28 to 2.55 with no thinner tone, but his own words do not improve, it deletes TV lines and merges speakers, and it costs 0.61x real time on the mini. Proposal: never before the transcriber. Landed in 1f53332ad.
+
 ## 2026-11-02 00:00:56 EST — scribe `80ccdf2277508a7a0db826bbcce13ae234b71df6`
 Test (#1550): Decisions' reference pictures from the simulator, recorded and repeated on the landed code; an option's cost reads at 7.07:1, from 2.40:1.
 
