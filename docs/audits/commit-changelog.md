@@ -1,3 +1,6 @@
+## 2026-11-02 01:53:14 EST — scribe `7cd155188e52e66c8b04bb7d3976c5a210ad7076`
+Wallet (#1533): what its first run on a simulator showed: the screen says where the key is, a quote reads a node's refusal to estimate for a wallet that cannot pay as its answer, a slow first activity read is read once more before a banner, and "an Ethereum".
+
 ## 2026-11-02 01:16:47 EST — scribe `2c1300ae372b72594246f6fcca80d37164b4165c`
 Fix (#1599): build 227's plain note fits the 30 words a line.
 
