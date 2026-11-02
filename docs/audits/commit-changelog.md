@@ -1,3 +1,6 @@
+## 2026-11-01 22:08:31 EST — scribe `6c780b7cc8fa76e3e6781073e3303668cc3b3806`
+Fix (#478): the YouTube companion's Safari scans share one held osascript, and a failure line says Safari's priority and the load. App Nap keeps a Safari not in front at priority 4, and build load starves that band; the grant was fine since 10-04.
+
 ## 2026-11-01 21:52:29 EST — scribe `e51dba1e046af7d3f67374aad5d5f74b1e3b2ab1`
 Feature (#1598): the listener clears and rereads at 120K tokens instead of growing to 966K, with a lease so there is never a second listener.
 
