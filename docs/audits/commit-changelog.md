@@ -1,3 +1,6 @@
+## 2026-11-01 22:44:42 EST — scribe `97709ad9c81ac7e0f55624fb4521916cf7bb69cc`
+Fix (#1545): the eviction probe rides a public feed; an outbound socket held an object 15 minutes, then it vanished with no close event.
+
 ## 2026-11-01 22:22:29 EST — scribe `b7d966e70b4862e77037a846ee45514a72c400a8`
 Fix (#478): a held osascript waits out a napping Safari instead of killing it at 30 s, because a kill started macOS's check over and added work for a starved Safari.
 
