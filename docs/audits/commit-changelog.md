@@ -1,3 +1,6 @@
+## 2026-11-02 00:00:56 EST — scribe `80ccdf2277508a7a0db826bbcce13ae234b71df6`
+Test (#1550): Decisions' reference pictures from the simulator, recorded and repeated on the landed code; an option's cost reads at 7.07:1, from 2.40:1.
+
 ## 2026-11-01 23:37:09 EST — scribe `6e44a303efc06cd032ced3403b90d02e02f4c215`
 Docs (#1596): the after numbers of the listener's one watch, measured the same way as the before (lines 0.2-0.5 s from the mirror, no empty wakes from the watch, busy ~20M tokens an hour against 65-188M), and the listener's other loops wait as background commands between recordings too.
 
