@@ -1,3 +1,6 @@
+## 2026-11-02 02:47:08 EST — scribe `5f8da30084ddb31ee4bb037bc61ccb8cceb04e66`
+Feature (#1457): Lines, Notes, Photos and Chat at the top of a live recording (design A, round 3); the picture viewer's strip drag selects by its offset; a scroll frame monitor that outlived its screen stops (a 60 Hz display link, older than this work); Scribe 0.1 (229). The build note fix is 93a26179a.
+
 ## 2026-11-02 01:53:14 EST — scribe `7cd155188e52e66c8b04bb7d3976c5a210ad7076`
 Wallet (#1533): what its first run on a simulator showed: the screen says where the key is, a quote reads a node's refusal to estimate for a wallet that cannot pay as its answer, a slow first activity read is read once more before a banner, and "an Ethereum".
 
