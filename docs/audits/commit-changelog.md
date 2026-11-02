@@ -1,3 +1,6 @@
+## 2026-11-01 22:13:53 EST — scribe `4764dc9455d2ee2535aeeb65cf91bc11f59dc91e`
+Feature (#1596): the listener's one watch, `scribe capture watch --mode listener`: every line as it lands (p50 0.09 s after the mirror vs 7.67 s, side by side on 39 lines), his typed messages and photos from every recording in the same stream, its own cursors, evidence through a cache instead of a per-batch scan of every session log, and a wait between recordings that wakes only for something new; push from the file system, not a 500 ms poll; the mirror untouched.
+
 ## 2026-11-01 22:08:31 EST — scribe `6c780b7cc8fa76e3e6781073e3303668cc3b3806`
 Fix (#478): the YouTube companion's Safari scans share one held osascript, and a failure line says Safari's priority and the load. App Nap keeps a Safari not in front at priority 4, and build load starves that band; the grant was fine since 10-04.
 
