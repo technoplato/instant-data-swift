@@ -1,3 +1,9 @@
+## 2026-11-01 21:40:52 EST — scribe `7cb8df400b51ebd8d1b6dbe2c04034879eb2956f`
+Fix (#1597): the mirror stamps the agent rows it carries over or closes a millisecond before the beat, so a new recording's live agents rank first in At work's 60 freshest rows (a heartbeat tie, broken by entity id, had kept 2 of 16 in).
+
+## 2026-11-01 21:37:40 EST — scribe `317af746e7028e7d1324387fb9073b50831d024c`
+Fix (#1597): the mirror's agent rows retry a write with no answer at the next beat instead of in 10 minutes, 20 rows a transaction, live first, keeping what landed; a new recording's one 154-row transaction had passed the 5 s bound 27 times since 2026-10-17, 263 minutes of a stale At work.
+
 ## 2026-11-01 21:38:26 EST — scribe `173be4ee4820c1d67ce7741664a5c42189a8618b`
 Wallet (#1533): send money by voice, a wallet in the drawer and the terminal, addresses and emoji on named speakers; the wallet reads the line the recording kept, so one spoken sentence pays once.
 
