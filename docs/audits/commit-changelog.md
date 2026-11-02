@@ -1,3 +1,6 @@
+## 2026-11-02 05:31:46 EST — scribe `f8dd7619abc1ef6ce42b2d053954fb9663e29f08`
+Fix (#1530): the search and videos installers copy links.ts, which the flip's model.ts imports (a hand-written file list lacked it; a scratch copy failed to load without it); both services reinstalled from main and print og links. Plan amendment E 528164576; change log f790e2fdd.
+
 ## 2026-11-02 05:26:28 EST — scribe `3d74ab2879ff0161d71c3220f8d2308f9baff418`
 Wallet (#1604): one wallet for every device on his iCloud account (14fc7a9b6 reverted; one keychain group for the iPhone and iPad, Mac and Vision Pro apps; the key made first is the wallet, any other an extra account), and one sentence two devices hear signs once, claimed in Instant by two unique keys. ADR 0113 amendment G; walletSendRequests.spokenKeyEven and spokenKeyOdd pushed to production 05:26 EST.
 
