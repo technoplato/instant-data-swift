@@ -1,3 +1,6 @@
+## 2026-11-01 21:49:21 EST — scribe `b77eaf271fab5be875026530f8055d12ea43102a`
+Link previews (#1530): words and issues links preview through og: one Cloudflare redirect rule, which runs before Access, sends only link-preview fetchers with no Access cookie to the same page on og, so Messages reads "Scribe" or a share's scrubbed quote instead of the Access sign-in.
+
 ## 2026-11-01 21:44:34 EST — scribe `72662f2fa96099a9da7877190fdcf56e98c6bdc2`
 Fix (#1576): the release tool reads the publisher's own sign-in by name, which neither uses nor changes the active account, so the next release needs no new sign-in; the Homebrew formula drops a redundant version line and passes brew audit; the audit records what went public and what is not yet proven.
 
