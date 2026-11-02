@@ -1,3 +1,6 @@
+## 2026-11-01 21:38:26 EST — scribe `173be4ee4820c1d67ce7741664a5c42189a8618b`
+Wallet (#1533): send money by voice, a wallet in the drawer and the terminal, addresses and emoji on named speakers; the wallet reads the line the recording kept, so one spoken sentence pays once.
+
 ## 2026-11-01 20:39:39 EST — scribe `578b8b5ed8b2e06e80cd12f2651b3e09a3620487`
 Feature (#1550): Decisions in the drawer: everything waiting on his answer, drawn by native SwiftUI from typed rows, answered in one tap; the app's write goes through the Instant client in one transaction, and a live test proves it through the real rules.
 
