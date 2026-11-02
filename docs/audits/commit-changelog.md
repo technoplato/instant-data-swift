@@ -1,3 +1,6 @@
+## 2026-11-01 20:39:39 EST — scribe `578b8b5ed8b2e06e80cd12f2651b3e09a3620487`
+Feature (#1550): Decisions in the drawer: everything waiting on his answer, drawn by native SwiftUI from typed rows, answered in one tap; the app's write goes through the Instant client in one transaction, and a live test proves it through the real rules.
+
 ## 2026-11-01 19:15:08 EST — scribe `1f97f77570301a0ea08969520c09924de756bbc1`
 Feature (#1235): the iPhone's live stream to Your Mac travels as Opus, AudioToolbox's on both ends, at 48 kHz and 50 kbps (about 20 MB an hour instead of 345.6; gold WER +0.20, AMI -0.11, voice prints within 0.008), fed as Float32 so nothing waits past a capture buffer; the server takes encoding=opus and keeps linear16; each KeepAlive pings the Mac and no pong in 5 s ends the stream. Server 34bb4754f deployed on the mini.
 
