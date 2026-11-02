@@ -1,3 +1,9 @@
+## 2026-11-01 21:44:34 EST — scribe `72662f2fa96099a9da7877190fdcf56e98c6bdc2`
+Fix (#1576): the release tool reads the publisher's own sign-in by name, which neither uses nor changes the active account, so the next release needs no new sign-in; the Homebrew formula drops a redundant version line and passes brew audit; the audit records what went public and what is not yet proven.
+
+## 2026-11-01 21:26:47 EST — scribe `897e20b0dee0cc2610bfd16db47ebc2db7ad0e44`
+Fix (#1576): a public release runs on Macs older than the build machine and one commit builds identical bytes: the Apple Silicon program comes from the runtime vendor's own build, checked against the registry, instead of the local Homebrew copy (minimum macOS 13.0, not 26.0), a release stops above that floor, and the archive holds no time.
+
 ## 2026-11-01 21:40:52 EST — scribe `7cb8df400b51ebd8d1b6dbe2c04034879eb2956f`
 Fix (#1597): the mirror stamps the agent rows it carries over or closes a millisecond before the beat, so a new recording's live agents rank first in At work's 60 freshest rows (a heartbeat tie, broken by entity id, had kept 2 of 16 in).
 
