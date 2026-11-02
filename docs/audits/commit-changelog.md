@@ -1,3 +1,6 @@
+## 2026-11-01 23:36:10 EST — scribe `c092ab3596df8ede60cf46089e438f0953f48f05`
+Feature (#1604): the voice wallet's keys are backed up in iCloud Keychain, end to end encrypted: one synchronizable item per key, named by its address, never updated or deleted; build 223's this-device-only item kept for good; a new phone takes the backed-up key with the same addresses and never makes a second; backed up at every launch and logged per chain. Red 1427e2fd0, green 64e0544df (146 package tests); ADR 0113 amendment E. Cut as build 225 (5a4b69e30).
+
 ## 2026-11-01 23:08:28 EST — scribe `bf5ff442e4cc56ad0653d6f70a37228f2a14120e`
 Tooling (#1605): agent-run and agent-progress-check, with their tests, now live in scripts/agent-run (imported exactly as installed, a1d1804c4) and reach ~/Scribe/tools only through install.py, which installs a commit on origin/main, records it in agent-run.installed.json, and refuses, naming the file, to write over a copy edited in place. Installed this commit at 22:56: each installed file's sha256 equals the commit's, and both suites pass from the repo and from ~/Scribe/tools.
 
