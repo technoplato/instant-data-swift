@@ -1,3 +1,6 @@
+## 2026-11-02 00:15:40 EST — scribe `3ac36c38a0fa50de784f0c44baf330f43e891ce7`
+Docs (#1601): the RE-USE audit timed Apple's Voice Isolation on the same Mac mini (0.0102-0.0106x real time), so RE-USE at 16 kHz is about 60 times as long, not the 40 times a laptop-vs-mini comparison gave; the card and the 5 GB of working copies removed are recorded. Landed in 446f9bee1.
+
 ## 2026-11-02 00:12:34 EST — scribe `24b3b2afc3a62daf7b424997842bd485d181439c`
 Audit (#1601): NVIDIA NemotronLabs RE-USE (9.6M, OpenMDW-1.1, bidirectional) measured as a speech cleanup option on his audio, with a checked Apple-silicon port (PyTorch + Metal kernels, 4.1e-7 vs NVIDIA's code) and the prototype stage in scripts/speech-cleanup; PESQ 1.28 to 2.55 with no thinner tone, but his own words do not improve, it deletes TV lines and merges speakers, and it costs 0.61x real time on the mini. Proposal: never before the transcriber. Landed in 1f53332ad.
 
