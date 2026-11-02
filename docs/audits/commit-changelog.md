@@ -1,3 +1,6 @@
+## 2026-11-01 23:08:28 EST — scribe `bf5ff442e4cc56ad0653d6f70a37228f2a14120e`
+Tooling (#1605): agent-run and agent-progress-check, with their tests, now live in scripts/agent-run (imported exactly as installed, a1d1804c4) and reach ~/Scribe/tools only through install.py, which installs a commit on origin/main, records it in agent-run.installed.json, and refuses, naming the file, to write over a copy edited in place. Installed this commit at 22:56: each installed file's sha256 equals the commit's, and both suites pass from the repo and from ~/Scribe/tools.
+
 ## 2026-11-01 22:50:28 EST — scribe `5871fe2233704c9f6b727b8277f4c920fe7455b6`
 Feature (#1530): plain links say what they are and when, with no words ("Scribe · Claude’s answer · Nov 1, 9:52 pm", "Scribe · Recording 344 · Nov 1 · 48 min", "Scribe · Issue 1530") and an 800x420 picture of the same words, from one facts record per recording of his that the card service keeps within 300 KV writes a day.
 
