@@ -1,3 +1,6 @@
+## 2026-11-02 05:20:28 EST — scribe `a2542468f20a505d7c13732e3602ade74d139162`
+Feature (#1543): his purpose in his own words on the drawer's Purpose page, and a gold star on each line where he says it, live and in playback (ADR 0115).
+
 ## 2026-11-02 02:47:08 EST — scribe `5f8da30084ddb31ee4bb037bc61ccb8cceb04e66`
 Feature (#1457): Lines, Notes, Photos and Chat at the top of a live recording (design A, round 3); the picture viewer's strip drag selects by its offset; a scroll frame monitor that outlived its screen stops (a 60 Hz display link, older than this work); Scribe 0.1 (229). The build note fix is 93a26179a.
 
