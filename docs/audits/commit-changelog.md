@@ -1,3 +1,21 @@
+## 2026-11-02 01:16:47 EST — scribe `2c1300ae372b72594246f6fcca80d37164b4165c`
+Fix (#1599): build 227's plain note fits the 30 words a line.
+
+## 2026-11-02 01:15:50 EST — scribe `64feaeda8eb2c09a2d5d63a5fa6024824b73ecfc`
+Cut (#1599): Scribe 0.1 (227): a link opens the Playground on one session, design, variant or attempt.
+
+## 2026-11-02 01:15:19 EST — scribe `88e2e9b0ee62bb4b85e256063f62183c86cadcc8`
+Feature (#1599): a link opens Scribe on a Playground session, design, variant or attempt, over any screen, through the reads its screens already make.
+
+## 2026-11-01 23:04:04 EST — scribe `f9e335c750140efb37cb785e5eb4dac638bb39ee`
+Fix (#1576): spotter no longer runs code from the folder it starts in: Bun's autoloads off, a release stops if they come back, and the installer runs an old copy from the root.
+
+## 2026-11-01 22:29:31 EST — scribe `42bdd3d8bf3d5909d1ec2b7215e36cd87c7485b1`
+Feature (#1599): the Playground's link on og and in the site files, scribe design prints it, and spotter's formula names its version.
+
+## 2026-11-01 22:08:58 EST — scribe `a7681612d7eebb832516bfeb37183682cc91139e`
+Fix (#1576): spotter's onboarding: help on every command, commands that run as printed, the Home Screen hint, the download on free static files with GitHub second, and /install pinned to its release.
+
 ## 2026-11-02 00:48:49 EST — scribe `2d99c2faf5c28283495a6183155aa27170b14fc2`
 Fix (#1604): a device restores only a wallet key its own kind of device backed up, so his iPad keeps its own wallet (or none) and one spoken send heard by both devices can never pay twice from one wallet; a new iPhone still takes the old iPhone's. Red 2e84c33f9, green 14fc7a9b6 (147 package tests); cut as build 226 (8219f50b2). The simslim proof (17792e4b4) held 19 of 19 claims on a simulator's real Keychain.
 
