@@ -1,3 +1,6 @@
+## 2026-11-02 00:48:49 EST — scribe `2d99c2faf5c28283495a6183155aa27170b14fc2`
+Fix (#1604): a device restores only a wallet key its own kind of device backed up, so his iPad keeps its own wallet (or none) and one spoken send heard by both devices can never pay twice from one wallet; a new iPhone still takes the old iPhone's. Red 2e84c33f9, green 14fc7a9b6 (147 package tests); cut as build 226 (8219f50b2). The simslim proof (17792e4b4) held 19 of 19 claims on a simulator's real Keychain.
+
 ## 2026-11-02 00:15:40 EST — scribe `3ac36c38a0fa50de784f0c44baf330f43e891ce7`
 Docs (#1601): the RE-USE audit timed Apple's Voice Isolation on the same Mac mini (0.0102-0.0106x real time), so RE-USE at 16 kHz is about 60 times as long, not the 40 times a laptop-vs-mini comparison gave; the card and the 5 GB of working copies removed are recorded. Landed in 446f9bee1.
 
