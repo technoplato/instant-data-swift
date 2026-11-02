@@ -1,3 +1,6 @@
+## 2026-11-02 15:38:36 EST — scribe `abb92d41b945a77d28298c993bc508e83a5c3d63`
+Fix (#1460): the real cause of the Your Mac drops: build 222's ping timer slept with try?, so the pong's cancel() woke it into "unanswered"; now it returns when cancelled (a copy of the shipped code: 110 of 2,000 answered pings reported unanswered, fixed 0).
+
 ## 2026-11-02 14:54:19 EST — scribe `334d1d216d6c4c838ec0245c1e8acb878f388c98`
 Fix (#1460): the iPhone reads its Your Mac socket apart from the transcript, from URLSession's own queue (bounded at 1,024 messages), so build 222's 5 s ping check no longer ends a stream whose Mac answered: URLSessionWebSocketTask hands a pong over only when receive() reaches it, and on 2026-11-02 the phone ended 56 of 58 streams while the Mac answered in 0.3 ms.
 
