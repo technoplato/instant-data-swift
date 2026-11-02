@@ -1,3 +1,6 @@
+## 2026-11-01 21:52:12 EST — scribe `e17b711b261231a99b9fb7939bc15fb6bd64fba5`
+Feature (#1530): every link the app hands out is on og.pisspoursoftware.xyz, a share's link waits on the privacy check and its preview, and an og link opens the app at its moment, proved on an iOS simulator.
+
 ## 2026-11-01 21:49:21 EST — scribe `b77eaf271fab5be875026530f8055d12ea43102a`
 Link previews (#1530): words and issues links preview through og: one Cloudflare redirect rule, which runs before Access, sends only link-preview fetchers with no Access cookie to the same page on og, so Messages reads "Scribe" or a share's scrubbed quote instead of the Access sign-in.
 
