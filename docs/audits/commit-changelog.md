@@ -1,3 +1,6 @@
+## 2026-11-01 22:50:28 EST — scribe `5871fe2233704c9f6b727b8277f4c920fe7455b6`
+Feature (#1530): plain links say what they are and when, with no words ("Scribe · Claude’s answer · Nov 1, 9:52 pm", "Scribe · Recording 344 · Nov 1 · 48 min", "Scribe · Issue 1530") and an 800x420 picture of the same words, from one facts record per recording of his that the card service keeps within 300 KV writes a day.
+
 ## 2026-11-01 22:44:42 EST — scribe `97709ad9c81ac7e0f55624fb4521916cf7bb69cc`
 Fix (#1545): the eviction probe rides a public feed; an outbound socket held an object 15 minutes, then it vanished with no close event.
 
