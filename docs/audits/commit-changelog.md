@@ -1,3 +1,6 @@
+## 2026-11-02 14:54:19 EST — scribe `334d1d216d6c4c838ec0245c1e8acb878f388c98`
+Fix (#1460): the iPhone reads its Your Mac socket apart from the transcript, from URLSession's own queue (bounded at 1,024 messages), so build 222's 5 s ping check no longer ends a stream whose Mac answered: URLSessionWebSocketTask hands a pong over only when receive() reaches it, and on 2026-11-02 the phone ended 56 of 58 streams while the Mac answered in 0.3 ms.
+
 ## 2026-11-02 05:47:13 EST — scribe `f12a111391f647cdf65537800f9bb31529c8a4b6`
 Docs (#1530): the flip's audit section and progress: links agents and the issues CLI hand out are og's, installed from main and proved on a real agent reply; the tap on his phone stays open. Change log e337ee726; landed 81e37774e.
 
