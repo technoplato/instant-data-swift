@@ -1,3 +1,6 @@
+## 2026-11-02 05:19:02 EST — scribe `5a2f3d4442f70c8b1e3836f24d12a198580d4118`
+Feature (#1530): the script builders and scribe reply hand out og links, now that his iPhone opens them (build 229): the mirror's commands, scribe search, the videos site, triage import and provenance build every link with links.ts on og.pisspoursoftware.xyz, and a words or issues link an agent typed goes out as its og link. Change log 7929a1882.
+
 ## 2026-11-02 05:20:28 EST — scribe `a2542468f20a505d7c13732e3602ade74d139162`
 Feature (#1543): his purpose in his own words on the drawer's Purpose page, and a gold star on each line where he says it, live and in playback (ADR 0115).
 
