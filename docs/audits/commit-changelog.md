@@ -1,3 +1,6 @@
+## 2026-11-02 05:26:28 EST — scribe `3d74ab2879ff0161d71c3220f8d2308f9baff418`
+Wallet (#1604): one wallet for every device on his iCloud account (14fc7a9b6 reverted; one keychain group for the iPhone and iPad, Mac and Vision Pro apps; the key made first is the wallet, any other an extra account), and one sentence two devices hear signs once, claimed in Instant by two unique keys. ADR 0113 amendment G; walletSendRequests.spokenKeyEven and spokenKeyOdd pushed to production 05:26 EST.
+
 ## 2026-11-02 05:19:02 EST — scribe `5a2f3d4442f70c8b1e3836f24d12a198580d4118`
 Feature (#1530): the script builders and scribe reply hand out og links, now that his iPhone opens them (build 229): the mirror's commands, scribe search, the videos site, triage import and provenance build every link with links.ts on og.pisspoursoftware.xyz, and a words or issues link an agent typed goes out as its og link. Change log 7929a1882.
 
