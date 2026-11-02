@@ -1,3 +1,9 @@
+## 2026-11-01 23:37:09 EST — scribe `6e44a303efc06cd032ced3403b90d02e02f4c215`
+Docs (#1596): the after numbers of the listener's one watch, measured the same way as the before (lines 0.2-0.5 s from the mirror, no empty wakes from the watch, busy ~20M tokens an hour against 65-188M), and the listener's other loops wait as background commands between recordings too.
+
+## 2026-11-01 23:37:09 EST — scribe `95912688971f6c502754aade94f1ed01f9944cb1`
+Fix (#1596): in the listener watch a mirror that is only slow wakes no one (it went to stderr); a mirror that is down, and its return, still print. The guide's coverage test is green again.
+
 ## 2026-11-01 23:36:10 EST — scribe `c092ab3596df8ede60cf46089e438f0953f48f05`
 Feature (#1604): the voice wallet's keys are backed up in iCloud Keychain, end to end encrypted: one synchronizable item per key, named by its address, never updated or deleted; build 223's this-device-only item kept for good; a new phone takes the backed-up key with the same addresses and never makes a second; backed up at every launch and logged per chain. Red 1427e2fd0, green 64e0544df (146 package tests); ADR 0113 amendment E. Cut as build 225 (5a4b69e30).
 
