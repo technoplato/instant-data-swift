@@ -1,3 +1,6 @@
+## 2026-11-02 05:47:13 EST — scribe `f12a111391f647cdf65537800f9bb31529c8a4b6`
+Docs (#1530): the flip's audit section and progress: links agents and the issues CLI hand out are og's, installed from main and proved on a real agent reply; the tap on his phone stays open. Change log e337ee726; landed 81e37774e.
+
 ## 2026-11-02 05:31:46 EST — scribe `f8dd7619abc1ef6ce42b2d053954fb9663e29f08`
 Fix (#1530): the search and videos installers copy links.ts, which the flip's model.ts imports (a hand-written file list lacked it; a scratch copy failed to load without it); both services reinstalled from main and print og links. Plan amendment E 528164576; change log f790e2fdd.
 
