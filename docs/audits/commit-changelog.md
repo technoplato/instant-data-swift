@@ -1,3 +1,6 @@
+## 2026-11-03 04:56:31 EST — scribe `5031e01d24693814d4d15cba40b026f32998cec1`
+Fix (#1606): the listener watch's stderr note names the command its background listing waits on; installed and checked on his Mac (six lines printed 61-913 ms after a separate writer appended them while a listing ran past 5 s), and a second ps stall seen live (04:51:40-04:54:30, load up to 917) where the bounded runner returned at 2,006 ms.
+
 ## 2026-11-03 04:49:01 EST — scribe `f7e420cff59808bed5119011ff451e7ec3713538`
 Fix (#1606): no ps, lsof or cmux call holds the listener's line watch or a scribe command: on 2026-11-01 the mirror wrote Recording 344 #263-#290 on time, but the watch re-read the process table on its loop and scribe decision add named its agent from ps, and both sat 3 minutes in a ps that stopped answering; every listing now has a 2 s limit that holds (a shell between: 2,005 ms against 2,000, 6,070 on main) and the watch lists in the background, printing each line at once (within 1 s against 3,054 ms with a 4 s hang).
 
