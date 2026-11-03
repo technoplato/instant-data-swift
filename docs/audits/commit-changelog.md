@@ -1,3 +1,6 @@
+## 2026-11-02 23:47:54 EST — scribe `fc30632617e382e5f84f10243e64b7ba150bed86`
+Feature (#1204): Scribe Playback fills the iPad's screen (a full-screen cover where a sheet would be a form sheet, the iPhone's sheet unchanged), its lines in one centered reading column of about 100 characters; landed in 5ec7e4016.
+
 ## 2026-11-02 22:58:25 EST — scribe `6d08acd7b7888a83e6ebdb47d556890ec43b34db`
 Fix (#1619): the recording catalog worker queues a just-finished copy's last stretch at once (Recording 349's waited 86.6 s for the listing), checks every 15 s, downloads four at a time, logs every value a memory hold tested, and its installer waits for launchd to let the old job go (error 5 left it unloaded). Change log 40d20da40.
 
