@@ -1,3 +1,6 @@
+## 2026-11-03 00:44:21 EST — scribe `9b0dfd785d2e20d16d0fd5174e49f34441c3bd43`
+Docs (#1482, #1528): build 233's TestFlight note works for a tester who installed the app today: its plain block is one Nothing to see line and a Try any new tester can do, instead of a Try that sent testers to one person's recording; stories unchanged.
+
 ## 2026-11-03 00:33:27 EST — scribe `a4a129a4ae76e9685bd1a0534896aa3706a409f7`
 Feature (#1621): spotter, the CLI in Homebrew, downloads Scribe's speech models in its setup (832 MB, shared with Scribe for Mac's copy) and transcribes a file on the Mac through spotter-speech, a helper built from TranscriptionEngine; the publisher ships it as its own archive. A clean home on the Mac mini reached its first transcript in 159.9 s.
 
