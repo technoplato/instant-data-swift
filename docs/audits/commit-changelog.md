@@ -1,3 +1,6 @@
+## 2026-11-03 07:57:05 EST — scribe `b1cc6003c750082871a839ae8f8d015e79218ec7`
+Fix (#1591): a recording number the diarizer mixed keeps no name of the account holder: the stream checks a matched speaker's lines one at a time against his print (half or more of the line time under 0.25 is not him), and the evidence rides on the voice summary so both learners take the name off; measured on 19 numbers in 7 recordings (mixed 0.87, his own 0.00-0.31).
+
 ## 2026-11-03 07:30:14 EST — scribe `efd0e8eb9a3dc6af587a3100e0548931cc2c85c1`
 Cut (#1482, #1528): Scribe 0.1 (241) from main after the #1661 and #1591 landings (a late answer sits at its thread's line in playback; a voice that starts as another stops is its own speaker); the build number 240 to 241, and Build 241's plain note reworded so each Try works for a tester with no recordings.
 
