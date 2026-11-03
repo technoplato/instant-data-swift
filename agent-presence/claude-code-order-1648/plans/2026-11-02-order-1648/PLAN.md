@@ -48,6 +48,7 @@ Upstream Reactor.js `pushOps` gives each mutation `order = max(order) + 1` when 
   creation stamp, `retryQuarantinedMutation` only)
 - `Tests/InstantSwiftDataTests/InstantWriteCreationOrderTests.swift` (new)
 - `Tests/InstantSwiftDataCoreTests/InstantSendAgainCreationOrderTests.swift` (new, amendment 1)
+- `docs/FOOTGUNS.md` (a new F67 entry and its index row only, amendment 2)
 - `CHANGELOG.md`, `PROGRESS.md`, `docs/releases/v1.9.65.md`, `docs/audits/commit-changelog.md` (release and ledger)
 
 ## Conflict check
@@ -60,3 +61,8 @@ Upstream Reactor.js `pushOps` gives each mutation `order = max(order) + 1` when 
 Send Again (`retryQuarantinedMutation`) needs a quarantined row, which only the Core test target can seed
 (`simulateUnexpectedConnectionCloseForTesting` is internal), so its same-millisecond red test is a new Core test file:
 a write made now, then a quarantined mutation sent again in the same millisecond, goes after it.
+
+## Amendment 2 (23:05)
+
+docs/FOOTGUNS.md asks that a newly found trap be added with its rule and guard test in the same change: F67, "decide a
+write's place in the outbox under the operation gate, never before it", guarded by the two creation-order suites.
