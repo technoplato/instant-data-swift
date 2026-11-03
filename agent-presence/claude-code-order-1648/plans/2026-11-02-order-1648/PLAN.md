@@ -47,9 +47,16 @@ Upstream Reactor.js `pushOps` gives each mutation `order = max(order) + 1` when 
 - `Sources/InstantSwiftDataCore/InstantRuntime.swift` (`transact`, `transact(operations:)`, `performTransact`'s
   creation stamp, `retryQuarantinedMutation` only)
 - `Tests/InstantSwiftDataTests/InstantWriteCreationOrderTests.swift` (new)
+- `Tests/InstantSwiftDataCoreTests/InstantSendAgainCreationOrderTests.swift` (new, amendment 1)
 - `CHANGELOG.md`, `PROGRESS.md`, `docs/releases/v1.9.65.md`, `docs/audits/commit-changelog.md` (release and ledger)
 
 ## Conflict check
 
 `InstantRuntime.swift`'s last claims are #1491/#1493/#1494/#1498 (2026-10-31, all landed and released in v1.9.62-64);
 `InstantTypedAPI.swift`'s last claim is library-79 (2026-10-04). No open lane names these functions.
+
+## Amendment 1 (22:56)
+
+Send Again (`retryQuarantinedMutation`) needs a quarantined row, which only the Core test target can seed
+(`simulateUnexpectedConnectionCloseForTesting` is internal), so its same-millisecond red test is a new Core test file:
+a write made now, then a quarantined mutation sent again in the same millisecond, goes after it.
