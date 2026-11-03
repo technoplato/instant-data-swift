@@ -1,3 +1,6 @@
+## 2026-11-03 08:32:27 EST — scribe `da9f6b8ea946dd72ae587ffbef9a2675e54972d3`
+Cut (#1482, #1528): Scribe 0.1 (242) from main after the #1591 landing (a speaker whose lines are clearly not his voice gets no name of his, live and in both learners); the build number 241 to 242, and Build 242's plain note says words, not lines.
+
 ## 2026-11-03 07:57:05 EST — scribe `b1cc6003c750082871a839ae8f8d015e79218ec7`
 Fix (#1591): a recording number the diarizer mixed keeps no name of the account holder: the stream checks a matched speaker's lines one at a time against his print (half or more of the line time under 0.25 is not him), and the evidence rides on the voice summary so both learners take the name off; measured on 19 numbers in 7 recordings (mixed 0.87, his own 0.00-0.31).
 
