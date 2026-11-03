@@ -1,3 +1,6 @@
+## 2026-11-03 03:19:53 EST — scribe `6034940dd43840852f258d3aea427df6274d3f26`
+Docs (#1057): build 236's gate confirmed on his iPad (it skipped the CPU load on Your Mac and compiled for the Neural Engine in 89.3 s); his iPhone, unplugged and not recording, went 35% to 1% overnight while installs 233, 234 and 235 each started a compile and only 233's finished (47.6 min including suspension); proposal (e) for Michael: whether the CPU should stand in for Your Mac's offline fallback during the compile.
+
 ## 2026-11-03 02:22:06 EST — scribe `4fbfb707ceeaf1e599024c55a82417ec580b224e`
 Fix (#1057): only a device whose provider is On This iPhone loads the models on the CPU after an update (his iPhone, on Your Mac, spent 23.6 s of CPU at thermal serious on it in build 235 for nothing); the audit gains build 235's device numbers (ready on the CPU 8.6 s iPad, 23.6 s iPhone).
 
