@@ -1,3 +1,6 @@
+## 2026-11-03 04:16:54 EST — scribe `a3f6f0b617eef28e24389876545bdd6157e34709`
+Cut (#1482, #1528): Scribe 0.1 (238) from main after the #1393 landing (the views of a recording, playback's views and 25 UI asks); the build number 237 to 238, and Build 238's plain note reworded so each Try works for a tester with no recordings.
+
 ## 2026-11-03 03:51:12 EST — scribe `8995bf8290729c6a56a38f04aeb5583d4bc69ae5`
 Merge (#1393, #1457): the views of a recording no longer double the screen's layouts (navigation stack 8.08 to 4.49 a second), playback has the same Lines, Notes, Photos and Chat through RecordingViewsFeature, and 25 of his UI asks from Recordings 321-349 (#1634 answers led by his lines, #1645 times in the speaker's color, #1628, #1629, #1630, #1563, #1564, #1520, #1519, #1603, #1589, #1611-#1615, #1639, #1459, #1633); What's New Build 238.
 
