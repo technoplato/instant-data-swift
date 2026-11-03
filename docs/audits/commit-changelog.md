@@ -1,3 +1,6 @@
+## 2026-11-02 21:29:38 EST — scribe `2ef2d35947a021cf20c502af95c9da7fe7fe36c6`
+Fix (#1618): NOW.md's device line also reads the session-health lane, so a device that has no recording open still shows its build (it said iPad 223 and Mac 213 while both ran 232); installed as ~/Scribe/tools/handoff-now. Change log ea4e4e116; landed bade6c3bf.
+
 ## 2026-11-02 21:25:28 EST — scribe `d1512ff15ce8503eb327bcea8e8a606e0b08bdbd`
 Audit (#1618): claims whose agent is gone and silent for a week are released by the working sync (foldkit c1f2fef26, issues CLI 1.18.0); claims 761 to 28, of agents not running 753 to 13, and no open P0 shows a stale claim. Change log d776ba12f; landed 7545cca5c.
 
