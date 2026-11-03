@@ -1,3 +1,6 @@
+## 2026-11-03 09:09:51 EST — scribe `fc45bd34975e8500d85934a038677d972d25c3ed`
+Feature (#1207): in Scribe Playback the spoken word stays on one line and the words move up a row at a time: following scrolls to the playing line with the anchor that puts the spoken row on the reading line (simulators: 341-346 points on an iPhone 17 Pro and 458-466 on an iPad Pro 12.9 for 20 of 20 seconds, main 453-583 and 428-511); landed in fc45bd349 (green b8830dcfe, e30b513f9), changelog 4a95a1134.
+
 ## 2026-11-03 09:08:06 EST — scribe `f295386d95aef30c19c5d9016b4b9d371d4bf392`
 Fix (#1671): the Mac mirror decodes the phone's compressed copy one encoder run at a time, so a recording's Mac audio goes on after the app relaunches mid-recording (Recording 353: live.wav 138 s -> 348 s).
 
