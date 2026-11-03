@@ -1,3 +1,6 @@
+## 2026-11-03 09:08:06 EST — scribe `f295386d95aef30c19c5d9016b4b9d371d4bf392`
+Fix (#1671): the Mac mirror decodes the phone's compressed copy one encoder run at a time, so a recording's Mac audio goes on after the app relaunches mid-recording (Recording 353: live.wav 138 s -> 348 s).
+
 ## 2026-11-03 08:32:27 EST — scribe `da9f6b8ea946dd72ae587ffbef9a2675e54972d3`
 Cut (#1482, #1528): Scribe 0.1 (242) from main after the #1591 landing (a speaker whose lines are clearly not his voice gets no name of his, live and in both learners); the build number 241 to 242, and Build 242's plain note says words, not lines.
 
