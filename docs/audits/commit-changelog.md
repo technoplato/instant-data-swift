@@ -1,3 +1,6 @@
+## 2026-11-02 22:15:00 EST — scribe `cc4e8a69423d76458c535cbad1286b267eb86259`
+Feature (#1619): the recording catalog on the mini runs from a durable job queue (one SQLite file, one job per recording, a recording being recorded first, retries at 1, 5, 30 min, 2 h, daily, resumed after a stop) with a kept-alive worker that queues recordings being recorded every 30 s and signs them again a minute of audio and 90 s on; the copy is decoded a window at a time; the mini's 2 GB memory rule. Before: passes grew from 15 s to 448 s over 71 minutes of live Recording 349. Change log 97da816be.
+
 ## 2026-11-02 22:12:06 EST — scribe `a3791376b9ccbf9881f42b2bf948362c39c877fd`
 Feature (#1299): FEATURES item 24 and ADR 0091 amendment C for the words page's live copy; the #1299 privacy test runs the words site's own tests; the copy's rules matrix shows a recording's reader gets none of the copy (30 of 30). Landed a3791376b.
 
