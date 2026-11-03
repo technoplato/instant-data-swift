@@ -1,3 +1,6 @@
+## 2026-11-03 01:07:20 EST — scribe `10471bc4ec2a1895101ce8d6683963c0f3bb9807`
+Fix (#1621): spotter 0.2.1 and 0.2.2: the speech helper keeps one name across releases (an update that brings the same helper compiles nothing; measured 1.2 s against 119.5 s after a new signature), and models remove takes spotter's own helper and compiled copies, keeping models Scribe for Mac shares.
+
 ## 2026-11-03 01:07:17 EST — scribe `2746bda9de07a227526b8f630abdb3af307c41f6`
 Docs (#1482, #1528): build 234's TestFlight note works for a tester who installed the app today: its plain block is one Nothing to see line and a Try any new tester can do, instead of a Try that sent testers to a recording only an agent can make; stories unchanged.
 
