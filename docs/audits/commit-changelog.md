@@ -1,3 +1,6 @@
+## 2026-11-03 05:31:57 EST — scribe `88ee5d2373761b167b9180f5a847f3fb5a359b94`
+Feature (#1627): Start or Resume Recording, an App Shortcut beside Brainstorm for Siri, Shortcuts and the Action button: it hands the app scribe-shared://recording/live inside its process (the quick actions' buffered stream, renamed linkRequests), and the list resumes a paused recording, keeps one that records, or starts one as Record does, then shows the newest line (Back to Live); the link's web form opens nothing. Landed on main as 5c94ae809.
+
 ## 2026-11-03 04:56:31 EST — scribe `5031e01d24693814d4d15cba40b026f32998cec1`
 Fix (#1606): the listener watch's stderr note names the command its background listing waits on; installed and checked on his Mac (six lines printed 61-913 ms after a separate writer appended them while a listing ran past 5 s), and a second ps stall seen live (04:51:40-04:54:30, load up to 917) where the bounded runner returned at 2,006 ms.
 
