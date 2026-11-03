@@ -1,3 +1,6 @@
+## 2026-11-02 23:58:21 EST — scribe `6c77f6124c05f87f80601eebc7214f4b6260beda`
+Feature (#1050): the card an agent's answer carries is drawn under it with its idea's moments, read live; cut Scribe 0.1 (233).
+
 ## 2026-11-02 23:47:54 EST — scribe `fc30632617e382e5f84f10243e64b7ba150bed86`
 Feature (#1204): Scribe Playback fills the iPad's screen (a full-screen cover where a sheet would be a form sheet, the iPhone's sheet unchanged), its lines in one centered reading column of about 100 characters; landed in 5ec7e4016.
 
