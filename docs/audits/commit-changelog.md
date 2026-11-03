@@ -1,3 +1,6 @@
+## 2026-11-03 07:27:24 EST — scribe `177f124c0d29e3a842e54aaf1d6f272e9e4a6a51`
+Fix (#1591): a final's first phrase keeps the last speaker only while the diarizer still hears that speaker, so a show that starts as Michael stops is its own (Recording 343: Ms. Rachel on the backseat iPad under his number), and each word's speaker confidence is its own again, so another voice's words stop feeding a voice's print audio.
+
 ## 2026-11-03 06:06:37 EST — scribe `e97fe1ff36075fb46455dfb353b5eefaec81eaba`
 Fix (#1661): in playback, an agent's answer given after the recording ended sits at the line its thread hangs on, not at the end.
 
