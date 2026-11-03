@@ -1,3 +1,6 @@
+## 2026-11-03 01:48:42 EST — scribe `3d725204b65a22fec32f15adf16947830e29b73e`
+Fix (#966, #846): the Your Mac fallback's Apple stand-in hands over to On This iPhone (Parakeet with speaker labels) as soon as its models are ready (after an install's compile or a download) instead of keeping Apple until the Mac answers, at Apple's next final with no word lost or repeated, and a session no engine could transcribe starts On This iPhone; Settings > Recording names the engine writing the words, with why it stands in for Your Mac; a poor signal is proven to fall back to On This iPhone. Change log ac117902c.
+
 ## 2026-11-03 01:18:47 EST — scribe `76bd9069a7b7e4ef5fff3cc9907215f375e629b4`
 Fix (#1057): On This iPhone writes the words on the CPU while the Neural Engine compiles after an update (iOS discards the compiled programs at every install; Apple DTS, forum thread 853157): a CPU-only model host (readyOnCPU), the session reports computeUnit cpu, and the recording hands it to the Neural Engine when ready; on the Mac the CPU loaded in 14.0 s against 152.8 s and wrote 516 of 520 words the same; for build 235.
 
