@@ -1,3 +1,7 @@
+// History:
+// - 2026-11-02: the typed transact no longer passes a creation time read before the operation gate; the runtime
+//   assigns it under the gate, after the outbox tail, and stamps the write's facts with it (#1648).
+
 import Dependencies
 import Foundation
 import InstantSwiftDataCore
@@ -2479,7 +2483,10 @@ extension InstantSwiftDataClient {
   ///   - id: Explicit transaction id when `batchSize` is nil or mutations fit
   ///     in one chunk.
   ///   - idPrefix: When chunking, transaction ids are `"\(idPrefix)-\(index)"`.
-  ///   - createdAt: Optional shared timestamp for every step.
+  ///   - createdAt: When `nil` (default), each committed transaction takes its place in the outbox as it enters the
+  ///     runtime's operation gate, after every earlier write, and its facts carry that time, so writes go to the
+  ///     server in the order they were made. A non-nil time is kept exactly for every step: the caller orders those
+  ///     writes itself, and writes that share one time go out in transaction-id order.
   /// - Returns: One result per committed chunk (length 1 when not chunking).
   @discardableResult
   public func transact(
@@ -2498,14 +2505,19 @@ extension InstantSwiftDataClient {
       )
     }
 
-    let createdAt: InstantTimestamp
+    // #1648: a write's place in the outbox is decided when it enters the runtime's operation gate. This read the clock
+    // here, before the gate, and passed it on, which skips the runtime's step past the outbox tail: two writes made in
+    // one millisecond tied and went out in id order, and a phone sent the newer of two revisions of one row first, so a
+    // rule requiring a newer `updatedAtMs` refused the older. Without an explicit time the facts are built with this
+    // provisional one, and the runtime restamps them with the time it assigns under the gate.
+    let txTime: InstantTimestamp
     if let explicitCreatedAt {
-      createdAt = explicitCreatedAt
+      txTime = explicitCreatedAt
     } else if let runtime {
-      createdAt = runtime.configuration.now()
+      txTime = runtime.configuration.now()
     } else {
       @Dependency(\.date) var date
-      createdAt = InstantTimestamp(
+      txTime = InstantTimestamp(
         milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded())
       )
     }
@@ -2545,12 +2557,15 @@ extension InstantSwiftDataClient {
       }
 
       let operations = try chunk.flatMap {
-        try $0.operations(transactionID: transactionID, txTime: createdAt)
+        try $0.operations(transactionID: transactionID, txTime: txTime)
       }
       let transaction = InstantStoreTransaction(id: transactionID, operations: operations)
       let result: InstantStoreMutationResult
       if let runtime {
-        result = try await runtime.transact(transaction, createdAt: createdAt)
+        result = try await runtime.transact(
+          transaction,
+          creation: explicitCreatedAt.map { .explicit($0) } ?? .afterOutboxTailStampingFacts
+        )
       } else {
         result = try await transact(transaction)
       }
