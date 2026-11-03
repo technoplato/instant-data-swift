@@ -1,3 +1,6 @@
+## 2026-11-02 21:38:31 EST — scribe `7d30492cd8ad14f97267d77b9478c4a5a98fecbf`
+Fix (#1619): the recording catalog's cache sweep keeps a live recording's compressed copy (it judged caches by chunks.json, which the copy's cache never writes), so each 5-minute pass on the mini stops downloading all of the copy again (Recording 349: 436 of 712 segments re-fetched three minutes into a pass that took 318 s). Change log a9eb80548; landed 920a51b54.
+
 ## 2026-11-02 21:29:38 EST — scribe `2ef2d35947a021cf20c502af95c9da7fe7fe36c6`
 Fix (#1618): NOW.md's device line also reads the session-health lane, so a device that has no recording open still shows its build (it said iPad 223 and Mac 213 while both ran 232); installed as ~/Scribe/tools/handoff-now. Change log ea4e4e116; landed bade6c3bf.
 
