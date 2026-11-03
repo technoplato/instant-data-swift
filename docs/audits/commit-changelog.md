@@ -1,3 +1,6 @@
+## 2026-11-03 01:18:47 EST — scribe `76bd9069a7b7e4ef5fff3cc9907215f375e629b4`
+Fix (#1057): On This iPhone writes the words on the CPU while the Neural Engine compiles after an update (iOS discards the compiled programs at every install; Apple DTS, forum thread 853157): a CPU-only model host (readyOnCPU), the session reports computeUnit cpu, and the recording hands it to the Neural Engine when ready; on the Mac the CPU loaded in 14.0 s against 152.8 s and wrote 516 of 520 words the same; for build 235.
+
 ## 2026-11-03 01:07:20 EST — scribe `10471bc4ec2a1895101ce8d6683963c0f3bb9807`
 Fix (#1621): spotter 0.2.1 and 0.2.2: the speech helper keeps one name across releases (an update that brings the same helper compiles nothing; measured 1.2 s against 119.5 s after a new signature), and models remove takes spotter's own helper and compiled copies, keeping models Scribe for Mac shares.
 
