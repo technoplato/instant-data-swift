@@ -1,3 +1,6 @@
+## 2026-11-03 05:46:39 EST — scribe `c97e550f0d4ecc79b3872f5f4931db7581cfd1bd`
+Docs (#1057): the CPU-load gate held on three consecutive installs on his iPad (236-238 skipped the CPU load and compiled for the Neural Engine in 89.2-89.5 s); build 233's 47.6-minute iPhone compile ran about 11.6 minutes with the app awake (36 minutes suspended); the change's tests confirmed on the Mac mini on what shipped as 236 (SpeechClientLiveTests 212 of 212, the hand-over's recording tests).
+
 ## 2026-11-03 05:31:57 EST — scribe `88ee5d2373761b167b9180f5a847f3fb5a359b94`
 Feature (#1627): Start or Resume Recording, an App Shortcut beside Brainstorm for Siri, Shortcuts and the Action button: it hands the app scribe-shared://recording/live inside its process (the quick actions' buffered stream, renamed linkRequests), and the list resumes a paused recording, keeps one that records, or starts one as Record does, then shows the newest line (Back to Live); the link's web form opens nothing. Landed on main as 5c94ae809.
 
