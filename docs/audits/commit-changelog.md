@@ -1,3 +1,6 @@
+## 2026-11-02 22:58:25 EST — scribe `6d08acd7b7888a83e6ebdb47d556890ec43b34db`
+Fix (#1619): the recording catalog worker queues a just-finished copy's last stretch at once (Recording 349's waited 86.6 s for the listing), checks every 15 s, downloads four at a time, logs every value a memory hold tested, and its installer waits for launchd to let the old job go (error 5 left it unloaded). Change log 40d20da40.
+
 ## 2026-11-02 22:52:14 EST — scribe `4dcde02577206bda64ef0b9b0c31538edd91f30d`
 Fix (#1643): route evidence counts a session as having received the spoken words only when the session log marks them typed by a person (origin human, outside a claude -p run); a headless run's prompt, a scheduled prompt, another session's message and a compaction summary no longer count. On one evening's recording, lines naming a session went from 1,114 of 1,281 (1,089 of them the 5-minute sweep's own runs) to 4 of 1,291, all real; the sweep's open lines carrying the false evidence from 1,031 of 1,129 to 1. Installed in the mirror's app folder (discover.ts).
 
