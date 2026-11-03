@@ -1,3 +1,6 @@
+## 2026-11-03 10:14:00 EST — scribe `4acdc7d06aeec9e37aa481d0ea3171624bbf15d3`
+Feature (#1652): Agent chats in the Playground: every agent session (running first, with its issue, model, account, status, counts, tokens and API-equivalent cost) and its chat as one timeline in file order, thinking and tool calls folded until tapped, read live from the agent activity rows only while shown; days named once, a run bar with every count.
+
 ## 2026-11-03 09:09:51 EST — scribe `fc45bd34975e8500d85934a038677d972d25c3ed`
 Feature (#1207): in Scribe Playback the spoken word stays on one line and the words move up a row at a time: following scrolls to the playing line with the anchor that puts the spoken row on the reading line (simulators: 341-346 points on an iPhone 17 Pro and 458-466 on an iPad Pro 12.9 for 20 of 20 seconds, main 453-583 and 428-511); landed in fc45bd349 (green b8830dcfe, e30b513f9), changelog 4a95a1134.
 
