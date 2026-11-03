@@ -1,3 +1,6 @@
+## 2026-11-02 21:46:39 EST — scribe `c4964b6b3e0fa52d504a6cd40c8a95396227c0b5`
+Audit (#1618): the last sections: NOW.md's device line (fixed in 2ef2d3594) and the installed working sync's hourly sweep on 1.18.0 (1,637 issues in 27 s, 4 real changes). Landed 25f8b36c2.
+
 ## 2026-11-02 21:38:31 EST — scribe `7d30492cd8ad14f97267d77b9478c4a5a98fecbf`
 Fix (#1619): the recording catalog's cache sweep keeps a live recording's compressed copy (it judged caches by chunks.json, which the copy's cache never writes), so each 5-minute pass on the mini stops downloading all of the copy again (Recording 349: 436 of 712 segments re-fetched three minutes into a pass that took 318 s). Change log a9eb80548; landed 920a51b54.
 
