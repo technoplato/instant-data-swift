@@ -1,3 +1,9 @@
+## 2026-11-02 21:25:28 EST — scribe `d1512ff15ce8503eb327bcea8e8a606e0b08bdbd`
+Audit (#1618): claims whose agent is gone and silent for a week are released by the working sync (foldkit c1f2fef26, issues CLI 1.18.0); claims 761 to 28, of agents not running 753 to 13, and no open P0 shows a stale claim. Change log d776ba12f; landed 7545cca5c.
+
+## 2026-11-02 21:25:28 EST — foldkit `c1f2fef263db6fd458813ef9e4049cc9337e6f8a`
+Fix (Scribe #1618): the issues CLI's working sync releases a claim whose agent nothing shows running and that wrote nothing on the issue for 7 days, with a line naming its last entry (439 such claims on the live catalog); status and work in progress stay. Installed as issues CLI 1.18.0.
+
 ## 2026-11-02 21:08:48 EST — scribe `7ffd3859ddd63bca62ab8cc5328a73b2dc8d108c`
 Audit (#1618): the 36 open P0s with no running agent checked read only against build 232, production rows, telemetry and his words: 16 Verified with proof, #969 closed as superseded, 13 PartiallyDone with what is missing, #645 Open, 5 in one Decisions question; open P0s 42 to 25. Change log b813347b4; landed d441cf4a9.
 
