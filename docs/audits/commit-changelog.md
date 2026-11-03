@@ -1,3 +1,6 @@
+## 2026-11-03 00:46:31 EST — scribe `f6c5831bb05757774fcb43d0435e1cc6e2db34d1`
+Feature (#1619): scribe-catalog signs a growing recording from its last unfinished part (sign --from) and measures its newest minutes (measure --from); on real audio a grown piece signed in 2.3 s and 249 MB where the whole took 5.8 s and 577 MB; the catalog worker's steps run within deadlines; ADR 0083 amendment B, FEATURES item 30, the audit. MediaCatalogTests 19/19 on the mini. Change log e67bf9592.
+
 ## 2026-11-03 00:44:21 EST — scribe `9b0dfd785d2e20d16d0fd5174e49f34441c3bd43`
 Docs (#1482, #1528): build 233's TestFlight note works for a tester who installed the app today: its plain block is one Nothing to see line and a Try any new tester can do, instead of a Try that sent testers to one person's recording; stories unchanged.
 
