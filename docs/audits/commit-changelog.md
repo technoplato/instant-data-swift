@@ -1,3 +1,6 @@
+## 2026-11-02 22:52:14 EST — scribe `4dcde02577206bda64ef0b9b0c31538edd91f30d`
+Fix (#1643): route evidence counts a session as having received the spoken words only when the session log marks them typed by a person (origin human, outside a claude -p run); a headless run's prompt, a scheduled prompt, another session's message and a compaction summary no longer count. On one evening's recording, lines naming a session went from 1,114 of 1,281 (1,089 of them the 5-minute sweep's own runs) to 4 of 1,291, all real; the sweep's open lines carrying the false evidence from 1,031 of 1,129 to 1. Installed in the mirror's app folder (discover.ts).
+
 ## 2026-11-02 22:15:00 EST — scribe `cc4e8a69423d76458c535cbad1286b267eb86259`
 Feature (#1619): the recording catalog on the mini runs from a durable job queue (one SQLite file, one job per recording, a recording being recorded first, retries at 1, 5, 30 min, 2 h, daily, resumed after a stop) with a kept-alive worker that queues recordings being recorded every 30 s and signs them again a minute of audio and 90 s on; the copy is decoded a window at a time; the mini's 2 GB memory rule. Before: passes grew from 15 s to 448 s over 71 minutes of live Recording 349. Change log 97da816be.
 
