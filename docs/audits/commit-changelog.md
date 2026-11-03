@@ -1,3 +1,6 @@
+## 2026-11-03 03:51:12 EST — scribe `8995bf8290729c6a56a38f04aeb5583d4bc69ae5`
+Merge (#1393, #1457): the views of a recording no longer double the screen's layouts (navigation stack 8.08 to 4.49 a second), playback has the same Lines, Notes, Photos and Chat through RecordingViewsFeature, and 25 of his UI asks from Recordings 321-349 (#1634 answers led by his lines, #1645 times in the speaker's color, #1628, #1629, #1630, #1563, #1564, #1520, #1519, #1603, #1589, #1611-#1615, #1639, #1459, #1633); What's New Build 238.
+
 ## 2026-11-03 03:19:53 EST — scribe `6034940dd43840852f258d3aea427df6274d3f26`
 Docs (#1057): build 236's gate confirmed on his iPad (it skipped the CPU load on Your Mac and compiled for the Neural Engine in 89.3 s); his iPhone, unplugged and not recording, went 35% to 1% overnight while installs 233, 234 and 235 each started a compile and only 233's finished (47.6 min including suspension); proposal (e) for Michael: whether the CPU should stand in for Your Mac's offline fallback during the compile.
 
