@@ -1,3 +1,6 @@
+## 2026-11-03 07:30:14 EST — scribe `efd0e8eb9a3dc6af587a3100e0548931cc2c85c1`
+Cut (#1482, #1528): Scribe 0.1 (241) from main after the #1661 and #1591 landings (a late answer sits at its thread's line in playback; a voice that starts as another stops is its own speaker); the build number 240 to 241, and Build 241's plain note reworded so each Try works for a tester with no recordings.
+
 ## 2026-11-03 07:27:24 EST — scribe `177f124c0d29e3a842e54aaf1d6f272e9e4a6a51`
 Fix (#1591): a final's first phrase keeps the last speaker only while the diarizer still hears that speaker, so a show that starts as Michael stops is its own (Recording 343: Ms. Rachel on the backseat iPad under his number), and each word's speaker confidence is its own again, so another voice's words stop feeding a voice's print audio.
 
