@@ -1,3 +1,6 @@
+## 2026-11-03 00:33:27 EST — scribe `a4a129a4ae76e9685bd1a0534896aa3706a409f7`
+Feature (#1621): spotter, the CLI in Homebrew, downloads Scribe's speech models in its setup (832 MB, shared with Scribe for Mac's copy) and transcribes a file on the Mac through spotter-speech, a helper built from TranscriptionEngine; the publisher ships it as its own archive. A clean home on the Mac mini reached its first transcript in 159.9 s.
+
 ## 2026-11-02 23:58:21 EST — scribe `6c77f6124c05f87f80601eebc7214f4b6260beda`
 Feature (#1050): the card an agent's answer carries is drawn under it with its idea's moments, read live; cut Scribe 0.1 (233).
 
