@@ -1,3 +1,6 @@
+## 2026-11-03 02:22:06 EST — scribe `4fbfb707ceeaf1e599024c55a82417ec580b224e`
+Fix (#1057): only a device whose provider is On This iPhone loads the models on the CPU after an update (his iPhone, on Your Mac, spent 23.6 s of CPU at thermal serious on it in build 235 for nothing); the audit gains build 235's device numbers (ready on the CPU 8.6 s iPad, 23.6 s iPhone).
+
 ## 2026-11-03 01:48:42 EST — scribe `3d725204b65a22fec32f15adf16947830e29b73e`
 Fix (#966, #846): the Your Mac fallback's Apple stand-in hands over to On This iPhone (Parakeet with speaker labels) as soon as its models are ready (after an install's compile or a download) instead of keeping Apple until the Mac answers, at Apple's next final with no word lost or repeated, and a session no engine could transcribe starts On This iPhone; Settings > Recording names the engine writing the words, with why it stands in for Your Mac; a poor signal is proven to fall back to On This iPhone. Change log ac117902c.
 
