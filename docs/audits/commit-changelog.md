@@ -1,3 +1,6 @@
+## 2026-11-03 06:06:37 EST — scribe `e97fe1ff36075fb46455dfb353b5eefaec81eaba`
+Fix (#1661): in playback, an agent's answer given after the recording ended sits at the line its thread hangs on, not at the end.
+
 ## 2026-11-03 05:46:39 EST — scribe `c97e550f0d4ecc79b3872f5f4931db7581cfd1bd`
 Docs (#1057): the CPU-load gate held on three consecutive installs on his iPad (236-238 skipped the CPU load and compiled for the Neural Engine in 89.2-89.5 s); build 233's 47.6-minute iPhone compile ran about 11.6 minutes with the app awake (36 minutes suspended); the change's tests confirmed on the Mac mini on what shipped as 236 (SpeechClientLiveTests 212 of 212, the hand-over's recording tests).
 
