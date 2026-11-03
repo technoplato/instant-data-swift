@@ -1,3 +1,6 @@
+## 2026-11-03 04:34:28 EST — scribe `412aa262a4b4386dbf4921c543dadfcdf7719c10`
+Feature (#1518): what the phone that records plays shows once on its live recording, from the source its audio route gives (PlayedSoundCapture, keyed on the output route and on what plays): over the phone's speaker the microphone is the one source (Scribe Playback's lines from this phone are not streamed in from Instant, the broadcast's system-audio lines are not shown); in his headphones Scribe Playback's own lines stream in and the broadcast's copy is not shown; AirPlay, CarPlay, other Bluetooth, another device's play and a moment before the route was read keep every source with the shown-once rule. Measured: out loud the microphone repeated the played book in every stretch (228 finals in 19), in AirPods Pro 2 finals in 20. Display only.
+
 ## 2026-11-03 04:16:54 EST — scribe `a3f6f0b617eef28e24389876545bdd6157e34709`
 Cut (#1482, #1528): Scribe 0.1 (238) from main after the #1393 landing (the views of a recording, playback's views and 25 UI asks); the build number 237 to 238, and Build 238's plain note reworded so each Try works for a tester with no recordings.
 
