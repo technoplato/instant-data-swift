@@ -1,3 +1,6 @@
+## 2026-11-02 20:33:49 EST — scribe `9399fc419fc0c69b88c2347d3c6fa2d6c3103bb3`
+Test (#1573): the clip that goes out is silent where the muted clip still said a word, padded as every mute is, and a last hearing still not clean uploads nothing (red on the pre-fix code and three throwaway changes); the audio check in real use since its install: 7 of 7 passed, the two broadcasts since went up by themselves, digital zero inside every mute range.
+
 ## 2026-11-02 15:38:36 EST — scribe `abb92d41b945a77d28298c993bc508e83a5c3d63`
 Fix (#1460): the real cause of the Your Mac drops: build 222's ping timer slept with try?, so the pong's cancel() woke it into "unanswered"; now it returns when cancelled (a copy of the shipped code: 110 of 2,000 answered pings reported unanswered, fixed 0).
 
