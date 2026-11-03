@@ -1,3 +1,6 @@
+## 2026-11-02 20:57:37 EST — scribe `eed350ef57bed681b5a3d7f9c464f4aa6cb41589`
+Feature (#1050): a post that names an older recording follows it first, so an answer lands at the line he asked about; the listener's recipe for linking every recording an idea came up in.
+
 ## 2026-11-02 20:45:45 EST — scribe `c256b6751064276b95c472ce8e55575ecf41f8d8`
 Audit (#1484): TCA 2 and Point-Free's newest episodes read against Scribe and instant-data-swift; spawning bounded at 0.04-0.16% of a core from the phone's ledger; #1622-#1626 filed for Opus 5.5 Max, none claimed.
 
