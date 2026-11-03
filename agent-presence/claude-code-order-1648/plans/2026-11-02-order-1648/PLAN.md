@@ -49,6 +49,7 @@ Upstream Reactor.js `pushOps` gives each mutation `order = max(order) + 1` when 
 - `Tests/InstantSwiftDataTests/InstantWriteCreationOrderTests.swift` (new)
 - `Tests/InstantSwiftDataCoreTests/InstantSendAgainCreationOrderTests.swift` (new, amendment 1)
 - `docs/FOOTGUNS.md` (a new F67 entry and its index row only, amendment 2)
+- `Tests/InstantSwiftDataTests/TypedAPITests.swift` (two tests' expectations only, amendment 3)
 - `CHANGELOG.md`, `PROGRESS.md`, `docs/releases/v1.9.65.md`, `docs/audits/commit-changelog.md` (release and ledger)
 
 ## Conflict check
@@ -66,3 +67,13 @@ a write made now, then a quarantined mutation sent again in the same millisecond
 
 docs/FOOTGUNS.md asks that a newly found trap be added with its rule and guard test in the same change: F67, "decide a
 write's place in the outbox under the operation gate, never before it", guarded by the two creation-order suites.
+
+## Amendment 3 (03:05)
+
+The full run at the fix (build.sh job 1648-gate, mini, 02:27-02:40) failed two typed tests whose expectations encoded
+the tie: with the clock frozen they expected pending writes in id order and every fact at the one frozen time
+(`typedCreateIsStrictAndTypedUpdateUpserts`, `typedLookupMutationsResolveUniqueAttributesAndPreservePendingLookups`).
+Their expectations become the order the writes were made and each write's own time. The run also showed the gate's
+holder renamed to `transact(_:creation:source:)` (three gate tests); the runtime now enters the gate under
+`transact(_:createdAt:source:)` for every local write, the name diagnostics and baselines key on. The other failures
+are checked against main's sources in the next job.
