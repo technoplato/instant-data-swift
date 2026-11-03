@@ -1,3 +1,6 @@
+## 2026-11-02 20:45:45 EST — scribe `c256b6751064276b95c472ce8e55575ecf41f8d8`
+Audit (#1484): TCA 2 and Point-Free's newest episodes read against Scribe and instant-data-swift; spawning bounded at 0.04-0.16% of a core from the phone's ledger; #1622-#1626 filed for Opus 5.5 Max, none claimed.
+
 ## 2026-11-02 20:43:50 EST — scribe `fa2534739c9040ee634393cb795b7546d8a3d43e`
 Fix (#1573): the clip check's record keeps the mute from before the extra hearings (audio.mutedSeconds.beforeRehearings) and its log lines say how many ran and how much they muted; before, what they added to a broadcast could only be bounded (at least 19.25 s of Recording 343's 215 s). Installed on the mini (scrubber and private stream service), rollback install.sh --rollback 20261102-204047.
 
