@@ -2441,7 +2441,12 @@ public final class InstantRuntime: Sendable {
       // A cancelled caller must not keep a queue slot and then run the write
       // anyway. Cancellation is honored only before acquisition, so a
       // transaction that has already started still commits atomically.
-      try await enterOperationGateUnlessCancelled(priority: .interactive)
+      // #1648: every local write holds the gate under the public entry's name, whichever entry it came through: the
+      // gate's timeline, stall reports and the concurrency baselines name the holder by it.
+      try await enterOperationGateUnlessCancelled(
+        operation: "transact(_:createdAt:source:)",
+        priority: .interactive
+      )
       enteredOperationGate = true
       let committed = try await performTransact(transaction, creation: creation, source: source)
       await leaveOperationGate()
