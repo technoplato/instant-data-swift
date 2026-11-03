@@ -1,3 +1,6 @@
+## 2026-11-02 20:39:11 EST — scribe `6f59c24cb4c73a53e2eb248385bff748eec73b02`
+Feature (#1050): scribe sources add links an idea's moments in any recording, one moment per stretch; older recordings are read from their transcript files.
+
 ## 2026-11-02 20:33:49 EST — scribe `9399fc419fc0c69b88c2347d3c6fa2d6c3103bb3`
 Test (#1573): the clip that goes out is silent where the muted clip still said a word, padded as every mute is, and a last hearing still not clean uploads nothing (red on the pre-fix code and three throwaway changes); the audio check in real use since its install: 7 of 7 passed, the two broadcasts since went up by themselves, digital zero inside every mute range.
 
