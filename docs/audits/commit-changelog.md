@@ -1,3 +1,9 @@
+## 2026-11-02 22:12:06 EST — scribe `a3791376b9ccbf9881f42b2bf948362c39c877fd`
+Feature (#1299): FEATURES item 24 and ADR 0091 amendment C for the words page's live copy; the #1299 privacy test runs the words site's own tests; the copy's rules matrix shows a recording's reader gets none of the copy (30 of 30). Landed a3791376b.
+
+## 2026-11-02 22:12:06 EST — foldkit `d95194b926f19f137e3798d520fff9b1ecf3ca50`
+Feature (Scribe #1299): the words page plays a recording while it is still recording, from the phone's compressed copy (Scribe ADR 0091) through Media Source Extensions (ManagedMediaSource in WebKit), only to the recording's owners; it joins 12 s behind the copy's end, measured 24 to 33 s behind the recording's clock in Chrome and WebKit. Commits 7acf2925c to d95194b92, deployed at 22:09.
+
 ## 2026-11-02 21:46:39 EST — scribe `c4964b6b3e0fa52d504a6cd40c8a95396227c0b5`
 Audit (#1618): the last sections: NOW.md's device line (fixed in 2ef2d3594) and the installed working sync's hourly sweep on 1.18.0 (1,637 issues in 27 s, 4 real changes). Landed 25f8b36c2.
 
