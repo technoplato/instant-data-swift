@@ -1,3 +1,9 @@
+## 2026-11-02 21:08:48 EST — scribe `7ffd3859ddd63bca62ab8cc5328a73b2dc8d108c`
+Audit (#1618): the 36 open P0s with no running agent checked read only against build 232, production rows, telemetry and his words: 16 Verified with proof, #969 closed as superseded, 13 PartiallyDone with what is missing, #645 Open, 5 in one Decisions question; open P0s 42 to 25. Change log b813347b4; landed d441cf4a9.
+
+## 2026-11-02 21:08:48 EST — foldkit `63e7290be0d9d8e969b6b921318f2e613c56c83d`
+Fix (Scribe #1618): the issues CLI's working sync stops saying agents run when none do: the hourly sweep reads every issue (22 kept "running" for ended runs), a finished issue's claim is released once its agent no longer runs, and a fresh claim is no longer flipped to VerificationNeeded by the last run's landing record (5 times); installed as issues CLI 1.17.0.
+
 ## 2026-11-02 20:57:37 EST — scribe `eed350ef57bed681b5a3d7f9c464f4aa6cb41589`
 Feature (#1050): a post that names an older recording follows it first, so an answer lands at the line he asked about; the listener's recipe for linking every recording an idea came up in.
 
