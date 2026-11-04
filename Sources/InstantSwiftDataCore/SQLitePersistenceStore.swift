@@ -1431,6 +1431,9 @@ public actor SQLitePersistenceStore {
   /// What the delivery claim encoded for the writes it claimed (#1517): each projected body it measured, and each
   /// forward wire intent it fingerprinted.
   private var claimEncodeCounts = InstantClaimEncodeCounts()
+  /// How many times a kept receipt fingerprint was looked up by hashing its write's inputs: the whole transaction and
+  /// rollback, about 180 us for a transcript line on an M4 (#1523).
+  private var receiptInputsHashCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1557,6 +1560,11 @@ public actor SQLitePersistenceStore {
     claimEncodeCounts
   }
 
+  /// How many receipt lookups hashed their write's inputs so far (#1523).
+  package func receiptInputsHashCountForTesting() -> Int {
+    receiptInputsHashCount
+  }
+
   /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one computed encodes the mutation's
   /// transaction and rollback with `JSONEncoder` and hashes the text; one whose inputs equal the kept one's is reused,
   /// and not counted (#1497).
@@ -1565,6 +1573,7 @@ public actor SQLitePersistenceStore {
       optimisticEffectFingerprintCount += 1
       return nil
     }
+    receiptInputsHashCount += 1
     let inputsHash = mutation.optimisticEffectReceiptFingerprintInputsHash
     if let kept = keptReceiptFingerprints[mutation.id], kept.inputsHash == inputsHash {
       return kept.fingerprint

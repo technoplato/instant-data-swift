@@ -4,6 +4,8 @@
 //                    twice, once for the body as stored, which the projected body's fingerprint always replaced before
 //                    the claim committed. All four ran under the operation gate; on the phone (builds 248-249) the
 //                    claim cost as much CPU as the save.
+// 2026-11-04  #1523  The save, the claim and the acknowledgement each found the write's kept receipt fingerprint by
+//                    hashing its whole transaction and rollback (about 180 us each on an M4); the stored bytes find it.
 
 import Foundation
 import Testing
@@ -64,6 +66,40 @@ struct InstantWritePathCostTests {
         claimToken: window.token
       )
     }
+    let pending = try await fixture.pendingCount()
+    #expect(pending == 0)
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A live write's save mints its receipt fingerprint, and its claim and acknowledgement check the row against it
+  /// without hashing the write's transaction and rollback to find it: the row's stored bytes are the key (#1523).
+  @Test
+  func aWritesSaveClaimAndAcknowledgementFindItsReceiptWithoutHashingTheWrite() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "receipt-by-bytes",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0
+    )
+    let persistence = fixture.runtime.persistence
+    let hashesBefore = await persistence.receiptInputsHashCountForTesting()
+    let fingerprintsBefore = await persistence.optimisticEffectFingerprintCountForTesting()
+    _ = try await fixture.writeSegments(2)
+
+    let window = try await fixture.claimWindow()
+    for mutation in window.mutations {
+      let transactionID = fixture.server.accept(mutation.transaction.operations)
+      _ = try await fixture.runtime.acceptMutationIfPresent(
+        id: mutation.id,
+        serverTransactionID: transactionID,
+        claimToken: window.token
+      )
+    }
+    let hashes = await persistence.receiptInputsHashCountForTesting() - hashesBefore
+    let fingerprints = await persistence.optimisticEffectFingerprintCountForTesting() - fingerprintsBefore
+
+    #expect(window.mutations.count == 2)
+    #expect(hashes == 0, "2 writes' saves, claims and acknowledgements hashed their inputs \(hashes) times")
+    #expect(fingerprints == 2, "2 writes were fingerprinted \(fingerprints) times; each save mints one")
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
