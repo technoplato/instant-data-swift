@@ -1,3 +1,25 @@
+## 2026-11-04 18:52 EST — perf-send-1797 (#653): one write costs one write; three greens on the branch, gate queued
+
+- **Why:** the phone (builds 248-249, its own write recorder, ledger pulled 18:13, 69 recording minutes) writes 49.9
+  MB/min logical; SQLite log pages 3,454/min, ~47% of them the outbox's bookkeeping (~33 pages a write: claim 2,
+  acknowledgement 4-5, save ~21, echo ~9.5 outbox pages); the claim costs as much CPU as the save. Evidence:
+  `~/Sync/audit/perf-send-1797/phone/before-1815-*.txt` (script `../scripts/ledger_disk.py`); code maps
+  `~/Sync/audit/perf-send-1797/maps/2026-11-04-write-path-maps.md`.
+- **On branch `agent/claude/perf-send-1797` (pushed, not on main yet):** `af35bc58` merges #1648 (order-1648's ended
+  worktree, ten commits, clean); #1517 red `db5e4365` / green `d5f4a7d7` (the claim measures each projected body once
+  and fingerprints each wire intent once: 6 -> 3 and 6 -> 3 for three writes); #1523 red `d6b239f4` / green `1ef4aa2f`
+  (the kept receipt fingerprint found by the body's stored bytes: 6 -> 0 input hashes for two writes saved, claimed
+  and accepted; InstantAcknowledgementDigestTests' helper reads compressed bodies, failing on main since 1.9.64).
+- **Running:** job `1797-a-gate1648-1517` (build.sh, high, mini; queued 18:37, worktree
+  `~/Sync/worktrees/perf-send-1797-measure` pinned at `1ef4aa2f`; outputs land there: `job-a-*.log`,
+  `base-af35bc58-*`, `head-1ef4aa2f-*`): the suites at HEAD, the creation-order suites x3, three reds, and the write
+  path in release at `af35bc58` and HEAD (b-tree frames per step, pages and CPU per step on a 7,000-line store, the
+  recording exercise's energy lines and a 60 s sample). Its stdout: `~/Sync/audit/perf-send-1797/jobs/1797-a.out`.
+- **Next:** read the job; if green, rebase on origin/main, push to main, release the first free v1.9.N (`git fetch
+  --tags`), pin it in Scribe (both Package.resolved), cut and install a build; then #653 item 4 (the acknowledgement's
+  pages: its outbox revision bump and the watermark index's two leaves), #1142 (park the pump; a lazy deadline wake),
+  #1320 (checkpoint from a wal hook on a utility connection), the send's double encode (InstantLiveMessage.transact).
+
 ## 2026-11-04 17:35 EST — b1104-1756 (#1756): v1.9.67, a restated unset field reduces on a cascading namespace
 
 - **Why:** a tablet that recorded 7.4 hours held about 12,000 unsent writes; 80 server applies overnight (and 60 in
