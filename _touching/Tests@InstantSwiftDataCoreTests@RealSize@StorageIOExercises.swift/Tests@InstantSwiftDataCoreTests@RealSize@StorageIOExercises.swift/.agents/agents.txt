@@ -2,3 +2,4 @@ claude-code/audit-storage-1076@ld 2026-10-24T16:00:47-0400 grower plan=2026-10-2
 claude-code/fix-storage-1076@ld 2026-10-24T22:27:43-0400 mower plan=2026-10-24-fix-storage-1076 #1118 (the hour's checkpoint setting and power-loss reach lines; continues audit-storage-1076)
 claude-code/fix-storage-1076@ld 2026-10-25T02:30:50-0400 mower plan=2026-10-24-fix-storage-1076 #1119 amendment 9 (StorageIOWriteCycle.writeLine)
 claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)
+claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 #1116 #1480

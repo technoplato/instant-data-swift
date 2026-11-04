@@ -1,1 +1,2 @@
 claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-perf-read-1498 #1495 (new)
+claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 #1513

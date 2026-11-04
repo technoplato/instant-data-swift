@@ -1,3 +1,4 @@
 grok-4.6-live-revision 2026-08-12T17:58:00-0400 mower plan=2026-08-12-live-revision-cardinality trial5-nested-include-limit-on-live-query-triples InstantRuntime-unedited
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/preapply_nested_limit 2026-08-14T21:00:32-0400 mower upstream-provenance-comment-only plan=2026-08-14-preapply-nested-limit
 claude-code/fix-memory-1075@ld 2026-10-24T22:37:54-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 2 (whole file: identity fast path, attribute lookups for the triples' ids only)
+claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 (the attribute maps per call)

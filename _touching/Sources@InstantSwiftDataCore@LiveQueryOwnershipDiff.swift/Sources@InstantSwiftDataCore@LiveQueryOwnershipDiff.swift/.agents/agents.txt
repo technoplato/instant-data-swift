@@ -1,1 +1,2 @@
 claude-code/fix-memory-1075@ld 2026-10-25T00:02:18-0400 mower plan=2026-10-24-fix-memory-1075 #1147 amendment 6 (new: the ownership diff)
+claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 #1480 #1116
