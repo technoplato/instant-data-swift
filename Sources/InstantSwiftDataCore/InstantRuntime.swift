@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-04: a one-shot read waits for its answer while the connection receives or applies frames, up to upstream's
+//   30 s, and fails after 5 s without either; a fixed 5 s failed every read behind a tablet's backlog (#1796).
 // - 2026-11-04: the acknowledgement-deadline wake keeps one sleeping task that re-checks the deadline when it wakes; each
 //   send started one and each acknowledgement cancelled it (#1142).
 // - 2026-11-04: a write saved while delivery could send it at once is claimed by its own save and queued on the pump in
@@ -655,6 +657,12 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable () async -> Void)? = nil
   package var onLiveQueryOnceAcknowledgedForTesting:
     (@Sendable () async throws -> Void)? = nil
+  /// How long a one-shot read waits for the server's answer while its connection receives no frame and applies none
+  /// (#1796): the stall F41 asks to make loud.
+  package var liveQueryAcknowledgementStallMilliseconds: UInt64 = 5_000
+  /// The longest a one-shot read waits for the server's answer while frames keep arriving or applying ahead of it:
+  /// upstream `Reactor.js`'s `QUERY_ONCE_TIMEOUT` (#1796).
+  package var liveQueryAcknowledgementLimitMilliseconds: UInt64 = 30_000
   /// Runs after a reopened live query read its closed stored result and before it commits the reload (#1131), with the
   /// query's registration key. Tests pause here to see what waits for that read.
   package var onUnloadedLiveQueryResultReadForTesting:
@@ -1668,6 +1676,9 @@ struct InstantServerApplyGateTimeline: Sendable {
     return Int(duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000)
   }
 }
+
+/// One stall's length passed while a one-shot read still waited for its answer (#1796).
+private struct InstantLiveQueryAnswerStillOwed: Error {}
 
 private actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
@@ -7034,17 +7045,8 @@ public final class InstantRuntime: Sendable {
       }
       try await ensureLiveConnectionIfNeeded()
 
-      let liveQueryAcknowledgementTimeoutMilliseconds: UInt64 = 5_000
       do {
-        try await instantLiveWithTimeout(
-          operation: "run Instant live query",
-          timeoutMilliseconds: liveQueryAcknowledgementTimeoutMilliseconds
-        ) {
-          try await self.liveQueryAcknowledgements.wait(
-            for: registrationKey,
-            after: observedRevision
-          )
-        }
+        try await waitForLiveQueryAcknowledgement(key: registrationKey, after: observedRevision)
       } catch {
         if let error = error as? InstantError,
           error.operation == "run Instant live query",
@@ -7076,7 +7078,8 @@ public final class InstantRuntime: Sendable {
             metadata: [
               "registrationKey": registrationKey,
               "namespace": plan.namespace,
-              "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
+              "timeoutMilliseconds": String(configuration.liveQueryAcknowledgementStallMilliseconds),
+              "limitMilliseconds": String(configuration.liveQueryAcknowledgementLimitMilliseconds),
             ],
             correlationID: plan.id
           )
@@ -7099,6 +7102,63 @@ public final class InstantRuntime: Sendable {
     await cleanupOwner.wait()
     try Task.checkCancellation()
     return emission
+  }
+
+  /// Waits for the server's answer to a one-shot read's `add-query` while the connection moves (#1796).
+  ///
+  /// The read fails once `liveQueryAcknowledgementStallMilliseconds` pass in which the connection received no frame
+  /// and applied none, or `liveQueryAcknowledgementLimitMilliseconds` pass in all. It waited a fixed 5 s, and every
+  /// one-shot read on a tablet whose applier was minutes behind failed that way while its socket was open and frames
+  /// kept applying: 1,085 `$files` lookups in 93 minutes (#1768), and the "Network or live transport failed" its
+  /// playback screen showed on 2026-11-04 (#1796). Upstream `Reactor.js` waits 30 s (`QUERY_ONCE_TIMEOUT`) whatever
+  /// the connection does.
+  private func waitForLiveQueryAcknowledgement(key: String, after observedRevision: Int) async throws {
+    let stallMilliseconds = configuration.liveQueryAcknowledgementStallMilliseconds
+    let limit = Duration.milliseconds(configuration.liveQueryAcknowledgementLimitMilliseconds)
+    let clock = ContinuousClock()
+    let started = clock.now
+    var progress = await liveSession.receiveProgress()
+    while true {
+      do {
+        try await instantLiveWithTimeout(
+          operation: "run Instant live query",
+          timeoutMilliseconds: stallMilliseconds,
+          sleep: { milliseconds in
+            try await instantLiveDefaultTimeoutSleep(milliseconds)
+            throw InstantLiveQueryAnswerStillOwed()
+          }
+        ) {
+          try await self.liveQueryAcknowledgements.wait(for: key, after: observedRevision)
+        }
+        return
+      } catch is InstantLiveQueryAnswerStillOwed {
+        let waited = clock.now - started
+        let current = await liveSession.receiveProgress()
+        let moved =
+          switch (progress, current) {
+          case let (earlier?, current?): current.moved(since: earlier)
+          case (nil, .some): true
+          case (_, nil): false
+          }
+        if moved, waited < limit {
+          progress = current
+          continue
+        }
+        let waitedMilliseconds = InstantLiveReceiveMeter.milliseconds(waited)
+        throw InstantError(
+          code: .networkFailed,
+          operation: "run Instant live query",
+          message: moved
+            ? "Instant's answer did not arrive within \(waitedMilliseconds) ms, while the connection kept "
+              + "receiving or applying the frames ahead of it."
+            : "Timed out after \(waitedMilliseconds)ms waiting for Instant live transport: the connection received "
+              + "and applied no frame in the last \(stallMilliseconds) ms.",
+          recovery: moved
+            ? "The device is applying a backlog from the server; read again once it has caught up."
+            : "Check the Instant WebSocket endpoint, credentials, and server response."
+        )
+      }
+    }
   }
 
   /// One answer to `plan` from this device's store, for the local reader (#1006).
