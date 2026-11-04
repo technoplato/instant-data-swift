@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 3:12:24 p.m. EST — `e4990383f937` docs(#1748): upstream's getCreatedAt keeps a resident fact's time; it never walks the store
+
+- **Implementation commit:** `e4990383f93758220e5df97ce5a2cb0429b784e2`
+- **Change:** docs(#1748): upstream's getCreatedAt keeps a resident fact's time; it never walks the store
+- **Details:**
+  - Comment only: TransactionTimeCounts' note on upstream said it never reads its store for a stamp; it reads the one resident fact and otherwise stamps Date.now() * 10 + seed.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1748 the upstream comparison in TransactionTimeCounts' doc comment
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, b1104-1748@halfjew22); no SpecStory capture
+
 ## November 4th, 2026 at 3:02:01 p.m. EST — `9722630e09cd` green(#1748): the store's newest transaction time is kept in time-ordered counts, not walked
 
 - **Implementation commit:** `9722630e09cd92d454fab2d46e061a8962bf649d`
