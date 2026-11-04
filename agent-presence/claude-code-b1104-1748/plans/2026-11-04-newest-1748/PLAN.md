@@ -73,3 +73,13 @@ InstantRuntime.swift's transact paths only, and claims v1.9.65; this plan does n
 - Checks run as one build.sh job on the Mac mini (`1748-redgreen`): the red tests on b446b586's sources, the
   server-apply cost harness (release, full rebase) and a temporary build-cost probe on each, then the whole
   InstantSwiftDataCoreTests bundle against Tests/known-failing.txt.
+
+## Outcome (2026-11-04 16:35)
+
+- Landed: merge 99ef8077 (red b446b586, green 9722630e, comment e4990383); released v1.9.66 (tag on df3ef358). Scribe
+  pinned it (0f0a41abd) and cut build 248 (63b4869f2), installed on the iPhone and the iPad (devicectl reads 0.1 248),
+  the Mac, and TestFlight.
+- Not done here: the release cost harness (the package's todos-v3 demo does not link in release on the laptop's macOS
+  26.7); verifying a long iPad session without a CPU kill (#1748's criterion 2, open).
+- Found and filed: #1787 (the mini's job sessions start at 256 open files; 62 bundle tests fail on it), #1788 (two
+  InstantAcknowledgementDigestTests fail on main since 1.9.64).
