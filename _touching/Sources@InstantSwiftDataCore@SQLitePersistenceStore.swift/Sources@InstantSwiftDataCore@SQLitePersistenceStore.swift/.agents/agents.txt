@@ -87,3 +87,4 @@ claude-code/perf-gate-1491@ld 2026-10-31T13:40:44-0400 mower plan=2026-10-31-per
 claude-code/perf-writes-1510@ld 2026-10-31T16:10:58-0400 mower plan=2026-10-31-perf-writes-1510 amendment 1 #1510 (encodeOutboxBody, decodeOutboxBody, storedOutboxBody only)
 claude-code/perf-observe-1493@strangelearning 2026-10-31T16:35:57-0400 mower plan=2026-10-31-perf-observe-1493 amendment 1 #1494 (beginServerApplyPlan's first page, the body and resident-patch page loaders and their last-page flag only)
 claude-code/perf-gate-1491@strangelearning 2026-10-31T16:40:00-0400 mower plan=2026-10-31-perf-gate-1491 amendment 3 #1491 (the outbox tail reads' SQL as constants, unchanged; a creation-order index put in place in bootstrap beside deliveryIndexSQL)
+claude-code/b1104-1756@halfjew22 2026-11-04T11:47:22-0500 mower plan=2026-11-04-retired-cascade-1756 #1756
