@@ -45,6 +45,39 @@ struct InstantRefreshPlanningReadTests {
     #expect(stored.triples.count == 96)
     #expect(stored.triples.contains { $0.entityID == page.lineID(7) && $0.value == .string("line 7 edited") })
   }
+
+  /// F21 (#1109, #1116): a refresh costs its change, not its page. Restating a 256-line page with one line changed should
+  /// read and encode about what a 64-line page's restatement does. With one comparison a refresh it still reads every
+  /// stored row and encodes every restated value, so its cost follows the page: a known issue until each result's rows
+  /// are kept in memory (#1116).
+  @Test
+  func aLargerPageWithOneLineChangedCostsAboutWhatASmallerOneDoes() async throws {
+    var costs: [Int: (rows: Int, values: Int)] = [:]
+    for lines in [64, 256] {
+      let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("InstantRefreshPlanningRatio-\(UUID().uuidString)", isDirectory: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let runtime = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "refresh-planning-ratio-\(lines)",
+          persistenceURL: directory.appendingPathComponent("store.sqlite"),
+          initialAttributes: PlanningReadPage.attributes
+        )
+      )
+      let page = PlanningReadPage(lines: lines)
+      _ = try await runtime.applyLiveRefresh(page.refresh(transactionID: "1", changedLine: nil), receivedAt: .init(milliseconds: 1))
+      let before = await runtime.persistence.liveQueryResultDiffCountsForTesting()
+      _ = try await runtime.applyLiveRefresh(page.refresh(transactionID: "2", changedLine: 7), receivedAt: .init(milliseconds: 2))
+      let after = await runtime.persistence.liveQueryResultDiffCountsForTesting()
+      costs[lines] = (after.ownershipRowsRead - before.ownershipRowsRead, after.valuesEncoded - before.valuesEncoded)
+    }
+    let small = try #require(costs[64])
+    let large = try #require(costs[256])
+    withKnownIssue("#1116: a refresh still compares every restated fact with every stored row of its result") {
+      #expect(large.rows < small.rows * 2, "rows read: \(large.rows) at 256 lines, \(small.rows) at 64")
+      #expect(large.values < small.values * 2, "values encoded: \(large.values) at 256 lines, \(small.values) at 64")
+    }
+  }
 }
 
 /// A flat page of lines the server restates whole, as `refresh-ok` restates every changed query's result.
