@@ -101,6 +101,8 @@
 // - 2026-10-31: an outbox body is stored compressed and its lifecycle derived from it, so a live write's cell fits its
 //   leaf; every budget still counts JSON bytes (`encoded_body_bytes`, `lifecycle_bytes`), and an older row's text body
 //   reads as before (#1463, #1510).
+// - 2026-11-04: a server apply compares each restated result with its stored rows once: the save takes the retractions'
+//   comparison, made in the same read, instead of encoding every restated value and reading every row again (#1480).
 
 import Foundation
 import IssueReporting
@@ -12067,7 +12069,9 @@ public actor SQLitePersistenceStore {
     // #1011: metered under its own name; a device profile found it outside every name.
     let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
     return try readTransaction {
-      try liveQueryReplacementRetractionsWithoutTransaction(for: replacements).operations
+      var storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
+      return try liveQueryReplacementRetractionsWithoutTransaction(for: replacements, keepingStoredDiffs: &storedDiffs)
+        .operations
     }
   }
 
@@ -12083,7 +12087,8 @@ public actor SQLitePersistenceStore {
       guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
         == expectedQueryResultRevision
       else { return nil }
-      return try liveQueryReplacementRetractionsWithoutTransaction(for: replacements)
+      var storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
+      return try liveQueryReplacementRetractionsWithoutTransaction(for: replacements, keepingStoredDiffs: &storedDiffs)
     }
   }
 
@@ -12107,6 +12112,10 @@ public actor SQLitePersistenceStore {
     try readTransaction {
       var reads = InstantServerApplyPlanningReads()
       var retractions = workedOutRetractions
+      // #1480: each restated key's diff against its stored rows, worked out once for the retractions and taken by the
+      // save; each pass encoded every restated value and read every row (serverApplyRetractions 15.0 and
+      // serverApplyPlan 15.3 CPU-s in 88 minutes of recording on the phone, build 248's ledger).
+      var storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
       if retractions == nil, !replacements.isEmpty {
         let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
         guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
@@ -12114,7 +12123,10 @@ public actor SQLitePersistenceStore {
           reads.isStale = true
           return reads
         }
-        retractions = try liveQueryReplacementRetractionsWithoutTransaction(for: replacements)
+        retractions = try liveQueryReplacementRetractionsWithoutTransaction(
+          for: replacements,
+          keepingStoredDiffs: &storedDiffs
+        )
         reads.retractions = retractions
       }
       if let results, !results.isEmpty {
@@ -12124,7 +12136,7 @@ public actor SQLitePersistenceStore {
           reads.isStale = true
           return reads
         }
-        reads.saves = try preparedLiveQueryResultSavesWithoutTransaction(results)
+        reads.saves = try preparedLiveQueryResultSavesWithoutTransaction(results, storedDiffs: storedDiffs)
       }
       if let retractions {
         guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision else {
@@ -12141,8 +12153,11 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// - Parameter storedDiffs: Receives, for each key whose first replacement is compared with stored rows, that
+  ///   comparison, finished: a save of the same facts in the same read takes it instead of reading the rows again (#1480).
   private func liveQueryReplacementRetractionsWithoutTransaction(
-    for replacements: [InstantLiveQueryResultReplacement]
+    for replacements: [InstantLiveQueryResultReplacement],
+    keepingStoredDiffs storedDiffs: inout [String: LiveQueryOwnershipDiff]
   ) throws -> InstantLiveQueryReplacementRetractions {
     let replacementKeys = Set(replacements.map(\.key))
     // The facts each key's result holds once the replacements before it in this batch are applied. A key's first
@@ -12171,7 +12186,11 @@ public actor SQLitePersistenceStore {
       if let previous = prospective[replacement.key] {
         leaving = previous.compactMap { identity, triple in next[identity] == nil ? (identity, triple) : nil }
       } else {
-        leaving = try storedLiveQueryFactsLeavingWithoutTransaction(key: replacement.key, next: replacement.triples)
+        leaving = try storedLiveQueryFactsLeavingWithoutTransaction(
+          key: replacement.key,
+          next: replacement.triples,
+          keepingDiffIn: &storedDiffs
+        )
       }
       let nextEntityIDs = Set(next.keys.map(\.entityID))
       for (identity, triple) in leaving {
@@ -19613,13 +19632,15 @@ public actor SQLitePersistenceStore {
   /// read the stored result whole: the newest kept in memory while its JSON waited, and otherwise its JSON, decoded.
   private func storedLiveQueryFactsLeavingWithoutTransaction(
     key: String,
-    next: [InstantTriple]
+    next: [InstantTriple],
+    keepingDiffIn storedDiffs: inout [String: LiveQueryOwnershipDiff]
   ) throws -> [(identity: InstantLiveTripleIdentity, triple: InstantTriple)] {
-    guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return [] }
+    guard try liveQueryResultHeaderWithoutTransaction(key: key) != nil else { return [] }
     liveQueryResultValueEncodeCount += next.count
     var diff = try LiveQueryOwnershipDiff(next: next, encoder: encoder)
     try liveQueryOwnershipRowsWithoutTransaction(queryKey: key, into: &diff)
     try diff.finish()
+    storedDiffs[key] = diff
     guard !diff.removed.isEmpty else { return [] }
     var statement: OpaquePointer?
     try prepare(
@@ -20534,16 +20555,21 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// - Parameter storedDiffs: The retractions' comparison of each key's first replacement with its stored rows, made in
+  ///   the same read from the replacements these results were built from (#1480).
   private func preparedLiveQueryResultSavesWithoutTransaction(
-    _ results: [InstantPersistedLiveQueryResult]
+    _ results: [InstantPersistedLiveQueryResult],
+    storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
   ) throws -> [InstantPreparedLiveQueryResultSave] {
     // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
     var storedFactsByKey: [String: [InstantTriple]] = [:]
     var saves: [InstantPreparedLiveQueryResultSave] = []
     for result in results {
+      let previousFacts = storedFactsByKey[result.key]
       let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
         result,
-        previousFacts: storedFactsByKey[result.key]
+        previousFacts: previousFacts,
+        storedDiff: previousFacts == nil ? storedDiffs[result.key] : nil
       )
       storedFactsByKey[result.key] = prepared.storedFacts
       saves.append(prepared.save)
@@ -20555,16 +20581,34 @@ public actor SQLitePersistenceStore {
   /// stored rows when nil, and the facts it stores.
   private func preparedLiveQueryResultSaveWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult,
-    previousFacts knownPreviousFacts: [InstantTriple]?
+    previousFacts knownPreviousFacts: [InstantTriple]?,
+    storedDiff: LiveQueryOwnershipDiff? = nil
   ) throws -> (save: InstantPreparedLiveQueryResultSave, storedFacts: [InstantTriple]) {
     let attributeIDs = Set(result.triples.map(\.attributeID))
     let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
+    let restatedCount = result.triples.count
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
       queryKey: result.key,
       triples: Array(result.triples),
       attributes: attributes
     )
+    // #1480: the retractions compared these facts with the stored rows already, in this read. The translation limited
+    // them with these attributes, so the limit here keeps every one, and the facts are the comparison's: its rows that
+    // leave and join are this save's. A limit that drops a fact, or a comparison of other facts, compares again.
+    if knownPreviousFacts == nil, let storedDiff, result.triples.count == restatedCount,
+      storedDiff.distinctFactCount == restatedCount
+    {
+      return (
+        InstantPreparedLiveQueryResultSave(
+          result: result,
+          attributeIDs: attributeIDs,
+          removedOwnership: storedDiff.removed,
+          insertedOwnership: storedDiff.inserted
+        ),
+        Array(result.triples)
+      )
+    }
     liveQueryResultValueEncodeCount += result.triples.count
     var ownership = try LiveQueryOwnershipDiff(next: Array(result.triples), encoder: encoder)
     if let knownPreviousFacts {
