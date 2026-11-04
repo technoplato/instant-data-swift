@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 5:24:20 p.m. EST — `29a2837aa4ce` test(#1756): the cascade guard restates the line alone, so a naive fix fails it
+
+- **Implementation commit:** `29a2837aa4ce257b324a3e56e23de8251d6f7290`
+- **Change:** test(#1756): the cascade guard restates the line alone, so a naive fix fails it
+- **Details:**
+  - The guard's frames restated the recording, whose pending delete declines the frame first, so it passed without the cascade check too; a frame of the line alone (as the app's transcript pages hold lines) fails a naive fix with 4 differences and passes the green.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — #1756 the cascade guard frames the line alone; refreshLineUnsetField
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, b1104-1756@halfjew22); no SpecStory capture
+
+## November 4th, 2026 at 5:24:20 p.m. EST — `dbc7d5d0b1a0` green(#1756): a restated unset field reduces on Scribe's schema too
+
+- **Implementation commit:** `dbc7d5d0b1a0d839fff83807fa9987d6dc540c84`
+- **Change:** green(#1756): a restated unset field reduces on Scribe's schema too
+- **Details:**
+  - #1378's unwritten-empty-slot rule left out every namespace a delete can cascade into; the app's recording cascades to its lines, so each frame that restated a new preview line's unset retiredAtMs peeled and replayed the whole queue (80 times overnight on the tablet behind #1756, 60 in ten minutes on 1.9.66).
+  - Now such a slot qualifies unless a surviving write on its entity deletes an entity of a namespace that cascades into it (InstantServerApplyCascade.sources) or one without its namespace; a new preview frame went from replaying 990-2,000 writes in 2.5-4.9 s to 0 in 9-21 ms (InstantFastDrainTests, 1,002 and 2,004 queued).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1756 emptyServerApplySlots keeps a cascading namespace's empty slots with the namespaces whose deletes reach them
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1756 InstantServerApplyCascade; the reduction context declines a slot whose entity's writes delete into it
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — #1756 the history line and the #1378 note now point at Scribe's links
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, b1104-1756@halfjew22); no SpecStory capture
+
 ## November 4th, 2026 at 3:31:07 p.m. EST — `57f9b503b7bb` release(#1748): v1.9.66: the store's newest transaction time is kept in time-ordered counts, not walked
 
 - **Implementation commit:** `57f9b503b7bbf1448cf1f3a57468f52f95b8ff91`
