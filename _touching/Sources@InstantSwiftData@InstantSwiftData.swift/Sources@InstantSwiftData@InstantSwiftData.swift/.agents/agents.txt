@@ -20,3 +20,4 @@ claude-code/transcript-open-1006@halfjew22 2026-10-23T14:44:24-0400 grower plan=
 claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 mower plan=2026-10-24-lib-audit-1072 #1072 (doc comments of the stored-file calls the fix changes)
 claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)
 claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494
+claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
