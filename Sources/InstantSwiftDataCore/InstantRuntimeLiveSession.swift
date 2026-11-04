@@ -7,6 +7,8 @@
 //   three tasks and armed a timer (#1496).
 // - 2026-10-31: the applier admits, records and checks each frame in one turn on this actor and finishes it in a second;
 //   it hopped here four times a frame (#1494).
+// - 2026-11-04: a waiting refresh-ok loses the results a newer one restates, and leaves the buffer when none remain; the
+//   buffer counts its progress for one-shot reads and logs a receive summary a minute (#1796).
 
 import Foundation
 import IssueReporting
@@ -56,6 +58,16 @@ extension InstantLiveMessage {
 ///
 /// When `capacity` frames are waiting, the reader waits for the applier, as the single receive loop always did. That
 /// bounds memory when an applier is stuck, and only then can the socket stop answering pings.
+///
+/// A `refresh-ok` restates the whole result of every query it carries, so a waiting `refresh-ok` whose queries a newer
+/// one restates would be applied only to be replaced (#1796). When the newer one arrives, the waiting ones lose those
+/// queries' results, and one left with none leaves the buffer: each query's newest result applies once, and the
+/// acknowledgements and answers between them stop waiting for the stale applies. The server does the same with the
+/// refreshes it has not sent yet (`session.clj`: `combine [:refresh :refresh]` keeps the second), and upstream
+/// `Reactor.js` replaces a query's stored result whole on every `refresh-ok` (`querySubs[hash].result`), so the store
+/// ends where applying every frame would leave it. On 2026-11-04 a tablet following a live recording, 8,240 of its own
+/// writes pending, spent about 1.5 s applying each `refresh-ok` of the recording list (29 a minute, 144 KB each) and
+/// showed the recording about six minutes late, and its one-shot reads timed out behind the same applies.
 // SAFETY: `lock` protects every mutable field. Continuations are taken under the lock and resumed after it.
 final class InstantLiveReceivedFrames: @unchecked Sendable {
   private typealias Applier = CheckedContinuation<InstantLiveMessage, any Error>
@@ -68,19 +80,32 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     case full
   }
 
+  /// One received frame, what it restates when it is a `refresh-ok`, and when the reader received it.
+  private struct Received {
+    var message: InstantLiveMessage
+    var restatement: InstantLiveRefreshRestatement?
+    var receivedAt: ContinuousClock.Instant
+  }
+
   private let lock = NSLock()
   private let capacity: Int
-  private var frames: [InstantLiveMessage] = []
+  private let clock = ContinuousClock()
+  private var frames: [Received] = []
   private var terminalError: (any Error)?
   private var isClosed = false
   private var waitingApplier: Applier?
   private var applierCancelledBeforeWaiting = false
-  private var waitingReader: (continuation: Reader, frame: InstantLiveMessage)?
+  private var waitingReader: (continuation: Reader, frame: Received)?
   private var readerCancelledBeforeWaiting = false
+  private var progress = InstantLiveReceiveProgress()
+  private var meter: InstantLiveReceiveMeter
+  /// When the applier took its last frame; the next `next()` call ends that frame's apply.
+  private var lastTakenAt: ContinuousClock.Instant?
 
   init(capacity: Int) {
     precondition(capacity > 0, "A live receive buffer needs room for at least one frame.")
     self.capacity = capacity
+    meter = InstantLiveReceiveMeter(windowStart: ContinuousClock.now)
   }
 
   var bufferedCountForTesting: Int {
@@ -95,16 +120,28 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     lock.withLock { waitingApplier != nil }
   }
 
+  /// How many frames the reader has received and the applier has taken, and how many waiting `refresh-ok` frames and
+  /// query results newer frames replaced (#1796).
+  var progressSnapshot: InstantLiveReceiveProgress {
+    lock.withLock { progress }
+  }
+
   /// Hands one received frame to the applier. Returns `false` once the applier has stopped, and then the reader
   /// stops too. Waits while `capacity` frames are already waiting.
-  func append(_ frame: InstantLiveMessage) async -> Bool {
+  func append(_ message: InstantLiveMessage) async -> Bool {
+    // Read outside the lock: the reader's own work, a few set inserts per computation.
+    let frame = Received(
+      message: message,
+      restatement: InstantLiveRefreshRestatement(message),
+      receivedAt: clock.now
+    )
     switch lock.withLock({ offerLocked(frame) }) {
     case .refused:
       return false
     case .buffered:
       return true
     case let .handed(applier):
-      applier.resume(returning: frame)
+      applier.resume(returning: message)
       return true
     case .full:
       break
@@ -125,7 +162,7 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
         case .buffered:
           continuation.resume(returning: true)
         case let .handed(applier):
-          applier.resume(returning: frame)
+          applier.resume(returning: message)
           continuation.resume(returning: true)
         case .full:
           break
@@ -160,7 +197,7 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
       guard !isClosed, terminalError == nil else { return (nil, 0) }
       terminalError = error
       let waitingCount = frames.count
-      frames.removeAll(where: \.isQueryResult)
+      frames.removeAll(where: \.message.isQueryResult)
       // An applier waits only when no frame is waiting, so nothing is skipped.
       defer { waitingApplier = nil }
       return (waitingApplier, waitingCount - frames.count)
@@ -182,6 +219,9 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
   /// or cancellation it throws `CancellationError`.
   func next() async throws -> InstantLiveMessage {
     try Task.checkCancellation()
+    // The applier asks for the next frame as soon as it has handled the last one, so this call ends that apply.
+    let summary = lock.withLock { finishApplyLocked(at: clock.now) }
+    if let summary { summary.log() }
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { (continuation: Applier) in
         let taken = lock.withLock { () -> (Result<InstantLiveMessage, any Error>, Reader?)? in
@@ -230,27 +270,264 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     waiting.1?.resume(returning: false)
   }
 
-  private func offerLocked(_ frame: InstantLiveMessage) -> Offer {
+  private func offerLocked(_ frame: Received) -> Offer {
     if isClosed || terminalError != nil {
       return .refused
     }
     if let applier = waitingApplier {
       waitingApplier = nil
+      progress.receivedFrameCount += 1
+      progress.takenFrameCount += 1
+      meter.recordTake(waited: .zero, buffered: 0)
+      lastTakenAt = clock.now
       return .handed(applier)
+    }
+    if let restatement = frame.restatement {
+      dropResultsRestated(by: restatement)
     }
     guard frames.count < capacity else { return .full }
     frames.append(frame)
+    progress.receivedFrameCount += 1
+    meter.recordBuffered(depth: frames.count)
     return .buffered
+  }
+
+  /// Removes from every waiting `refresh-ok` the results `newer` restates, and every such frame left with none
+  /// (#1796). A frame that carries `attrs` keeps everything: the applier records its attributes when it takes it. A
+  /// frame whose results reflect a later transaction than `newer` keeps everything too; the server sends them in order,
+  /// so that would be a frame this rule does not understand.
+  private func dropResultsRestated(by newer: InstantLiveRefreshRestatement) {
+    var index = frames.endIndex
+    while index > frames.startIndex {
+      index -= 1
+      guard let older = frames[index].restatement,
+        older.mayLoseResults,
+        older.processedTransaction <= newer.processedTransaction,
+        !older.queries.isDisjoint(with: newer.queries)
+      else { continue }
+      let computations = frames[index].message.fields["computations"]?.arrayValue ?? []
+      let kept = computations.filter { computation in
+        guard let query = computation.objectValue?["instaql-query"] else { return true }
+        return !newer.queries.contains(query)
+      }
+      progress.replacedResultCount += computations.count - kept.count
+      meter.recordReplaced(results: computations.count - kept.count)
+      if kept.isEmpty {
+        frames.remove(at: index)
+        progress.replacedFrameCount += 1
+        meter.recordReplacedFrame()
+      } else {
+        frames[index].message.fields["computations"] = .array(kept)
+        frames[index].restatement?.queries.subtract(newer.queries)
+      }
+    }
   }
 
   /// Takes the oldest frame. A reader waiting on a full buffer moves its frame in behind the others.
   private func takeFrameLocked() -> (frame: InstantLiveMessage, reader: Reader?)? {
     guard !frames.isEmpty else { return nil }
     let frame = frames.removeFirst()
-    guard let reader = waitingReader else { return (frame, nil) }
+    let now = clock.now
+    progress.takenFrameCount += 1
+    meter.recordTake(waited: now - frame.receivedAt, buffered: frames.count)
+    lastTakenAt = now
+    guard let reader = waitingReader else { return (frame.message, nil) }
     waitingReader = nil
+    // Nothing arrived after the waiting frame, and it already replaced what it restates, so it only moves in.
     frames.append(reader.frame)
-    return (frame, reader.continuation)
+    progress.receivedFrameCount += 1
+    return (frame.message, reader.continuation)
+  }
+
+  /// Ends the apply of the frame the applier took last, and closes the meter's window once a minute.
+  private func finishApplyLocked(at now: ContinuousClock.Instant) -> InstantLiveReceiveSummary? {
+    if let lastTakenAt {
+      meter.recordApply(now - lastTakenAt)
+      self.lastTakenAt = nil
+    }
+    return meter.summary(at: now, buffered: frames.count)
+  }
+}
+
+/// What a `refresh-ok` restates (#1796): the queries whose whole results it carries, and the transaction they reflect.
+struct InstantLiveRefreshRestatement: Sendable, Equatable {
+  var queries: Set<InstantLiveJSONValue>
+  var processedTransaction: Int64
+  /// False when the frame carries `attrs`, which the applier records as it takes the frame: such a frame is applied
+  /// whole, though its results still replace older ones.
+  var mayLoseResults: Bool
+
+  /// Nil unless `message` is a `refresh-ok` with a numeric processed-tx-id whose every computation names its query.
+  init?(_ message: InstantLiveMessage) {
+    guard message.op == "refresh-ok",
+      let processed = Self.transactionNumber(message.fields["processed-tx-id"]),
+      let computations = message.fields["computations"]?.arrayValue,
+      !computations.isEmpty
+    else { return nil }
+    var queries = Set<InstantLiveJSONValue>()
+    for computation in computations {
+      guard let query = computation.objectValue?["instaql-query"] else { return nil }
+      queries.insert(query)
+    }
+    self.queries = queries
+    self.processedTransaction = processed
+    self.mayLoseResults = message.fields["attrs"]?.arrayValue?.isEmpty ?? true
+  }
+
+  /// A processed-tx-id, which the server sends as a number or as its decimal text.
+  private static func transactionNumber(_ value: InstantLiveJSONValue?) -> Int64? {
+    switch value {
+    case let .string(text)?:
+      return Int64(text)
+    case let .number(number)?:
+      guard number.isFinite, number.rounded() == number, abs(number) < 9.0e18 else { return nil }
+      return Int64(number)
+    default:
+      return nil
+    }
+  }
+}
+
+/// How far one connection's receive side has come (#1796). A one-shot read waits for its answer while these move or a
+/// frame is being applied: the server is answering, and the answer is behind frames that came first.
+struct InstantLiveReceiveProgress: Sendable, Equatable {
+  var receivedFrameCount: UInt64 = 0
+  var takenFrameCount: UInt64 = 0
+  /// Waiting `refresh-ok` frames that newer ones replaced whole, and the query results newer frames replaced.
+  var replacedFrameCount = 0
+  var replacedResultCount = 0
+  /// Whether the applier was applying a frame when this was read; the live session fills it in.
+  var isApplying = false
+
+  /// Whether the receive side moved between `earlier` and this reading, or is applying a frame now.
+  func moved(since earlier: InstantLiveReceiveProgress) -> Bool {
+    isApplying || receivedFrameCount != earlier.receivedFrameCount || takenFrameCount != earlier.takenFrameCount
+  }
+}
+
+/// One minute of the applier's buffer (#1796): how long frames waited between the reader and the applier, how deep
+/// the buffer got, how long applies took, and what newer frames replaced. The tablet behind #1796 logged none of it,
+/// so its six-minute lag could only be inferred from its apply times and its refresh rate.
+struct InstantLiveReceiveMeter: Sendable {
+  static let windowSeconds = 60
+  /// Waits kept for the median; a window past this many frames keeps the first ones and still counts the rest.
+  static let maximumKeptWaits = 4_096
+
+  var windowStart: ContinuousClock.Instant
+  private var takenFrames = 0
+  private var waitsMilliseconds: [Int] = []
+  private var longestWait: Duration = .zero
+  private var deepestBuffer = 0
+  private var longestApply: Duration = .zero
+  private var applying: Duration = .zero
+  private var replacedFrames = 0
+  private var replacedResults = 0
+
+  init(windowStart: ContinuousClock.Instant) {
+    self.windowStart = windowStart
+  }
+
+  mutating func recordBuffered(depth: Int) {
+    deepestBuffer = max(deepestBuffer, depth)
+  }
+
+  mutating func recordTake(waited: Duration, buffered: Int) {
+    takenFrames += 1
+    longestWait = max(longestWait, waited)
+    if waitsMilliseconds.count < Self.maximumKeptWaits {
+      waitsMilliseconds.append(Self.milliseconds(waited))
+    }
+    deepestBuffer = max(deepestBuffer, buffered + 1)
+  }
+
+  mutating func recordApply(_ duration: Duration) {
+    longestApply = max(longestApply, duration)
+    applying += duration
+  }
+
+  mutating func recordReplaced(results: Int) {
+    replacedResults += results
+  }
+
+  mutating func recordReplacedFrame() {
+    replacedFrames += 1
+  }
+
+  /// The window's summary once a minute has passed, and a new window; nil before that, or when no frame was taken.
+  mutating func summary(at now: ContinuousClock.Instant, buffered: Int) -> InstantLiveReceiveSummary? {
+    let elapsed = now - windowStart
+    guard elapsed >= .seconds(Self.windowSeconds) else { return nil }
+    defer { self = InstantLiveReceiveMeter(windowStart: now) }
+    guard takenFrames > 0 else { return nil }
+    let sorted = waitsMilliseconds.sorted()
+    return InstantLiveReceiveSummary(
+      windowMilliseconds: Self.milliseconds(elapsed),
+      takenFrames: takenFrames,
+      waitMedianMilliseconds: sorted.isEmpty ? 0 : sorted[sorted.count / 2],
+      waitP95Milliseconds: sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, sorted.count * 95 / 100)],
+      waitMaxMilliseconds: Self.milliseconds(longestWait),
+      deepestBuffer: deepestBuffer,
+      bufferedAtEnd: buffered,
+      applyMaxMilliseconds: Self.milliseconds(longestApply),
+      applyingMilliseconds: Self.milliseconds(applying),
+      replacedFrames: replacedFrames,
+      replacedResults: replacedResults
+    )
+  }
+
+  static func milliseconds(_ duration: Duration) -> Int {
+    let (seconds, attoseconds) = duration.components
+    return Int(seconds) * 1_000 + Int(attoseconds / 1_000_000_000_000_000)
+  }
+}
+
+/// One minute of the applier's buffer, as the receive summary logs it (#1796).
+struct InstantLiveReceiveSummary: Sendable, Equatable {
+  var windowMilliseconds: Int
+  var takenFrames: Int
+  var waitMedianMilliseconds: Int
+  var waitP95Milliseconds: Int
+  var waitMaxMilliseconds: Int
+  var deepestBuffer: Int
+  var bufferedAtEnd: Int
+  var applyMaxMilliseconds: Int
+  var applyingMilliseconds: Int
+  var replacedFrames: Int
+  var replacedResults: Int
+
+  /// The share of the window the applier spent applying frames, in percent.
+  var applyingPercent: Int {
+    windowMilliseconds > 0 ? applyingMilliseconds * 100 / windowMilliseconds : 0
+  }
+
+  /// A notice when a frame waited a second or more, which a follower sees as lag; otherwise a routine line.
+  func log() {
+    let level: InstantDiagnosticLevel = waitMaxMilliseconds >= 1_000 ? .notice : .info
+    guard InstantDiagnostics.shared.isEnabled(at: level) else { return }
+    InstantDiagnostics.shared.record(
+      level,
+      subsystem: "instant-swift-data-core",
+      category: "transport",
+      event: "live.receive-summary",
+      message:
+        "The applier took \(takenFrames) frames in \(windowMilliseconds / 1_000) s: they waited \(waitMedianMilliseconds) ms "
+        + "at the median, \(waitP95Milliseconds) ms at p95 and \(waitMaxMilliseconds) ms at most, behind up to "
+        + "\(deepestBuffer) buffered; applying took \(applyingPercent)% of the time, \(applyMaxMilliseconds) ms at most; "
+        + "newer frames replaced \(replacedFrames) waiting refreshes and \(replacedResults) results.",
+      metadata: [
+        "windowMilliseconds": String(windowMilliseconds),
+        "takenFrames": String(takenFrames),
+        "waitMedianMilliseconds": String(waitMedianMilliseconds),
+        "waitP95Milliseconds": String(waitP95Milliseconds),
+        "waitMaxMilliseconds": String(waitMaxMilliseconds),
+        "deepestBuffer": String(deepestBuffer),
+        "bufferedAtEnd": String(bufferedAtEnd),
+        "applyMaxMilliseconds": String(applyMaxMilliseconds),
+        "applyingPercent": String(applyingPercent),
+        "replacedFrames": String(replacedFrames),
+        "replacedResults": String(replacedResults),
+      ]
+    )
   }
 }
 
@@ -2571,6 +2848,15 @@ package actor InstantRuntimeLiveSession {
   /// for the next frame as soon as it buffers one, so a new `receive()` no longer proves a frame was applied (#296).
   func applierIsWaitingForAFrameForTesting() -> Bool {
     receivedFrames?.applierIsWaitingForTesting == true
+  }
+
+  /// How far the open connection's receive side has come, nil while no connection is open (#1796). A one-shot read
+  /// waits for its answer while this moves: the server is answering, and the answer is behind frames that came first.
+  func receiveProgress() -> InstantLiveReceiveProgress? {
+    guard isOpened, let receivedFrames else { return nil }
+    var progress = receivedFrames.progressSnapshot
+    progress.isApplying = frameBeingApplied() != nil
+    return progress
   }
 
   /// Applies one room frame the reader handed over, in arrival order and beside the query applier (#461): the room's
