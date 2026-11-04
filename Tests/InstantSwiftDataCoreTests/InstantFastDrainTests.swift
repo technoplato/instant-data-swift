@@ -2334,8 +2334,10 @@ extension InstantFastDrainTests {
 
   /// #1756: a pending write that deletes the line's recording cascades into the line on the full rebase's replay
   /// (Scribe's `recordings/segments`), and the server's null goes with it; a later write then writes the line again
-  /// without it. The line's empty slot is not the server's to fill there: the reduced apply must leave what the full
-  /// rebase leaves, whether the delete names its namespace or only the id.
+  /// without it. The frame here holds the line alone, as Scribe's transcript pages do (lines by recording id, no
+  /// recording), so the recording's own facts do not decline it first. The line's empty slot is not the server's to
+  /// fill: the reduced apply must leave what the full rebase leaves, whether the delete names its namespace or only the
+  /// id. Without the cascade check the reduced apply keeps the null.
   @Test(arguments: CascadingDelete.allCases)
   func aPendingDeleteThatCascadesIntoTheLineLeavesWhatTheFullRebaseLeaves(delete: CascadingDelete) async throws {
     let segment = FastDrainSchema.segmentID(6)
@@ -2345,6 +2347,13 @@ extension InstantFastDrainTests {
         suffix: "unset-cascade-\(delete.rawValue)-\(reduces)", serverSegmentCount: 6, pendingSegmentCount: 2,
         reducesServerApply: reduces, scribeLinks: true, previewUnsetField: true
       )
+      // Segment 6's six writes reach the server one frame each: the server holds the line, and the recording's link.
+      let window = try await fixture.claimWindow(maximumMutationCount: 6)
+      expectNoDifference(window.mutations.count, 6)
+      for mutation in window.mutations {
+        _ = try await fixture.acceptAndRefresh(mutation, claimToken: window.token)
+      }
+      // Then the device deletes the recording, whose lines go with it, and writes the line again.
       let time = InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds + 1_000)
       let deletion: InstantTripleOperation
       switch delete {
@@ -2371,16 +2380,9 @@ extension InstantFastDrainTests {
       for transaction in writes {
         _ = try await fixture.runtime.transact(transaction, createdAt: time)
       }
+      // A transcript page restates the line's unset field as null while the delete and the rewrite are pending.
+      _ = try await fixture.refreshLineUnsetField(segment)
       fixtures.append(fixture)
-    }
-    // Segment 6's six writes reach the server one frame each; its summary makes it the preview while the delete and
-    // the rewrite are pending.
-    for index in fixtures.indices {
-      let window = try await fixtures[index].claimWindow(maximumMutationCount: 6)
-      expectNoDifference(window.mutations.count, 6)
-      for mutation in window.mutations {
-        _ = try await fixtures[index].acceptAndRefresh(mutation, claimToken: window.token)
-      }
     }
     let reducedObservation = try await FastDrainObservation.observe(fixtures[0].runtime)
     let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
@@ -2428,6 +2430,38 @@ extension InstantFastDrainTests {
     for frame in frames {
       expectNoDifference(frame.plannedBodyCount, 0, "\(pending) pending: \(lines.joined(separator: "; "))")
     }
+  }
+}
+
+extension FastDrainFixture {
+  /// #1756: one frame of a query that holds `segmentID` alone, as Scribe's transcript pages do (lines by recording id,
+  /// without the recording): the server restates the line's unset field as null, stamped with the line's creation.
+  func refreshLineUnsetField(_ segmentID: String) async throws -> FastDrainFrameMeasurement {
+    let processed = String(server.lastTransactionNumber)
+    let createdAt = server.facts[segmentID]?["transcriptionSegments/id"]?.values.first ?? server.serverMilliseconds
+    let triple = InstantTriple(
+      entityID: segmentID,
+      attributeID: FastDrainSchema.previewUnsetFieldAttributeID,
+      value: .null,
+      txID: processed,
+      txTime: InstantTimestamp(milliseconds: createdAt)
+    )
+    let before = await runtime.persistence.serverApplyMetricsForTesting()
+    let started = ContinuousClock.now
+    _ = try await runtime.applyServerTransactionMergingAttributesForTesting(
+      InstantStoreTransaction(id: processed, operations: [.insert(triple)]),
+      attributesToMerge: [],
+      liveQueryResultReplacements: [
+        InstantLiveQueryResultReplacement(key: "fast-drain-query-line-page", triples: [triple], pageInfo: nil),
+      ]
+    )
+    let elapsed = ContinuousClock.now - started
+    let after = await runtime.persistence.serverApplyMetricsForTesting()
+    return FastDrainFrameMeasurement(
+      duration: elapsed,
+      plannedBodyCount: after.plannedComponentBodyCount - before.plannedComponentBodyCount,
+      decodedBodyCount: after.decodedBodyCount - before.decodedBodyCount
+    )
   }
 }
 
