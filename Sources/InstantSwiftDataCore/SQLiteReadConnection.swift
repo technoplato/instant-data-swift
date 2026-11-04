@@ -3,10 +3,10 @@
 // - 2026-10-24: a reopened query reads its closed stored result here, before it takes the operation gate (#1131).
 // - 2026-10-24: the prune reads and decodes its next batch's stored results here, before it takes the gate (#1129).
 // - 2026-10-25: fact rows are read by `InstantFactRowReader` (#1150).
-// - 2026-11-04: a closed result unloaded where it is reads from its marked row and its ownership rows (#1500).
 // - 2026-10-27: the lookup's statement is `entityIDsSQL(lookupAttributeIDs:)`, which a guard plans (#1244).
 // - 2026-10-31: the prune's stored results are read from their header and ownership rows, as the writer reads them
 //   (`InstantStoredLiveQueryResultRows`); no result's write waits, so none is left out for it (#1426).
+// - 2026-11-04: a closed result unloaded where it is reads from its marked row and its ownership rows (#1500).
 
 import Foundation
 import SQLite3
