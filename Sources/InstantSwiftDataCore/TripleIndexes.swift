@@ -714,8 +714,8 @@ enum InstantResultSetMembership: Equatable, Sendable {
 /// The full-rebase server apply stamps each pending write it replays one past the store's newest fact, so it reads the
 /// newest once per write. Walking every fact for it made a frame that replays P writes over N facts cost P × N: on
 /// 2026-11-04 iOS's CPU Monitor killed the app for "81% cpu average, exceeding limit of 80% cpu over 60 seconds", with
-/// 5 of 6 samples in that walk. Upstream never reads its store for a stamp (`getCreatedAt` stamps `Date.now() * 10 +
-/// seed`); here the stamps stay newest + 1 and only the walk goes.
+/// 5 of 6 samples in that walk. Upstream never walks its store for a stamp (`getCreatedAt` keeps a resident fact's
+/// time, else stamps `Date.now() * 10 + seed`); here the stamps stay newest + 1 and only the walk goes.
 ///
 /// A count per time, not the newest alone, because the newest has to survive removals: when the last fact at the
 /// newest time leaves (a peeled overlay, a removed deferred value, a retraction), the next newest is the entry before
