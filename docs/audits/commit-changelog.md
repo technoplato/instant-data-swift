@@ -1,3 +1,9 @@
+## 2026-11-04 15:33:30  — scribe `63b4869f2795682f37cbfc970a593aeab53ebe3e`
+Cut (#1748): Scribe 0.1 (248) from main after the 1.9.66 pin: the full-rebase server apply no longer walks every fact for each pending write it replays; CURRENT_PROJECT_VERSION 247 to 248 and build 248's plain block.
+
+## 2026-11-04 15:32:52  — scribe `0f0a41abd46903bab8a541a89e6bed30564b8b92`
+Fix (#1748): pin instant-data-swift 1.9.66 (tag on df3ef358): the store's newest transaction time is kept in time-ordered counts, not walked (the replay scaling test 68.920 s -> 0.368 s).
+
 ## 2026-11-04 13:05:18 EST — scribe `090dcc070cd74903f17d30a12ea30514521c1d49`
 Fix (#1616): behind another app, a microphone restart that iOS refuses right after a call's end, an interruption's end or an audio device change tries again 1, 3 and 5 s after the refusal, on the audio session the failed start keeps, instead of waiting until the app comes to the front (measured waits before: 28 s, 40 s, 71 s and 68 min); red and green on the build machine (nothing fails only in green, six fail only in red), the iOS app core compiled; changelog 1bbc83870.
 
