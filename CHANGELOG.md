@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 3:31:07 p.m. EST — `57f9b503b7bb` release(#1748): v1.9.66: the store's newest transaction time is kept in time-ordered counts, not walked
+
+- **Implementation commit:** `57f9b503b7bbf1448cf1f3a57468f52f95b8ff91`
+- **Change:** release(#1748): v1.9.66: the store's newest transaction time is kept in time-ordered counts, not walked
+- **Details:**
+  - The release document for v1.9.66, tagged from main (99ef8077) for Scribe's next build: #1748 (red b446b586, green 9722630e) keeps the newest transaction time in TransactionTimeCounts instead of walking every fact per replayed write.
+  - No API or storage change; the whole bundle passed twice on the Mac mini but for two tests that fail on main since 1.9.64.
+- **Files:**
+  - `docs/releases/v1.9.66.md` — #1748 the release: what changed, what it measured, the checks
+  - `PROGRESS.md` — #1748 the release checkpoint
+  - `agent-presence/_channels/2026-11-04-retired-cascade-1756.md` — #1748 tells #1756 that v1.9.67 carries its change on top
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, b1104-1748@halfjew22); no SpecStory capture
+
 ## November 4th, 2026 at 3:12:24 p.m. EST — `e4990383f937` docs(#1748): upstream's getCreatedAt keeps a resident fact's time; it never walks the store
 
 - **Implementation commit:** `e4990383f93758220e5df97ce5a2cb0429b784e2`
