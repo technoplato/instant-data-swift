@@ -14117,13 +14117,18 @@ public actor SQLitePersistenceStore {
       ? batch.revisions.store
       : try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
     let queryResultRevision = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+    // #1500: what remains loaded, as the results a prune left before unloading kept them where they are; the unloaded
+    // ones still count toward the limits.
+    let remainingLoadedRows = batch.remainingRows.filter {
+      !$0.isUnloaded && !batch.unloadingQueryKeys.contains($0.queryKey)
+    }
     return InstantLiveQueryResultPruneBatchApplication(
       result: InstantLiveQueryResultPruningResult(
         removedQueryKeys: batch.removedQueryKeys,
-        remainingQueryKeys: batch.remainingRows.map(\.queryKey),
+        remainingQueryKeys: remainingLoadedRows.map(\.queryKey),
         removedOrphanedTripleCount: removedFacts.count,
-        remainingEntryCount: batch.remainingRows.count,
-        remainingTripleCount: batch.remainingRows.reduce(0) { $0 + $1.tripleCount },
+        remainingEntryCount: remainingLoadedRows.count,
+        remainingTripleCount: remainingLoadedRows.reduce(0) { $0 + $1.tripleCount },
         unloadedQueryKeys: unloadedKeys
       ),
       removedFacts: removedFacts,
