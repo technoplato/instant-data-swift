@@ -1,3 +1,9 @@
+## 2026-11-04 12:16:04 EST — scribe `b3e4dfba6a985f25041c4faa58547f7406615718`
+Feature (#1678): Claude work per day (llmUsageDays) from the session logs since 2026-07-14, each reply once by message id at list price (514,156 replies on 47 days, $70,696.07); the quota command folds only new log bytes every five minutes (1.5 s at load 348).
+
+## 2026-11-04 11:51:24 EST — scribe `23371c912d995c90d8bce336aeeca56bb381b669`
+Feature (#1678): the quota history: llmQuotaDays (one row per account per local day of 5-minute reads and a summary) and llmUsageDays pushed to production 11:50-11:51 (drift 0); the quota command keeps each read by day, and its printed log since 2026-10-29 14:20 was backfilled (10,034 reads, 49 rows).
+
 ## 2026-11-03 10:14:00 EST — scribe `4acdc7d06aeec9e37aa481d0ea3171624bbf15d3`
 Feature (#1652): Agent chats in the Playground: every agent session (running first, with its issue, model, account, status, counts, tokens and API-equivalent cost) and its chat as one timeline in file order, thinking and tool calls folded until tapped, read live from the agent activity rows only while shown; days named once, a run bar with every count.
 
