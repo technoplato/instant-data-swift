@@ -495,6 +495,10 @@ struct InstantPruneResidency: Sendable {
   /// Of ``heldIdentities``, those of entities the rule keeps whatever the ownership says: the store holds a fact of them
   /// that no removed result released. A later batch that releases the rest of an entity checks it again.
   var keptIdentities: Set<InstantLiveTripleIdentity> = []
+  /// The released facts' entities the hot store holds any fact of (#1500), or nil when the caller did not say. A result
+  /// unloaded where it is keeps its facts on disk and not in memory, so when the policy collects it, the rule reads
+  /// the entities memory does not hold from SQLite.
+  var residentEntityIDs: Set<String>?
 
   init() {}
 
@@ -521,6 +525,14 @@ struct InstantPruneResidency: Sendable {
   func holds(_ identity: InstantLiveTripleIdentity) -> Bool { heldIdentities.contains(identity) }
 
   func factCount(of entityID: String) -> Int { factCounts[entityID] ?? 0 }
+
+  /// This residency with `other`'s, for entities it says nothing of (#1500).
+  mutating func merge(_ other: InstantPruneResidency) {
+    heldIdentities.formUnion(other.heldIdentities)
+    factCounts.merge(other.factCounts) { mine, _ in mine }
+    factsOfDroppableEntities.merge(other.factsOfDroppableEntities) { mine, _ in mine }
+    keptIdentities.formUnion(other.keptIdentities)
+  }
 }
 
 /// What a live-query prune batch removed (#654).
@@ -14134,8 +14146,20 @@ public actor SQLitePersistenceStore {
   ///   ownership says, so its facts are neither read nor checked here; its held released facts are carried.
   private func releaseLiveQueryResultFactsWithoutTransaction(
     _ releasedIdentities: Set<InstantLiveTripleIdentity>,
-    residency: InstantPruneResidency
+    residency memoryResidency: InstantPruneResidency
   ) throws -> (removedFacts: [InstantTriple], retainedReleasedIdentities: Set<InstantLiveTripleIdentity>) {
+    // #1500: the entities memory does not hold (a collected result unloaded where it is kept its facts on disk only)
+    // are judged by the same rule from what SQLite holds of them; memory's picture stands for the rest.
+    var residency = memoryResidency
+    var diskOnlyEntityIDs: Set<String> = []
+    if let resident = memoryResidency.residentEntityIDs {
+      diskOnlyEntityIDs = Set(releasedIdentities.lazy.map(\.entityID)).subtracting(resident)
+      if !diskOnlyEntityIDs.isEmpty {
+        let diskReleased = releasedIdentities.filter { diskOnlyEntityIDs.contains($0.entityID) }
+        let diskFacts = try storedFactsWithoutTransaction(ofEntityIDs: diskOnlyEntityIDs)
+        residency.merge(InstantPruneResidency(released: diskReleased, residentFacts: diskFacts))
+      }
+    }
     // #654: the released entities' own facts stand in for the whole store, which each batch used to copy into a
     // dictionary of every fact to answer these same questions. #1319: of those, only the entities the rule can drop.
     let candidates = releasedIdentities.filter {
@@ -14175,7 +14199,25 @@ public actor SQLitePersistenceStore {
     for entityID in removedEntityIDs.sorted() {
       try execute("DELETE FROM instant_triples WHERE entity_id = ?", [.text(entityID)])
     }
-    return (removedFacts, retainedReleasedIdentities)
+    // Memory retracts only what it holds (#1500).
+    let memoryRemovedFacts = diskOnlyEntityIDs.isEmpty
+      ? removedFacts : removedFacts.filter { !diskOnlyEntityIDs.contains($0.entityID) }
+    return (memoryRemovedFacts, retainedReleasedIdentities)
+  }
+
+  /// Every fact SQLite keeps of `entityIDs`, deferred values included, 500 entities to a statement (#1500).
+  private func storedFactsWithoutTransaction(ofEntityIDs entityIDs: Set<String>) throws -> [InstantTriple] {
+    var facts: [InstantTriple] = []
+    let sorted = entityIDs.sorted()
+    for start in stride(from: 0, to: sorted.count, by: 500) {
+      let batch = sorted[start..<Swift.min(start + 500, sorted.count)]
+      facts += try selectJSON(
+        "SELECT json FROM instant_triples WHERE entity_id IN ("
+          + Array(repeating: "?", count: batch.count).joined(separator: ", ") + ")",
+        batch.map(SQLiteBinding.text)
+      ) as [InstantTriple]
+    }
+    return facts
   }
 
   /// The ownership rows of `entityIDs`' facts, of every stored result (#1129).

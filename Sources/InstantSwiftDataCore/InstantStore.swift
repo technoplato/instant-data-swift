@@ -3415,6 +3415,12 @@ public actor InstantStore {
       heldByEntity[identity.entityID, default: []].append(identity)
     }
     var residency = InstantPruneResidency()
+    // #1500: which of the released facts' entities memory holds at all; the prune reads the others from SQLite.
+    var resident: Set<String> = []
+    for entityID in Set(released.lazy.map(\.entityID)) where indexes.factCount(entityID: entityID) > 0 {
+      resident.insert(entityID)
+    }
+    residency.residentEntityIDs = resident
     for (entityID, held) in heldByEntity {
       let count = indexes.factCount(entityID: entityID)
       residency.factCounts[entityID] = count
