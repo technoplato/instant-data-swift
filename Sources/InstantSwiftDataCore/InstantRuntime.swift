@@ -1,4 +1,7 @@
 // History:
+// - 2026-11-02: a local write's outbox time is assigned under the operation gate, after the tail, on every path: the
+//   typed transact, `transact(operations:)` and Send Again passed a time read before the gate, so writes made in one
+//   millisecond tied and went out in id order; the typed path's facts carry the assigned time (#1648).
 // - 2026-10-31: a server frame plans in two persistence turns after its seed, the reduction's context in the planning
 //   reads' turn and the first reverse body page in the plan's; no pass reads the empty page after its last row, and the
 //   plan's end and the status read share a turn (#1494).
@@ -1746,6 +1749,27 @@ private struct InstantLocalWriteCommit: Sendable {
   var publication: InstantStorePublicationTicket?
 }
 
+/// When a local write takes its place in the outbox, and the time its facts carry (#1648).
+///
+/// Delivery sends the outbox in `(createdAt, id)` order, and a transaction id is usually random, so two writes with one
+/// `createdAt` go out in either order. Upstream Reactor.js `pushOps` numbers each mutation `max(order) + 1` as it is
+/// made; here a write is numbered as it enters the operation gate, where writes are serialized, by a time past the
+/// outbox tail.
+package enum InstantLocalWriteCreation: Equatable, Sendable {
+  /// `max(now, tail + 1)`, under the gate. The facts keep the times the caller built them with.
+  case afterOutboxTail
+  /// As ``afterOutboxTail``, and every fact the write asserts or retracts carries that time. The typed API builds its
+  /// facts with the write's own time, so the visible-write filter and the same-entity supersession, which compare
+  /// facts' times, see the order delivery uses.
+  case afterOutboxTailStampingFacts
+  /// The caller's time, kept exactly: tests, replays and imports that order their own writes. A tie goes by id.
+  case explicit(InstantTimestamp)
+
+  var explicitTime: InstantTimestamp? {
+    if case let .explicit(time) = self { time } else { nil }
+  }
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
@@ -2366,18 +2390,40 @@ public final class InstantRuntime: Sendable {
     source: String = "local"
   ) async throws -> InstantStoreMutationResult {
     let transactionID = configuration.makeID()
+    // #1648: no `createdAt`, so the write takes its place in the outbox inside the gate. Passing `now()` from here
+    // skipped the step past the tail, and two writes in one millisecond went out in id order.
     return try await transact(
       InstantStoreTransaction(id: transactionID, operations: operations),
-      createdAt: configuration.now(),
       source: source
     )
   }
 
+  /// Commits a local write: it is applied to the local store and saved to the durable outbox, and delivery sends it in
+  /// the order writes were made. Returns once both are durable, never after the server; offline it still succeeds.
+  ///
+  /// - Parameter createdAt: When `nil` (the default), the write's outbox time is assigned when it enters the operation
+  ///   gate, after every earlier write: `max(now, tail + 1)`. A non-nil time is kept exactly; a write that ties with
+  ///   another goes out in transaction-id order.
   @discardableResult
   @concurrent
   public func transact(
     _ transaction: InstantStoreTransaction,
     createdAt: InstantTimestamp? = nil,
+    source: String = "local"
+  ) async throws -> InstantStoreMutationResult {
+    try await transact(
+      transaction,
+      creation: createdAt.map { .explicit($0) } ?? .afterOutboxTail,
+      source: source
+    )
+  }
+
+  /// ``transact(_:createdAt:source:)`` with the write's creation time chosen by `creation` (#1648).
+  @discardableResult
+  @concurrent
+  package func transact(
+    _ transaction: InstantStoreTransaction,
+    creation: InstantLocalWriteCreation,
     source: String = "local"
   ) async throws -> InstantStoreMutationResult {
     let startedAt = Date()
@@ -2399,9 +2445,14 @@ public final class InstantRuntime: Sendable {
       // A cancelled caller must not keep a queue slot and then run the write
       // anyway. Cancellation is honored only before acquisition, so a
       // transaction that has already started still commits atomically.
-      try await enterOperationGateUnlessCancelled(priority: .interactive)
+      // #1648: every local write holds the gate under the public entry's name, whichever entry it came through: the
+      // gate's timeline, stall reports and the concurrency baselines name the holder by it.
+      try await enterOperationGateUnlessCancelled(
+        operation: "transact(_:createdAt:source:)",
+        priority: .interactive
+      )
       enteredOperationGate = true
-      let committed = try await performTransact(transaction, createdAt: createdAt, source: source)
+      let committed = try await performTransact(transaction, creation: creation, source: source)
       await leaveOperationGate()
       enteredOperationGate = false
       connectionHealthRecorder.recordLocalCommit(at: configuration.now().date)
@@ -2461,7 +2512,7 @@ public final class InstantRuntime: Sendable {
 
   private func performTransact(
     _ transaction: InstantStoreTransaction,
-    createdAt: InstantTimestamp?,
+    creation: InstantLocalWriteCreation,
     source: String
   ) async throws -> InstantLocalWriteCommit {
     var mutation: PendingMutation?
@@ -2561,9 +2612,11 @@ public final class InstantRuntime: Sendable {
         )
       }
       guard let creationCursor = checks.creationCursor, creationCursor.matchesRevision else { continue }
+      // #1648: the write's place in the outbox is decided here, under the gate, after the tail: the order writes enter
+      // the gate is the order delivery sends them, as Reactor.js `pushOps` numbers each mutation `max(order) + 1`.
       var pendingMutation: PendingMutation
       if var existingDraft = mutation {
-        if createdAt == nil {
+        if creation.explicitTime == nil {
           existingDraft.createdAt = Self.monotonicOutboxTimestamp(
             existingDraft.createdAt,
             after: creationCursor.timestamp
@@ -2574,7 +2627,7 @@ public final class InstantRuntime: Sendable {
       } else {
         let newMutation = PendingMutation(
           id: transaction.id,
-          createdAt: createdAt
+          createdAt: creation.explicitTime
             ?? Self.monotonicOutboxTimestamp(
               configuration.now(),
               after: creationCursor.timestamp
@@ -2583,6 +2636,13 @@ public final class InstantRuntime: Sendable {
         )
         mutation = newMutation
         pendingMutation = newMutation
+      }
+      if creation == .afterOutboxTailStampingFacts {
+        // Each attempt restamps the caller's facts at this attempt's time, so a retry that steps the time keeps them
+        // equal; #296's restamp below runs again on the result.
+        let createdAt = pendingMutation.createdAt
+        pendingMutation.transaction.operations = transaction.operations.map { $0.rebased(at: createdAt) }
+        mutation = pendingMutation
       }
       let immediateTail: InstantOutboxImmediateTailLoad
       if let tailRead = checks.immediateTail {
@@ -15132,9 +15192,10 @@ public final class InstantRuntime: Sendable {
         recovery: "Export it from the quarantine; its row is kept exactly as it was."
       )
     }
+    // #1648: sent again now, so it goes after every write in the outbox; a `now()` passed from here tied with a write
+    // made in the same millisecond and could go out before it.
     let result = try await transact(
       mutation.transaction,
-      createdAt: configuration.now(),
       source: "quarantine-send-again"
     )
     recordActorHop(.persistence)
