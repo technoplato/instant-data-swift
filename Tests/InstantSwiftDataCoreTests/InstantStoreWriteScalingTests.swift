@@ -332,6 +332,239 @@ struct InstantStoreWriteScalingTests {
     #expect(indexes.newestWriteTime(entityID: "row", attributeID: "ns/missing") == nil)
   }
 
+  // MARK: - TripleIndexes.newestTransactionTimeMilliseconds
+
+  /// A full-rebase server apply stamps each pending write it replays one past the newest fact in the store, so it reads
+  /// the newest once per write. Walking every fact for it made a frame that replays P writes over N facts cost P × N.
+  ///
+  /// Measured on a tablet on 2026-11-04 (library 1.9.64, #1748): iOS's CPU Monitor killed the app for "48 seconds cpu
+  /// time over 60 seconds (81% cpu average), exceeding limit of 80% cpu over 60 seconds" while another app was
+  /// frontmost in Split View, and 5 of the 6 samples were in this getter, under `applyLiveRefresh` →
+  /// `performApplyServerTransaction`. After the relaunch the outbox it had built up drained at roughly one minute of
+  /// writes an hour.
+  ///
+  /// The replay runs here as the server apply runs it: read the newest, write a fact one past it. The same 300 replays
+  /// over a store 32× larger must cost about the same. Best of three, and an absolute floor for runs too short to time.
+  @Test
+  func replayingPendingWritesDoesNotWalkTheStoreForTheNewestTime() {
+    let attributes = AttributeStore(attributes: [
+      InstantAttribute(id: "ns/value", namespace: "ns", name: "value", valueType: .string)
+    ])
+    func replayThreeHundredWrites(overFacts factCount: Int) -> Duration {
+      var indexes = TripleIndexes(
+        triples: (0..<factCount).map { index in
+          InstantTriple(
+            entityID: "row-\(index)",
+            attributeID: "ns/value",
+            value: .string("seed-\(index)"),
+            txID: "seed-\(index)",
+            txTime: InstantTimestamp(milliseconds: Int64(index + 1))
+          )
+        },
+        attributes: attributes
+      )
+      var best = Duration.seconds(3_600)
+      for trial in 0..<3 {
+        let started = ContinuousClock.now
+        for write in 0..<300 {
+          let newest = indexes.newestTransactionTimeMilliseconds ?? 0
+          indexes.apply(
+            .insert(
+              InstantTriple(
+                entityID: "pending-\(trial)-\(write)",
+                attributeID: "ns/value",
+                value: .string("pending-\(trial)-\(write)"),
+                txID: "pending-\(trial)-\(write)",
+                txTime: InstantTimestamp(milliseconds: newest + 1)
+              )
+            ),
+            attributes: attributes
+          )
+        }
+        best = min(best, ContinuousClock.now - started)
+      }
+      expectNoDifference(indexes.newestTransactionTimeMilliseconds, Int64(factCount + 900))
+      return best
+    }
+
+    let small = replayThreeHundredWrites(overFacts: 2_000)
+    let large = replayThreeHundredWrites(overFacts: 64_000)
+
+    #expect(
+      large < small * 4 || large < .milliseconds(20),
+      """
+      300 replayed writes cost \(small) over 2,000 facts and \(large) over 64,000: reading the store's newest \
+      transaction time is walking the store.
+
+      This is the shape that got the app killed on 2026-11-04 (#1748): the full-rebase server apply reads the newest \
+      once per pending write it replays. Check that TripleIndexes still keeps its transaction times \
+      (TransactionTimeCounts) and that newestTransactionTimeMilliseconds reads them.
+      """
+    )
+  }
+
+  /// The newest time is kept rather than walked, so what can now break is staleness: every write that adds, replaces
+  /// or removes a fact has to leave it equal to a fresh walk, above all the ones that take the newest fact away.
+  @Test
+  func maintainedNewestTransactionTimeMatchesAFreshWalkThroughEveryMutation() throws {
+    let attributes = AttributeStore(attributes: [
+      InstantAttribute(id: "ns/many", namespace: "ns", name: "many", valueType: .string, cardinality: .many),
+      InstantAttribute(id: "ns/one", namespace: "ns", name: "one", valueType: .string),
+      InstantAttribute(id: "ns/doc", namespace: "ns", name: "doc", valueType: .json),
+      InstantAttribute(
+        id: "ns/link",
+        namespace: "ns",
+        name: "link",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .many,
+        linkNamespace: "ns"
+      ),
+    ])
+    func walked(_ indexes: TripleIndexes) -> Int64? {
+      indexes.triples.map(\.txTime.milliseconds).max()
+    }
+    func fact(
+      _ entityID: String,
+      _ attributeID: String,
+      _ value: InstantValue,
+      at milliseconds: Int64
+    ) -> InstantTriple {
+      InstantTriple(
+        entityID: entityID,
+        attributeID: attributeID,
+        value: value,
+        txID: "tx-\(milliseconds)",
+        txTime: InstantTimestamp(milliseconds: milliseconds)
+      )
+    }
+
+    var indexes = TripleIndexes(attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, nil)
+
+    // New cardinality-one facts and many-cardinality values.
+    indexes.apply(.insert(fact("row-a", "ns/one", .string("a1"), at: 10)), attributes: attributes)
+    indexes.apply(.insert(fact("row-b", "ns/one", .string("b1"), at: 20)), attributes: attributes)
+    indexes.apply(.insert(fact("row-a", "ns/many", .string("m1"), at: 30)), attributes: attributes)
+    indexes.apply(.insert(fact("row-a", "ns/many", .string("m2"), at: 40)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // An identical fact keeps the stamp it already has.
+    indexes.apply(.insert(fact("row-a", "ns/many", .string("m2"), at: 99)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // A cardinality-one value replaced by a newer one, then retracted: the newest falls back one fact.
+    indexes.apply(.insert(fact("row-a", "ns/one", .string("a2"), at: 50)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 50)
+    indexes.apply(.retract(fact("row-a", "ns/one", .string("a2"), at: 51)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // The newest retracted when the next newest is far below it.
+    indexes.apply(.insert(fact("row-c", "ns/one", .string("c1"), at: 1_000)), attributes: attributes)
+    indexes.apply(.retract(fact("row-c", "ns/one", .string("c1"), at: 1_001)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // Retracting what the store does not hold changes nothing.
+    indexes.apply(.retract(fact("row-a", "ns/many", .string("never"), at: 1_002)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // Replayed writes stamped one past each other, peeled newest first, as a full rebase does.
+    for write in 1...5 {
+      let newest = try #require(indexes.newestTransactionTimeMilliseconds)
+      indexes.apply(
+        .insert(fact("pending-\(write)", "ns/one", .string("p\(write)"), at: newest + 1)),
+        attributes: attributes
+      )
+    }
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 45)
+    for write in (1...5).reversed() {
+      indexes.apply(
+        .retract(fact("pending-\(write)", "ns/one", .string("p\(write)"), at: 0)),
+        attributes: attributes
+      )
+      expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    }
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // A local write loses to a resident later value; the server's older value replaces it whatever the stamps (#431).
+    indexes.apply(.insert(fact("row-d", "ns/one", .string("d-local"), at: 2_000)), attributes: attributes)
+    indexes.apply(.insert(fact("row-d", "ns/one", .string("d-older"), at: 5)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 2_000)
+    indexes.apply(
+      .insert(fact("row-d", "ns/one", .string("d-server"), at: 5)),
+      attributes: attributes,
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 40)
+
+    // A merge keeps the stamp of the value it merges into.
+    indexes.apply(.insert(fact("row-e", "ns/doc", .json(.object(["a": .number(1)])), at: 3_000)), attributes: attributes)
+    indexes.apply(.merge(fact("row-e", "ns/doc", .json(.object(["b": .number(2)])), at: 4_000)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 3_000)
+
+    // Deleting an entity takes its facts and the links that point at it.
+    indexes.apply(.insert(fact("row-g", "ns/one", .string("g"), at: 4_500)), attributes: attributes)
+    indexes.apply(.insert(fact("row-f", "ns/link", .ref("row-g"), at: 5_000)), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 5_000)
+    indexes.apply(.deleteEntity("row-g"), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 3_000)
+    indexes.apply(.insert(fact("row-h", "ns/one", .string("h"), at: 5_500)), attributes: attributes)
+    indexes.apply(.deleteEntityInNamespace(entityID: "row-h", namespace: "ns"), attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 3_000)
+
+    // A deferred value read back to prepare a write, then removed again.
+    indexes.hydrateDeferredValues([fact("row-i", "ns/one", .string("i"), at: 6_000)], attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 6_000)
+    indexes.removeMarkedDeferredValues(attributes: attributes)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 3_000)
+
+    // A schema change rebuilds the derived indexes: a many slot becomes one value.
+    indexes.apply(.insert(fact("row-k", "ns/many", .string("k1"), at: 7_000)), attributes: attributes)
+    indexes.apply(.insert(fact("row-k", "ns/many", .string("k2"), at: 6_500)), attributes: attributes)
+    let narrowed = AttributeStore(
+      attributes: attributes.attributes.map { attribute in
+        var attribute = attribute
+        if attribute.id == "ns/many" { attribute.cardinality = .one }
+        return attribute
+      }
+    )
+    indexes.reconcileDerivedIndexShapes(attributes: narrowed)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, walked(indexes))
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 7_000)
+
+    // A copy prepared for a write is its own value.
+    var prepared = indexes
+    prepared.apply(.insert(fact("row-l", "ns/one", .string("l"), at: 9_000)), attributes: narrowed)
+    expectNoDifference(prepared.newestTransactionTimeMilliseconds, 9_000)
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 7_000)
+
+    // Decoded and freshly built indexes count their times again.
+    let decoded = try JSONDecoder().decode(TripleIndexes.self, from: JSONEncoder().encode(prepared))
+    expectNoDifference(decoded.newestTransactionTimeMilliseconds, walked(prepared))
+    let rebuilt = TripleIndexes(triples: prepared.triples, attributes: narrowed)
+    expectNoDifference(rebuilt.newestTransactionTimeMilliseconds, walked(prepared))
+
+    // Emptied, the store has no newest time.
+    for entityID in Set(prepared.triples.map(\.entityID)) {
+      prepared.apply(.deleteEntity(entityID), attributes: narrowed)
+    }
+    expectNoDifference(prepared.tripleCount, 0)
+    expectNoDifference(prepared.newestTransactionTimeMilliseconds, nil)
+  }
+
   // MARK: - Overlay peel scaling (live server apply)
 
   /// Live server apply peels every durable optimistic overlay before rebasing. The wrong shape
