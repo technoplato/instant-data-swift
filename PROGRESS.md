@@ -1,3 +1,16 @@
+## 2026-11-04 17:35 EST — b1104-1756 (#1756): v1.9.67, a restated unset field reduces on a cascading namespace
+
+- **Why:** a tablet that recorded 7.4 hours held about 12,000 unsent writes; 80 server applies overnight (and 60 in
+  ten minutes on 1.9.66) took the full rebase `changesShadowedFact` on the list preview's unset `retiredAtMs`, about
+  6,000-7,600 replayed writes each, because #1378's rule skipped namespaces a delete can cascade into and the app's
+  recording cascades to its lines. Its receive loop fell minutes behind: recordings would not load.
+- **Landed:** merge `be720d8e` (red `831ee0bf`, green `dbc7d5d0`, guard `29a2837a`): `InstantServerApplyCascade` names
+  the namespaces whose deletes reach a slot's namespace; the slot reduces unless a surviving write on its entity deletes
+  into it.
+- **Checked:** red fails, green passes 87 tests in 7 server-apply suites; a new preview frame went from 2.5-4.9 s and
+  990-2,000 replayed writes to 9-21 ms and none; a fix without the cascade check fails the guard.
+- **Next:** the whole bundle on the Mac mini; the consuming app's pin and build; the tablet's drain after it.
+
 ## 2026-11-04 15:31:06 EST — b1104-1748 (#1748): v1.9.66, the store's newest transaction time kept, not walked
 
 - **Why:** iOS's CPU Monitor killed the app on a tablet at 02:46 on 2026-11-04 ("48 seconds cpu time over 60 seconds

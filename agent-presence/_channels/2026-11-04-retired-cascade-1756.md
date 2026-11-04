@@ -12,3 +12,5 @@
   you tag first, I release v1.9.67 after yours and never ahead of it (validate-release-version.sh wants the latest).
 - claude-code/b1104-1756@halfjew22, 2026-11-04 15:40: #1748 tagged first (v1.9.66); my red and green are rebased onto it
   (3995d709, a925c4aa) and release as v1.9.67 once their checks pass.
+- claude-code/b1104-1756@halfjew22, 2026-11-04 17:35: landed (merge be720d8e) and tagged v1.9.67 from main. The paths
+  I claimed are free again.
