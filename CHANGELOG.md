@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 3:02:01 p.m. EST — `9722630e09cd` green(#1748): the store's newest transaction time is kept in time-ordered counts, not walked
+
+- **Implementation commit:** `9722630e09cd92d454fab2d46e061a8962bf649d`
+- **Change:** green(#1748): the store's newest transaction time is kept in time-ordered counts, not walked (red b446b586)
+- **Details:**
+  - A full-rebase server apply stamps each pending write it replays one past the store's newest fact and read that newest once per write; the getter walked every fact, so a frame replaying P writes over N facts cost P x N. iOS's CPU Monitor killed the app on that walk on 2026-11-04 (81% cpu over 60 s, 5 of 6 samples).
+  - TransactionTimeCounts keeps how many facts carry each transaction time in sorted runs (at most 1,024 a run; short runs join a neighbor): the newest is the last entry and survives removals in O(log D). Kept where storedTripleCount is kept and where a cardinality-one value replaces another; recounted on decode and a derived-index rebuild; not encoded, compared or hashed.
+  - Measured (laptop, debug): the replay scaling test took 68.92 s on the red sources (300 replayed writes: 0.496 s over 2,000 facts, 17.998 s over 64,000) and 0.368 s on the green; InstantStoreWriteScalingTests 11 of 11 pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1748 TransactionTimeCounts and the hooks that keep it; newestTransactionTimeMilliseconds reads it
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreWriteScalingTests.swift` — #1748 a randomized test of the runs through splits, joins, a peel and an empty store
+  - `agent-presence/claude-code-b1104-1748/plans/2026-11-04-newest-1748/PLAN.md` — #1748 amendment 1: sorted runs instead of a rescanned dictionary
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, b1104-1748@halfjew22); no SpecStory capture
+
 ## October 31st, 2026 at 10:54:56 p.m. EDT — `faae749d19b9` release(#1482): v1.9.64: a live write's outbox body stored compressed; the write recorder with its cost fixed
 
 - **Implementation commit:** `faae749d19b9aee408c0945a986fad2405782f9a`
