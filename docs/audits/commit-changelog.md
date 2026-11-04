@@ -1,3 +1,6 @@
+## 2026-11-04 17:34:54 EST — scribe `a64e397d13287bd481ee16714c3b717824ce6a67`
+Tooling (#1793): agent-run ranks the eligible Claude Max logins by the week most at risk of going unused (weekly % left per hour until that login's weekly reset, highest first; ties to more 5-hour left; no reset read after, by weekly % left), not the fixed accountOrder; the interactive login and --spare stay last; --quota says each login's place and why. Red 85aa7eef0, green c65c4d950, installed into ~/Scribe/tools 17:30; changelog c46543758. Live 17:31: pp (100% left, 11h28m: 8.7%/h) then halfjew22.
+
 ## 2026-11-04 17:10:48 EST — scribe `aa5b33a2e1e11700d6d5f29558393945dfe735ef`
 Feature (#1592): "Scribe, stop recording" in the owner's own voice (a named speaker or a voice print without a question mark) stops the recording at once, in front and in the background: a fixed grammar reads the sentence, never the model (0 model calls a try, was 1 at 1.5 s median); an unknown voice is asked in front and refused aloud in the background; another person, system audio and Scribe's own voice never stop it; every try logs #1592. The grammar over 90,758 mirrored lines reads 4 as a stop, all real asks.
 
