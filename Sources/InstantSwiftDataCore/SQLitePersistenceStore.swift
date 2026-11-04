@@ -364,6 +364,9 @@ struct InstantUnloadedLiveQueryResultRead: Sendable {
   var result: InstantPersistedLiveQueryResult
   var rowTripleCount: Int
   var rowUpdatedAtMilliseconds: Int64
+  /// Whether the result was unloaded where it is (#1500): its row is marked, and its ownership rows and facts stayed on
+  /// disk. False for an older build's whole copy in `instant_unloaded_live_query_results`.
+  var isInPlace = false
 }
 
 /// Where a closed result's reload stands once its row is back among the stored results (#1131).
@@ -377,6 +380,8 @@ struct InstantUnloadedLiveQueryResultReloadStart: Sendable {
   var unownedFacts: Set<InstantLiveTripleIdentity>
   /// Whether the row read before the operation gate had been replaced, so the reload read it again.
   var readAgain: Bool
+  /// Whether the result kept its ownership rows (#1500): unloaded where it is, it needs none written back.
+  var ownsItsFacts = false
 }
 
 /// One chunk of a closed result's reload (#1131).
@@ -11809,10 +11814,14 @@ public actor SQLitePersistenceStore {
         attributes: attributes
       )
       if retainedLiveQueryEntityIDs.isEmpty {
+        // #1500: the loaded results' rows only; an unloaded result's stay on disk.
         whereClauses.append(
           """
           entity_id IN (
-            SELECT DISTINCT entity_id FROM instant_live_query_triples
+            SELECT DISTINCT ownership.entity_id
+            FROM instant_live_query_triples AS ownership
+            JOIN instant_live_query_results AS result ON result.query_id = ownership.query_id
+            WHERE result.unloaded_at_ms IS NULL
             UNION
             SELECT entity_id FROM instant_outbox_effect_entities
           )
@@ -14733,7 +14742,9 @@ public actor SQLitePersistenceStore {
   }
 
   private func unloadedLiveQueryResultWithoutTransaction(key: String) throws -> InstantUnloadedLiveQueryResultRead? {
-    guard let identity = try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key) else { return nil }
+    guard let identity = try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key) else {
+      return try inPlaceUnloadedLiveQueryResultWithoutTransaction(key: key)
+    }
     let results: [InstantPersistedLiveQueryResult] = try selectJSON(
       "SELECT json FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
       [.text(key)]
@@ -14745,6 +14756,25 @@ public actor SQLitePersistenceStore {
         rowUpdatedAtMilliseconds: identity.updatedAtMilliseconds
       )
     }
+  }
+
+  /// `key`'s result when a prune unloaded it where it is (#1500): its row marked, read from its ownership rows and the
+  /// facts they name, as a stored result is read.
+  private func inPlaceUnloadedLiveQueryResultWithoutTransaction(key: String) throws -> InstantUnloadedLiveQueryResultRead? {
+    guard
+      try selectScalar(
+        "SELECT 1 FROM instant_live_query_results WHERE query_key = ? AND unloaded_at_ms IS NOT NULL LIMIT 1",
+        [.text(key)]
+      ) != nil,
+      let identity = try loadedLiveQueryResultRowIdentityWithoutTransaction(key: key),
+      let result = try liveQueryResultWithoutTransaction(key: key)
+    else { return nil }
+    return InstantUnloadedLiveQueryResultRead(
+      result: result,
+      rowTripleCount: identity.tripleCount,
+      rowUpdatedAtMilliseconds: identity.updatedAtMilliseconds,
+      isInPlace: true
+    )
   }
 
   /// What names `key`'s unloaded row: a prune writes the result's own fact count and update time with it, so a row
@@ -14783,6 +14813,30 @@ public actor SQLitePersistenceStore {
     var expected: (store: Int64, attributes: Int64, outbox: Int64, queryResults: Int64) = (0, 0, 0, 0)
     let start: InstantUnloadedLiveQueryResultReloadStart? = try transaction {
       let key = read.result.key
+      if read.isInPlace || (try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key)) == nil {
+        // #1500: unloaded where it is: its mark goes, and its ownership rows and facts are already where they belong.
+        guard let current = try inPlaceUnloadedLiveQueryResultWithoutTransaction(key: key) else { return nil }
+        expected = (
+          try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+          try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey),
+          try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey),
+          try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+        )
+        try execute(
+          "UPDATE instant_live_query_results SET unloaded_at_ms = NULL WHERE query_key = ?",
+          [.text(key)]
+        )
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+        return InstantUnloadedLiveQueryResultReloadStart(
+          result: current.result,
+          rowTripleCount: current.rowTripleCount,
+          rowUpdatedAtMilliseconds: current.rowUpdatedAtMilliseconds,
+          unownedFacts: [],
+          readAgain: current.rowTripleCount != read.rowTripleCount
+            || current.rowUpdatedAtMilliseconds != read.rowUpdatedAtMilliseconds,
+          ownsItsFacts: true
+        )
+      }
       guard let identity = try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key) else { return nil }
       var result = read.result
       var row = identity
@@ -14873,7 +14927,8 @@ public actor SQLitePersistenceStore {
     rowUpdatedAtMilliseconds: Int64,
     entityTriples: [String: [InstantTriple]],
     ownedFacts: [InstantTriple],
-    residentEntityIDs: Set<String>
+    residentEntityIDs: Set<String>,
+    ownsItsFacts: Bool = false
   ) throws -> InstantUnloadedLiveQueryResultChunkReload? {
     var expected: (store: Int64, attributes: Int64, outbox: Int64, queryResults: Int64) = (0, 0, 0, 0)
     var restoredEntityTriples: [String: [InstantTriple]] = [:]
@@ -14890,7 +14945,8 @@ public actor SQLitePersistenceStore {
         try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       )
       var ownership: Set<LiveQueryOwnershipIdentity> = []
-      for triple in ownedFacts {
+      // #1500: a result unloaded where it is kept its ownership rows.
+      for triple in ownedFacts where !ownsItsFacts {
         ownership.insert(
           LiveQueryOwnershipIdentity(
             entityID: triple.entityID,
@@ -14899,7 +14955,7 @@ public actor SQLitePersistenceStore {
           )
         )
       }
-      liveQueryResultValueEncodeCount += ownedFacts.count
+      liveQueryResultValueEncodeCount += ownership.count
       let queryID = try liveQueryResultIDWithoutTransaction(key: key)
       try executeRepeated(
         """
@@ -19740,7 +19796,8 @@ public actor SQLitePersistenceStore {
   ) throws -> Set<String> {
     let rows = try loadLiveQueryResultRowsWithoutTransaction()
     var retained: Set<String> = []
-    for row in rows {
+    // #1500: a result unloaded where it is keeps its facts on disk until its query subscribes again.
+    for row in rows where !row.isUnloaded {
       guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
         continue
       }
@@ -20809,7 +20866,8 @@ public actor SQLitePersistenceStore {
         triple_count = excluded.triple_count,
         updated_at_ms = excluded.updated_at_ms,
         page_info_json = excluded.page_info_json,
-        json = ''
+        json = '',
+        unloaded_at_ms = NULL
       """,
       [
         .text(key),

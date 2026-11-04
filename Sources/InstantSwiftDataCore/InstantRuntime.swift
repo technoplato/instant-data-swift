@@ -7346,7 +7346,8 @@ public final class InstantRuntime: Sendable {
               rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
               entityTriples: entityTriples,
               ownedFacts: ownedFacts,
-              residentEntityIDs: residentEntityIDs
+              residentEntityIDs: residentEntityIDs,
+              ownsItsFacts: begun.ownsItsFacts
             )
           else {
             stoppedEarly = true
