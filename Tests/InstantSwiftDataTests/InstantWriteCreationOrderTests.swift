@@ -80,6 +80,42 @@ struct InstantWriteCreationOrderTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
+  /// The phone's case: two tasks write revisions of one row at once, in one millisecond. Neither is made first by the
+  /// call; the one that enters the gate first is. Each takes its own place after the tail, its facts carry it, the wire
+  /// carries both in that order, and the row shows the revision the server applies last.
+  @Test
+  func twoConcurrentTypedWritesInOneMillisecondGoOutInTheOrderTheyEnteredTheGate() async throws {
+    let server = CreationOrderServer()
+    let fixture = try await CreationOrderFixture.make(
+      "typed-concurrent-same-millisecond",
+      now: { Self.sameMillisecond },
+      liveTransport: server.transport
+    )
+    defer { fixture.remove() }
+    let client = fixture.client
+
+    try await client.transact([Self.create()], id: "m-create")
+    async let first = client.transact([Self.revise("First", updatedAtMs: 2)], id: "z-first")
+    async let second = client.transact([Self.finish("Second", updatedAtMs: 3)], id: "a-second")
+    _ = try await (first, second)
+
+    let outbox = await fixture.runtime.pendingMutations(limit: 10)
+    let start = Self.sameMillisecond.milliseconds
+    expectNoDifference(outbox.map(\.createdAt.milliseconds), [start, start + 1, start + 2])
+    for mutation in outbox {
+      expectNoDifference(mutation.writeTimes, [mutation.createdAt], "\(mutation.id)'s facts")
+    }
+    let lastTitle = try #require(outbox.last?.insertedValue(of: "title"))
+    let songs = try await client.query(CreationOrderSong.query)
+    expectNoDifference(songs.map { InstantValue.string($0.title) }, [lastTitle])
+
+    _ = try await fixture.runtime.connect()
+    try await waitUntil("three transacts are sent") { await server.transactIDs().count == 3 }
+    let sent = await server.transactIDs()
+    expectNoDifference(sent, outbox.map { $0.id as String? })
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
   /// The clock may step back between two writes (a time sync). The second write is still made after the first.
   @Test
   func aTypedWriteMadeAfterTheClockStepsBackStillGoesAfterTheWriteBeforeIt() async throws {
