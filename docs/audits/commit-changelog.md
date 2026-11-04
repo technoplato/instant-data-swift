@@ -1,3 +1,9 @@
+## 2026-10-30 01:49:21 EDT — scribe `8e6c233f68ab1d6a94ff6047ac0100c3a4dae940`
+Playground (#950): the right ribbon's marks sit at their time, playback is a band, and a drag on the edge pulls it in.
+
+## 2026-10-30 00:33:16 EDT — scribe `6d20641f2acef721f76d2abc378f8823fd832a33`
+Playground (#950): three takes for a right-side ribbon of logged events beside one transcript column.
+
 ## 2026-10-25 01:50:46 EDT — scribe `282714354addab364d86738f7237c9f0106da72c`
 Feature (#962): a played line's Open and Copy by voice (playedLine.open, playedLine.copy), so every control has a voice command or a reason again.
 
