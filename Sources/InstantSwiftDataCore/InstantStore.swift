@@ -2480,7 +2480,7 @@ public actor InstantStore {
   /// - An entity that enters the root set of a head window (a limit, with no offset or cursor), while no row the window
   ///   shows leaves or moves and no member it does not show leaves: the new window is among its old rows and the entering
   ///   ones, so the window's bounded selection runs over those alone. A full window gains a row, so its lookahead is
-  ///   among them too; one that was not full held the whole set.
+  ///   among them too. A window that was not full held the whole set, so any of its rows may also leave or move.
   ///
   /// The server's page info bounds no row of such a plan (``TripleIndexes/pageRowsDependOnRemotePageInfo(_:)``), so a
   /// publication that also brings new page info for it only replaces the page info the page reports.
@@ -2517,17 +2517,28 @@ public actor InstantStore {
       guard rootIndexByID.updateValue(index, forKey: root.id) == nil else { return nil }
     }
     let shownEntityIDs = observer.shownEntityIDs(metrics: &metrics)
+    let isHeadWindow = plan.limit != nil && (plan.offset ?? 0) == 0 && plan.first == nil && plan.last == nil
+      && plan.after == nil && plan.before == nil
+    // A head window holding fewer rows than its limit shows its whole root set.
+    let showsWholeSet = isHeadWindow && roots.count < (plan.limit ?? 0)
     // The shown entities the changes reach, at any depth; every root whose tree shows one is made again.
     var reachedShownIDs: Set<String> = []
     var enteringIDs: [String] = []
+    var windowChanged = false
     for entityID in changedEntityIDs {
       let before = baseline.indexes.resultSetMembership(entityID, plan: plan, attributes: baseline.attributes)
       let after = indexes.resultSetMembership(entityID, plan: plan, attributes: attributes)
       if before != after {
-        // A shown row that leaves or moves, or a member the window does not show that leaves, changes the window by
-        // rows it does not hold.
-        guard rootIndexByID[entityID] == nil, case .member = after else { return nil }
-        enteringIDs.append(entityID)
+        if case .member = after, rootIndexByID[entityID] == nil {
+          enteringIDs.append(entityID)
+        } else if showsWholeSet {
+          // A shown row that leaves or moves: the window held every member, so its rows are still among its candidates.
+          windowChanged = true
+        } else {
+          // A shown row that leaves or moves, or a member the window does not show that leaves, changes the window by
+          // rows it does not hold.
+          return nil
+        }
         continue
       }
       if shownEntityIDs.contains(entityID) {
@@ -2540,9 +2551,8 @@ public actor InstantStore {
       }
     }
 
-    if !enteringIDs.isEmpty {
-      guard plan.limit != nil, (plan.offset ?? 0) == 0, plan.first == nil, plan.last == nil, plan.after == nil,
-        plan.before == nil,
+    if windowChanged || !enteringIDs.isEmpty {
+      guard isHeadWindow,
         let window = indexes.materializeBoundedPage(
           plan,
           amongCandidates: roots.map(\.id) + enteringIDs,
