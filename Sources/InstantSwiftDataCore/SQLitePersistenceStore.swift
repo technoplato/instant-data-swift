@@ -533,6 +533,8 @@ struct InstantLiveQueryResultPruneBatchApplication: Sendable {
   var retainedReleasedIdentities: Set<InstantLiveTripleIdentity>
   /// Whether the batch left released rows whose facts later batches check (#1129).
   var leftReleasedRows = false
+  /// The entities the results it unloaded own (#1500): their rows stay on disk, and memory may release them.
+  var unloadedEntityIDs: Set<String> = []
 
   var removedEntityIDs: Set<String> {
     Set(removedFacts.lazy.map(\.entityID))
@@ -551,6 +553,8 @@ private struct LiveQueryResultStorageRow: Sendable {
   var queryKey: String
   var updatedAtMilliseconds: Int64
   var tripleCount: Int
+  /// Whether no open query holds the result: its rows and facts stay on disk until the policy collects it (#1500).
+  var isUnloaded = false
 }
 
 // #590 (2026-10-23): the queue keeps its own user-initiated QoS. A caller waits for its batches on a dispatch group from
@@ -3029,6 +3033,10 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
+    // After the compaction, which rebuilds the results table with the columns it knew (#1500).
+    try withSQLiteBusyRetry {
+      try addLiveQueryResultUnloadedColumnIfNeeded()
+    }
     // After every migration above, which wrote the old table's shape; a restore that rebuilds that shape converts again.
     try withSQLiteBusyRetry {
       try moveOutboxBodiesToTheirOwnTableIfNeeded()
@@ -3706,6 +3714,25 @@ public actor SQLitePersistenceStore {
   private func liveQueryResultsHavePageInfoColumn() throws -> Bool {
     try selectInt64(
       "SELECT COUNT(*) FROM pragma_table_info('instant_live_query_results') WHERE name = 'page_info_json'"
+    ) > 0
+  }
+
+  /// Adds `unloaded_at_ms` to the results table, the first time a store opens without it (#1500): a closed query's
+  /// result is unloaded where it is, marked with the time no open query held it, instead of copied whole into
+  /// `instant_unloaded_live_query_results`. NULL is a loaded result, as every row was.
+  private func addLiveQueryResultUnloadedColumnIfNeeded() throws {
+    guard try !liveQueryResultsHaveUnloadedColumn() else { return }
+    try transaction {
+      // Another connection may have added it while this one waited for the write lock.
+      guard try !liveQueryResultsHaveUnloadedColumn() else { return }
+      try execute("ALTER TABLE instant_live_query_results ADD COLUMN unloaded_at_ms INTEGER")
+    }
+  }
+
+  /// Whether the results table has #1500's `unloaded_at_ms` column.
+  private func liveQueryResultsHaveUnloadedColumn() throws -> Bool {
+    try selectInt64(
+      "SELECT COUNT(*) FROM pragma_table_info('instant_live_query_results') WHERE name = 'unloaded_at_ms'"
     ) > 0
   }
 
@@ -13918,13 +13945,16 @@ public actor SQLitePersistenceStore {
       return true
     }
 
-    // A closed query's result is unloaded, not deleted (#1006): its facts leave the store as a deleted result's do,
-    // and its stored copy answers the query's next subscription before the server does. Upstream
-    // `PersistedObject.unloadKey` "unloads the key so that it can be garbage collected, but does not delete it".
+    // A closed query's result is unloaded, not deleted (#1006), and unloaded where it is (#1500): its row is marked, its
+    // ownership rows and facts stay on disk for the query's next subscription, and memory releases what nothing open
+    // shows. Upstream `PersistedObject.unloadKey` "unloads the key so that it can be garbage collected, but does not
+    // delete it". It stays among the rows the limits below count, which collect it oldest first like any result no
+    // open query holds. The copy into `instant_unloaded_live_query_results` it replaces wrote each result whole: 207 MB
+    // of copies on a phone's store, 145-308 MB an hour of writes with the release and the reload.
     var unloadingKeys: Set<String> = []
     if !preservingQueryKeys.isEmpty {
-      for row in Array(rows) where !preservingQueryKeys.contains(row.queryKey) {
-        if remove(row) { unloadingKeys.insert(row.queryKey) }
+      for row in rows where !row.isUnloaded && !preservingQueryKeys.contains(row.queryKey) {
+        unloadingKeys.insert(row.queryKey)
       }
     }
 
@@ -13973,11 +14003,11 @@ public actor SQLitePersistenceStore {
 
     var releasedIdentities = carriedReleasedIdentities
     var unreadableQueryKeys: Set<String> = []
-    // #1129: an unloaded result larger than the budget is released over later batches, which read its facts from its
-    // ownership rows, so it is not decoded here.
+    // #1129: a result a session prune collects that is larger than the budget is released over later batches, which
+    // read its facts from its ownership rows, so it is not decoded here.
     var releasingQueryKeys: Set<String> = []
-    if let maximumRemovedTripleCount {
-      for row in removedRows where unloadingKeys.contains(row.queryKey) && row.tripleCount > maximumRemovedTripleCount {
+    if let maximumRemovedTripleCount, !preservingQueryKeys.isEmpty {
+      for row in removedRows where row.tripleCount > maximumRemovedTripleCount {
         releasingQueryKeys.insert(row.queryKey)
       }
     }
@@ -14017,11 +14047,26 @@ public actor SQLitePersistenceStore {
     residency: InstantPruneResidency
   ) throws -> InstantLiveQueryResultPruneBatchApplication {
     var unloadedKeys: [String] = []
+    var unloadedEntityIDs: Set<String> = []
+    let removedQueryKeys = Set(batch.removedQueryKeys)
+    // #1500: an unloaded result is marked where it is; a result the limits also collect in this batch goes below.
+    for queryKey in batch.unloadingQueryKeys.sorted() where !removedQueryKeys.contains(queryKey) {
+      try execute(
+        "UPDATE instant_live_query_results SET unloaded_at_ms = ? WHERE query_key = ? AND unloaded_at_ms IS NULL",
+        [.int(now.milliseconds), .text(queryKey)]
+      )
+      unloadedEntityIDs.formUnion(
+        try selectStrings(
+          """
+          SELECT DISTINCT entity_id FROM instant_live_query_triples
+          WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = ?)
+          """,
+          [.text(queryKey)]
+        )
+      )
+      unloadedKeys.append(queryKey)
+    }
     for queryKey in batch.removedQueryKeys where !batch.unreadableQueryKeys.contains(queryKey) {
-      if batch.unloadingQueryKeys.contains(queryKey) {
-        try unloadLiveQueryResultWithoutTransaction(key: queryKey)
-        unloadedKeys.append(queryKey)
-      }
       if batch.releasingQueryKeys.contains(queryKey) {
         // #1129: out of its key's way, with its ownership rows, which later batches delete as they check its facts;
         // deleting it took them all in one cascade, 150 ms and a 96 ms commit for the `$files` list's 75,640.
@@ -14066,7 +14111,8 @@ public actor SQLitePersistenceStore {
       queryResultRevision: queryResultRevision,
       hasMoreToRemove: batch.hasMoreToRemove,
       retainedReleasedIdentities: retainedReleasedIdentities,
-      leftReleasedRows: !batch.releasingQueryKeys.isEmpty
+      leftReleasedRows: !batch.releasingQueryKeys.isEmpty,
+      unloadedEntityIDs: unloadedEntityIDs
     )
   }
 
@@ -14250,9 +14296,8 @@ public actor SQLitePersistenceStore {
           [.text(Self.releasedLiveQueryResultKeyPrefix), .text(Self.releasedLiveQueryResultKeyPrefix + "\u{10FFFF}")]
         ) == nil
       else { return nil }
-      let unowned = entityIDs.subtracting(
-        try entityIDsWithRowsWithoutTransaction(in: "instant_live_query_triples", among: entityIDs)
-      )
+      // #1500: a closed result unloaded where it is keeps its ownership rows for its reopening, not memory's facts.
+      let unowned = entityIDs.subtracting(try entityIDsLoadedResultsOwnWithoutTransaction(among: entityIDs))
       var pending = try entityIDsWithRowsWithoutTransaction(in: "instant_outbox_write_keys", among: unowned)
       pending.formUnion(
         try entityIDsWithRowsWithoutTransaction(
@@ -14262,6 +14307,30 @@ public actor SQLitePersistenceStore {
       )
       return InstantResidencySweepDecision(releasable: unowned.subtracting(pending), pending: pending)
     }
+  }
+
+  /// The ids among `entityIDs` that a loaded stored result owns a fact of (#1500): a result no open query holds keeps its
+  /// rows on disk for its reopening, and owns nothing in memory. 500 to a statement, through the ownership rows' identity
+  /// index and the results' primary key.
+  private func entityIDsLoadedResultsOwnWithoutTransaction(among entityIDs: Set<String>) throws -> Set<String> {
+    var found: Set<String> = []
+    let sorted = entityIDs.sorted()
+    for start in stride(from: 0, to: sorted.count, by: 500) {
+      let batch = sorted[start..<Swift.min(start + 500, sorted.count)]
+      let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+      found.formUnion(
+        try selectStrings(
+          """
+          SELECT DISTINCT ownership.entity_id
+          FROM instant_live_query_triples AS ownership
+          JOIN instant_live_query_results AS result ON result.query_id = ownership.query_id
+          WHERE ownership.entity_id IN (\(placeholders)) AND result.unloaded_at_ms IS NULL
+          """,
+          batch.map(SQLiteBinding.text)
+        )
+      )
+    }
+    return found
   }
 
   /// The ids among `entityIDs` that `table` holds rows of, through its index that leads with `entity_id`, 500 to a
@@ -19628,7 +19697,7 @@ public actor SQLitePersistenceStore {
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT query_key, updated_at_ms, triple_count
+      SELECT query_key, updated_at_ms, triple_count, unloaded_at_ms IS NOT NULL
       FROM instant_live_query_results
       WHERE \(Self.notReleasedLiveQueryResultSQL)
       ORDER BY updated_at_ms, query_key
@@ -19659,7 +19728,8 @@ public actor SQLitePersistenceStore {
         LiveQueryResultStorageRow(
           queryKey: String(cString: queryKeyCString),
           updatedAtMilliseconds: sqlite3_column_int64(statement, 1),
-          tripleCount: Int(sqlite3_column_int64(statement, 2))
+          tripleCount: Int(sqlite3_column_int64(statement, 2)),
+          isUnloaded: sqlite3_column_int64(statement, 3) != 0
         )
       )
     }
