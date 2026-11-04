@@ -1425,6 +1425,9 @@ public actor SQLitePersistenceStore {
   private var keptReceiptFingerprints: [String: InstantKeptReceiptFingerprint] = [:]
   /// How many forward wire-intent fingerprints the outbox row write computed for the mutation it saves (#1491).
   private var savedWireIntentFingerprintCount = 0
+  /// What the delivery claim encoded for the writes it claimed (#1517): each projected body it measured, and each
+  /// forward wire intent it fingerprinted.
+  private var claimEncodeCounts = InstantClaimEncodeCounts()
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1544,6 +1547,11 @@ public actor SQLitePersistenceStore {
   /// How many forward wire-intent fingerprints the outbox row write computed for the mutations it saved (#1491).
   package func savedWireIntentFingerprintCountForTesting() -> Int {
     savedWireIntentFingerprintCount
+  }
+
+  /// What the delivery claims on this store encoded so far (#1517).
+  package func claimEncodeCountsForTesting() -> InstantClaimEncodeCounts {
+    claimEncodeCounts
   }
 
   /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one computed encodes the mutation's
@@ -10731,6 +10739,7 @@ public actor SQLitePersistenceStore {
               // below includes its write keys.
               break
             }
+            claimEncodeCounts.wireIntentFingerprints += 1
             try claimOutboxMutationWithoutTransaction(
               id: mutation.id,
               claimantID: request.claimantID,
@@ -10842,6 +10851,7 @@ public actor SQLitePersistenceStore {
           continue
         }
 
+        claimEncodeCounts.projectedBodyEncodes += 1
         let metadata = try InstantBoundedOutboxDelivery.projectionMetadata(
           for: candidate,
           visibleWriteFilter: visibleWriteFilter
@@ -10927,6 +10937,7 @@ public actor SQLitePersistenceStore {
           candidate,
           visibleWriteFilter: hydratedFilter
         )
+        claimEncodeCounts.projectedBodyEncodes += 1
         let encodedProjectedBodyByteCount = try InstantBoundedOutboxDelivery
           .encodedProjectedBodyByteCount(projectedMutation)
         guard encodedProjectedBodyByteCount == metadata.encodedBodyByteCount else {
@@ -10936,6 +10947,7 @@ public actor SQLitePersistenceStore {
               "Metadata-first projected bytes did not match exact sorted-key encoding."
           )
         }
+        claimEncodeCounts.wireIntentFingerprints += 1
         try updateProjectedOutboxClaimByteCountWithoutTransaction(
           id: candidate.mutation.id,
           claimToken: request.claimToken,
@@ -18338,6 +18350,24 @@ public actor SQLitePersistenceStore {
 
   package func optimisticEffectReceiptFingerprintForTesting(id: String) throws -> String? {
     try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: id)
+  }
+
+  /// A row's claim columns as its claim left them (#1517): the projected byte count and the payload fingerprint.
+  package func outboxClaimColumnsForTesting(
+    id: String
+  ) throws -> (projectedBodyByteCount: Int?, payloadFingerprint: String?)? {
+    guard
+      try selectInt64("SELECT COUNT(*) FROM instant_outbox WHERE mutation_id = ?", [.text(id)]) == 1
+    else { return nil }
+    let bytes = try selectScalar(
+      "SELECT delivery_claim_projected_body_bytes FROM instant_outbox WHERE mutation_id = ?",
+      [.text(id)]
+    )
+    let fingerprint = try selectScalar(
+      "SELECT delivery_claim_payload_fingerprint FROM instant_outbox WHERE mutation_id = ?",
+      [.text(id)]
+    )
+    return (bytes.flatMap { Int($0) }, fingerprint)
   }
 
   private func decodeOutboxBody<Value: Decodable>(_ json: String) throws -> Value {

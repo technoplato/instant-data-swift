@@ -219,6 +219,14 @@ struct InstantOutboxProjectionMetadata: Sendable {
   var requiredScalarKeys: Set<InstantVisibleWriteKey>
 }
 
+/// What a store's delivery claims encoded for the writes they claimed (#1517), for the tests that pin it.
+package struct InstantClaimEncodeCounts: Equatable, Sendable {
+  /// Sorted-key encodes of a claimed write's projected body, made to measure it.
+  package var projectedBodyEncodes = 0
+  /// Forward wire-intent fingerprints (a sorted-key encode and a SHA-256) of a claimed write.
+  package var wireIntentFingerprints = 0
+}
+
 struct InstantOutboxDeliveryClaim: Equatable, Sendable {
   var state: InstantOutboxDeliveryClaimState
   var claimToken: String?
