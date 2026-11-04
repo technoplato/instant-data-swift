@@ -382,6 +382,7 @@ struct SpliceFixture {
       return heartbeat(recording)
     case 6:
       // A line retired or edited, shown or not.
+      guard lineCounts[recording] > 0 else { return heartbeat(recording) }
       let index = random.int(0...(lineCounts[recording] - 1))
       let line = Self.segmentID(recording, index)
       guard !deletedLines.contains(line) else { return heartbeat(recording) }
@@ -399,7 +400,7 @@ struct SpliceFixture {
       ])
     case 8:
       // A preview slot moved to an older line, or a new audio attachment.
-      if random.chance(50) {
+      if random.chance(50), lineCounts[recording] > 0 {
         let index = random.int(0...(lineCounts[recording] - 1))
         guard !deletedLines.contains(Self.segmentID(recording, index)) else { return heartbeat(recording) }
         return transaction([
