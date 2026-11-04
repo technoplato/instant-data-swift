@@ -1,6 +1,7 @@
 // History:
 // - 2026-11-04: added (#1165): a write to an entity this device keeps on disk but not in memory, local or from the
 //   server, reads the entity's own facts first: it keeps the facts it does not restate, and strict checks see it.
+// - 2026-11-04: the read's cost: none for an entity in memory, one probe for a new one (#1165).
 
 import CustomDump
 import Foundation
@@ -135,6 +136,31 @@ struct InstantNonResidentWriteTests {
       of: runtime, InstantLocalReadTests.recordingLines("recording-1")
     )
     expectNoDifference(memory.values.map(\.id), ["line-2", "line-0"], "the restated line is in memory, whole")
+  }
+
+  /// What the read beside memory costs: a write to an entity memory holds reads nothing from disk for it, and a write
+  /// that creates an entity probes for it once and finds nothing.
+  @Test
+  func aWriteReadsFromDiskOnlyTheEntitiesMemoryLacks() async throws {
+    let (_, runtime) = try await Self.relaunchedStore()
+    let before = await runtime.persistence.keptOnDiskEntityReadCount
+
+    try await runtime.transact(
+      InstantStoreTransaction(id: "move-line-2", operations: [.insert(Self.fact("line-2", "lines/index", .number(102)))]),
+      createdAt: Self.now
+    )
+    let afterResidentWrite = await runtime.persistence.keptOnDiskEntityReadCount
+    #expect(afterResidentWrite == before, "line-2 is in memory")
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "create-line-3",
+        operations: InstantLocalReadTests.line(3, recordingID: "recording-1").map(InstantTripleOperation.insert)
+      ),
+      createdAt: Self.now
+    )
+    let afterCreate = await runtime.persistence.keptOnDiskEntityReadCount
+    #expect(afterCreate == before + 1, "line-3 is new: one probe, which finds nothing")
   }
 }
 

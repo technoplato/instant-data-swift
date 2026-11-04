@@ -1,4 +1,7 @@
 // History:
+// - 2026-11-04: a write, local or the server's, reads every fact this device keeps of each entity it names that memory
+//   lacks, with the deferred values it already read, and prepares against the whole entity: one written in part was
+//   saved as a new one, deleting its other facts from SQLite, and a strict update of it threw (#1165).
 // - 2026-10-31: a server frame plans in two persistence turns after its seed, the reduction's context in the planning
 //   reads' turn and the first reverse body page in the plan's; no pass reads the empty page after its last row, and the
 //   plan's end and the status read share a turn (#1494).
@@ -2621,8 +2624,8 @@ public final class InstantRuntime: Sendable {
         else { return nil }
         return predecessor
       }
-      operationGate.markHolderPhase("load deferred values")
-      let deferredTriples = try await deferredValuesForPreparing(transaction)
+      operationGate.markHolderPhase("load facts beside memory")
+      let besideMemory = try await factsBesideMemoryForPreparing(transaction)
       operationGate.markHolderPhase("prepare")
       func prepareLocalWrite(_ transaction: InstantStoreTransaction) async throws -> PreparedStoreMutation {
         if let supersededTail, let rollback = supersededTail.rollbackTransaction {
@@ -2633,12 +2636,14 @@ public final class InstantRuntime: Sendable {
           return try await store.prepare(
             peelingOverlays: [rollback],
             thenApplying: transaction,
-            hydratingDeferredValues: deferredTriples
+            hydratingDeferredValues: besideMemory.deferredValues,
+            loadingFactsKeptOnDisk: besideMemory.keptOnDisk
           )
         }
         return try await store.prepareCurrent(
           transaction,
-          hydratingDeferredValues: deferredTriples
+          hydratingDeferredValues: besideMemory.deferredValues,
+          loadingFactsKeptOnDisk: besideMemory.keptOnDisk
         )
       }
       var prepared = try await prepareLocalWrite(pendingMutation.transaction)
@@ -2834,37 +2839,57 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func deferredValuesForPreparing(
+  private func factsBesideMemoryForPreparing(
     _ transaction: InstantStoreTransaction
-  ) async throws -> [InstantTriple] {
-    try await deferredValuesForPreparing([transaction])
+  ) async throws -> InstantFactsBesideMemory {
+    try await factsBesideMemoryForPreparing([transaction])
   }
 
-  private func deferredValuesForPreparing(
+  /// What a write reads from SQLite before it prepares, in one persistence turn: the deferred values of the entities it
+  /// can touch, and every fact this device keeps of each entity it names that memory holds no fact of (#1165).
+  ///
+  /// Upstream keeps one store per query result, so a write never meets an entity its store holds in part. This runtime
+  /// keeps one store for every result over SQLite, and after a relaunch memory holds only what the stored results own
+  /// (#1006): a write prepared against memory alone handled an entity kept on disk as a new one, so its save deleted the
+  /// facts the write did not restate, and a strict update of it threw. The residency sweep (#1145) and closed results
+  /// kept on disk (#1500) make such entities routine.
+  private func factsBesideMemoryForPreparing(
     _ transactions: [InstantStoreTransaction]
-  ) async throws -> [InstantTriple] {
+  ) async throws -> InstantFactsBesideMemory {
+    guard !transactions.isEmpty else { return InstantFactsBesideMemory() }
     // Upstream applies deep merges and optimistic rebases against one complete store. Load only
     // the entities these transactions can touch into the throwaway prepared indexes; commit strips
     // the configured payload attributes before installing the next hot store.
     let policy = configuration.deferredValueResidency
-    guard policy.isEnabled, !transactions.isEmpty else { return [] }
-    recordActorHop(.store)
-    var entityIDs: Set<String> = []
+    var namedEntityIDs: Set<String> = []
     for transaction in transactions {
-      entityIDs.formUnion(policy.directEntityIDs(in: transaction))
-      entityIDs.formUnion(try await store.resolvedMutationEntityIDs(in: transaction))
-      if policy.requiresEntityDiscovery(in: transaction),
-        await mayChangeDeferredValuesItDoesNotName(transaction, policy: policy),
-        let preview = try? await store.prepareCurrent(transaction)
-      {
-        entityIDs.formUnion(preview.result.changedEntityIDs)
+      namedEntityIDs.formUnion(policy.directEntityIDs(in: transaction))
+    }
+    recordActorHop(.store)
+    // One turn finds both. An entity addressed by a lookup resolves against memory, as before: Scribe writes none, and a
+    // lookup on disk needs its attribute's index.
+    let names = try await store.entityIDsForPreparing(
+      named: namedEntityIDs,
+      resolving: policy.isEnabled ? transactions : []
+    )
+    let keptOnDiskEntityIDs = names.withoutFacts
+    var deferredEntityIDs: Set<String> = []
+    if policy.isEnabled {
+      deferredEntityIDs = namedEntityIDs.union(names.resolved)
+      for transaction in transactions where policy.requiresEntityDiscovery(in: transaction) {
+        if await mayChangeDeferredValuesItDoesNotName(transaction, policy: policy),
+          let preview = try? await store.prepareCurrent(transaction)
+        {
+          deferredEntityIDs.formUnion(preview.result.changedEntityIDs)
+        }
       }
     }
-    guard !entityIDs.isEmpty else { return [] }
+    guard !deferredEntityIDs.isEmpty || !keptOnDiskEntityIDs.isEmpty else { return InstantFactsBesideMemory() }
     recordActorHop(.persistence)
-    return try await persistence.loadDeferredValues(
-      attributeIDs: policy.attributeIDs,
-      entityIDs: entityIDs
+    return try await persistence.loadFactsBesideMemory(
+      deferredAttributeIDs: policy.attributeIDs,
+      deferredEntityIDs: deferredEntityIDs,
+      keptOnDiskEntityIDs: keptOnDiskEntityIDs
     )
   }
 
@@ -5263,47 +5288,71 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// `prepared` with what `transactions` need from SQLite beside memory before they are applied to it: the deferred
+  /// values they can touch, and every fact this device keeps of each entity they name that neither `prepared` nor memory
+  /// holds a fact of (#1165).
   private func hydrateDeferredValuesForServerApply(
     _ transactions: [InstantStoreTransaction],
     over prepared: PreparedStoreMutation,
     planID: String
   ) async throws -> PreparedStoreMutation {
+    guard !transactions.isEmpty else { return prepared }
     let policy = configuration.deferredValueResidency
-    guard policy.isEnabled, !transactions.isEmpty else { return prepared }
-    var entityIDs: Set<String> = []
+    var namedEntityIDs: Set<String> = []
     for transaction in transactions {
-      entityIDs.formUnion(policy.directEntityIDs(in: transaction))
-      for operation in transaction.operations {
-        for lookup in Self.serverApplyLookupRefs(in: operation) {
-          guard let lookupAttribute = prepared.attributes.lookupAttribute(id: lookup.attributeID)
-          else { continue }
-          entityIDs.formUnion(
-            prepared.indexes.entityIDs(
-              matching: lookup,
-              lookupAttribute: lookupAttribute
+      namedEntityIDs.formUnion(policy.directEntityIDs(in: transaction))
+    }
+    // #1165: a result that selects some fields of an entity memory lacks restated those fields as a new entity, and the
+    // commit's save deleted the entity's other rows. Memory decides with the apply's own store: an entity a pending write
+    // created is absent from the store once its overlay is peeled, and its rows on disk are that write's, not the
+    // server's. Only an entity absent from both asks the store, so a peel or replay of resident writes costs no turn.
+    var keptOnDiskEntityIDs = namedEntityIDs.filter {
+      !prepared.indexes.containsEntity($0, namespace: nil, attributes: prepared.attributes)
+    }
+    if !keptOnDiskEntityIDs.isEmpty {
+      recordActorHop(.store)
+      keptOnDiskEntityIDs = await store.entityIDsWithoutFacts(among: keptOnDiskEntityIDs)
+    }
+    var entityIDs: Set<String> = []
+    if policy.isEnabled {
+      entityIDs = namedEntityIDs
+      for transaction in transactions {
+        for operation in transaction.operations {
+          for lookup in Self.serverApplyLookupRefs(in: operation) {
+            guard let lookupAttribute = prepared.attributes.lookupAttribute(id: lookup.attributeID)
+            else { continue }
+            entityIDs.formUnion(
+              prepared.indexes.entityIDs(
+                matching: lookup,
+                lookupAttribute: lookupAttribute
+              )
             )
-          )
+          }
+        }
+        if policy.requiresEntityDiscovery(in: transaction) {
+          let preview = try await store.prepare(transaction, applyingTo: prepared)
+          entityIDs.formUnion(preview.result.changedEntityIDs)
         }
       }
-      if policy.requiresEntityDiscovery(in: transaction) {
-        let preview = try await store.prepare(transaction, applyingTo: prepared)
-        entityIDs.formUnion(preview.result.changedEntityIDs)
-      }
     }
-    guard !entityIDs.isEmpty else { return prepared }
+    guard !entityIDs.isEmpty || !keptOnDiskEntityIDs.isEmpty else { return prepared }
     recordActorHop(.persistence)
-    let deferredTriples = try await persistence.loadDeferredValues(
-      attributeIDs: policy.attributeIDs,
-      entityIDs: entityIDs
+    let besideMemory = try await persistence.loadFactsBesideMemory(
+      deferredAttributeIDs: policy.attributeIDs,
+      deferredEntityIDs: entityIDs,
+      keptOnDiskEntityIDs: keptOnDiskEntityIDs
     )
-    guard !deferredTriples.isEmpty else { return prepared }
+    var hydrated = prepared
+    // The facts kept on disk stay when the apply is installed, as a local write's do.
+    hydrated.indexes.loadFactsKeptOnDisk(besideMemory.keptOnDisk, attributes: hydrated.attributes)
+    guard !besideMemory.deferredValues.isEmpty else { return hydrated }
     recordActorHop(.store)
     return try await store.prepare(
       InstantStoreTransaction(
         id: "\(planID)-deferred-hydration",
-        operations: deferredTriples.map(InstantTripleOperation.insert)
+        operations: besideMemory.deferredValues.map(InstantTripleOperation.insert)
       ),
-      applyingTo: prepared
+      applyingTo: hydrated
     )
   }
 
@@ -16688,16 +16737,18 @@ public final class InstantRuntime: Sendable {
     }
 
     var rebasedSuccessors = component.successors.sorted(by: PendingMutation.creationOrder)
-    let deferredTriples = try await deferredValuesForPreparing(
+    let besideMemory = try await factsBesideMemoryForPreparing(
       [failedRollback]
         + rebasedSuccessors.compactMap(\.rollbackTransaction)
         + rebasedSuccessors.map(\.transaction)
     )
     // Deferred values join a copy of the base's indexes, marked for removal again when the result is installed, as
-    // `prepareCurrent(_:hydratingDeferredValues:)` does for a local write.
+    // `prepareCurrent(_:hydratingDeferredValues:loadingFactsKeptOnDisk:)` does for a local write; facts kept on disk of
+    // entities memory lacks join it and stay (#1165).
     var hydratedBase = base
-    if !deferredTriples.isEmpty {
-      hydratedBase.indexes.hydrateDeferredValues(deferredTriples, attributes: hydratedBase.attributes)
+    if !besideMemory.isEmpty {
+      hydratedBase.indexes.hydrateDeferredValues(besideMemory.deferredValues, attributes: hydratedBase.attributes)
+      hydratedBase.indexes.loadFactsKeptOnDisk(besideMemory.keptOnDisk, attributes: hydratedBase.attributes)
     }
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
@@ -16838,15 +16889,17 @@ public final class InstantRuntime: Sendable {
         && mutation.status != .failed
         && mutation.optimisticOverlayState != .removed
     }
-    let deferredTriples = try await deferredValuesForPreparing(
+    let besideMemory = try await factsBesideMemoryForPreparing(
       [failedRollback]
         + successors.compactMap(\.rollbackTransaction)
         + successors.map(\.transaction)
     )
-    let hydratedSnapshot = configuration.deferredValueResidency.hydrating(
+    var hydratedSnapshot = configuration.deferredValueResidency.hydrating(
       snapshot,
-      with: deferredTriples
+      with: besideMemory.deferredValues
     )
+    // #1165: the entities these writes name that memory lacks, whole, as a local write prepares against them.
+    hydratedSnapshot.triples += besideMemory.keptOnDisk
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
     var changedFactScope = InstantFactScope()
@@ -17199,11 +17252,12 @@ public final class InstantRuntime: Sendable {
             id: retriedMutation.transaction.id,
             operations: operations
           )
-          let deferredTriples = try await deferredValuesForPreparing(retryTransaction)
+          let besideMemory = try await factsBesideMemoryForPreparing(retryTransaction)
           recordActorHop(.store)
           let prepared = try await store.prepareCurrent(
             retryTransaction,
-            hydratingDeferredValues: deferredTriples
+            hydratingDeferredValues: besideMemory.deferredValues,
+            loadingFactsKeptOnDisk: besideMemory.keptOnDisk
           )
           preparedRetry = prepared
           retryRollback = Self.rollbackTransaction(

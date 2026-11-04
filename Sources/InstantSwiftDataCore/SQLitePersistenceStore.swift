@@ -101,11 +101,25 @@
 // - 2026-10-31: an outbox body is stored compressed and its lifecycle derived from it, so a live write's cell fits its
 //   leaf; every budget still counts JSON bytes (`encoded_body_bytes`, `lifecycle_bytes`), and an older row's text body
 //   reads as before (#1463, #1510).
+// - 2026-11-04: a write reads what it needs beside memory in one turn: the deferred values it can touch, and every fact
+//   this device keeps of an entity it names that memory lacks (#1165).
 
 import Foundation
 import IssueReporting
 import os
 import SQLite3
+
+/// What a write reads from SQLite beside memory before it prepares (#1165).
+struct InstantFactsBesideMemory: Sendable {
+  /// The deferred values of the entities the write can touch: they join the prepared indexes and leave memory again when
+  /// the result is installed.
+  var deferredValues: [InstantTriple] = []
+  /// Every other fact this device keeps of each entity the write names that memory holds no fact of: they join the
+  /// prepared indexes and stay, so the write prepares against the whole entity and memory never holds part of one.
+  var keptOnDisk: [InstantTriple] = []
+
+  var isEmpty: Bool { deferredValues.isEmpty && keptOnDisk.isEmpty }
+}
 
 public struct InstantPersistenceSnapshot: Hashable, Codable, Sendable {
   public var store: InstantStoreSnapshot
@@ -1440,6 +1454,8 @@ public actor SQLitePersistenceStore {
   /// the durable queue. Public/full-state APIs increment this when they do.
   private var localMutationQueueWideReadCount = 0
   private var deferredValueDecodeMetrics = InstantDeferredValueDecodeMetrics()
+  /// How many entities writes have read from disk because memory held no fact of them (#1165).
+  package private(set) var keptOnDiskEntityReadCount = 0
   private var terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
   private var failedMutationRetryMetrics = InstantFailedMutationRetryMetrics()
   private var serverApplyMetrics = InstantServerApplyMetrics()
@@ -11863,6 +11879,61 @@ public actor SQLitePersistenceStore {
     deferredValueDecodeMetrics.valueCount += values.count
     deferredValueDecodeMetrics.encodedByteCount += encodedByteCount
     return values
+  }
+
+  /// What a write reads beside memory before it prepares, in one turn (#1165): the deferred values of
+  /// `deferredEntityIDs`, as ``loadDeferredValues(attributeIDs:entityIDs:)`` reads them, and every other fact this
+  /// device keeps of `keptOnDiskEntityIDs`, the entities the write names that memory holds no fact of.
+  ///
+  /// A write prepared against memory alone handled such an entity as a new one, and its save deleted every row of the
+  /// entity it did not restate (`saveChangedEntityFactsWithoutTransaction`): a one-attribute write to a line kept on disk
+  /// erased the line's id and recording from this device, and a strict update of it threw. The read is a primary-key
+  /// probe per entity, in bounded chunks; a new entity (nothing on disk) costs one probe that finds nothing.
+  func loadFactsBesideMemory(
+    deferredAttributeIDs: Set<String>,
+    deferredEntityIDs: Set<String>,
+    keptOnDiskEntityIDs: Set<String>
+  ) throws -> InstantFactsBesideMemory {
+    var facts = InstantFactsBesideMemory()
+    facts.deferredValues = try loadDeferredValues(attributeIDs: deferredAttributeIDs, entityIDs: deferredEntityIDs)
+    guard !keptOnDiskEntityIDs.isEmpty else { return facts }
+    let energy = InstantEnergyMeter.begin(.deferredHydrate); defer { energy.end() }
+    // The deferred values of these entities are the first read's: they are named by the write, so they are among
+    // `deferredEntityIDs` whenever deferred values are configured.
+    let deferredAttributeBindings = deferredValueResidency.attributeIDs.sorted().map(SQLiteBinding.text)
+    let deferredCondition = deferredAttributeBindings.isEmpty
+      ? ""
+      : " AND attribute_id NOT IN (\(Array(repeating: "?", count: deferredAttributeBindings.count).joined(separator: ", ")))"
+    let entityIDs = keptOnDiskEntityIDs.sorted()
+    var start = entityIDs.startIndex
+    while start < entityIDs.endIndex {
+      let end = entityIDs.index(start, offsetBy: 500, limitedBy: entityIDs.endIndex) ?? entityIDs.endIndex
+      let chunk = entityIDs[start..<end]
+      var statement: OpaquePointer?
+      try prepare(
+        """
+        SELECT \(InstantFactRowReader.columns)
+        FROM instant_triples
+        WHERE entity_id IN (\(Array(repeating: "?", count: chunk.count).joined(separator: ", ")))\(deferredCondition)
+        ORDER BY entity_id, attribute_id, value_json
+        """,
+        statement: &statement
+      )
+      defer { finishStatement(statement) }
+      try bind(chunk.map(SQLiteBinding.text) + deferredAttributeBindings, to: statement)
+      guard let statement else {
+        throw persistenceError(operation: "load facts kept on disk", message: "SQLite prepared no statement.")
+      }
+      var reader = InstantFactRowReader(decoder: decoder)
+      do {
+        try reader.read(statement, into: &facts.keptOnDisk) { _, _ in }
+      } catch let failure as InstantFactRowReader.ReadFailure {
+        throw persistenceError(operation: failure.operation, message: failure.message)
+      }
+      start = end
+    }
+    keptOnDiskEntityReadCount += entityIDs.count
+    return facts
   }
 
   private func loadOutboxWithoutTransaction(
