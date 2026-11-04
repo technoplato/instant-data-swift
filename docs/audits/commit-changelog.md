@@ -1,3 +1,18 @@
+## 2026-11-04 13:05:18 EST — scribe `090dcc070cd74903f17d30a12ea30514521c1d49`
+Fix (#1616): behind another app, a microphone restart that iOS refuses right after a call's end, an interruption's end or an audio device change tries again 1, 3 and 5 s after the refusal, on the audio session the failed start keeps, instead of waiting until the app comes to the front (measured waits before: 28 s, 40 s, 71 s and 68 min); red and green on the build machine (nothing fails only in green, six fail only in red), the iOS app core compiled; changelog 1bbc83870.
+
+## 2026-11-04 12:54:46 EST — scribe `b3d26898ef0ad770cb0994ea9bf09945734c1bf6`
+Cut (#1652): Scribe 0.1 (246) from main after landing A of #1652; the build number 245 to 246, build 246's plain block and two stories.
+
+## 2026-11-04 12:53:32 EST — scribe `a04d25dc032b1c9b0bd911c1aebde37198fa2070`
+Fix (#1652): every page Settings > Playground pushes, and each agent's chat, give the floating recording bar its room; a chat reads its rows by its session alone (duo-panels-1578's chat timed out after 30 s on production with the account beside the session; 67 ms alone); claude runs take a message after each tool call through agent-run's inbox hook.
+
+## 2026-11-04 12:16:04 EST — scribe `b3e4dfba6a985f25041c4faa58547f7406615718`
+Feature (#1678): Claude work per day (llmUsageDays) from the session logs since 2026-07-14, each reply once by message id at list price (514,156 replies on 47 days, $70,696.07); the quota command folds only new log bytes every five minutes (1.5 s at load 348).
+
+## 2026-11-04 11:51:24 EST — scribe `23371c912d995c90d8bce336aeeca56bb381b669`
+Feature (#1678): the quota history: llmQuotaDays (one row per account per local day of 5-minute reads and a summary) and llmUsageDays pushed to production 11:50-11:51 (drift 0); the quota command keeps each read by day, and its printed log since 2026-10-29 14:20 was backfilled (10,034 reads, 49 rows).
+
 ## 2026-11-03 10:14:00 EST — scribe `4acdc7d06aeec9e37aa481d0ea3171624bbf15d3`
 Feature (#1652): Agent chats in the Playground: every agent session (running first, with its issue, model, account, status, counts, tokens and API-equivalent cost) and its chat as one timeline in file order, thinking and tool calls folded until tapped, read live from the agent activity rows only while shown; days named once, a run bar with every count.
 

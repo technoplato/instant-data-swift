@@ -1,6 +1,6 @@
 # Repository Instructions
 
-**Read the multi-agent coordination protocol and follow the protocol:** `/Users/laptop/Sync/tools/realtime-voice-sqlite-instant/docs/agent-coordination-protocol.md` (ET presence, plan-to-touch, mower/grower, Genesis allowlist). Library work still uses this machine protocol.
+**Read the multi-agent coordination protocol and follow the protocol:** `/Users/laptop/Sync/tools/realtime-voice/docs/agent-coordination-protocol.md` (ET presence, plan-to-touch, mower/grower, Genesis allowlist). Library work still uses this machine protocol.
 
 
 ## Fundamentals first (active program)
@@ -99,7 +99,7 @@ when Instant attributes are string-typed. Library helpers: `InstantMediaKind`,
 - Do not add a public `queryLocal`. Select local-only behavior with an injected
   local-only `InstantSwiftDataClient` that uses ordinary public APIs.
 - This library and its primary consumer, Scribe
-  (`../tools/realtime-voice-sqlite-instant`), are developed together and both
+  (`../tools/realtime-voice`), are developed together and both
   change daily. Scribe consumes this checkout directly through the
   `Packages/instant-data-swift` symlink, so library changes reach a real device
   immediately and a Scribe symptom is as likely to originate here as in the app.
@@ -129,7 +129,7 @@ when Instant attributes are string-typed. Library helpers: `InstantMediaKind`,
   blaming, confirm the subsystem actually belongs to the layer you are
   accusing, and state plainly when a conclusion is inference rather than
   measurement. Release thresholds and the commands that measure them live in
-  `../tools/realtime-voice-sqlite-instant/docs/performance-budget.md`; when a
+  `../tools/realtime-voice/docs/performance-budget.md`; when a
   change moves one of those numbers, record the measured before/after.
 - Keep explicit flush/status APIs limited to CLI, diagnostics, tests, and real
   user-visible operations. Keep entity delivery independent from media
@@ -149,7 +149,7 @@ when Instant attributes are string-typed. Library helpers: `InstantMediaKind`,
   context. Keep increments small enough to review and resume, then mirror each
   substantive commit through `CHANGELOG.md` and the cross-repository audit.
 - After every substantive commit in this repository or
-  `../tools/realtime-voice-sqlite-instant`, add a newest-first entry to
+  `../tools/realtime-voice`, add a newest-first entry to
   `docs/audits/commit-changelog.md` with a human-readable timestamp including
   seconds in `America/New_York`, the repository name, the full commit SHA, and
   the high-level reason. A changelog-only commit cannot contain its own final
@@ -158,7 +158,7 @@ when Instant attributes are string-typed. Library helpers: `InstantMediaKind`,
 - Multiple agents may work directly on `main`. Preserve their changes, commit
   owned work promptly, and coordinate immediately when another agent leaves
   related work uncommitted. Keep this repository and
-  `../tools/realtime-voice-sqlite-instant` clean at handoff.
+  `../tools/realtime-voice` clean at handoff.
 
 ## Code comments record decisions
 
