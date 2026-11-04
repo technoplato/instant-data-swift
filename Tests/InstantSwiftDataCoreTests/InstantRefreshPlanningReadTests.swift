@@ -40,7 +40,8 @@ struct InstantRefreshPlanningReadTests {
     // Three facts a line: its id, its text and its index.
     #expect(after.ownershipRowsRead - before.ownershipRowsRead == 96, "rows read: \(after.ownershipRowsRead - before.ownershipRowsRead)")
     #expect(after.valuesEncoded - before.valuesEncoded == 96, "values encoded: \(after.valuesEncoded - before.valuesEncoded)")
-    let stored = try #require(try await runtime.persistence.liveQueryResult(key: page.queryKey()))
+    let storedValue = try await runtime.persistence.liveQueryResult(key: page.queryKey())
+    let stored = try #require(storedValue)
     #expect(stored.triples.count == 96)
     #expect(stored.triples.contains { $0.entityID == page.lineID(7) && $0.value == .string("line 7 edited") })
   }
