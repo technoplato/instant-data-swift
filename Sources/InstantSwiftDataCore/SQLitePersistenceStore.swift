@@ -960,6 +960,52 @@ struct InstantServerApplyReductionContext: Sendable {
   var bodies: [String: PendingMutation] = [:]
 }
 
+/// Which namespaces' deletes can cascade into a namespace, read from the schema's cascading links (#1756).
+///
+/// The store's delete walks two rules (`TripleIndexes.deleteEntity`): a link with `onDeleteReverse: .cascade` deletes
+/// its targets with its entity, and a link with `onDelete: .cascade` deletes its entity with its target. Scribe's
+/// `recordings/segments` is the first kind, so a recording's delete reaches its lines.
+enum InstantServerApplyCascade {
+  /// A source for a cascading link that names no target namespace: a delete of any namespace may reach through it.
+  static let anyNamespace = "*"
+
+  /// The namespaces whose deletes can reach an entity of `namespace` through one or more cascading links; empty when
+  /// none can. It holds ``anyNamespace`` when a cascading link that names no namespace can reach it.
+  static func sources(into namespace: String, attributes: AttributeStore) -> Set<String> {
+    // Each cascade's target namespace, with the namespaces whose deletes start it.
+    var startedFrom: [String: Set<String>] = [:]
+    // Namespaces whose deletes cascade along a link that names no target, so into any namespace.
+    var reachingAny: Set<String> = []
+    // Namespaces any delete can cascade into, through an `onDelete` link that names no target namespace.
+    var reachedFromAny: Set<String> = []
+    for attribute in attributes.attributes where attribute.valueType == .ref {
+      if attribute.onDeleteReverse == .cascade {
+        if let target = attribute.linkNamespace {
+          startedFrom[target, default: []].insert(attribute.namespace)
+        } else {
+          reachingAny.insert(attribute.namespace)
+        }
+      }
+      if attribute.onDelete == .cascade {
+        if let target = attribute.linkNamespace {
+          startedFrom[attribute.namespace, default: []].insert(target)
+        } else {
+          reachedFromAny.insert(attribute.namespace)
+        }
+      }
+    }
+    var sources: Set<String> = []
+    var pending = [namespace]
+    while let reached = pending.popLast() {
+      if reachedFromAny.contains(reached) { return [anyNamespace] }
+      for source in startedFrom[reached, default: []].union(reachingAny) where sources.insert(source).inserted {
+        pending.append(source)
+      }
+    }
+    return sources
+  }
+}
+
 /// What a pending write's own operations say about one entity it deletes (#932).
 enum InstantServerApplyDeletion {
   /// Whether `operations` delete `entityID` and touch none of its slots afterwards (no re-creation in the same write).
@@ -5950,12 +5996,17 @@ public actor SQLitePersistenceStore {
   /// - Parameter emptySlots: Slots of the frame's facts that the store leaves empty, by entity (#1378). For each one on
   ///   a shadowed entity that no surviving write inserts, the context says whether any surviving write on the entity
   ///   deletes it or retracts the slot (``InstantServerApplyReductionContext/unwrittenEmptySlots``).
+  /// - Parameter cascadeSources: For an entity of `emptySlots` in a namespace a delete can cascade into, the namespaces
+  ///   whose deletes can reach it (`InstantServerApplyCascade.sources(into:attributes:)`, #1756). A surviving write on
+  ///   the entity that deletes an entity of one of them, or deletes one without naming its namespace, keeps its slots
+  ///   out: the full rebase's replay of that delete can cascade into the entity and remove the server's fact with it.
   func loadServerApplyReductionContext(
     slots: [String: Set<String>],
     writeKeyNames: [String: [String]] = [:],
     reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
     absentEntityIDs: Set<String> = [],
     emptySlots: [String: Set<String>] = [:],
+    cascadeSources: [String: Set<String>] = [:],
     processedTransactionID: String,
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64,
@@ -6358,6 +6409,10 @@ public actor SQLitePersistenceStore {
       for (entityID, writes) in unwrittenEmptySlotWritesByEntity {
         var retracted: Set<String> = []
         var deletesEntity = false
+        // #1756: a write whose delete cascades into this entity names it in its effect footprint (its rollback restores
+        // the entity), so it is one of `writes`. Its delete reaches the entity only from a namespace that cascades into
+        // the entity's; a delete that names no namespace may come from any.
+        let sources = cascadeSources[entityID] ?? []
         for mutationID in writes {
           guard let body = context.bodies[mutationID] else {
             deletesEntity = true
@@ -6365,8 +6420,14 @@ public actor SQLitePersistenceStore {
           }
           for operation in body.transaction.operations {
             switch operation {
-            case let .deleteEntity(deletedID), let .deleteEntityInNamespace(deletedID, _):
-              if deletedID == entityID { deletesEntity = true }
+            case let .deleteEntity(deletedID):
+              if deletedID == entityID || !sources.isEmpty { deletesEntity = true }
+            case let .deleteEntityInNamespace(deletedID, namespace):
+              if deletedID == entityID || sources.contains(namespace)
+                || sources.contains(InstantServerApplyCascade.anyNamespace)
+              {
+                deletesEntity = true
+              }
             case let .retract(triple) where triple.entityID == entityID:
               retracted.insert(triple.attributeID)
             case .deleteEntityByLookup, .retractByLookup:
