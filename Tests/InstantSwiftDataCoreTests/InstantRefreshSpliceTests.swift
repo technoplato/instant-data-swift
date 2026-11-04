@@ -136,14 +136,14 @@ struct SpliceFixture {
   static let live = seededRecordingCount - 1
 
   private var step = 100
-  private var recordingCount = Self.seededRecordingCount
+  private var recordingCount = SpliceFixture.seededRecordingCount
   /// Lines per recording, including deleted ones (an index is never reused).
-  private var lineCounts = Array(repeating: Self.seededLineCount, count: Self.seededRecordingCount)
+  private var lineCounts = Array(repeating: SpliceFixture.seededLineCount, count: SpliceFixture.seededRecordingCount)
   private var deletedLines: Set<String> = []
   private var deletedRecordings: Set<Int> = []
   private var attachmentCount = 0
   /// The live recording's open line, which its live line shows until the final.
-  private var openLine = Self.seededLineCount
+  private var openLine = SpliceFixture.seededLineCount
 
   static let attributes: [InstantAttribute] = {
     func scalar(_ namespace: String, _ name: String, _ type: InstantValueType, indexed: Bool = false) -> InstantAttribute {
