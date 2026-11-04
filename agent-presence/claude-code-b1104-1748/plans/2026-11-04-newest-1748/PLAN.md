@@ -59,3 +59,17 @@ _seed++`. Swift stamps newest + 1 to keep stamps in milliseconds; this keeps tha
 TripleIndexes.swift's newest claim is gate-1319 (#1319, 2026-10-28, landed). No branch on origin holds an unlanded
 change to it (checked 2026-11-04 10:40). #1648 (order-1648, resumed 10:12) touches InstantTypedAPI.swift and
 InstantRuntime.swift's transact paths only, and claims v1.9.65; this plan does not touch InstantRuntime.swift.
+
+## Amendment 1 (2026-11-04 11:50, the resumed run)
+
+- Step 3 changed: the counts live in sorted runs (`TransactionTimeCounts`: at most 1,024 times a run, split in two
+  past it; a run under 256 joins a neighbor with room), not a sharded dictionary with the newest found again by a
+  scan. A dictionary finds the next newest by scanning every kept time whenever the last fact at the newest time
+  leaves: a full rebase does that once per peeled overlay, and a replayed write whose facts are all deferred does it
+  once per write (its facts are removed as soon as the write is prepared), so the scan would come back as P x D for D
+  distinct times. Runs keep every change O(log D); a prepared copy copies the array of runs and the one run it changes.
+- New test: `transactionTimeCountsMatchASortedListThroughRunSplitsAndJoins` (random inserts and removals against a
+  sorted list of every fact's time, through splits, joins, a peel of the newest and an empty store).
+- Checks run as one build.sh job on the Mac mini (`1748-redgreen`): the red tests on b446b586's sources, the
+  server-apply cost harness (release, full rebase) and a temporary build-cost probe on each, then the whole
+  InstantSwiftDataCoreTests bundle against Tests/known-failing.txt.

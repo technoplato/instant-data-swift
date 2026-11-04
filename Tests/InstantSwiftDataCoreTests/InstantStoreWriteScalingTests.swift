@@ -565,6 +565,116 @@ struct InstantStoreWriteScalingTests {
     expectNoDifference(prepared.newestTransactionTimeMilliseconds, nil)
   }
 
+  /// The counts behind the newest time keep their order through the run splits and joins a long session reaches:
+  /// random inserts and removals, checked against a sorted list of every fact's time, then a peel of the newest.
+  @Test
+  func transactionTimeCountsMatchASortedListThroughRunSplitsAndJoins() {
+    var random = FastDrainRandom(seed: 1_748)
+    var counts = TransactionTimeCounts()
+    // Every counted fact's time, oldest first.
+    var sorted: [Int64] = []
+    func position(of time: Int64) -> Int {
+      var low = 0
+      var high = sorted.count
+      while low < high {
+        let middle = (low + high) / 2
+        if sorted[middle] < time {
+          low = middle + 1
+        } else {
+          high = middle
+        }
+      }
+      return low
+    }
+    func insert(_ time: Int64) {
+      counts.insert(time)
+      sorted.insert(time, at: position(of: time))
+    }
+    func removeFact(at index: Int) {
+      counts.remove(sorted.remove(at: index))
+    }
+    func expectMatchesSortedList() {
+      var expected: [TransactionTimeCounts.Entry] = []
+      for time in sorted {
+        if expected.last?.time == time {
+          expected[expected.count - 1].count += 1
+        } else {
+          expected.append(TransactionTimeCounts.Entry(time: time, count: 1))
+        }
+      }
+      expectNoDifference(counts.entries, expected)
+      let lengths = counts.runLengths
+      #expect(lengths.allSatisfy { $0 > 0 && $0 <= TransactionTimeCounts.maxRunLength })
+      #expect(
+        zip(lengths, lengths.dropFirst()).allSatisfy { max($0, $1) >= TransactionTimeCounts.maxRunLength / 4 },
+        "two short runs side by side: \(lengths)"
+      )
+    }
+
+    // Grow through several splits: mostly a new newest time, as live writes are, with older server times between.
+    var newest: Int64 = 0
+    for step in 1...12_000 {
+      switch random.int(1...10) {
+      case 1...6:
+        newest += Int64(random.int(1...3))
+        insert(newest)
+      case 7...9:
+        insert(Int64(random.int(0...Int(newest))))
+      default:
+        if !sorted.isEmpty {
+          removeFact(at: random.int(0...(sorted.count - 1)))
+        }
+      }
+      if counts.newest != sorted.last {
+        expectNoDifference(counts.newest, sorted.last)
+        return
+      }
+      if step.isMultiple(of: 1_000) {
+        expectMatchesSortedList()
+      }
+    }
+    #expect(counts.runLengths.count > 4)
+
+    // Shrink to a few hundred facts at random: short runs join their neighbors.
+    while sorted.count > 300 {
+      removeFact(at: random.int(0...(sorted.count - 1)))
+      if sorted.count.isMultiple(of: 500) {
+        expectMatchesSortedList()
+      }
+    }
+    expectMatchesSortedList()
+
+    // Peel the newest, as a full rebase peels the writes it replays: each read is the next newest.
+    for _ in 1...200 {
+      removeFact(at: sorted.count - 1)
+      expectNoDifference(counts.newest, sorted.last)
+    }
+
+    // Grow again over what is left, then empty it.
+    for _ in 1...3_000 {
+      newest += 1
+      insert(newest)
+    }
+    expectMatchesSortedList()
+    while !sorted.isEmpty {
+      removeFact(at: random.int(0...(sorted.count - 1)))
+    }
+    expectNoDifference(counts.newest, nil)
+    expectNoDifference(counts.runLengths, [])
+
+    // Tallied counts, as decode and a derived-index rebuild build them, read the same as inserted ones.
+    let tallied = TransactionTimeCounts(counts: [5: 2, 1: 1, 9: 0, 3: 4])
+    expectNoDifference(
+      tallied.entries,
+      [
+        TransactionTimeCounts.Entry(time: 1, count: 1),
+        TransactionTimeCounts.Entry(time: 3, count: 4),
+        TransactionTimeCounts.Entry(time: 5, count: 2),
+      ]
+    )
+    expectNoDifference(tallied.newest, 5)
+  }
+
   // MARK: - Overlay peel scaling (live server apply)
 
   /// Live server apply peels every durable optimistic overlay before rebasing. The wrong shape

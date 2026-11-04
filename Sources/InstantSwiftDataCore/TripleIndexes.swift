@@ -13,6 +13,8 @@ import os
 // - 2026-10-27: `forwardWriteNames(of:)`, the names a forward write may give an attribute: a link the server issued an
 //   id for is written under its forward identity and held under the id (#1270).
 // - 2026-10-28: `holdsFact` and `factCount(entityID:)` answer a prune batch without materializing an entity (#1319).
+// - 2026-11-04: the newest transaction time is kept in time-ordered counts, not walked: the full-rebase server apply
+//   read it once per pending write it replayed, and iOS's CPU Monitor killed the app in that walk (#1748).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -706,6 +708,145 @@ enum InstantResultSetMembership: Equatable, Sendable {
   case member(orderValue: InstantValue?)
 }
 
+/// How many of a store's facts carry each transaction time, oldest first, so the newest is read without walking the
+/// facts (#1748).
+///
+/// The full-rebase server apply stamps each pending write it replays one past the store's newest fact, so it reads the
+/// newest once per write. Walking every fact for it made a frame that replays P writes over N facts cost P × N: on
+/// 2026-11-04 iOS's CPU Monitor killed the app for "81% cpu average, exceeding limit of 80% cpu over 60 seconds", with
+/// 5 of 6 samples in that walk. Upstream never reads its store for a stamp (`getCreatedAt` stamps `Date.now() * 10 +
+/// seed`); here the stamps stay newest + 1 and only the walk goes.
+///
+/// A count per time, not the newest alone, because the newest has to survive removals: when the last fact at the
+/// newest time leaves (a peeled overlay, a removed deferred value, a retraction), the next newest is the entry before
+/// it, not a walk. In sorted runs, not one array: a write prepared on a copy of the indexes copies the array of runs
+/// and the run it changes, not every time, as the sharded collections do (#1007).
+struct TransactionTimeCounts: Sendable {
+  struct Entry: Equatable, Sendable {
+    var time: Int64
+    var count: Int
+  }
+
+  /// A run splits in two past this many entries, and a run under a quarter of it joins a neighbor with room, so no two
+  /// short runs sit side by side and D distinct times keep at most about D / 128 runs.
+  static let maxRunLength = 1_024
+
+  /// Oldest first: every run is non-empty and sorted, and every time in a run is below every time in the next.
+  private var runs: [[Entry]] = []
+
+  init() {}
+
+  /// Counts tallied by a walk of the facts (decode, a derived-index rebuild), sorted once: an ordered insert per fact
+  /// would shift a run per fact.
+  init(counts: [Int64: Int]) {
+    let entries = counts.lazy
+      .filter { $0.value > 0 }
+      .map { Entry(time: $0.key, count: $0.value) }
+      .sorted { $0.time < $1.time }
+    let half = Self.maxRunLength / 2
+    runs = stride(from: 0, to: entries.count, by: half).map { start in
+      Array(entries[start..<min(start + half, entries.count)])
+    }
+  }
+
+  /// The newest time a counted fact carries; nil when no fact is counted.
+  var newest: Int64? {
+    runs.last?.last?.time
+  }
+
+  /// Every counted time with how many facts carry it, oldest first.
+  var entries: [Entry] {
+    Array(runs.joined())
+  }
+
+  /// How many entries each run holds, oldest first.
+  var runLengths: [Int] {
+    runs.map(\.count)
+  }
+
+  /// Counts one more fact at `time`.
+  mutating func insert(_ time: Int64) {
+    guard !runs.isEmpty else {
+      runs = [[Entry(time: time, count: 1)]]
+      return
+    }
+    let runIndex = run(holding: time)
+    let entryIndex = Self.position(of: time, in: runs[runIndex])
+    if entryIndex < runs[runIndex].count, runs[runIndex][entryIndex].time == time {
+      runs[runIndex][entryIndex].count += 1
+      return
+    }
+    runs[runIndex].insert(Entry(time: time, count: 1), at: entryIndex)
+    guard runs[runIndex].count > Self.maxRunLength else { return }
+    let half = runs[runIndex].count / 2
+    let upper = Array(runs[runIndex][half...])
+    runs[runIndex].removeSubrange(half...)
+    runs.insert(upper, at: runIndex + 1)
+  }
+
+  /// Counts one fewer fact at `time`. A time no counted fact carries changes nothing.
+  mutating func remove(_ time: Int64) {
+    guard !runs.isEmpty else { return }
+    let runIndex = run(holding: time)
+    let entryIndex = Self.position(of: time, in: runs[runIndex])
+    guard entryIndex < runs[runIndex].count, runs[runIndex][entryIndex].time == time else { return }
+    if runs[runIndex][entryIndex].count > 1 {
+      runs[runIndex][entryIndex].count -= 1
+      return
+    }
+    runs[runIndex].remove(at: entryIndex)
+    if runs[runIndex].isEmpty {
+      runs.remove(at: runIndex)
+    } else if runs[runIndex].count < Self.maxRunLength / 4 {
+      joinShortRun(at: runIndex)
+    }
+  }
+
+  /// The run that holds `time`, or would: the first whose newest entry is at least `time`, else the last. A live
+  /// write is usually the newest, so the last run is tried first.
+  private func run(holding time: Int64) -> Int {
+    let last = runs.count - 1
+    if runs[last][0].time <= time { return last }
+    var low = 0
+    var high = last
+    while low < high {
+      let middle = (low + high) / 2
+      if runs[middle][runs[middle].count - 1].time < time {
+        low = middle + 1
+      } else {
+        high = middle
+      }
+    }
+    return low
+  }
+
+  /// Where `time` is, or would go, in `run`: the first entry at or after it.
+  private static func position(of time: Int64, in run: [Entry]) -> Int {
+    var low = 0
+    var high = run.count
+    while low < high {
+      let middle = (low + high) / 2
+      if run[middle].time < time {
+        low = middle + 1
+      } else {
+        high = middle
+      }
+    }
+    return low
+  }
+
+  /// Joins a short run into a neighbor when the two fit in one run, the earlier neighbor first.
+  private mutating func joinShortRun(at index: Int) {
+    if index > 0, runs[index - 1].count + runs[index].count <= Self.maxRunLength {
+      let run = runs.remove(at: index)
+      runs[index - 1].append(contentsOf: run)
+    } else if index + 1 < runs.count, runs[index].count + runs[index + 1].count <= Self.maxRunLength {
+      let next = runs.remove(at: index + 1)
+      runs[index].append(contentsOf: next)
+    }
+  }
+}
+
 struct TripleIndexes: Codable, Sendable {
   private struct DerivedIndexAttributeShape: Hashable, Sendable {
     var namespace: String
@@ -816,6 +957,10 @@ struct TripleIndexes: Codable, Sendable {
   /// schema-shape transition must rebuild before an exact authoritative insert can be a no-op.
   private var derivedIndexAttributeShapes: [String: DerivedIndexAttributeShape] = [:]
   private var storedTripleCount = 0
+  /// How many facts carry each transaction time, for `newestTransactionTimeMilliseconds` (#1748). Kept where
+  /// `storedTripleCount` is, and where a cardinality-one value replaces another; counted again where it is (decode,
+  /// a derived-index rebuild). Derived from `eav`, so it is not encoded, compared or hashed.
+  private var transactionTimes = TransactionTimeCounts()
   private var internedTxIDsBox = TxIDInterner()
   /// Exact transient keys hydrated or written only for preparing a mutation.
   /// Consumed before prepared indexes become the next hot store.
@@ -1093,7 +1238,7 @@ struct TripleIndexes: Codable, Sendable {
 
   /// Wire shape keeps historical `aev` (always empty) so older caches decode.
   /// Secondary indexes (`indexedValueEntities`, …) are derived and not encoded.
-  /// `storedTripleCount` / `internedTxIDs` rebuild on decode when needed.
+  /// `storedTripleCount`, `transactionTimes` and `internedTxIDs` rebuild on decode when needed.
   private enum CodingKeys: String, CodingKey {
     case aev
     case eav
@@ -1123,6 +1268,7 @@ struct TripleIndexes: Codable, Sendable {
     let interned = try container.decodeIfPresent([String].self, forKey: .internedTxIDs) ?? [""]
     self.internedTxIDsBox = TxIDInterner(internedTxIDs: interned)
     self.storedTripleCount = Self.walkedTripleCount(eav)
+    self.transactionTimes = Self.walkedTransactionTimes(eav)
     // Secondary indexes stay empty until the next insert path with attributes
     // (or InstantStore rebuild via init(triples:attributes:)).
     self.indexedValueEntities = [:]
@@ -1152,6 +1298,20 @@ struct TripleIndexes: Codable, Sendable {
         count += slot.count
       }
     }
+  }
+
+  private static func walkedTransactionTimes(
+    _ eav: ShardedDictionary<String, [String: AttrSlot]>
+  ) -> TransactionTimeCounts {
+    var counts: [Int64: Int] = [:]
+    for attributesByID in eav.values {
+      for slot in attributesByID.values {
+        slot.forEachPair { _, stamp in
+          counts[stamp.txTimeMilliseconds, default: 0] += 1
+        }
+      }
+    }
+    return TransactionTimeCounts(counts: counts)
   }
 
   private struct IndexedEqualsResultKey: Hashable {
@@ -1646,23 +1806,14 @@ struct TripleIndexes: Codable, Sendable {
     storedTripleCount
   }
 
+  /// The newest transaction time a fact in the store carries: a pending write replayed over the store is stamped one
+  /// past it, so it wins its slots.
+  ///
+  /// Kept, not walked (#1748): the full-rebase server apply reads it once per pending write it replays, and walking
+  /// every entity × attribute × value made a frame that replays P writes over N facts cost P × N. See
+  /// `InstantStoreWriteScalingTests.replayingPendingWritesDoesNotWalkTheStoreForTheNewestTime`.
   var newestTransactionTimeMilliseconds: Int64? {
-    var newest: Int64?
-    for attributesByID in eav.values {
-      for slot in attributesByID.values {
-        for stamp in slot.values {
-          let milliseconds = stamp.txTime.milliseconds
-          if let newestMilliseconds = newest {
-            if milliseconds > newestMilliseconds {
-              newest = milliseconds
-            }
-          } else {
-            newest = milliseconds
-          }
-        }
-      }
-    }
-    return newest
+    transactionTimes.newest
   }
 
   func triples(entityID: String) -> [InstantTriple] {
@@ -2021,6 +2172,7 @@ struct TripleIndexes: Codable, Sendable {
     }
     eav = normalizedEAV
     storedTripleCount = Self.walkedTripleCount(eav)
+    transactionTimes = Self.walkedTransactionTimes(eav)
     vae = [:]
     indexedValueEntities = [:]
     indexedEntityValues = [:]
@@ -4291,6 +4443,7 @@ private struct PreparedInclude {
       txTimeMilliseconds: triple.txTime.milliseconds
     )
     storedTripleCount += 1
+    transactionTimes.insert(stamp.txTimeMilliseconds)
     eav[triple.entityID, default: [:]][triple.attributeID] = .one(
       value: value,
       stamp: stamp
@@ -4372,8 +4525,10 @@ private struct PreparedInclude {
       }
     }
 
+    // A resident value keeps its time (above), so only a new one is counted.
     if eav[triple.entityID]?[triple.attributeID]?[triple.value] == nil {
       storedTripleCount += 1
+      transactionTimes.insert(triple.txTime.milliseconds)
     }
     let stamp = InstantTripleStamp(
       txIDIndex: internTxID(triple.txID),
@@ -4432,11 +4587,17 @@ private struct PreparedInclude {
     if attribute?.valueType == .ref {
       removeVAE(value: previousValue, attributeID: attributeID, entityID: entityID)
     }
+    // Whatever the slot held goes, even when a derived-index rebuild normalized it after the caller read it.
+    let replaced = eav[entityID]?[attributeID]
     let stamp = InstantTripleStamp(
       txIDIndex: internTxID(triple.txID),
       txTimeMilliseconds: triple.txTime.milliseconds
     )
     eav[entityID, default: [:]][attributeID] = .one(value: triple.value, stamp: stamp)
+    transactionTimes.insert(stamp.txTimeMilliseconds)
+    replaced?.forEachPair { _, replacedStamp in
+      transactionTimes.remove(replacedStamp.txTimeMilliseconds)
+    }
     if attribute?.valueType == .ref {
       vae[triple.value, default: [:]][attributeID, default: [:]][entityID] = stamp
     }
@@ -5106,13 +5267,15 @@ private struct PreparedInclude {
     uniqueEAV()
     // Read-only probes release their temporaries before the in-place removal below; holding
     // `attrs` or `slot` in locals would copy every value in the slot on write.
-    guard let hadValue = eavStorage.rows[triple.entityID]?[triple.attributeID].map({
-      $0[triple.value] != nil
+    guard let residentStamp = eavStorage.rows[triple.entityID]?[triple.attributeID].map({
+      $0[triple.value]
     }) else {
       return
     }
-    if hadValue {
+    if let residentStamp {
       storedTripleCount -= 1
+      // The time the store holds, not the retraction's own.
+      transactionTimes.remove(residentStamp.txTimeMilliseconds)
     }
     if eavStorage.rows[triple.entityID]?[triple.attributeID]?.removeValue(triple.value) == true {
       eavStorage.rows[triple.entityID]?[triple.attributeID] = nil
@@ -5296,7 +5459,8 @@ private struct PreparedInclude {
         continue
       }
       storedTripleCount -= slot.count
-      slot.forEachPair { value, _ in
+      slot.forEachPair { value, stamp in
+        transactionTimes.remove(stamp.txTimeMilliseconds)
         if attribute?.valueType == .ref {
           removeVAE(value: value, attributeID: attributeID, entityID: entityID)
         }
