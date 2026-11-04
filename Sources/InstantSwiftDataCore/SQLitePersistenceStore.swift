@@ -107,6 +107,7 @@
 // - 2026-11-04: a write's kept receipt fingerprint is found by its body's stored bytes at its save, claim and
 //   acknowledgement, where each hashed the whole transaction and rollback to find it (#1523).
 
+import CryptoKit
 import Foundation
 import IssueReporting
 import os
@@ -628,10 +629,11 @@ struct InstantMutationLifecycleResolution: Sendable {
 
 /// A write's receipt fingerprint, found by the bytes its row stores (#1523) or by the hash of its inputs (#1497).
 private struct InstantKeptReceiptFingerprint {
-  /// The body as its row stored it when this fingerprint was computed (#1523). The stored body holds every input of the
-  /// fingerprint (the row's columns hold only status, server transaction id and confirmation source), so a row whose
-  /// body is these bytes has this fingerprint.
-  var storedBody: SQLiteBinding?
+  /// The SHA-256 of the body as its row stored it when this fingerprint was computed (#1523). The stored body holds every
+  /// input of the fingerprint (the row's columns hold only status, server transaction id and confirmation source), so a
+  /// row whose body has this digest has this fingerprint. A digest, not the bytes: offline, 512 kept entries of
+  /// compressed bodies would hold megabytes.
+  var storedBodyDigest: SHA256Digest?
   /// The hash of the fingerprint's inputs (#1497), for a caller that holds a write but not its row's bytes.
   var inputsHash: Int?
   var fingerprint: String
@@ -1590,8 +1592,9 @@ public actor SQLitePersistenceStore {
     }
     let kept = keptReceiptFingerprints[mutation.id]
     let inputsHash: Int?
-    if let storedBody {
-      if let kept, kept.storedBody == storedBody {
+    let storedBodyDigest = storedBody?.storedBodyDigest
+    if let storedBodyDigest {
+      if let kept, kept.storedBodyDigest == storedBodyDigest {
         return kept.fingerprint
       }
       inputsHash = nil
@@ -1618,7 +1621,7 @@ public actor SQLitePersistenceStore {
       keptReceiptFingerprints.removeAll(keepingCapacity: true)
     }
     keptReceiptFingerprints[mutation.id] = InstantKeptReceiptFingerprint(
-      storedBody: storedBody ?? (sameInputs ? kept?.storedBody : nil),
+      storedBodyDigest: storedBodyDigest ?? (sameInputs ? kept?.storedBodyDigest : nil),
       inputsHash: inputsHash ?? (sameInputs ? kept?.inputsHash : nil),
       fingerprint: fingerprint
     )
@@ -21525,12 +21528,32 @@ public actor SQLitePersistenceStore {
     "instant.internal.declared-relation-storage-reconciliation.v1"
 }
 
-private enum SQLiteBinding: Equatable, Sendable {
+private enum SQLiteBinding: Sendable {
   case int(Int64)
   case text(String)
   /// A compressed outbox body (#1463).
   case blob(Data)
   case null
+}
+
+extension SQLiteBinding {
+  /// A stored body's digest for the kept receipt fingerprints (#1523): a compressed body's bytes, or a text body's UTF-8
+  /// after another first byte, so the two never share a key. A few microseconds for a live write's body on an M4, where
+  /// the inputs' hash it replaces walked the decoded transaction and rollback (about 180 us).
+  fileprivate var storedBodyDigest: SHA256Digest? {
+    var hash = SHA256()
+    switch self {
+    case let .blob(data):
+      hash.update(data: Data([0]))
+      hash.update(data: data)
+    case let .text(text):
+      hash.update(data: Data([1]))
+      hash.update(data: Data(text.utf8))
+    case .int, .null:
+      return nil
+    }
+    return hash.finalize()
+  }
 }
 
 /// What SQLite's page cache holds on one connection (#653).
