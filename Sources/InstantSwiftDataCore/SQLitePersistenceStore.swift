@@ -9960,7 +9960,7 @@ public actor SQLitePersistenceStore {
         SELECT MAX(result.updated_at_ms)
         FROM instant_live_query_triples AS owned
         JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
-        WHERE owned.entity_id = ? AND result.updated_at_ms >= ?
+        WHERE owned.entity_id = ? AND result.updated_at_ms >= ? AND result.unloaded_at_ms IS NULL
         """,
         [.text(triple.entityID), .int(milliseconds)]
       ).flatMap { Int64($0) }
@@ -9971,7 +9971,7 @@ public actor SQLitePersistenceStore {
       FROM instant_live_query_triples AS owned
       JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
       WHERE owned.entity_id = ? AND owned.attribute_id = ? AND owned.value_json = ?
-        AND result.updated_at_ms >= ?
+        AND result.updated_at_ms >= ? AND result.unloaded_at_ms IS NULL
       """,
       [
         .text(triple.entityID),
@@ -10480,7 +10480,7 @@ public actor SQLitePersistenceStore {
         SELECT owned.query_id
         FROM instant_live_query_triples AS owned
         JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
-        WHERE owned.entity_id = ? AND owned.attribute_id = ?
+        WHERE owned.entity_id = ? AND owned.attribute_id = ? AND result.unloaded_at_ms IS NULL
         ORDER BY result.updated_at_ms DESC, result.query_key
         LIMIT 1
         """,
@@ -14189,8 +14189,11 @@ public actor SQLitePersistenceStore {
       var statement: OpaquePointer?
       try prepare(
         """
-        SELECT entity_id, attribute_id, value_json FROM instant_live_query_triples
-        WHERE entity_id IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))
+        SELECT ownership.entity_id, ownership.attribute_id, ownership.value_json
+        FROM instant_live_query_triples AS ownership
+        JOIN instant_live_query_results AS result ON result.query_id = ownership.query_id
+        WHERE ownership.entity_id IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))
+          AND result.unloaded_at_ms IS NULL
         """,
         statement: &statement
       )
@@ -19915,11 +19918,14 @@ public actor SQLitePersistenceStore {
     _ identity: InstantLiveTripleIdentity,
     excludingQueryKeys: Set<String>
   ) throws -> Bool {
+    // #1500: a result unloaded where it is owns nothing here, as its whole copy owned nothing before: its rows hold the
+    // values its reopening shows, and a fact the server took away leaves the store.
     var sql =
       """
       SELECT 1
       FROM instant_live_query_triples
       WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+        AND query_id IN (SELECT query_id FROM instant_live_query_results WHERE unloaded_at_ms IS NULL)
       """
     var bindings: [SQLiteBinding] = [
       .text(identity.entityID),
