@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 5:25:08 p.m. EST — `49780127c9f2` release(#1756): v1.9.67: a restated unset field reduces on a cascading namespace
+
+- **Implementation commit:** `49780127c9f2af872a376ac7efad95589e629b12`
+- **Change:** release(#1756): v1.9.67: a restated unset field reduces on a cascading namespace
+- **Details:**
+  - The release document for v1.9.67, tagged from main (be720d8e) for Scribe's next build: #1756 (red 831ee0bf, green dbc7d5d0, guard 29a2837a) lets a frame that restates a list preview's unset field reduce on a namespace a delete can cascade into, unless a pending write on that row deletes into it.
+  - No API or storage change; a new preview frame went from 2.5-4.9 s and 990-2,000 replayed writes to 9-21 ms and none; the release gate and the whole bundle did not run before the tag (the bundle runs after it).
+- **Files:**
+  - `docs/releases/v1.9.67.md` — #1756 the release: what changed, what it measured, the checks, what did not run
+  - `PROGRESS.md` — #1756 the release checkpoint
+  - `agent-presence/_channels/2026-11-04-retired-cascade-1756.md` — #1756 says it landed and its claimed paths are free
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, b1104-1756@halfjew22); no SpecStory capture
+
 ## November 4th, 2026 at 5:24:20 p.m. EST — `29a2837aa4ce` test(#1756): the cascade guard restates the line alone, so a naive fix fails it
 
 - **Implementation commit:** `29a2837aa4ce257b324a3e56e23de8251d6f7290`
