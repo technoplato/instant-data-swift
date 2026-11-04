@@ -1,3 +1,6 @@
+## 2026-11-04 18:41:26 EST — scribe `73987de4649214ee7190c750f1392f9b2ccf7e89`
+Feature (#1790): a decision question carries the draft it names (scribe decision ask --draft) and a link to the place it names (--link, https or the app's own scribe-shared link), and refuses one that shows a file he cannot open; the WAITING gatherer names whose note a line was; the door's evidence link takes scribe-shared://.
+
 ## 2026-11-04 18:19:14 EST — scribe `e82bf7c56648ce3ea3465cb9aeabe6bb3d0219f9`
 Tooling (#1799): scripts/perf/metrics.py prints his five metrics (size of the recording, size per minute, usage per minute, CPU per minute by state, heat) per build and per recording, each number with its source (energy ledger, a sysdiagnose powerlog read over unplugged minutes only, iOS hang reports, the recording's Instant rows), --compare A B with a scenario check, and --trend --write one row per build in ~/Sync/audit/perf-metrics/trend.jsonl; it keeps the collector's ledger lines by day (the 64 MB journal prunes). Nothing new runs on the phone (#1285). Red eb2d95791, green 808312e2a, changelog 538abc916; 39 tests.
 
