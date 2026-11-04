@@ -15,6 +15,7 @@ import os
 // - 2026-10-28: `holdsFact` and `factCount(entityID:)` answer a prune batch without materializing an entity (#1319).
 // - 2026-11-04: the newest transaction time is kept in time-ordered counts, not walked: the full-rebase server apply
 //   read it once per pending write it replayed, and iOS's CPU Monitor killed the app in that walk (#1748).
+// - 2026-11-04: `loadFactsKeptOnDisk`, an entity's facts read from SQLite before a write prepares against it (#1165).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -1592,6 +1593,25 @@ struct TripleIndexes: Codable, Sendable {
       deferredValueKeysToRemove.insert(
         EntityAttributeKey(entityID: triple.entityID, attributeID: triple.attributeID)
       )
+    }
+  }
+
+  /// Inserts the facts this device keeps on disk of entities these indexes hold no fact of, read before a write
+  /// prepares against them (#1165). Unlike deferred values they stay when the result is installed: an entity a write
+  /// touches is held whole, never in part.
+  mutating func loadFactsKeptOnDisk(
+    _ triples: [InstantTriple],
+    attributes: AttributeStore
+  ) {
+    guard !triples.isEmpty else { return }
+    if triples.contains(where: {
+      derivedIndexAttributeShapes[$0.attributeID]
+        != attributes[$0.attributeID].map(DerivedIndexAttributeShape.init)
+    }) {
+      _ = rebuildDerivedIndexes(attributes: attributes)
+    }
+    for triple in triples {
+      insert(triple, attribute: attributes[triple.attributeID])
     }
   }
 
