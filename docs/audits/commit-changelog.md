@@ -1,3 +1,6 @@
+## 2026-11-04 17:10:48 EST — scribe `aa5b33a2e1e11700d6d5f29558393945dfe735ef`
+Feature (#1592): "Scribe, stop recording" in the owner's own voice (a named speaker or a voice print without a question mark) stops the recording at once, in front and in the background: a fixed grammar reads the sentence, never the model (0 model calls a try, was 1 at 1.5 s median); an unknown voice is asked in front and refused aloud in the background; another person, system audio and Scribe's own voice never stop it; every try logs #1592. The grammar over 90,758 mirrored lines reads 4 as a stop, all real asks.
+
 ## 2026-11-04 16:33:42 EST — scribe `208757feafefb095b5cc838e03966b6f14e68980`
 Feature (#1777): the Mac and the mini keep only each recording's compressed copy (phase 1): one range reader of it (Apple's decoder, only the segments a stretch needs, one encoder run at a time); the mirror writes no live.wav from the copy and keeps its index; the cutter, book_readings, transcribe-gap, the scrubber and the ShazamKit catalog read the copy; a window read from it is within one step of a 16-bit sample of the Mac's old decode (Recording 340); changelog 78089ecd3.
 
