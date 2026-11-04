@@ -72,3 +72,42 @@ kept on disk depend on the same fix.
   `prepareLocalWrite`.
 - perf-sync-1796 (#1796): delivery and acknowledgements; step 5's sweep reads acknowledgements (outbox rows gone),
   never changes them.
+
+## Amendment 1 (2026-11-04 19:00 EST): what #1165 and #1145 became; how to resume
+
+Commits on `agent/claude/perf-mem-1797` (pushed to origin; not yet on main): #1165 red 20b88d9a, green f66f726f;
+#1145 red 6ab10a4b, green c14aa08d and 67515e53. One mini job checks all of it: `1797-1165-redgreen`
+(`.runs-1797/1165-redgreen.sh`, untracked in the worktree): #1165 red on main's sources, the two-hour replay without and
+with the sweep (release), the focused suites, the whole bundle against `Tests/known-failing.txt`. Logs land in
+`.runs-1797/` (`1165-red.log`, `1145-red-replay.log*`, `1145-green-replay.log*`, `1145-focused.log`, `bundle-*`).
+
+- #1165, the invariant: memory never holds part of an entity. A local write (and the retry and refused-write rebases)
+  reads, in the persistence turn that already read its deferred values, every fact SQLite keeps of each entity it
+  names that memory holds no fact of; they join the prepared indexes and stay (`TripleIndexes.loadFactsKeptOnDisk`,
+  unlike `hydrateDeferredValues`, marks nothing for removal). A server apply does the same for an entity absent from
+  both its own prepared store and memory: an entity a pending write created is absent from the prepared store once its
+  overlay is peeled, and its rows on disk are that write's, so memory decides. The residency check rides the store
+  turn that already resolved the write's lookups (`entityIDsForPreparing`); with deferred values configured, as in
+  Scribe, a write takes no new turn. Lookups still resolve against memory (Scribe writes none). Known gap left as it
+  was: a delete's cascade reaches only resident children.
+- #1145, the sweep: candidates are the entities each committed local write changed and the entities a result's save
+  stopped owning (a value change keeps its row, so it is not named). Every 64 local writes or result-carrying frames a
+  background task reads them once without a gate (owned ones leave, ones an outbox row touches wait), then holds the
+  server-apply and operation gates at background priority for at most 500 at a time, reads them again and releases from
+  memory, never from disk, those no observer shows. No batch while a prune releases a result; a maintenance activity
+  stops it before a suspension; a close stops it. Observers stay verified (none shows a released entity), unlike a
+  prune's retraction. The sweep records no actor hops, so the benchmarks' foreground counts stay exact.
+- Expected bundle movement: `BenchmarkTests` (localTodoBenchmarkProducesDeterministicMetrics) asserts actor hops
+  exactly; without deferred values a write now takes one more store turn, and one more persistence turn when it names an
+  entity memory lacks (a create). Update those numbers from the run's diff, with this reason.
+- #1512, read from the phone's own samples (iPhone, 17:55, build 249): footprint 203 MB, malloc in use 143 MB, malloc
+  free 174 MB, graphics 27 MB. Footprint bounds the dirty part of the free list at about 33 MB: most of "free and never
+  returned" is clean, purgeable or compressed, not footprint. The trace's 960 purgable-control traps a second (from
+  scribe-f3) fit SQLite's page cache: each ephemeral b-tree (an IN list, a DISTINCT, an ORDER BY without an index) takes
+  a bulk allocation of about 20 pages (~88 KB), freed at the statement's reset, which libmalloc's large cache marks
+  volatile and non-volatile again on reuse. Next: count allocations of 32 KB and more per refresh and per write with
+  `MemoryAllocationSites` and cut the ephemeral tables at their statements.
+- To resume: read the job's logs; fix what the bundle names; then rebase on origin/main, push to main, release the first
+  free v1.9.N (`git fetch --tags`; four lanes release tonight), pin it in Scribe, cut and install, and compare the
+  phone's storeTriples and mallocInUse over an hour of recording with build 248's (44,127 -> 64,874 facts, 135.8 ->
+  187.3 MB in 95 minutes).
