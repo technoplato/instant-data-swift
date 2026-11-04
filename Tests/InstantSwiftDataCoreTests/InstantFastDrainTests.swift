@@ -17,6 +17,8 @@ import Testing
 // name, held by the store and every frame under the id. One device's queue grew to 2,316 writes on it.
 // 2026-10-29 (#1378): the recording list's preview can select an optional field no write sets, which the server
 // restates as null on each new preview segment. One device's queue grew from 29 to 524 in eight minutes on it.
+// 2026-11-04 (#1756): the same frames on Scribe's own links, whose recording cascades to its lines. The iPad's
+// Recording 364 (7.4 h, 12,000 writes queued) took the full rebase on them 80 times, about 7,600 writes each.
 
 // MARK: - Schema
 
@@ -2284,6 +2286,143 @@ extension InstantFastDrainTests {
     print(
       """
       #1378 a new preview segment's frames against \(pending) pending writes (setup \(setup)):
+        \(lines.joined(separator: "\n  "))
+      """
+    )
+    for frame in frames {
+      expectNoDifference(frame.plannedBodyCount, 0, "\(pending) pending: \(lines.joined(separator: "; "))")
+    }
+  }
+}
+
+extension InstantFastDrainTests {
+  /// #1756: #1378's frames on Scribe's own links. Scribe's recording cascades to its lines (`recordings/segments`), and
+  /// #1378 left out every namespace a delete can cascade into, so on Scribe's schema each new preview line still peeled
+  /// and replayed the whole queue. On 2026-11-04 the iPad's Recording 364 (7.4 h, 12,000 writes queued) took that full
+  /// rebase 80 times (`changesShadowedFact on transcriptionSegments/retiredAtMs`, about 7,600 writes each), and no
+  /// recording would load until the queue drained. Nothing pending here deletes a recording, so no replay can cascade
+  /// into a line: the drain must rebase nothing and leave what the whole-component rebase leaves.
+  @Test
+  func thePreviewsUnsetFieldDoesNotForceARebaseOnScribesLinks() async throws {
+    var reduced = try await FastDrainFixture.make(
+      suffix: "unset-field-links-reduced", serverSegmentCount: 6, pendingSegmentCount: 4, scribeLinks: true,
+      defersSegmentText: true, previewUnsetField: true
+    )
+    var full = try await FastDrainFixture.make(
+      suffix: "unset-field-links-full", serverSegmentCount: 6, pendingSegmentCount: 4, reducesServerApply: false,
+      scribeLinks: true, defersSegmentText: true, previewUnsetField: true
+    )
+    let (drain, declines) = try await FastDrainDeclineCounter.counting {
+      try await reduced.drain()
+    }
+    _ = try await full.drain()
+    expectNoDifference(drain.rebases, 0, "declines: \(declines)")
+    let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+    let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+    let restated = reducedObservation.persistedFacts
+      .filter { $0.attributeID == FastDrainSchema.previewUnsetFieldAttributeID }
+      .map(\.entityID)
+    expectNoDifference(restated, (5...9).map(FastDrainSchema.segmentID))
+  }
+
+  enum CascadingDelete: String, CaseIterable, Sendable {
+    case recordingInItsNamespace
+    case recordingByIDAlone
+  }
+
+  /// #1756: a pending write that deletes the line's recording cascades into the line on the full rebase's replay
+  /// (Scribe's `recordings/segments`), and the server's null goes with it; a later write then writes the line again
+  /// without it. The line's empty slot is not the server's to fill there: the reduced apply must leave what the full
+  /// rebase leaves, whether the delete names its namespace or only the id.
+  @Test(arguments: CascadingDelete.allCases)
+  func aPendingDeleteThatCascadesIntoTheLineLeavesWhatTheFullRebaseLeaves(delete: CascadingDelete) async throws {
+    let segment = FastDrainSchema.segmentID(6)
+    var fixtures: [FastDrainFixture] = []
+    for reduces in [true, false] {
+      var fixture = try await FastDrainFixture.make(
+        suffix: "unset-cascade-\(delete.rawValue)-\(reduces)", serverSegmentCount: 6, pendingSegmentCount: 2,
+        reducesServerApply: reduces, scribeLinks: true, previewUnsetField: true
+      )
+      let time = InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds + 1_000)
+      let deletion: InstantTripleOperation
+      switch delete {
+      case .recordingInItsNamespace:
+        deletion = .deleteEntityInNamespace(entityID: FastDrainSchema.recordingID, namespace: "recordings")
+      case .recordingByIDAlone:
+        deletion = .deleteEntity(FastDrainSchema.recordingID)
+      }
+      func insert(_ id: String, _ attribute: String, _ value: InstantValue) -> InstantTripleOperation {
+        .insert(InstantTriple(entityID: segment, attributeID: "transcriptionSegments/\(attribute)", value: value, txID: id, txTime: time))
+      }
+      let writes = [
+        InstantStoreTransaction(id: "fast-drain-cascade-delete", operations: [deletion]),
+        InstantStoreTransaction(
+          id: "fast-drain-cascade-rewrite",
+          operations: [
+            insert("fast-drain-cascade-rewrite", "id", .string(segment)),
+            insert("fast-drain-cascade-rewrite", "recordingID", .string(FastDrainSchema.recordingID)),
+            insert("fast-drain-cascade-rewrite", "segmentIndex", .number(6)),
+            insert("fast-drain-cascade-rewrite", "text", .string("written again")),
+          ]
+        ),
+      ]
+      for transaction in writes {
+        _ = try await fixture.runtime.transact(transaction, createdAt: time)
+      }
+      fixtures.append(fixture)
+    }
+    // Segment 6's six writes reach the server one frame each; its summary makes it the preview while the delete and
+    // the rewrite are pending.
+    for index in fixtures.indices {
+      let window = try await fixtures[index].claimWindow(maximumMutationCount: 6)
+      expectNoDifference(window.mutations.count, 6)
+      for mutation in window.mutations {
+        _ = try await fixtures[index].acceptAndRefresh(mutation, claimToken: window.token)
+      }
+    }
+    let reducedObservation = try await FastDrainObservation.observe(fixtures[0].runtime)
+    let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+  }
+
+  /// #1756: the differential on Scribe's links with the preview's unset field: whatever the drain does, the reduced
+  /// apply observes what the full rebase observes.
+  @Test(arguments: [UInt64(51), 52, 53, 54, 55, 56])
+  func theReducedApplyObservesWhatTheFullRebaseObservesWithThePreviewsUnsetFieldOnScribesLinks(seed: UInt64) async throws {
+    try await runDifferential(seed: seed, scribeLinks: true, liveLines: true, attachments: true, previewUnsetField: true)
+  }
+
+  /// #1756, measured: #1378's frames against the queue's length on Scribe's links. On the iPad each one peeled and
+  /// replayed the whole queue.
+  @Test(.measurement, arguments: [100, 1_000, 2_000])
+  func measureANewPreviewSegmentsFramesAgainstTheQueueOnScribesLinks(writes: Int) async throws {
+    let setupStarted = ContinuousClock.now
+    var fixture = try await FastDrainFixture.make(
+      suffix: "unset-frame-links-\(writes)", serverSegmentCount: 20, pendingSegmentCount: (writes + 5) / 6,
+      scribeLinks: true, defersSegmentText: true, previewUnsetField: true
+    )
+    let setup = ContinuousClock.now - setupStarted
+    let pending = try await fixture.pendingCount()
+    var lines: [String] = []
+    var frames: [FastDrainFrameMeasurement] = []
+    for round in 1...3 {
+      let window = try await fixture.claimWindow(maximumMutationCount: 6)
+      for mutation in window.mutations {
+        let (frame, declines) = try await FastDrainDeclineCounter.counting {
+          try await fixture.acceptAndRefresh(mutation, claimToken: window.token)
+        }
+        frames.append(frame)
+        lines.append("round \(round) \(mutation.id): \(frame.duration), bodies \(frame.plannedBodyCount), declines \(declines)")
+      }
+    }
+    print(
+      """
+      #1756 a new preview segment's frames on Scribe's links against \(pending) pending writes (setup \(setup)):
         \(lines.joined(separator: "\n  "))
       """
     )
