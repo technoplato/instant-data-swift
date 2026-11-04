@@ -8450,6 +8450,12 @@ public final class InstantRuntime: Sendable {
     await liveSession.applierIsWaitingForAFrameForTesting()
   }
 
+  /// The op of the server frame the live applier is applying, if any (#1796).
+  @concurrent
+  package func liveFrameBeingAppliedForTesting() async -> String? {
+    await liveSession.frameBeingApplied()?.op
+  }
+
   @concurrent
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
