@@ -136,10 +136,10 @@ struct MemorySiteExercises {
         try await MemoryExerciseSession.waitUntilAcknowledged(runtime)
       }
       for index in 0..<2 { try await write(index) }
-      let final = try await MemoryAllocationSites.record(minimumSize: minimumSize) {
+      let finishedLines = try await MemoryAllocationSites.record(minimumSize: minimumSize) {
         for index in 2..<(2 + iterations) { try await write(index) }
       }
-      MemoryAllocationSites.print("S05.large.final-line-long-recording", final, top: 30, iterations: iterations)
+      MemoryAllocationSites.print("S05.large.final-line-long-recording", finishedLines, top: 30, iterations: iterations)
     }
   }
 
