@@ -1,3 +1,20 @@
+## 2026-11-04 15:31:06 EST — b1104-1748 (#1748): v1.9.66, the store's newest transaction time kept, not walked
+
+- **Why:** iOS's CPU Monitor killed the app on a tablet at 02:46 on 2026-11-04 ("48 seconds cpu time over 60 seconds
+  (81% cpu average), exceeding limit of 80% cpu over 60 seconds", not frontmost), 5 of 6 samples in
+  `TripleIndexes.newestTransactionTimeMilliseconds`, which the full-rebase server apply read once per pending write it
+  replayed and which walked every fact; its CPU reports at 01:57 (10 of 32 samples), 02:55 (13 of 22) and 10:39 (29 of
+  38) show the same walk.
+- **Landed:** merge `99ef8077` (red `b446b586`, green `9722630e`, comment `e4990383`): `TransactionTimeCounts`, how many
+  facts carry each transaction time in sorted runs; kept where the fact count is kept and where a cardinality-one value
+  replaces another; recounted on decode and a derived-index rebuild.
+- **Measured:** the replay scaling test took 68.920 s on the red sources (300 replayed writes: 0.496 s over 2,000 facts,
+  17.998 s over 64,000) and 0.368 s on the green (laptop, debug). Not measured: the release cost harness (the package's
+  `todos-v3` demo does not link in release on the laptop's macOS 26.7) and the effect on a device.
+- **Checks:** `InstantStoreWriteScalingTests` 11 of 11; the whole bundle twice on the Mac mini, every test passing in at
+  least one run but two that fail on `main` since 1.9.64 (docs/releases/v1.9.66.md, Checks).
+- **Released:** v1.9.66 (docs/releases/v1.9.66.md). Scribe pins it exactly next.
+
 ## 2026-10-31 22:54:46 EDT — perf-ship-10 (#1482): v1.9.64 for Scribe build 217
 
 - Tagged from main (b2156d7d plus the release record): #1510 / #1463 the compressed outbox body (cb95ef5d; a save 16.3
