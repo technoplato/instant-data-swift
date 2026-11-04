@@ -1640,6 +1640,12 @@ public actor SQLitePersistenceStore {
     serverApplyMetrics
   }
 
+  /// Every live-query ownership row read and every restated value encoded to compare a stored result with the one that
+  /// replaces it, since this store opened: for cost tests (#1480).
+  package func liveQueryResultDiffCountsForTesting() -> (ownershipRowsRead: Int, valuesEncoded: Int) {
+    (liveQueryOwnershipRowReadCount, liveQueryResultValueEncodeCount)
+  }
+
   /// Holds this actor for `duration` without suspending, as a long SQLite commit does, after calling `started` (#1006).
   package func occupyForTesting(_ duration: Duration, started: @Sendable () -> Void) {
     started()
@@ -19610,6 +19616,7 @@ public actor SQLitePersistenceStore {
     next: [InstantTriple]
   ) throws -> [(identity: InstantLiveTripleIdentity, triple: InstantTriple)] {
     guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return [] }
+    liveQueryResultValueEncodeCount += next.count
     var diff = try LiveQueryOwnershipDiff(next: next, encoder: encoder)
     try liveQueryOwnershipRowsWithoutTransaction(queryKey: key, into: &diff)
     try diff.finish()
