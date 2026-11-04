@@ -21,6 +21,8 @@ import Foundation
 //   observation hands the store; the runtime forwarded every emission through two tasks of its own (#1493).
 // - 2026-11-04: a write prepares against the whole of each entity it touches: the facts SQLite keeps of an entity memory
 //   lacks are loaded into the prepared indexes first and stay (#1165).
+// - 2026-11-04: `releaseEntitiesNoObserverShows`, the residency sweep's release: entities no observer shows leave memory
+//   without marking every observer's result unverified, as a prune's retraction does (#1145).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -3454,6 +3456,40 @@ public actor InstantStore {
     }
     indexes.finishInternCachesAfterWrite(invalidating: changedEntityIDs, attributes: attributes)
     sequence += 1
+  }
+
+  /// Releases from memory every fact of each of `candidates` that no observer shows (#1145): their rows stay on disk,
+  /// where a local read finds them and a write reads them before it prepares (#1165), as after a relaunch. Returns how
+  /// many entities and facts left memory, and the candidates kept because an observer's last result, or the last one it
+  /// was handed, shows them.
+  ///
+  /// Unlike a prune's retraction (``retractFactsReleasedByPrune(_:)``) it leaves every observer's result verified: no
+  /// observer shows a released entity, so no result changes, and the next change need not refresh them all.
+  func releaseEntitiesNoObserverShows(
+    _ candidates: Set<String>
+  ) -> (entityCount: Int, factCount: Int, shown: Set<String>) {
+    guard !candidates.isEmpty else { return (0, 0, []) }
+    publishPendingChanges()
+    var shown: Set<String> = []
+    var metrics = InstantStorePublishMetrics()
+    for id in Array(observers.keys) {
+      guard var observer = observers[id] else { continue }
+      shown.formUnion(observer.shownEntityIDs(metrics: &metrics).intersection(candidates))
+      if !observer.lastHandedValues.sharesStorage(with: observer.lastValues) {
+        shown.formUnion(observer.lastHandedValues.allEntityIDs().intersection(candidates))
+      }
+      observers[id] = observer
+    }
+    let released = facts(of: candidates.subtracting(shown))
+    guard !released.isEmpty else { return (0, 0, shown) }
+    indexes.discardInternedQueryResultsBeforeWrite()
+    var changedEntityIDs: Set<String> = []
+    for triple in released {
+      indexes.apply(.retract(triple), attributes: attributes, into: &changedEntityIDs)
+    }
+    indexes.finishInternCachesAfterWrite(invalidating: changedEntityIDs, attributes: attributes)
+    sequence += 1
+    return (changedEntityIDs.count, released.count, shown)
   }
 
   func activeQueryCacheKeys() -> Set<String> {

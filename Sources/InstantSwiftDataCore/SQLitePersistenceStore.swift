@@ -103,6 +103,8 @@
 //   reads as before (#1463, #1510).
 // - 2026-11-04: a write reads what it needs beside memory in one turn: the deferred values it can touch, and every fact
 //   this device keeps of an entity it names that memory lacks (#1165).
+// - 2026-11-04: a result's save names the entities it stopped owning, and a residency sweep asks which of its
+//   candidates no stored result owns and no outbox row touches (#1145).
 
 import Foundation
 import IssueReporting
@@ -1481,6 +1483,9 @@ public actor SQLitePersistenceStore {
   private var liveQueryResultJSONWriteStats = (saves: 0, writes: 0, bytes: 0)
   /// Ownership rows read and result values encoded to save live-query results, for the commit's metrics (#932).
   private var liveQueryOwnershipRowReadCount = 0
+  /// Whether a result's save records the entities it stopped owning, for the residency sweep (#1145), and those entities.
+  private var recordsOwnershipReleases = false
+  private var ownershipReleasedEntityIDs: Set<String> = []
   private var liveQueryResultValueEncodeCount = 0
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
@@ -1985,13 +1990,15 @@ public actor SQLitePersistenceStore {
     startupTrace: InstantStartupTrace = .disabled,
     deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
     localLookup: InstantLocalLookupPolicy = .none,
-    declaredAttributes: [InstantAttribute] = []
+    declaredAttributes: [InstantAttribute] = [],
+    recordingOwnershipReleases: Bool = false
   ) throws {
     self.fileURL = fileURL
     self.startupTrace = startupTrace
     self.deferredValueResidency = deferredValueResidency
     self.localLookup = localLookup
     self.declaredAttributes = declaredAttributes
+    self.recordsOwnershipReleases = recordingOwnershipReleases
     // #1245: the writer opens through the file meter's VFS, so a checkpoint's copies and the temporary files count.
     let connectionVFS = Self.connectionVFSForTesting ?? InstantSQLiteFileMeter.registeredVFSName()
     self.connectionVFS = connectionVFS
@@ -14217,6 +14224,64 @@ public actor SQLitePersistenceStore {
   }
 
   /// Whether a released result waits for the batches that check its facts (#1129).
+  /// Whether a result's save records the entities it stops owning, for the runtime's residency sweep (#1145). Off, as
+  /// when the sweep never runs, the record would only grow.
+  func recordOwnershipReleases(_ records: Bool) {
+    recordsOwnershipReleases = records
+    if !records { ownershipReleasedEntityIDs = [] }
+  }
+
+  /// The entities a result's save stopped owning since the last call (#1145): each may be owned by no result now.
+  func takeOwnershipReleasedEntityIDs() -> Set<String> {
+    let released = ownershipReleasedEntityIDs
+    ownershipReleasedEntityIDs = []
+    return released
+  }
+
+  /// Which of `entityIDs` a residency sweep may release from memory (#1145): nil while a prune is releasing a result,
+  /// whose next chunks drop an entity's rows only while memory holds it (#1129); otherwise the ones no stored result owns
+  /// and no outbox row touches, and apart, the unowned ones an outbox row touches. Ownership is per entity, not per fact:
+  /// an entity a result owns any fact of stays whole (#259). One read transaction, three index probes per 500 entities.
+  func residencySweepDecision(for entityIDs: Set<String>) throws -> InstantResidencySweepDecision? {
+    try readTransaction {
+      guard
+        try selectScalar(
+          "SELECT 1 FROM instant_live_query_results WHERE query_key >= ? AND query_key < ? LIMIT 1",
+          [.text(Self.releasedLiveQueryResultKeyPrefix), .text(Self.releasedLiveQueryResultKeyPrefix + "\u{10FFFF}")]
+        ) == nil
+      else { return nil }
+      let unowned = entityIDs.subtracting(
+        try entityIDsWithRowsWithoutTransaction(in: "instant_live_query_triples", among: entityIDs)
+      )
+      var pending = try entityIDsWithRowsWithoutTransaction(in: "instant_outbox_write_keys", among: unowned)
+      pending.formUnion(
+        try entityIDsWithRowsWithoutTransaction(
+          in: "instant_outbox_effect_entities",
+          among: unowned.subtracting(pending)
+        )
+      )
+      return InstantResidencySweepDecision(releasable: unowned.subtracting(pending), pending: pending)
+    }
+  }
+
+  /// The ids among `entityIDs` that `table` holds rows of, through its index that leads with `entity_id`, 500 to a
+  /// statement.
+  private func entityIDsWithRowsWithoutTransaction(in table: String, among entityIDs: Set<String>) throws -> Set<String> {
+    var found: Set<String> = []
+    let sorted = entityIDs.sorted()
+    for start in stride(from: 0, to: sorted.count, by: 500) {
+      let batch = sorted[start..<Swift.min(start + 500, sorted.count)]
+      let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+      found.formUnion(
+        try selectStrings(
+          "SELECT DISTINCT entity_id FROM \(table) WHERE entity_id IN (\(placeholders))",
+          batch.map(SQLiteBinding.text)
+        )
+      )
+    }
+    return found
+  }
+
   func hasReleasedLiveQueryResult() throws -> Bool {
     try readTransaction {
       try selectScalar(
@@ -20697,6 +20762,15 @@ public actor SQLitePersistenceStore {
     inserted insertedOwnership: [LiveQueryOwnershipIdentity]
   ) throws {
     guard !removedOwnership.isEmpty || !insertedOwnership.isEmpty else { return }
+    if recordsOwnershipReleases, !removedOwnership.isEmpty {
+      // #1145: an entity this result stops owning may be owned by no result now, and may leave memory. One whose value
+      // changed gains a row as it loses one, and stays owned.
+      var released = Set(removedOwnership.lazy.map(\.entityID))
+      for identity in insertedOwnership where !released.isEmpty {
+        released.remove(identity.entityID)
+      }
+      ownershipReleasedEntityIDs.formUnion(released)
+    }
     // The row was written above; its id names it in every ownership row (#704).
     let queryID = try liveQueryResultIDWithoutTransaction(key: key)
     try executeRepeated(
