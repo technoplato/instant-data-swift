@@ -2,3 +2,4 @@ claude-code/audit-memory-1075@ld 2026-10-24T16:00:45-0400 grower plan=2026-10-24
 claude-code/fix-memory-1075@ld 2026-10-24T22:07:41-0400 mower plan=2026-10-24-fix-memory-1075 #1075 amendment 1 (MemoryLongRunReplaySmokeTests only: into the measurement pass)
 claude-code/fix-memory-1075@ld 2026-10-25T02:54:32-0400 mower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (twoHourRecording holds #1145's criterion)
 claude-code/sqlite-writes-1426@strangelearning 2026-10-31T00:06:30-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its ownership rows, facts and a narrow header)
+claude-code/perf-mem-1797@pp 2026-11-04T18:10:00-0500 mower plan=2026-11-04-perf-mem-1797 #1165 #1145 #1500

@@ -1,1 +1,2 @@
 claude-code/fix-memory-1075@ld 2026-10-25T02:52:55-0400 grower plan=2026-10-24-fix-memory-1075 #1145 amendment 13 (new)
+claude-code/perf-mem-1797@pp 2026-11-04T18:10:00-0500 mower plan=2026-11-04-perf-mem-1797 #1165 #1145 #1500
