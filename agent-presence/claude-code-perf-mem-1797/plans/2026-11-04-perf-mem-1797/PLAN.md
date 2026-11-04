@@ -111,3 +111,36 @@ with the sweep (release), the focused suites, the whole bundle against `Tests/kn
   free v1.9.N (`git fetch --tags`; four lanes release tonight), pin it in Scribe, cut and install, and compare the
   phone's storeTriples and mallocInUse over an hour of recording with build 248's (44,127 -> 64,874 facts, 135.8 ->
   187.3 MB in 95 minutes).
+
+## Amendment 2 (2026-11-04 19:05 EST): #1500's design, unload in place; red test waiting
+
+Red test written, not committed while `1797-1165-redgreen` waits (a job ships the worktree as it is when it starts,
+and a red test would read as a new bundle failure): `~/Sync/audit/perf-mem-1797/pending/InstantUnloadInPlaceTests.swift`
+(`aClosedResultIsUnloadedWhereItIsWithoutACopy`: after the session prune, no row in
+`instant_unloaded_live_query_results`, the closed result keeps its row and its 12 ownership rows, its 12 facts stay in
+`instant_triples`, memory holds only the open query's row, and the reopened list answers from disk first). Commit it
+as `red(#1500)` once that job has started.
+
+Green, in this order (perf-recv-1797 agreed #1122 and #1107 are mine with #1500 and #1149):
+1. Schema: `instant_live_query_results.unloaded_at_ms INTEGER` (nullable; one `ALTER TABLE ... ADD COLUMN` migration).
+2. Unload = mark: the cadence prune sets `unloaded_at_ms` on each stored result no open or registering query holds
+   (one row's page), instead of copying it, deleting its rows and releasing its facts. Its entities become residency
+   sweep candidates; the sweep's ownership check counts loaded results only (`JOIN instant_live_query_results r ON
+   r.query_id = o.query_id WHERE r.unloaded_at_ms IS NULL`), so memory lets a closed result's rows go while SQLite
+   keeps them.
+3. Collection: the policy (1 year, 1,000 results, 1,000,000 facts; upstream's) counts loaded and unloaded results, and
+   collects unloaded ones oldest first: their row and ownership rows go (the cascade, in bounded chunks as #1129's
+   released rows do), then the facts no remaining result owns and no outbox row touches, whole entities only (#259),
+   from SQLite and, if resident and unshown, memory. The released-row machinery (`released-result:`) is reused for this.
+4. Reopen: a marked result clears its mark (one row) and loads its entities whole from `instant_triples` (entities
+   memory lacks, in bounded chunks under gate holds, as #1131's reload does) without writing them. A legacy JSON copy
+   (`instant_unloaded_live_query_results`, older builds) reloads as today, which turns it into rows; the policy collects
+   the rest; no new copy is ever written.
+5. Readers: retraction ownership checks and the policy's counts include unloaded results (their facts stay on disk for
+   an offline reopen); the refusal resolution's newest server values (#441) and the launch residency read count loaded
+   results only, as they counted no copy before.
+6. Launch (#1149, #1107): the retained entities come from SQL over loaded results' ownership rows (they are already
+   nested-limited at save), not from decoding every result.
+Measure: the unloaded table's bytes on a copy of the phone's store, the four writers' MB/h (applyReleasedLiveQuery...,
+applyLiveQueryResultPruneBatch, reloadUnloadedLiveQueryResultChunk, beginUnloadedLiveQueryResultReload) from the
+phone's ledger files before and after, and `StorageIOExercises/liveWritesOnThePhoneShapedStore`'s first prune frames.
