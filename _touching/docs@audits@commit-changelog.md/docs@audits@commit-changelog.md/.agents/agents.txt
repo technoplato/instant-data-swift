@@ -39,3 +39,4 @@ claude-code/perf-read-1498@ld 2026-10-31T12:28:51-0400 mower plan=2026-10-31-per
 claude-code/perf-gate-1491@ld 2026-10-31T12:34:11-0400 mower plan=2026-10-31-perf-gate-1491 #1491
 claude-code/perf-writes-1510@ld 2026-10-31T13:45:27-0400 grower plan=2026-10-31-perf-writes-1510 #1510 
 claude-code/order-1648@halfjew22 2026-11-02T22:43:39-0500 mower plan=2026-11-02-order-1648 #1648 (ledger entries)
+claude-code/b1104-1748@halfjew22 2026-11-04T10:22:57-0500 mower plan=2026-11-04-newest-1748 #1748
