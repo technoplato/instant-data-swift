@@ -1,1 +1,2 @@
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/ack_deadline_fix 2026-08-14T21:28:55Z mower plan=2026-08-14-acknowledgement-deadline-generation-barrier
+claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653

@@ -4,3 +4,4 @@ claude-code/sync-jam-1378@halfjew22 2026-10-29T20:27:27-0400 mower plan=2026-10-
 claude-code/outbox-1435@strangelearning 2026-10-30T22:19:47-0400 mower plan=2026-10-30-outbox-1435 #1435 amendment 2 (F59 only)
 claude-code/sqlite-writes-1426@strangelearning 2026-10-31T03:04:27-0400 mower plan=2026-10-30-sqlite-writes-1426 amendment 1 #1426 #1440 (a stored result is its rows)
 claude-code/order-1648@halfjew22 2026-11-02T23:00:07-0500 mower plan=2026-11-02-order-1648 amendment 2 #1648 (a new F67 entry and its index row only)
+claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653

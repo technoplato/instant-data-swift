@@ -19,3 +19,4 @@ claude-code/fix-gate-1074@ld 2026-10-24T23:01:44-0400 mower plan=2026-10-24-fix-
 claude-code/perf-send-1492@ld 2026-10-31T12:26:11-0400 mower plan=2026-10-31-perf-send-1492 #1492 #1496 (sendMutations, send(_:through:), serverAttributes; not startReceiving/record/canDeliverReceiverEvent)
 claude-code/perf-observe-1493@ld 2026-10-31T12:30:12-0400 mower plan=2026-10-31-perf-observe-1493 #1493 #1494
 claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 #1127 #590 (step 7 only, after perf-sync-1796 agrees)
+claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
