@@ -14,6 +14,9 @@ import Testing
 // History:
 // - 2026-10-24: #1147: the refresh of an open page (E03) and a finished line (E04).
 // - 2026-10-25: #1150: a page of a long recording's history read locally (E14).
+// - 2026-11-04: #1512: the allocations of 32 KB and more a page refresh and a finished line make: on a phone each is a
+//   large block, which libmalloc's large cache marks volatile when freed and non-volatile again when reused (a trace of
+//   build 247 counted 960 such traps a second, nearly all under the store's SQLite reads).
 
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["INSTANT_MEMORY_SITES"] != nil))
 struct MemorySiteExercises {
@@ -78,6 +81,65 @@ struct MemorySiteExercises {
         for index in 2..<(2 + iterations) { try await write(index) }
       }
       MemoryAllocationSites.print("S04.final-line-long-recording", recording, top: 60, iterations: iterations)
+    }
+  }
+
+  /// #1512: the large allocations (32 KB and more) of E03's page refresh and of E04's finished line, by site. Each is a
+  /// large block on a phone; SQLite's page cache takes about 20 pages at once for each temporary b-tree a statement opens
+  /// (an IN list, a DISTINCT, an ORDER BY without an index) and frees them when the statement is reset.
+  @Test func s05LargeAllocationSites() async throws {
+    let minimumSize = 32 * 1_024
+    try await MemoryExerciseSession.open(MemoryExercises.shape, label: "s05").closing { context in
+      let recordingID = RealSizeID.make(.write, 700_000)
+      let rows = 64
+      let page = try await MemoryOpenPage.open(
+        context, recordingID: recordingID, rows: rows, firstLine: rows * 1_000, idBase: 2_000_000 + rows * 1_000,
+        id: "s05-page-\(rows)"
+      )
+      let iterations = 4
+      let frames = await page.frames(count: 2 + iterations)
+      for index in 0..<2 {
+        await context.server.push(encoded: frames[index].frame)
+        try await context.waitApplies.wait(for: frames[index].tx)
+      }
+      let refresh = try await MemoryAllocationSites.record(minimumSize: minimumSize) {
+        for index in 2..<(2 + iterations) {
+          await context.server.push(encoded: frames[index].frame)
+          try await context.waitApplies.wait(for: frames[index].tx)
+        }
+      }
+      MemoryAllocationSites.print("S05.large.page-refresh-\(rows)", refresh, top: 30, iterations: iterations)
+      await page.close()
+
+      let runtime = context.runtime
+      let clock = context.session.clock
+      let (longestID, _) = MemoryExercises.longestRecording
+      let longest = try #require(context.session.account.entities["recordings"]?.first { $0.id == longestID })
+      _ = try await MemoryScribeWrites.seedLinks(context, recordingID: longestID)
+      let lives = (0..<(2 + iterations)).map {
+        MemoryScribeWrites.liveLine(recordingID: longestID, line: 200_000 + $0, words: 9, at: clock.now())
+      }
+      try await runtime.transact(MemoryScribeWrites.transaction { txID in
+        lives.flatMap { MemoryScribeWrites.update($0, at: clock.advance(), txID: txID) }
+      })
+      try await MemoryExerciseSession.settle(runtime)
+      let lines = (0..<(2 + iterations)).map { index in
+        RealSizeAccount.segment(
+          recordingID: longestID, line: 200_000 + index, revision: 4, serial: 0,
+          id: RealSizeID.make(.write, 920_000 + index)
+        )
+      }
+      func write(_ index: Int) async throws {
+        try await runtime.transact(
+          MemoryScribeWrites.finalLine(lines[index], recording: longest, liveLine: (lives[index].id, lives[index].namespace), at: clock.advance())
+        )
+        try await MemoryExerciseSession.waitUntilAcknowledged(runtime)
+      }
+      for index in 0..<2 { try await write(index) }
+      let final = try await MemoryAllocationSites.record(minimumSize: minimumSize) {
+        for index in 2..<(2 + iterations) { try await write(index) }
+      }
+      MemoryAllocationSites.print("S05.large.final-line-long-recording", final, top: 30, iterations: iterations)
     }
   }
 
