@@ -7785,8 +7785,10 @@ public final class InstantRuntime: Sendable {
 
   /// Starts a residency sweep in a task of its own at background priority (#1145). One already running leaves the
   /// candidates recorded since for the next.
+  ///
+  /// The sweep records no actor hops: it is background maintenance, and the foreground paths' hop counts (the benchmarks
+  /// assert them exactly) would depend on when a sweep ran. What it did is its result and its diagnostics event.
   private func requestResidencySweep() {
-    recordActorHop(.task)
     _ = residencySweepOwner.start(priority: .background) { [weak self] in
       guard let self else { return }
       do {
@@ -7817,7 +7819,6 @@ public final class InstantRuntime: Sendable {
   @discardableResult
   func sweepResidentEntities() async throws -> InstantResidencySweepResult {
     var result = InstantResidencySweepResult()
-    recordActorHop(.persistence)
     var candidates = residencySweep.takeCandidates().union(await persistence.takeOwnershipReleasedEntityIDs())
     guard !candidates.isEmpty else { return result }
     var kept: Set<String> = []
@@ -7827,7 +7828,6 @@ public final class InstantRuntime: Sendable {
     // suspend the process, so no gate is held across a suspension.
     let activity = configuration.maintenanceActivity.begin("residency sweep")
     defer { activity.end() }
-    recordActorHop(.persistence)
     guard cadencePruneOwner.isIdle, let preview = try await persistence.residencySweepDecision(for: candidates) else {
       result.deferredForPrune = true
       result.keptEntityCount = candidates.count
@@ -7841,7 +7841,7 @@ public final class InstantRuntime: Sendable {
       let batch = Set(candidates.prefix(Self.residencySweepBatchEntityCount))
       try await serverApplyGate.enterUnlessCancelled(operation: "residency sweep", priority: .background)
       do {
-        try await enterOperationGateUnlessCancelled(operation: "residency sweep", priority: .background, writes: [])
+        try await operationGate.enterUnlessCancelled(operation: "residency sweep", priority: .background, writes: [])
       } catch {
         await serverApplyGate.leave()
         throw error
@@ -7850,21 +7850,19 @@ public final class InstantRuntime: Sendable {
       var released: (entityCount: Int, factCount: Int, shown: Set<String>) = (0, 0, [])
       do {
         if cadencePruneOwner.isIdle, !activity.isExpired {
-          recordActorHop(.persistence)
           decision = try await persistence.residencySweepDecision(for: batch)
         } else {
           decision = nil
         }
         if let decision, !decision.releasable.isEmpty {
-          recordActorHop(.store)
           released = await store.releaseEntitiesNoObserverShows(decision.releasable)
         }
       } catch {
-        await leaveOperationGate()
+        await operationGate.leave()
         await serverApplyGate.leave()
         throw error
       }
-      await leaveOperationGate()
+      await operationGate.leave()
       await serverApplyGate.leave()
       guard let decision else {
         result.deferredForPrune = true
