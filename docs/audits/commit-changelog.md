@@ -1,3 +1,6 @@
+## 2026-11-04 16:33:42 EST — scribe `208757feafefb095b5cc838e03966b6f14e68980`
+Feature (#1777): the Mac and the mini keep only each recording's compressed copy (phase 1): one range reader of it (Apple's decoder, only the segments a stretch needs, one encoder run at a time); the mirror writes no live.wav from the copy and keeps its index; the cutter, book_readings, transcribe-gap, the scrubber and the ShazamKit catalog read the copy; a window read from it is within one step of a 16-bit sample of the Mac's old decode (Recording 340); changelog 78089ecd3.
+
 ## 2026-11-04 15:33:30 EST — scribe `63b4869f2795682f37cbfc970a593aeab53ebe3e`
 Cut (#1748): Scribe 0.1 (248) from main after the 1.9.66 pin: the full-rebase server apply no longer walks every fact for each pending write it replays; CURRENT_PROJECT_VERSION 247 to 248 and build 248's plain block.
 
