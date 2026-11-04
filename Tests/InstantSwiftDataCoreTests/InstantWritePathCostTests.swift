@@ -6,6 +6,9 @@
 //                    claim cost as much CPU as the save.
 // 2026-11-04  #1523  The save, the claim and the acknowledgement each found the write's kept receipt fingerprint by
 //                    hashing its whole transaction and rollback (about 180 us each on an M4); the stored bytes find it.
+// 2026-11-04  #653   Red: a write saved while the connection is open and nothing waits ahead of it still takes a claim
+//                    turn of the operation gate, which reads its body back and fingerprints it again (3.06 ms a claim on
+//                    the phone, builds 248-249, more than the save's 2.79 ms).
 
 import Foundation
 import Testing
@@ -103,5 +106,52 @@ struct InstantWritePathCostTests {
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A write saved while the connection is open and nothing waits ahead of it is claimed by its own save and sent from
+  /// there, as `Reactor.js` `pushOps` sends a mutation as it records it (`_trySendAuthed`): no claim turn of the
+  /// operation gate, and every write still goes out once, in order, and is accepted (#653).
+  @Test
+  func aWriteSavedWithNothingAheadOfItIsClaimedByItsSave() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let holds = InstantGateHoldCounter()
+    let runtime = try await InstantObserverRegistrationGateTests.runtime(
+      "claim-at-save",
+      transport: session.transport
+    ) {
+      $0.operationGateTimeline = holds.record
+    }
+    _ = try await runtime.connect()
+    try await InstantConnectionStateTruthTests.waitUntil("the connection's first pass to finish") {
+      await runtime.automaticMutationPumpIsIdleForTesting()
+    }
+    holds.reset()
+
+    let writes = 6
+    for index in 0..<writes {
+      try await InstantOfflineRuntimeFixture.createTodo("save-claim-\(index)", in: runtime)
+      try await InstantConnectionStateTruthTests.waitUntil("write \(index) to reach the socket") {
+        await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-save-claim-\(index)" }
+      }
+      await session.enqueue(
+        InstantLiveMessage(
+          op: "transact-ok",
+          clientEventID: "tx-save-claim-\(index)",
+          fields: ["tx-id": .string("server-\(index)")]
+        )
+      )
+      try await InstantConnectionStateTruthTests.waitUntil("the server to accept write \(index)") {
+        await runtime.pendingMutations().isEmpty
+      }
+      try await InstantConnectionStateTruthTests.waitUntil("the pump to finish after write \(index)") {
+        await runtime.automaticMutationPumpIsIdleForTesting()
+      }
+    }
+
+    let claims = holds.count(of: "claim automatic outbox transport mutations for delivery")
+    #expect(claims == 0, "\(claims) claim turns for \(writes) writes saved with nothing ahead of them")
+    let sent = await session.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
+    #expect(sent == (0..<writes).map { "tx-save-claim-\($0)" }, "every write is sent once, in order: \(sent)")
+    _ = try? await runtime.closeConnection()
   }
 }
