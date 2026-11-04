@@ -1,3 +1,6 @@
+## 2026-11-04 18:19:14 EST — scribe `e82bf7c56648ce3ea3465cb9aeabe6bb3d0219f9`
+Tooling (#1799): scripts/perf/metrics.py prints his five metrics (size of the recording, size per minute, usage per minute, CPU per minute by state, heat) per build and per recording, each number with its source (energy ledger, a sysdiagnose powerlog read over unplugged minutes only, iOS hang reports, the recording's Instant rows), --compare A B with a scenario check, and --trend --write one row per build in ~/Sync/audit/perf-metrics/trend.jsonl; it keeps the collector's ledger lines by day (the 64 MB journal prunes). Nothing new runs on the phone (#1285). Red eb2d95791, green 808312e2a, changelog 538abc916; 39 tests.
+
 ## 2026-11-04 17:34:54 EST — scribe `a64e397d13287bd481ee16714c3b717824ce6a67`
 Tooling (#1793): agent-run ranks the eligible Claude Max logins by the week most at risk of going unused (weekly % left per hour until that login's weekly reset, highest first; ties to more 5-hour left; no reset read after, by weekly % left), not the fixed accountOrder; the interactive login and --spare stay last; --quota says each login's place and why. Red 85aa7eef0, green c65c4d950, installed into ~/Scribe/tools 17:30; changelog c46543758. Live 17:31: pp (100% left, 11h28m: 8.7%/h) then halfjew22.
 
