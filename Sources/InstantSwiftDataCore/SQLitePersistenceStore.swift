@@ -101,6 +101,9 @@
 // - 2026-10-31: an outbox body is stored compressed and its lifecycle derived from it, so a live write's cell fits its
 //   leaf; every budget still counts JSON bytes (`encoded_body_bytes`, `lifecycle_bytes`), and an older row's text body
 //   reads as before (#1463, #1510).
+// - 2026-11-04: the delivery claim measures a projected body once and fingerprints its wire intent once: the body as
+//   stored was fingerprinted and then always replaced, and an unsubstituted projection was encoded a second time to
+//   check its own measure (#1517).
 
 import Foundation
 import IssueReporting
@@ -10739,7 +10742,8 @@ public actor SQLitePersistenceStore {
               // below includes its write keys.
               break
             }
-            claimEncodeCounts.wireIntentFingerprints += 1
+            // #1517: no fingerprint here. The projection below records the projected body's fingerprint on every row
+            // it keeps claimed, or releases the claim, before this transaction commits; this one was always replaced.
             try claimOutboxMutationWithoutTransaction(
               id: mutation.id,
               claimantID: request.claimantID,
@@ -10752,7 +10756,7 @@ public actor SQLitePersistenceStore {
                   inFlightOrdinal: claimedCount + mutations.count + 1
                 ),
               projectedBodyByteCount: candidate.encodedBodyByteCount,
-              payloadFingerprint: try mutation.mutationWireIntentFingerprint()
+              payloadFingerprint: nil
             )
             mutations.append(mutation)
             deliveryStartedBeforeClaimByMutationID[mutation.id] = candidate.deliveryStarted
@@ -10910,6 +10914,22 @@ public actor SQLitePersistenceStore {
           continue
         }
 
+        // #1517: without a required-scalar substitution the projected body is the value projectionMetadata measured,
+        // so its byte count is exact as measured; only a substitution builds and encodes a second value to check.
+        guard !metadata.requiredScalarKeys.isEmpty else {
+          let projectedMutation = metadata.projectedMutation
+          claimEncodeCounts.wireIntentFingerprints += 1
+          try updateProjectedOutboxClaimByteCountWithoutTransaction(
+            id: candidate.mutation.id,
+            claimToken: request.claimToken,
+            projectedBodyByteCount: metadata.encodedBodyByteCount,
+            payloadFingerprint: try projectedMutation.mutationWireIntentFingerprint()
+          )
+          admittedMutations.append(candidate.mutation)
+          projectedMutations.append(projectedMutation)
+          admittedBodyByteCount += metadata.encodedBodyByteCount
+          continue
+        }
         var hydratedScalars: [InstantVisibleWriteKey: InstantTriple] = [:]
         hydratedScalars.reserveCapacity(metadata.requiredScalarKeys.count)
         for key in metadata.requiredScalarKeys.sorted(by: {
@@ -17934,13 +17954,15 @@ public actor SQLitePersistenceStore {
       && stepCount <= remainingStepCount - admittedStepCount
   }
 
+  /// Claims a ready row for `claimToken`. `payloadFingerprint` is `nil` when the caller records the projected body's
+  /// fingerprint before its transaction commits (#1517), as the automatic claim does.
   private func claimOutboxMutationWithoutTransaction(
     id: String,
     claimantID: String,
     claimToken: String,
     deadlineMilliseconds: Int64,
     projectedBodyByteCount: Int,
-    payloadFingerprint: String
+    payloadFingerprint: String?
   ) throws {
     precondition(projectedBodyByteCount >= 0)
     try execute(
@@ -17958,7 +17980,7 @@ public actor SQLitePersistenceStore {
         .text(claimantID),
         .int(deadlineMilliseconds),
         .int(Int64(projectedBodyByteCount)),
-        .text(payloadFingerprint),
+        payloadFingerprint.map(SQLiteBinding.text) ?? .null,
         .text(id),
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
       ]

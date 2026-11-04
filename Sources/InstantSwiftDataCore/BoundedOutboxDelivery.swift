@@ -1,3 +1,7 @@
+// History:
+// - 2026-11-04: projectionMetadata hands back the projection it measured, so a claim that substitutes no required
+//   scalar records that value and its exact size instead of building and encoding it again (#1517).
+
 import Foundation
 import os
 
@@ -217,6 +221,9 @@ struct InstantOutboxProjectionCandidate: Sendable {
 struct InstantOutboxProjectionMetadata: Sendable {
   var encodedBodyByteCount: Int
   var requiredScalarKeys: Set<InstantVisibleWriteKey>
+  /// The projection before any required-scalar substitution: with no ``requiredScalarKeys`` it is the projected body,
+  /// and ``encodedBodyByteCount`` is its exact sorted-key size (#1517).
+  var projectedMutation: PendingMutation
 }
 
 /// What a store's delivery claims encoded for the writes they claimed (#1517), for the tests that pin it.
@@ -392,7 +399,8 @@ enum InstantBoundedOutboxDelivery {
     }
     return InstantOutboxProjectionMetadata(
       encodedBodyByteCount: encodedBodyByteCount,
-      requiredScalarKeys: Set(hydrations.map(\.key))
+      requiredScalarKeys: Set(hydrations.map(\.key)),
+      projectedMutation: baseMutation
     )
   }
 
