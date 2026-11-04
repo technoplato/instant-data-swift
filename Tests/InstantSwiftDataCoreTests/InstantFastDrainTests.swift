@@ -1263,9 +1263,8 @@ extension InstantFastDrainTests {
   }
 
   /// #1378: the same with the recording list's preview selecting an optional field no write sets, which the server
-  /// restates as null on each new preview segment while that segment's writes are pending. Without Scribe's links:
-  /// their cascade from the recording to its segments keeps the reduction from proving a segment's empty slot, so
-  /// those frames take the full rebase there, as before.
+  /// restates as null on each new preview segment while that segment's writes are pending. Without Scribe's links,
+  /// whose cascade from the recording to its segments #1378 left out; #1756 runs it on them (seeds 51-56).
   @Test(arguments: [UInt64(41), 42, 43, 44, 45, 46])
   func theReducedApplyObservesWhatTheFullRebaseObservesWithThePreviewsUnsetField(seed: UInt64) async throws {
     try await runDifferential(seed: seed, scribeLinks: false, liveLines: true, attachments: true, previewUnsetField: true)

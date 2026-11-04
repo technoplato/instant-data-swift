@@ -1447,6 +1447,9 @@ private struct InstantServerApplyReductionContextRequest: Sendable {
   var reverseLinkSlots: Set<InstantVisibleWriteKey>
   var absentEntityIDs: Set<String>
   var emptySlots: [String: Set<String>]
+  /// For each entity of `emptySlots` in a namespace a delete can cascade into, the namespaces whose deletes can reach it
+  /// (#1756).
+  var cascadeSources: [String: Set<String>] = [:]
 
   /// The context, at the revisions `state` was read at.
   func load(
@@ -1460,6 +1463,7 @@ private struct InstantServerApplyReductionContextRequest: Sendable {
       reverseLinkSlots: reverseLinkSlots,
       absentEntityIDs: absentEntityIDs,
       emptySlots: emptySlots,
+      cascadeSources: cascadeSources,
       processedTransactionID: processedTransactionID,
       expectedStoreRevision: state.storeRevision,
       expectedAttributeRevision: state.attributeRevision,
@@ -4489,8 +4493,9 @@ public final class InstantRuntime: Sendable {
       slots.keys.filter { preparedStore.indexes.copiedAttributeSlots(entityID: $0)?.isEmpty ?? true }
     )
     // #1378: the frame's scalar facts in cardinality-one slots the store leaves empty, on entities it shows, so the
-    // context can prove that no surviving write removes one. Only where no delete can cascade into the entity's
-    // namespace: a write deleting another entity could then remove the slot on the full rebase's replay.
+    // context can prove that no surviving write removes one. #1756: where a delete can cascade into the entity's
+    // namespace, the context also proves that no surviving write on the entity deletes an entity whose delete reaches
+    // it, which the full rebase's replay would cascade into the slot.
     let emptySlots = Self.emptyServerApplySlots(
       of: operations,
       absentEntityIDs: absentEntityIDs,
@@ -4510,7 +4515,8 @@ public final class InstantRuntime: Sendable {
         writeKeyNames: writeKeyNames,
         reverseLinkSlots: reverseLinkSlots,
         absentEntityIDs: absentEntityIDs,
-        emptySlots: emptySlots
+        emptySlots: emptySlots.slots,
+        cascadeSources: emptySlots.cascadeSources
       )
     )
   }
@@ -4684,14 +4690,20 @@ public final class InstantRuntime: Sendable {
   }
 
   /// The frame's scalar facts in cardinality-one slots the store leaves empty, by entity, on entities the store shows
-  /// and in namespaces no delete can cascade into (#1378). ``reducedServerApplyOperations(_:context:attributes:indexes:)``
-  /// keeps such a fact without the full rebase once the context proves no surviving write removes it.
+  /// (#1378). ``reducedServerApplyOperations(_:context:attributes:indexes:)`` keeps such a fact without the full rebase
+  /// once the context proves no surviving write removes it.
+  ///
+  /// #1756: a slot in a namespace a delete can cascade into is one too, with the namespaces whose deletes can reach it
+  /// (`cascadeSources`), so the context can prove that no surviving write on its entity deletes one of them. #1378 left
+  /// those namespaces out whole, and Scribe's recording cascades to its lines: on 2026-11-04 the iPad's Recording 364
+  /// (12,000 writes queued) peeled and replayed about 7,600 writes for each frame that restated a new preview line's
+  /// unset `retiredAtMs`, 80 times over 1 s, until no recording would load.
   static func emptyServerApplySlots(
     of operations: [InstantTripleOperation],
     absentEntityIDs: Set<String>,
     attributes: AttributeStore,
     indexes: TripleIndexes
-  ) -> [String: Set<String>] {
+  ) -> (slots: [String: Set<String>], cascadeSources: [String: Set<String>]) {
     var candidates: [InstantTriple] = []
     for operation in operations {
       guard case let .insert(triple) = operation, !absentEntityIDs.contains(triple.entityID) else { continue }
@@ -4706,22 +4718,23 @@ public final class InstantRuntime: Sendable {
       else { continue }
       candidates.append(triple)
     }
-    guard !candidates.isEmpty else { return [:] }
-    // A delete cascades along a link into its target's namespace (`onDeleteReverse`) or its source's (`onDelete`).
-    var cascadeNamespaces: Set<String> = []
-    for attribute in attributes.attributes where attribute.valueType == .ref {
-      if attribute.onDeleteReverse == .cascade, let linkNamespace = attribute.linkNamespace {
-        cascadeNamespaces.insert(linkNamespace)
-      }
-      if attribute.onDelete == .cascade { cascadeNamespaces.insert(attribute.namespace) }
-    }
+    guard !candidates.isEmpty else { return ([:], [:]) }
     var slots: [String: Set<String>] = [:]
+    var cascadeSources: [String: Set<String>] = [:]
+    var sourcesByNamespace: [String: Set<String>] = [:]
     for triple in candidates {
-      guard let namespace = attributes[triple.attributeID]?.namespace, !cascadeNamespaces.contains(namespace)
-      else { continue }
+      guard let namespace = attributes[triple.attributeID]?.namespace else { continue }
+      let sources: Set<String>
+      if let known = sourcesByNamespace[namespace] {
+        sources = known
+      } else {
+        sources = InstantServerApplyCascade.sources(into: namespace, attributes: attributes)
+        sourcesByNamespace[namespace] = sources
+      }
       slots[triple.entityID, default: []].insert(triple.attributeID)
+      if !sources.isEmpty { cascadeSources[triple.entityID, default: []].formUnion(sources) }
     }
-    return slots
+    return (slots, cascadeSources)
   }
 
   enum DeletedEntityReceiptPatch: Equatable {
