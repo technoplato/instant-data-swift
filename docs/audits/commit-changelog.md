@@ -1,3 +1,9 @@
+## 2026-11-04 12:54:46 EST — scribe `b3d26898ef0ad770cb0994ea9bf09945734c1bf6`
+Cut (#1652): Scribe 0.1 (246) from main after landing A of #1652; the build number 245 to 246, build 246's plain block and two stories.
+
+## 2026-11-04 12:53:32 EST — scribe `a04d25dc032b1c9b0bd911c1aebde37198fa2070`
+Fix (#1652): every page Settings > Playground pushes, and each agent's chat, give the floating recording bar its room; a chat reads its rows by its session alone (duo-panels-1578's chat timed out after 30 s on production with the account beside the session; 67 ms alone); claude runs take a message after each tool call through agent-run's inbox hook.
+
 ## 2026-11-04 12:16:04 EST — scribe `b3e4dfba6a985f25041c4faa58547f7406615718`
 Feature (#1678): Claude work per day (llmUsageDays) from the session logs since 2026-07-14, each reply once by message id at list price (514,156 replies on 47 days, $70,696.07); the quota command folds only new log bytes every five minutes (1.5 s at load 348).
 
