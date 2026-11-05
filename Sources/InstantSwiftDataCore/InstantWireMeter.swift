@@ -9,6 +9,7 @@ import os
 //   about 1.15 MB per final line in refresh-ok frames, and only two copies of its store said which queries carried it.
 // - 2026-11-05 (#1781): also each query's wait for its first answer and the triples that answer carried, by shape. A
 //   launch's first lines reached the screen 12.1 s after start, and no count said which query had waited.
+// - 2026-11-05 (#1816): 512 shapes kept apart over a process's life, not 48: one session's later screens read `other`.
 
 /// The live socket's traffic: frames and bytes by op, each way, counted where each frame is sent or received (#1124).
 ///
@@ -253,9 +254,10 @@ package final class InstantWireMeterStorage: Sendable {
     state.withLock { $0.counts }
   }
 
-  /// The most query shapes the meter keeps apart (#1117); a later one counts as `other`. An app's queries are fixed
-  /// shapes, so this bounds only a shape built from data.
-  package static let maximumQueryShapes = 48
+  /// The most query shapes the meter keeps apart over the process's life (#1117, #1816); a later one counts as `other`.
+  /// An app's queries are fixed shapes, so this bounds a shape built from data; at 48 one session's later screens all
+  /// read `other` (13% of a build's received bytes). An entry is a short string and a few counts.
+  package static let maximumQueryShapes = 512
 
   /// Counts one query's first answer under its shape (#1781): once per subscription, under the lock the frame counts
   /// take; past ``maximumQueryShapes`` it counts as `other`, as the bytes do.
