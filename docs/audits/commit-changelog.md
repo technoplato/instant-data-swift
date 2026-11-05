@@ -1,3 +1,6 @@
+## 2026-11-05 07:15:45 EST — scribe `75ff7eb10846298abee8dfbb2a7a232f18096c4e`
+Fix (#1226, #1424): the energy ledger's GPU time is nil until the kernel's counter moves (1,507 of 1,507 rows read 0 on 2026-11-04 while MetricKit bills 1,598-3,669 GPU-seconds a day), and one minute's row is made at a time, so two calls at a scene change cannot write a 2^64 ns row; mini job 1226-ledger-redgreen: the old sources fail the three new tests, 70 tests pass; changelog 07eec9800.
+
 ## 2026-11-05 07:12:14 EST — scribe `07f1223a650cc66cd37b5719fab7b02a4b8d729a`
 Cut (#1679): Scribe 0.1 (269) from main: select text in Notes and Expand Selection to Here (0b3e35ca4); CURRENT_PROJECT_VERSION 268 to 269 and build 269's plain block.
 
