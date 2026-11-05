@@ -117,6 +117,44 @@ struct InstantStoredFileEvictionTests {
     expectNoDifference(record.isDownloaded, true)
   }
 
+  /// #1104: the consuming app evicts after each launch, and each call read and decoded every record this device keeps
+  /// to find the few it was given: 47,393 records and 19.1 MB of their JSON on a phone's store (2026-10-30), 13 of them
+  /// with a copy. The storage snapshot decoded them all to count the copies.
+  @Test("Eviction reads only the records it names, and the storage snapshot counts copies without reading records")
+  func evictionAndTheSnapshotReadOnlyTheRecordsTheyNeed() async throws {
+    let fixture = try await EvictionFixture(payload: payload, connects: false)
+    defer { fixture.remove() }
+    // One copy this device holds, beside 300 records of uploads that keep none.
+    _ = try await fixture.runtime.storedFileContents(id: "held", name: "scribe/r/generation-1/audio.wav")
+    for index in 0..<300 {
+      _ = try await fixture.runtime.persistence.saveUploadedFileRecord(
+        InstantStoredFile(
+          id: "upload-\(index)",
+          appID: "app-1",
+          name: "scribe/r/generation-1/audio-chunks/\(index).wav",
+          byteCount: 1_000,
+          localPath: "",
+          ownerUserID: "user-1",
+          createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000 + Int64(index)),
+          updatedAt: InstantTimestamp(milliseconds: 1_700_000_000_000 + Int64(index))
+        )
+      )
+    }
+
+    await fixture.runtime.persistence.resetCacheResidencyMetricsForTesting()
+    let evictions = try await fixture.runtime.evictStoredFiles(ids: ["upload-7"])
+    expectNoDifference(evictions.map(\.outcome), [.kept(.notHeld)])
+    let evictionReads = await fixture.runtime.persistence.cacheResidencyMetricsForTesting().storedFileRecordReadCount
+    #expect(evictionReads == 1, "Evicting one file read \(evictionReads) records.")
+
+    await fixture.runtime.persistence.resetCacheResidencyMetricsForTesting()
+    let snapshot = try await fixture.runtime.storageSnapshot()
+    expectNoDifference(snapshot.downloadedFileCount, 1)
+    expectNoDifference(snapshot.downloadedFileSize, Int64(payload.count))
+    let snapshotReads = await fixture.runtime.persistence.cacheResidencyMetricsForTesting().storedFileRecordReadCount
+    #expect(snapshotReads == 0, "The storage snapshot read \(snapshotReads) records.")
+  }
+
   @Test("A client without storage keeps every copy: each is the only one")
   func clientWithoutStorageKeepsEveryCopy() async throws {
     let directory = FileManager.default.temporaryDirectory

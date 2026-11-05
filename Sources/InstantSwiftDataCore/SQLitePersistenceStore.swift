@@ -205,15 +205,19 @@ package struct InstantPersistenceCacheResidencyMetrics: Equatable, Sendable {
   package var fullStoreSnapshotLoadCount = 0
   package var fullStateReconstructionCount = 0
   package var storeSnapshotReplacementCount = 0
+  /// File records read and decoded from `instant_files` (#1104).
+  package var storedFileRecordReadCount = 0
 
   package init(
     fullStoreSnapshotLoadCount: Int = 0,
     fullStateReconstructionCount: Int = 0,
-    storeSnapshotReplacementCount: Int = 0
+    storeSnapshotReplacementCount: Int = 0,
+    storedFileRecordReadCount: Int = 0
   ) {
     self.fullStoreSnapshotLoadCount = fullStoreSnapshotLoadCount
     self.fullStateReconstructionCount = fullStateReconstructionCount
     self.storeSnapshotReplacementCount = storeSnapshotReplacementCount
+    self.storedFileRecordReadCount = storedFileRecordReadCount
   }
 }
 
@@ -13011,6 +13015,7 @@ public actor SQLitePersistenceStore {
       """,
       [.text(appID)]
     )
+    cacheResidencyMetrics.storedFileRecordReadCount += files.count
     return locatedInFilesFolder(files)
   }
 
@@ -13085,6 +13090,7 @@ public actor SQLitePersistenceStore {
       """,
       [.text(appID), .text(fileID)]
     )
+    cacheResidencyMetrics.storedFileRecordReadCount += rows.count
     return locatedInFilesFolder(rows).first
   }
 
