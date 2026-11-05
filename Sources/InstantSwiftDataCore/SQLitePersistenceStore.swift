@@ -1595,6 +1595,8 @@ public actor SQLitePersistenceStore {
   private var recordsOwnershipReleases = false
   private var ownershipReleasedEntityIDs: Set<String> = []
   private var liveQueryResultValueEncodeCount = 0
+  /// Nested-limit passes a result's save ran over its facts, since this store opened: for cost tests (#1109).
+  private var liveResultNestedLimitPasses = 0
   /// #1116: each stored live-query result's entity fingerprints, as its last save in this process left its rows, with
   /// the query-result revision and header they describe. A refresh of a result whose fingerprints describe what it read
   /// compares only the entities that changed with the rows SQLite holds. Every writer of ownership rows bumps that
@@ -1836,6 +1838,11 @@ public actor SQLitePersistenceStore {
   /// replaces it, since this store opened: for cost tests (#1480).
   package func liveQueryResultDiffCountsForTesting() -> (ownershipRowsRead: Int, valuesEncoded: Int) {
     (liveQueryOwnershipRowReadCount, liveQueryResultValueEncodeCount)
+  }
+
+  /// Every nested-limit pass a stored result's save ran over its facts, since this store opened: for cost tests (#1109).
+  package func liveResultNestedLimitPassesForTesting() -> Int {
+    liveResultNestedLimitPasses
   }
 
   /// Holds this actor for `duration` without suspending, as a long SQLite commit does, after calling `started` (#1006).
@@ -21591,6 +21598,7 @@ public actor SQLitePersistenceStore {
     let schema = try nestedLimitSchemaForLiveResultSaveWithoutTransaction()
     var result = result
     let restatedCount = result.triples.count
+    liveResultNestedLimitPasses += 1
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
       queryKey: result.key,
       triples: Array(result.triples),

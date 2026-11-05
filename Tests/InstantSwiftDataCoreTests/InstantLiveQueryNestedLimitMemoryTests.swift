@@ -217,6 +217,40 @@ struct InstantLiveQueryNestedLimitMemoryTests {
     expectNoDifference(maximumTripleCount, 8)
   }
 
+  /// #1109: a server refresh saves each restated result as its translation limited it. The translation limits a
+  /// result's nested includes with the schema the store holds at the attribute revision the commit checks (a frame that
+  /// merges attributes saves in its commit instead), and the limit keeps what it kept, so the save's second pass over
+  /// every restated fact kept every one: 44 ms in 90 s of the phone's speech trace once the schema walk was gone (build
+  /// 251). The rows still hold the recording and its two newest segments.
+  @Test
+  func aRefreshSavesWhatItsTranslationLimitedWithoutLimitingItAgain() async throws {
+    let cacheURL = temporaryNestedLimitCacheURL("save-limits-once")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "nested-limit-save-limits-once",
+        persistenceURL: cacheURL,
+        initialAttributes: NestedLimitLiveRefreshFixture.attributes
+      )
+    )
+    var fixture = NestedLimitLiveRefreshFixture(childIndices: Array(0..<childCount))
+    _ = try await runtime.applyLiveRefresh(fixture.refresh(transactionID: "nested-limit-save-once-0"))
+    let passesBefore = await runtime.persistence.liveResultNestedLimitPassesForTesting()
+    for offset in 1...3 {
+      fixture = NestedLimitLiveRefreshFixture(childIndices: Array(offset..<(offset + childCount)))
+      _ = try await runtime.applyLiveRefresh(fixture.refresh(transactionID: "nested-limit-save-once-\(offset)"))
+    }
+    let passes = await runtime.persistence.liveResultNestedLimitPassesForTesting() - passesBefore
+
+    let key = try InstantLiveQueryEncoder.registrationKey(for: fixture.query())
+    let rows = try await runtime.persistence.liveQueryOwnershipForTesting(queryKey: key)
+    expectNoDifference(
+      Set(rows.map { $0[0] }),
+      [fixture.recordingID, fixture.segmentID(3 + 8), fixture.segmentID(3 + 9)]
+    )
+    #expect(passes == 0, "the saves limited \(passes) results their translations had limited")
+  }
+
   @Test
   func repeatedLargeReplacementMutatesOnlyChangedOwnershipIdentities() async throws {
     let cacheURL = temporaryNestedLimitCacheURL("ownership-diff")
