@@ -21,6 +21,8 @@ import os
 //   sorting every attribute (#1109).
 // - 2026-11-04: `isOutsideRemotePageRows` says when a row lies outside what a page bounded by the server's page info
 //   can show, so a publication skips an infinite query's frozen pages for a line past their cursors (#1513).
+// - 2026-11-04: a page with no limit, ordered by an indexed field, orders only its indexed filters' hits, not every
+//   row of its namespace (#1513).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -3632,10 +3634,23 @@ struct TripleIndexes: Codable, Sendable {
       valuesByEntityID.count == namespaceMembers.count
     else { return nil }
 
+    // #1513: the rows the plan's indexed equality filters admit, when they are fewer than the namespace's. A recording's
+    // attachments, or a frozen page of its lines, ordered and materialized every attachment or line the device holds.
+    // Every row the filters match is among the hits, and each is still matched below.
+    let candidateSource = resolveBoundedCandidateSource(plan: plan, attributes: attributes)
     var ordered: [(entityID: String, value: InstantValue)] = []
-    ordered.reserveCapacity(valuesByEntityID.count)
-    for (entityID, value) in valuesByEntityID {
-      ordered.append((entityID, value))
+    if let hits = candidateSource.baseEntityIDs, hits.count < valuesByEntityID.count {
+      ordered.reserveCapacity(hits.count)
+      forEachEntityID(in: candidateSource) { entityID in
+        if let value = valuesByEntityID[entityID] {
+          ordered.append((entityID, value))
+        }
+      }
+    } else {
+      ordered.reserveCapacity(valuesByEntityID.count)
+      for (entityID, value) in valuesByEntityID {
+        ordered.append((entityID, value))
+      }
     }
     ordered.sort { lhs, rhs in
       Self.orderedValuePrecedes(
