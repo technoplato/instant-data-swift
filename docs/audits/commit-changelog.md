@@ -1,3 +1,9 @@
+## 2026-11-05 11:22:59 EST — scribe `da554c8d85a48824c25a9887fa8c5cb13c51c725`
+Diagnostics (#1826): the Mac mirror counts its requests to Instant's API by endpoint with the 429 refusals apart (status.json instantHTTP) and logs each minute in which Instant refused any (instant.http.refused), to aim the post-restart rate-limit fix at its cause.
+
+## 2026-11-05 11:22:59 EST — scribe `85efc65b25187c97b0681a1ba23ab1de85430d3e`
+Fix (#1826): running is not receiving: the mirror's heartbeat carries its socket's newest message from Instant and open queries; scribe state says NOT RECEIVING past 30 s with queries open, and the listener's watch prints "mirror not receiving from Instant ... audio still arrives" and "mirror receiving again".
+
 ## 2026-11-05 11:09:25 EST — scribe `041904fa6cd7aee2f247da448ff35f9236aa8d25`
 Fix (#1833): the listener and the 5-minute sweep read his screenshots and copies: the sweep puts non-frame images (with the phone's description once analysed) and clipboard copies between his open lines by time, the listener watch prints each copy, screen-broadcast frames stay out unless he points at the screen, and the scribe-listener skill lists every input each reads. Installed into the Mac mirror (two CLI files, no restart).
 
