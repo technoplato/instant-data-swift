@@ -1,3 +1,6 @@
+## 2026-11-05 06:14:41 EST — scribe `e944cd4d40bfbde20ae7c60f793cbd97152a748c`
+Fix and perf (#1809, #1812): a compressed copy whose encoder fails at Stop (AVAssetWriter -11819, Recording 366) is finished as it stands or from the WAV by a fresh encoder, so the phone no longer uploads the whole WAV on top of it (4.43 GB once); the launch sweep finishes a copy begun before the app closed; the iPhone streams to Your Mac as AAC-ELD at 48 kHz 48 kbps (Opus cost 2.33% of a core; AAC-ELD about 60% less encode CPU at the WAV's gold-set WER), Opus or linear16 for an older Mac. Gates 1809-redgreen and 1809-green2 on the mini: red fails, green 17/17 and 29/29.
+
 ## 2026-11-05 05:44:14 EST — scribe `7d2fc7319b414bcb8e17df3fcd8b1acc6b413355`
 Performance (#1423, ADR 0128 amendment 1): the recordings list's page holds no row being recorded; the rows stamped active come from a small query of their own (at most 24) and join the window inside its range. Before (build 253): an idle recording minute restated the page once, 149.4 KB, on every device holding the list. Proved on the throwaway app: a duration write restated the old page 115.9 KB, the new page never, the live rows 4.3 KB. Gate liverows1423-green3 on the mini, 211 tests in 22 suites.
 
