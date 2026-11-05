@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 7:04:20 a.m. EST — `49e090c79c87` release(#1109 #1513 #1116): v1.9.73: a server refresh compares only what it changed; its save takes the translation's limit
+
+- **Implementation commit:** `49e090c79c87c3504f160359370ba2bf7eebaff1`
+- **Change:** release(#1109 #1513 #1116): v1.9.73
+- **Details:**
+  - The release document, PROGRESS and FOOTGUNS F21 for v1.9.73, tagged from main for Scribe's next build.
+- **Files:**
+  - `docs/releases/v1.9.73.md` — #1109 #1513 #1116 the release record with the merge check's numbers
+  - `PROGRESS.md` — #1109 the lane's checkpoint: what landed, how it was checked, what is next
+  - `docs/FOOTGUNS.md` — F21 what 1.9.73 fixed; the ratio guard holds
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
 ## November 5th, 2026 at 7:04:09 a.m. EST — `f4e1367e1083` test(#1109 #1116): the differential counts the refreshes' reads; the schema-index tests state what the save change left
 
 - **Implementation commit:** `f4e1367e108361a790f83d137b1e7a0e4e84a6c2`

@@ -1,3 +1,6 @@
+## 2026-11-05 07:04:20 EST — instant-data-swift `49e090c79c87c3504f160359370ba2bf7eebaff1`
+Release (#1109, #1513, #1116): v1.9.73, tag on this commit: a server refresh compares only the entities it changed with a stored result's rows, its save takes the translation's limit; the second set (schema index, cascade sources, socket UTF-8, plan dependencies, frozen and filtered pages).
+
 ## 2026-11-05 07:04:10 EST — instant-data-swift `9d76a581f8c15105bf29f8b6291306b5327ccff2`
 Landing (#1109, #1513, #1116): the receive lane on main (with v1.9.72's record). Gate: Mac mini 1797-recv-merge-check and 1109-recv-testfix (22 tests in 3 suites passed, debug, 07:03); E03 64-line refresh 5.89 -> 5.22 ms, the echo 3.95 -> 3.64 ms CPU a write.
 
