@@ -5,6 +5,8 @@
 //   rare state, and the outbox takes at most 24 frames per write, the issue's criterion.
 // - 2026-10-31: at most 25 (#1491): the creation-order index costs a save and an echo one frame each, measured 23.0 ->
 //   25.0, for a tail read that no longer sorts the outbox on every write and twice in every server apply's plan.
+// - 2026-11-04: red (#1254): a live write's save, claim and acknowledgement each rewrote a page of instant_sync_metadata
+//   to bump a revision counter only this store reads.
 
 import CustomDump
 import Foundation
@@ -62,6 +64,26 @@ extension StorageIOExercises {
   }
 }
 
+extension StorageIOExercises {
+  /// A live write's save, claim and acknowledgement each bumped a revision counter in `instant_sync_metadata`, so each
+  /// rewrote a 4 KB page of it for an 8-byte number only this store reads (#1254: 138 pages a minute on the phone,
+  /// builds 248-249). The counters live in memory, their rows reserve a block of revisions at a time, and these steps
+  /// write no page of the table. The echo still records the server's processed transaction there.
+  @Test
+  func aLiveWritesSaveClaimAndAcknowledgementWriteNoSyncMetadataPage() async throws {
+    let measured = try await OutboxBTreeFrames.measure(
+      label: "sync-metadata-btrees",
+      prefixes: ["instant_sync_metadata", "sqlite_autoindex_instant_sync_metadata"]
+    )
+    let written = [StorageIOStep.save, .claim, .ack].compactMap { step -> String? in
+      let frames = measured.frames[step] ?? [:]
+      return frames.isEmpty ? nil : "\(step.rawValue) \(frames)"
+    }
+
+    #expect(written.isEmpty, "steps that wrote instant_sync_metadata pages: \(written)")
+  }
+}
+
 /// A live write's outbox frames by step and b-tree (#1115).
 struct OutboxBTreeFrames: CustomStringConvertible {
   var steps: [StorageIOStep]
@@ -74,8 +96,11 @@ struct OutboxBTreeFrames: CustomStringConvertible {
   }
 
   /// Four live writes, after one that prepares the recording's statements, on a small store: the steps' frames
-  /// counted on the b-trees whose name begins with the outbox's.
-  static func measure(label: String) async throws -> Self {
+  /// counted on the b-trees whose name begins with one of `prefixes` (the outbox's by default).
+  static func measure(
+    label: String,
+    prefixes: [String] = ["instant_outbox", "sqlite_autoindex_instant_outbox"]
+  ) async throws -> Self {
     StorageIOCounters.install(asDefault: false)
     let run = try StorageIORun(label: label)
     defer { run.remove() }
@@ -101,8 +126,8 @@ struct OutboxBTreeFrames: CustomStringConvertible {
     let steps: [StorageIOStep] = [.save, .claim, .ack, .echo]
     var frames: [StorageIOStep: [String: Int]] = [:]
     for step in steps {
-      frames[step] = map.byName(ledger.io(step).walFramesByPage).filter {
-        $0.key.hasPrefix("instant_outbox") || $0.key.hasPrefix("sqlite_autoindex_instant_outbox")
+      frames[step] = map.byName(ledger.io(step).walFramesByPage).filter { name, _ in
+        prefixes.contains { name.hasPrefix($0) }
       }
     }
     let total = frames.values.reduce(0) { $0 + $1.values.reduce(0, +) }
