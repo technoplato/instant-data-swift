@@ -1,3 +1,15 @@
+## 2026-11-05 15:49:02 EST — instant-data-swift `fe1e8fddc402ea80e628a02d3f255c434900dbf6`
+Fix (#1129): a prune batch's memory release after an unload (#1500) is its own phase, release memory, so a slow batch's notice names it apart from the SQLite apply.
+
+## 2026-11-05 15:49:02 EST — instant-data-swift `8b6898adb92be34793d4f2169f1fbb433764b7cb`
+Test (#1129): the prune-phase tests restated to #1500's unload in place (24 results unloaded, none removed) and expecting a release-memory phase.
+
+## 2026-11-05 15:49:01 EST — instant-data-swift `5a8da3a8dcf788b9ca34929e9d35a92ee70ec0a5`
+Diagnostics (#1129): each prune batch names its phase in the server-apply and operation gates' reports and times it; a batch held 1 s or more logs live-query-results.prune-batch-slow with each phase's ms and its counts, to name what grew in a Mac's 4.5-13.1 s holds.
+
+## 2026-11-05 15:49:01 EST — instant-data-swift `d7f704c1375c1248846dbc916fa1a4b547ab5625`
+Test (#1129): a prune batch holds its gates without naming or timing its phases (4 of 5 fail on their own sources).
+
 ## 2026-11-05 15:43:47 EST — scribe `c63d5a1e3d46f237c226fe56c7175c896e7b9ef9`
 Fix (#1827): a recognized song's now-playing card moves with the song until 15 s after its last match, then stands where the song was last heard until it leaves 40 s after (NowPlayingProgress.holdsAt); an item of Your Mac's catalogs, which predict no place, is placed from its newest match at the hearing's end, and past 16 hearings from the hearing before the last, so a film no longer runs at twice its speed (Recording 370's card read 1:36:21 for a film last heard at 1:34:02). Display only. Red 68c6c72cb, green 09a47a113 (mini: NowPlayingCardTests and RecordingNowPlayingTests pass), changelog 89d61b224; What's New build 272 (next) 9df3b1f11.
 
