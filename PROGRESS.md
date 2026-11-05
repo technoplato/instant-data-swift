@@ -1,3 +1,25 @@
+## 2026-11-05 01:00 EST — perf-send-1797 (#1517, #1523): job F green; the lane waits for the memory lane, then lands
+
+- **Lane head `ddcb77e5`** = main (v1.9.70) + #1517's claim at save measured by the save's own body encode (red
+  `b3b819b4`, green `26943d43`) + #1523's reworked test (`e153cf39`; two pending edits replayed by the full rebase under
+  another device's change).
+- **Job F** (`1797-f-claim-measure`, mini, 00:21-00:56; `~/Sync/audit/perf-send-1797/jobs/out-1797-f/`): the whole
+  debug bundle (1,680 tests) fails only `InstantLiveFrameDecodeTests/aServerResultDecodesAtAFractionOfJSONDecodersCost`
+  (ratio 0.351 vs 0.33, failing on main since 1.9.64-1.9.67). Reds fail as they must: #1517 (`encodes == 0`), #1523 on
+  9b792550's store (the echo minted 4 for 2 changed receipts; the acknowledgements 2). Release A/B, same job, v1.9.70 vs
+  the lane head: save + claim 4,058.9 -> 3,643.5 us a write (-10.2%), write side -8.6%, all metered library ops -1.8%.
+- **Order (coordinator, 00:12):** the memory lane (perf-mem-1797, gate `1797-1500-land-green`) lands next; this lane
+  holds library landings until then.
+- **Next (resume here):** when the memory lane's release is on main: `git fetch`, merge origin/main into the lane (it
+  differs from main only by `BoundedOutboxDelivery.swift`, `SQLitePersistenceStore.swift`'s claim at save and
+  `InstantWritePathCostTests.swift`); if their change touched those files, rerun `InstantWritePathCostTests` and the
+  delivery suites on the mini before landing. Land with a merge (never rebase: the ledger cites SHAs), ledger
+  (`~/Sync/audit/perf-send-1797/scripts/ledger_batch.py` for b3b819b4, 26943d43, 9b792550, a5c21032, e153cf39), release
+  the first free v1.9.N (`docs/releases/`, PROGRESS, channel line), pin it in Scribe in the ten pin files without a cut
+  unless the coordinator says otherwise. Phone: builds 261-262 carry 1.9.69 (ack 628.7 us on the mini), the first cut
+  after the memory lane carries 1.9.70+; an hour of recording on it, then `device-lab.py ledger` and `ledger_disk.py`
+  against `phone/before-1815-*.txt`. Page roadmap: the maps file's 2026-11-04 23:40 section and #1434's reader audit.
+
 ## 2026-11-05 00:15 EST — perf-send-1797 (#1523): v1.9.70, the acknowledgement's receipt found by stored bytes again
 
 - **Why:** 1.9.69 keyed kept receipts by stored bytes, but the server apply's body pages and staging looked them up by
