@@ -19,6 +19,14 @@
   unless the coordinator says otherwise. Phone: builds 261-262 carry 1.9.69 (ack 628.7 us on the mini), the first cut
   after the memory lane carries 1.9.70+; an hour of recording on it, then `device-lab.py ledger` and `ledger_disk.py`
   against `phone/before-1815-*.txt`. Page roadmap: the maps file's 2026-11-04 23:40 section and #1434's reader audit.
+- **#1254 work in progress (the previous run, not in this lane branch):** worktree `~/Sync/worktrees/perf-send-1797-next`,
+  branch `agent/claude/perf-send-1797-next` (pushed), red `124b8085` (a live write's save, claim and acknowledgement
+  each rewrite a page of instant_sync_metadata), wip `5b13033a` (store, outbox and query-result revisions in memory,
+  rows reserving blocks of 1,024, PRAGMA data_version for other connections; not compiled, not green; tests that read
+  exact revisions across stores need updating). Based on `5dd96175`: merge main first. Question to settle before green:
+  it restores the counters on rollback, so a revision value can be handed out twice; check that nothing keeps a value
+  computed inside a rolled-back transaction under the rolled-back revision (the query cache's store_revision, #1498;
+  `cachedState`; the attribute copies), or advance instead of restoring.
 
 ## 2026-11-05 00:15 EST — perf-send-1797 (#1523): v1.9.70, the acknowledgement's receipt found by stored bytes again
 
