@@ -1,3 +1,30 @@
+## 2026-11-05 05:19 EST — perf-mem-1797 (#1500, #1165, #1145, #541, #1104, #1105, #1107, #1149): v1.9.72, memory in proportion to what is on screen
+
+- **Why:** on the phone (2026-11-04, the consuming app's builds 246-253) the store's resident facts grew 9,000-24,000
+  an hour while recording and each relaunch started again near 45,000 with every stored result's entities loaded
+  (48,202 facts on the 21:20 store copy); closing a query copied its whole result into
+  `instant_unloaded_live_query_results` and wrote it back at the reopening (the four unload writers: 149.2 MB an hour on
+  builds 247-249, 413.8 MB an hour on build 253); a write to an entity kept on disk but not in memory erased its other
+  facts; each answered live query left its acknowledgement key behind; eviction and the storage snapshot decoded every
+  file record (47,393 on the 2026-10-30 store).
+- **Landed:** merges `cfd74320` (#1165 red `53e30f9f` green `68045937`, test `f46d1e0e`; #1145 red `213a7563` greens
+  `ef358515` `221512b9`; #541 red `31d0e156` green `820d412a`; #1500 red `f87d77b6` greens `623a8a8b` `93e79459`
+  `bbf40f04`; #1512's S05 `e7027553` `b3c844ce`) and `f504ed51` (#1104 red `277a9203` green `69ceae52`; #1105 red
+  `dfe16998` green `79a90b8b`); #1107 (plan `68ec5712`, red `9da1fbf5`, green `83446b22`); #1149's launch read (red
+  `44fc0c03`, green `518b7418`); the landing gate's fixes (red `708ded11` green `74e65b56`: a bounded batch unloads within
+  its budget; tests `caf33f20` `b6a80186` `7982385d`; red `cb0e8578` green `6779994f`: the store's own prune marks closed
+  results, a collection counts its disk deletions); plan amendments 5 and 6. Landing merge `d7dcf707`.
+- **Checked:** gate `1797-1500-land-green` (Mac mini): the four reds fail as written; the two-hour replay +15,102 ->
+  +1,380 resident facts and +9.2 -> +2.7 MB of heap an hour (release, same job); E07's launch 54,720 -> 9,728 facts,
+  24.9 -> 9.0 MB retained, 234 -> 59 ms. Its bundle found 22 stale tests and three source gaps (fixed above). Job `1797-1500-fixtests` (Mac mini, 2026-11-05 05:01-05:14, the whole bundle at `6779994f`): 1,700 tests, 3 failing, 2 new: `InstantLiveQueryCompactOwnershipTests`' pinned digest, re-pinned from that run in `d7dcf707` (an unloaded page keeps its ownership rows: 22,178 -> 22,778 answers), and `InstantLiveFrameDecodeTests`' timing ratio, 0.366 against a 0.33 ceiling (0.374 at `518b7418`, 0.323 at `f504ed51`, 0.325 on the sync lane's tree): it times a pure frame-decode loop no commit here touches, read as load (inference) until an alone-run A/B after the landing says otherwise. The merge of main with v1.9.71 (`6ed41621`) conflicted in two history headers only and lands without another whole-bundle run; main's new suites run on the landed tree next.
+- **Released:** v1.9.72 (`docs/releases/v1.9.72.md`). Scribe pins it next.
+- **Next (resume here):** the phone's storeTriples, mallocInUse and footprint over an hour of recording against builds
+  248-253 (`python3 -I ~/Sync/audit/perf-mem-1797/scripts/mem_trend.py --since 'YYYY-MM-DD HH:MM'`; Scribe had not run
+  on the iPhone since 2026-11-05 00:00, so it waits for his next recording) and the four unload writers
+  (`ledger_writers.py`) against 149.2-413.8 MB an hour; one line on #1797. Then #1149's link residency
+  (`agent/claude/perf-mem-1797-links`: plan amendment 5, red `48f10a63`, sized -48% launch facts on the store copy);
+  #1251/#1505's wrapper (-33% value text, measured).
+
 ## 2026-11-05 04:51:25 EST — perf-sync-1796 (#1796): v1.9.71, a follower applies each list's newest result and its reads survive a busy applier and a dying socket
 
 - **Why:** on 2026-11-04 the tablet followed the phone's live recording about six minutes late (the user's reading at
