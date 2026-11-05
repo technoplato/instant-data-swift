@@ -100,6 +100,33 @@ struct InstantNestedLimitSchemaTests {
       "Translating took \(Int(cost.large)) ns with 2,283 attributes against \(Int(cost.small)) with 16."
     )
   }
+
+  /// A server apply with an empty slot to keep asks which namespaces' deletes cascade into the slot's namespace (#1756).
+  /// It sorted every attribute of the schema to find the cascading links: with them kept beside the schema, the answer
+  /// costs about the same with 2,283 attributes as with sixteen.
+  @Test
+  func theCascadeSourcesCostTheSameWithTheWholeSchema() {
+    let cascade = InstantAttribute(
+      id: "recordings/segments", namespace: "recordings", name: "segments", valueType: .ref, cardinality: .many,
+      linkNamespace: "transcriptionSegments", onDeleteReverse: .cascade
+    )
+    let small = AttributeStore(attributes: Self.listAttributes(count: 16) + [cascade])
+    let large = AttributeStore(attributes: Self.listAttributes(count: 2_283) + [cascade])
+    for attributes in [small, large] {
+      #expect(InstantServerApplyCascade.sources(into: "transcriptionSegments", attributes: attributes) == ["recordings"])
+      #expect(InstantServerApplyCascade.sources(into: "recordings", attributes: attributes).isEmpty)
+      #expect(InstantServerApplyCascade.sources(into: "other", attributes: attributes).isEmpty)
+    }
+    guard RealSizeBudget.isOptimized else { return }
+    let cost = Self.cpuNanosecondsPerCall(
+      small: { _ = InstantServerApplyCascade.sources(into: "transcriptionSegments", attributes: small) },
+      large: { _ = InstantServerApplyCascade.sources(into: "transcriptionSegments", attributes: large) }
+    )
+    #expect(
+      cost.large < cost.small * 1.5,
+      "The cascade sources took \(Int(cost.large)) ns with 2,283 attributes against \(Int(cost.small)) with 16."
+    )
+  }
 }
 
 extension InstantNestedLimitSchemaTests {
