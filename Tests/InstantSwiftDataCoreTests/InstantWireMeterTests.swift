@@ -5,6 +5,7 @@
 //   received about 1.15 MB per final line, and only two copies of its store said which live queries carried it.
 // - 2026-11-05 (#1781): a query's first answer is timed from its own ask, by client-event-id, with the triples it
 //   carried, under its shape.
+// - 2026-11-05 (#1816): 512 shapes keep their names over a process's life, not 48.
 
 import CustomDump
 import Foundation
@@ -294,6 +295,26 @@ extension InstantWireMeterTests {
     let byQuery = meter.snapshot().firstAnswersByQuery
     expectNoDifference(byQuery.count, InstantWireMeterStorage.maximumQueryShapes + 1)
     expectNoDifference(byQuery["other"], .init(answers: 2, waitNanoseconds: 20, slowAnswers: 0, triples: 2))
+  }
+
+  /// A process asks for more than 48 shapes over its life (#1816: one session's later screens all read `other`, 13% of
+  /// a build's received bytes): the 49th to the 512th keep their names, their bytes and their first answers alike.
+  @Test
+  func theFortyNinthShapeAndLaterKeepTheirNames() {
+    let meter = InstantWireMeterStorage()
+    for index in 0..<512 {
+      meter.recordQueries([(shape: "q\(index)", bytes: 10)])
+      meter.recordFirstAnswer(InstantFirstAnswer(shape: "q\(index)", waitNanoseconds: 10, triples: 1))
+    }
+
+    let snapshot = meter.snapshot()
+    expectNoDifference(snapshot.receivedByQuery["q48"], .init(frames: 1, bytes: 10))
+    expectNoDifference(snapshot.receivedByQuery["q511"], .init(frames: 1, bytes: 10))
+    expectNoDifference(snapshot.receivedByQuery["other"], nil)
+    expectNoDifference(
+      snapshot.firstAnswersByQuery["q511"],
+      .init(answers: 1, waitNanoseconds: 10, slowAnswers: 0, triples: 1)
+    )
   }
 
   private static func ask(_ clientEventID: String, _ query: String) -> InstantLiveMessage {
