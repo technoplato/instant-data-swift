@@ -23,6 +23,8 @@ import Foundation
 //   lacks are loaded into the prepared indexes first and stay (#1165).
 // - 2026-11-04: `releaseEntitiesNoObserverShows`, the residency sweep's release: entities no observer shows leave memory
 //   without marking every observer's result unverified, as a prune's retraction does (#1145).
+// - 2026-11-04: a prune's residency names the released facts' entities memory holds at all, so the rule reads the rest
+//   from SQLite (#1500).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -3415,6 +3417,12 @@ public actor InstantStore {
       heldByEntity[identity.entityID, default: []].append(identity)
     }
     var residency = InstantPruneResidency()
+    // #1500: which of the released facts' entities memory holds at all; the prune reads the others from SQLite.
+    var resident: Set<String> = []
+    for entityID in Set(released.lazy.map(\.entityID)) where indexes.factCount(entityID: entityID) > 0 {
+      resident.insert(entityID)
+    }
+    residency.residentEntityIDs = resident
     for (entityID, held) in heldByEntity {
       let count = indexes.factCount(entityID: entityID)
       residency.factCounts[entityID] = count

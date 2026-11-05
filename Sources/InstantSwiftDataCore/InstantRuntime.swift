@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-04: a prune that unloads a closed result marks it where it is and releases its entities from memory only,
+//   under the batch's gates, by the residency sweep's rule; its reopening reads its rows where they are (#1500).
 // - 2026-11-04: a live query's acknowledgement entries go when its last registration ends, and revisions come from one
 //   counter, so a key forgotten and answered again still moves past any revision read before (#541).
 // - 2026-11-04: a residency sweep releases from memory, every 64 local writes or result-carrying frames, the entities no
@@ -7346,7 +7348,8 @@ public final class InstantRuntime: Sendable {
               rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
               entityTriples: entityTriples,
               ownedFacts: ownedFacts,
-              residentEntityIDs: residentEntityIDs
+              residentEntityIDs: residentEntityIDs,
+              ownsItsFacts: begun.ownsItsFacts
             )
           else {
             stoppedEarly = true
@@ -8151,10 +8154,10 @@ public final class InstantRuntime: Sendable {
       carriedReleasedIdentities: carriedReleasedIdentities,
       predecoded: predecoded
     )
-    guard !application.result.removedQueryKeys.isEmpty else {
+    guard !application.result.removedQueryKeys.isEmpty || !application.result.unloadedQueryKeys.isEmpty else {
       return application
     }
-    for key in application.result.removedQueryKeys {
+    for key in Set(application.result.removedQueryKeys).union(application.result.unloadedQueryKeys) {
       await liveQueryResultState.unload(key: key)
     }
     InstantDiagnostics.shared.record(
@@ -8210,7 +8213,10 @@ public final class InstantRuntime: Sendable {
         carriedReleasedIdentities: [],
         predecoded: predecoded
       )
-      guard !batch.removedQueryKeys.isEmpty else { return batch.applicationRemovingNothing }
+      // #1500: a batch that only unloads closed results marks them where they are.
+      guard !batch.removedQueryKeys.isEmpty || !batch.unloadingQueryKeys.isEmpty else {
+        return batch.applicationRemovingNothing
+      }
       let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: batch.releasedEntityIDs)
       batch.releasedIdentities.formUnion(touched)
       recordActorHop(.store)
@@ -8233,6 +8239,22 @@ public final class InstantRuntime: Sendable {
             storeRevision: application.storeRevision,
             attributeRevision: application.attributeRevision
           )
+        }
+        if !application.unloadedEntityIDs.isEmpty {
+          // #1500: the unloaded results' rows and facts stay on disk; memory releases, under this batch's gates, what no
+          // loaded result owns, no write waits on and no observer shows, as the residency sweep does (#1145). What it
+          // cannot release now stays the sweep's candidate.
+          recordActorHop(.persistence)
+          if let decision = try await persistence.residencySweepDecision(for: application.unloadedEntityIDs) {
+            var kept = decision.pending
+            if !decision.releasable.isEmpty {
+              recordActorHop(.store)
+              kept.formUnion(await store.releaseEntitiesNoObserverShows(decision.releasable).shown)
+            }
+            residencySweep.keep(kept)
+          } else {
+            residencySweep.keep(application.unloadedEntityIDs)
+          }
         }
         operationGate.markHolderWrites([])
         return application
