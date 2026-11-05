@@ -1,3 +1,6 @@
+## 2026-11-05 14:28:45 EST — instant-data-swift `a7223eadeac0fc92a20e0aa16997d8c2de767f81`
+Release (#632): v1.9.74, tag on this commit (the landing of agent/claude/perf-audio-1223: red af95eb36, green 418ff841, comments b52f2870, test reads 1a2ed1b9, release record 82cd08ad; its CHANGELOG entries in eb6d4266): InstantProgressiveMediaWriter takes the stream's stored row (continuing:), so a progressive media stream delivered to its end and then continued stores only its new segments instead of starting over at index 0 (whole stream encoded and stored again, every re-sent row refused by the app's rules). Gate: Mac mini 632-lib-redgreen (3 new tests fail at red; 31 + 5 progressive media tests pass at green); the app's side in 632-app-redgreen against this branch in edit mode (red fails 3, green 20/20). One source-compatible API addition, no storage change; carries 1.9.73.
+
 ## 2026-11-05 15:01:59 EST — scribe `5ae0405d4df59d07794238615fbb50e84ca91e31`
 Audit (#1845): every remote control driven on his iPhone (build 270, Recording 370): 22 of 22 screens open by scribe toolbox app.open, handled by the phone a median 1.42 s after the send (n=30); only Recognize Songs can be set remotely (#551); stuck coming back from a sheet (#1850), on the agent name (#1851) and on the rate limit (#1852); audits/2026-11-05-remote-controls-1845.md.
 
