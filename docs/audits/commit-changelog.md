@@ -1,3 +1,6 @@
+## 2026-11-05 07:08:38 EST — scribe `0b3e35ca4acfb56486fac5537f886216bb2a1ee3`
+Feature (#1679): select text in Notes with Lines' selection (its paragraph stays one attributed string, each line found by its UTF-16 range), and Expand Selection to Here, first in every line's and paragraph's menu while words are selected, grows the selection up or down to the pressed word; one decision for both reducers, logged; a selection belongs to its view.
+
 ## 2026-11-05 07:04:20 EST — instant-data-swift `49e090c79c87c3504f160359370ba2bf7eebaff1`
 Release (#1109, #1513, #1116): v1.9.73, tag on this commit: a server refresh compares only the entities it changed with a stored result's rows, its save takes the translation's limit; the second set (schema index, cascade sources, socket UTF-8, plan dependencies, frozen and filtered pages).
 
