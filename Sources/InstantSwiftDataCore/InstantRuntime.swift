@@ -1,4 +1,5 @@
 // History:
+// - 2026-11-05: the prune's batches go on while the last one unloaded closed results and left more (#1500, #303).
 // - 2026-11-04: a launch keeps the newest `preloadedLiveQueryResultCount` (10) stored results loaded, as upstream
 //   preloads ten; the rest reload from disk when their query subscribes (#1107, #1149).
 // - 2026-11-04: the acknowledgement-deadline wake keeps one sleeping task that re-checks the deadline when it wakes; each
@@ -8252,7 +8253,10 @@ public final class InstantRuntime: Sendable {
         await Task.yield()
         continue
       }
-      guard let lastRemoval, lastRemoval.hasMoreToRemove, !lastRemoval.result.removedQueryKeys.isEmpty else { break }
+      // #1500: a batch that only unloaded closed results within its budget leaves the rest to the next one.
+      guard let lastRemoval, lastRemoval.hasMoreToRemove,
+        !lastRemoval.result.removedQueryKeys.isEmpty || !lastRemoval.result.unloadedQueryKeys.isEmpty
+      else { break }
       await Task.yield()
     }
     return InstantLiveQueryResultPruningResult(

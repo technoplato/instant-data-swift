@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import SQLite3
 import Testing
 
 @testable import InstantSwiftDataCore
@@ -258,7 +259,9 @@ extension InstantStoredResultReloadTests {
     }
   }
 
-  /// A result the server sends again for a key replaces the copy a prune unloaded: a key lives in one table.
+  /// A result the server sends again for a key supersedes the one a prune unloaded: its save clears the mark the prune
+  /// left on the result's row (#1500), so the result is a loaded one again. An older build's whole copy goes the same way
+  /// (``aSavedResultSupersedesAnOlderBuildsCopy()``).
   @Test
   func aSavedResultSupersedesItsUnloadedCopy() async throws {
     let persistence = try SQLitePersistenceStore(fileURL: try Self.temporaryCacheURL())
@@ -283,6 +286,31 @@ extension InstantStoredResultReloadTests {
     answered.updatedAt = InstantTimestamp(milliseconds: 4)
     try await Self.save([answered], in: persistence)
     #expect(try await persistence.unloadedLiveQueryResult(key: "query-closed") == nil)
+  }
+
+  /// A result the server sends again for a key replaces the whole copy an older build's prune kept of it (#1006): a key
+  /// lives in one table. A prune writes no copy since #1500; a store an older build left still holds its copies.
+  @Test
+  func aSavedResultSupersedesAnOlderBuildsCopy() async throws {
+    let url = try Self.temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: url)
+    try await persistence.bootstrap()
+    let closed = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(key: "query-closed", triples: Self.todoTriples(index: 1), pageInfo: nil),
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    try Self.writeOlderBuildsUnloadedCopy(closed, at: url)
+    let copy = try #require(try await persistence.unloadedLiveQueryResult(key: "query-closed"))
+    #expect(!copy.isInPlace)
+
+    var answered = closed
+    answered.updatedAt = InstantTimestamp(milliseconds: 4)
+    try await Self.save([answered], in: persistence)
+    #expect(try await persistence.unloadedLiveQueryResult(key: "query-closed") == nil)
+    #expect(
+      try InstantUnloadInPlaceTests.scalar(url, "SELECT COUNT(*) FROM instant_unloaded_live_query_results") == 0,
+      "the save deleted the older build's copy"
+    )
   }
 
   static func todoTriples(index: Int) -> [InstantTriple] {
@@ -445,6 +473,43 @@ extension InstantStoredResultReloadTests {
       .appendingPathComponent("instant-stored-result-reload-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("instant.sqlite")
+  }
+
+  /// Writes `result` into the store's file at `url` as the whole copy an older build's session prune kept of a closed
+  /// query's result (#1006), through a second connection. Since #1500 a prune unloads a result where it is and writes no
+  /// copy; a store an older build left still holds its copies, and a reopened query still reloads one. That build
+  /// deleted the result's row and ownership rows as it wrote the copy: call this for a key with neither.
+  static func writeOlderBuildsUnloadedCopy(_ result: InstantPersistedLiveQueryResult, at url: URL) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let json = String(decoding: try encoder.encode(result), as: UTF8.self)
+    var connection: OpaquePointer?
+    defer { sqlite3_close_v2(connection) }
+    var statement: OpaquePointer?
+    defer { sqlite3_finalize(statement) }
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    guard
+      sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+      sqlite3_busy_timeout(connection, 5_000) == SQLITE_OK,
+      sqlite3_prepare_v2(
+        connection,
+        """
+        INSERT INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
+        VALUES (?, ?, ?, ?)
+        """,
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK,
+      sqlite3_bind_text(statement, 1, result.key, -1, transient) == SQLITE_OK,
+      sqlite3_bind_int64(statement, 2, Int64(result.triples.count)) == SQLITE_OK,
+      sqlite3_bind_int64(statement, 3, result.updatedAt.milliseconds) == SQLITE_OK,
+      sqlite3_bind_text(statement, 4, json, -1, transient) == SQLITE_OK,
+      sqlite3_step(statement) == SQLITE_DONE
+    else {
+      let message = connection.map { String(cString: sqlite3_errmsg($0)) } ?? "no connection"
+      throw InstantStoredResultReloadTestFailure("Could not write an older build's copy of \(result.key): \(message)")
+    }
   }
 
   /// The `number`th query the runtime registered with the server.

@@ -2,6 +2,9 @@
 // 2026-10-23  #654  Created. The live-query prune rebuilt the whole store to drop the results no query watches: build
 //                   118 held the operation gate 1,385 ms and 4,168 ms in it in its first minutes on an iPhone, and the
 //                   energy ledger named it the top cost.
+// 2026-11-05  #1500  The session prune unloads closed results where they are, so the forty-thousand-fact test proves
+//                    the unload copies and deletes nothing, and a second test drops the same results by the policy's
+//                    collection. Every seeded result stays loaded at the launch (#1107).
 
 import CustomDump
 import Foundation
@@ -35,8 +38,9 @@ struct InstantPruneCostTests {
     filters: [.equals(field: "isCompleted", value: .bool(true))]
   )
 
-  /// A 40,000-fact store kept by the open query, and 24 closed queries' results, about 10,800 facts, that the prune
-  /// drops: it copies nothing the size of the store, and keeps and drops what it always did.
+  /// A 40,000-fact store kept by the open query, and 24 closed queries' results, about 10,800 facts, that the session
+  /// prune unloads where they are (#1500): it copies nothing the size of the store and no result, deletes nothing from
+  /// disk, and releases from memory, in place, the entities nothing open holds.
   @Test
   func aPruneOnAFortyThousandFactStoreCopiesNothingTheSizeOfTheStore() async throws {
     let fixture = try await Fixture.bootstrapped(storeTodoCount: 13_334)
@@ -44,11 +48,97 @@ struct InstantPruneCostTests {
 
     let outcome = try await fixture.prune()
 
+    // #1500: it marks each closed result's row where it is; the policy's limits collect none of them.
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
+    expectNoDifference(outcome.pruned.removedQueryKeys, [])
+    expectNoDifference(outcome.pruned.remainingQueryKeys, [fixture.openKey])
+    expectNoDifference(outcome.pruned.removedOrphanedTripleCount, 0, "an unload deletes no fact")
+    #expect(outcome.batchCount >= 2, "the prune ran in bounded batches")
+    #expect(
+      try InstantUnloadInPlaceTests.scalar(
+        fixture.url,
+        "SELECT COUNT(*) FROM instant_live_query_results WHERE unloaded_at_ms IS NOT NULL"
+      ) == Int64(Self.inactiveResultCount),
+      "each closed result keeps its row, marked"
+    )
+    #expect(
+      try InstantUnloadInPlaceTests.scalar(
+        fixture.url,
+        "SELECT COUNT(*) FROM instant_unloaded_live_query_results"
+      ) == 0,
+      "a closed result copied whole"
+    )
+    // Their facts stay on disk. Memory releases what no loaded result owns, no write waits on and no observer shows
+    // (#1145): the open query's filter shows no todo, so each entity only closed results held goes, and the one with
+    // local data too, whose rows stay on disk.
+    expectNoDifference(outcome.sqliteEntityIDs, fixture.keptEntityIDs.union(fixture.closedEntityIDs))
+    expectNoDifference(outcome.storeEntityIDs, fixture.keptEntityIDs.subtracting(["local-todo"]))
+    expectNoDifference(outcome.storeFactCount, fixture.storeFactCount + 3)
+
+    // It copied nothing the size of the store.
+    expectNoDifference(outcome.fullStoreCopyCount, 0, "InstantStore.snapshot() copies every fact the store holds")
+    expectNoDifference(
+      outcome.residency,
+      InstantPersistenceCacheResidencyMetrics(),
+      "a full load, a state rebuilt from the whole store, or the hot store replaced and indexed again"
+    )
+
+    // The store it left answers queries as a store built from the same facts does: its indexes lost exactly the
+    // released entities.
+    let rebuilt = InstantStore(snapshot: outcome.storeSnapshot)
+    for plan in Self.indexCheckPlans {
+      let pruned = await fixture.runtime.store.materialize(plan)
+      let expected = await rebuilt.materialize(plan)
+      expectNoDifference(pruned, expected, "\(plan.id)")
+    }
+    await fixture.close()
+  }
+
+  /// A collection after an unload counts what it deletes from disk (#1500). The session prune unloads the 24 closed
+  /// results where they are and memory lets their entities go, so when the policy's limits collect them later every
+  /// fact the collection deletes is one memory no longer holds. Its count, and the store revision other connections
+  /// read to learn the store changed, follow the disk, not memory.
+  @Test
+  func aCollectionAfterAnUnloadCountsTheFactsItDeletesFromDisk() async throws {
+    let fixture = try await Fixture.bootstrapped(storeTodoCount: 1_000)
+    let unloaded = try await fixture.prune()
+    expectNoDifference(unloaded.pruned.unloadedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
+    #expect(unloaded.storeEntityIDs.isDisjoint(with: fixture.closedEntityIDs), "memory kept a closed result's entity")
+    let revisionBefore = try await fixture.runtime.persistence.loadState().storeRevision
+
+    let collected = try await fixture.prune(policy: InstantLiveQueryResultPruningPolicy(maxEntries: 1))
+
+    expectNoDifference(collected.pruned.removedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
+    expectNoDifference(
+      collected.pruned.removedOrphanedTripleCount,
+      Self.inactiveResultCount * Self.todosPerInactiveResult * 3 + 3,
+      "the collection deleted these facts from disk"
+    )
+    expectNoDifference(collected.sqliteEntityIDs, fixture.keptEntityIDs)
+    let revisionAfter = try await fixture.runtime.persistence.loadState().storeRevision
+    #expect(revisionAfter > revisionBefore, "the store changed on disk and its revision did not move")
+    await fixture.close()
+  }
+
+  /// The same 24 closed results, collected by the policy's limits (#1500): collection is the path that still deletes a
+  /// result's row, its ownership rows and the entities only it held, by the whole-entity rule (#259), in bounded
+  /// batches. It copies nothing the size of the store either, and keeps and drops what the prune did before #654.
+  @Test
+  func aCollectionOnAFortyThousandFactStoreCopiesNothingTheSizeOfTheStore() async throws {
+    let fixture = try await Fixture.bootstrapped(storeTodoCount: 13_334)
+    #expect(fixture.storeFactCount >= 40_000)
+
+    // One stored result at most: the open query's, which no limit collects.
+    let outcome = try await fixture.prune(policy: InstantLiveQueryResultPruningPolicy(maxEntries: 1))
+
     // It keeps and drops what it did before #654.
     expectNoDifference(outcome.pruned.removedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
-    expectNoDifference(outcome.pruned.unloadedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
+    expectNoDifference(outcome.pruned.unloadedQueryKeys, [], "a result the limits collect is not unloaded first")
     expectNoDifference(outcome.pruned.remainingQueryKeys, [fixture.openKey])
-    expectNoDifference(outcome.pruned.removedOrphanedTripleCount, Self.inactiveResultCount * Self.todosPerInactiveResult * 3 + 3)
+    expectNoDifference(
+      outcome.pruned.removedOrphanedTripleCount,
+      Self.inactiveResultCount * Self.todosPerInactiveResult * 3 + 3
+    )
     #expect(outcome.batchCount >= 2, "the prune ran in bounded batches")
     expectNoDifference(outcome.storeEntityIDs, fixture.keptEntityIDs)
     expectNoDifference(outcome.sqliteEntityIDs, fixture.keptEntityIDs)
@@ -134,6 +224,8 @@ struct InstantPruneCostTests {
     var openKey: String
     var inactiveKeys: [String]
     var keptEntityIDs: Set<String>
+    /// The entities only closed results hold: each closed result's todos and the split one (#1500).
+    var closedEntityIDs: Set<String>
     var storeFactCount: Int
 
     struct Outcome {
@@ -226,6 +318,9 @@ struct InstantPruneCostTests {
         liveTransport: session.transport
       )
       configuration.autoConnectLiveTransport = false
+      // #1107: every seeded result stays loaded at the launch, the open query's oldest among them, as the results of a
+      // session's queries are; a launch keeps only the newest ten.
+      configuration.preloadedLiveQueryResultCount = .max
       configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting = { _ in holds.batchStarted() }
       configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in holds.batchFinished() }
       let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
@@ -233,6 +328,8 @@ struct InstantPruneCostTests {
 
       var keptEntityIDs = Set((0..<storeTodoCount).map { "store-todo-\($0)" })
       keptEntityIDs.formUnion(["shared-todo", "local-todo"])
+      var closedEntityIDs = Set((0..<inactiveResultCount * todosPerInactiveResult).map { "closed-todo-\($0)" })
+      closedEntityIDs.insert("split-todo")
       return Fixture(
         runtime: runtime,
         url: url,
@@ -241,16 +338,21 @@ struct InstantPruneCostTests {
         openKey: openKey,
         inactiveKeys: inactiveKeys,
         keptEntityIDs: keptEntityIDs,
+        closedEntityIDs: closedEntityIDs,
         storeFactCount: storeTodoCount * 3
       )
     }
 
-    func prune() async throws -> Outcome {
+    /// Prunes with `policy`: the production policy unloads the closed results; a policy whose limits they exceed
+    /// collects them (#1500).
+    func prune(
+      policy: InstantLiveQueryResultPruningPolicy = InstantPruneCostTests.productionPolicy
+    ) async throws -> Outcome {
       await runtime.resetPersistenceCacheResidencyMetricsForTesting()
       await runtime.store.resetFullCopyCountForTesting()
       let cpuBefore = InstantEnergyMeter.snapshot()[.prune].cpuNanoseconds
       let started = ContinuousClock.now
-      let pruned = try await runtime.pruneLiveQueryResults(policy: productionPolicy, now: runtime.configuration.now())
+      let pruned = try await runtime.pruneLiveQueryResults(policy: policy, now: runtime.configuration.now())
       let duration = started.duration(to: .now)
       let cpu = InstantEnergyMeter.snapshot()[.prune].cpuNanoseconds - cpuBefore
       // Read before the snapshot below, which is itself a full copy.

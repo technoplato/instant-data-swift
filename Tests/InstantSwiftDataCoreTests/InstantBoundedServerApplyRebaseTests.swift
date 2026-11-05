@@ -1464,11 +1464,20 @@ struct InstantBoundedServerApplyRebaseTests {
       transactionID: "cross-runtime-local",
       milliseconds: 1
     )
+    // #1165: the apply reads the entity the peer's write created from disk before it prepares, since this runtime's
+    // memory holds no fact of it, so the store keeps the peer's own time for that fact (as upstream's `getCreatedAt`
+    // keeps a resident fact's time); the durable mutation still carries the rebase's stamp.
+    let expectedAdoptedFact = boundedServerApplyTriple(
+      entityID: "cross-runtime-local-entity",
+      value: "peer-local",
+      transactionID: "cross-runtime-local",
+      milliseconds: 1_000
+    )
     let hotSnapshot = await runtime.store.snapshot()
     let hotTriple = try #require(hotSnapshot.triples.first(where: {
       $0.entityID == "cross-runtime-local-entity"
     }))
-    expectNoDifference(hotTriple, expectedRebasedTriple)
+    expectNoDifference(hotTriple, expectedAdoptedFact)
     let sequenceAfterApply = await runtime.store.currentSequence()
     expectNoDifference(sequenceAfterApply, sequenceBeforeApply + 1)
     let durableState = try await runtime.persistence.loadState()
@@ -1480,7 +1489,7 @@ struct InstantBoundedServerApplyRebaseTests {
     let durableMutationTriple = try #require(
       durableMutation.transaction.operations.compactMap(\.insertedTriple).first
     )
-    expectNoDifference(durableTriple, expectedRebasedTriple)
+    expectNoDifference(durableTriple, expectedAdoptedFact)
     expectNoDifference(durableMutationTriple, expectedRebasedTriple)
     expectNoDifference(durableState.storeRevision, durableStateBeforeApply.storeRevision + 2)
     expectNoDifference(durableState.outboxRevision, durableStateBeforeApply.outboxRevision + 2)
@@ -1501,7 +1510,7 @@ struct InstantBoundedServerApplyRebaseTests {
       $0.entityID == "cross-runtime-local-entity"
     }))
     let relaunchedDurableState = try await relaunched.persistence.loadState()
-    expectNoDifference(relaunchedHotTriple, expectedRebasedTriple)
+    expectNoDifference(relaunchedHotTriple, expectedAdoptedFact)
     expectNoDifference(relaunchedDurableState, durableState)
     let relaunchedInstalledRevisions = relaunched.installedStoreRevisionsForTesting()
     expectNoDifference(relaunchedInstalledRevisions.store, durableState.storeRevision)
