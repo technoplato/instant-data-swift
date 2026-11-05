@@ -9,6 +9,8 @@
 //   it hopped here four times a frame (#1494).
 // - 2026-11-04: a waiting refresh-ok loses the results a newer one restates, and leaves the buffer when none remain; the
 //   buffer counts its progress for one-shot reads and logs a receive summary a minute (#1796).
+// - 2026-11-04: the receive summary measures how old the newest server write is when its frame is applied, the lag a
+//   device following another one sees (#1796).
 
 import Foundation
 import IssueReporting
@@ -45,6 +47,50 @@ extension InstantLiveMessage {
 
   /// Whether this frame is a query's result, which the next connection's answer to `add-query` replaces.
   var isQueryResult: Bool { Self.queryResultOps.contains(op) }
+
+  /// The newest time at which the server stored a fact this query result carries, in milliseconds since 1970 (#1796):
+  /// the fourth element of each `[entity, attribute, value, created-at]` join-row triple, child nodes included, which
+  /// the applier stores as each fact's `txTime`. Nil for any other frame, or for a result with no timed fact.
+  var newestFactMilliseconds: Int64? {
+    var pending: [InstantLiveJSONValue]
+    switch op {
+    case "refresh-ok":
+      pending = (fields["computations"]?.arrayValue ?? []).flatMap {
+        $0.objectValue?["instaql-result"]?.arrayValue ?? []
+      }
+    case "add-query-ok":
+      pending = fields["result"]?.arrayValue ?? []
+    default:
+      return nil
+    }
+    var newest: Int64?
+    while let node = pending.popLast() {
+      guard let object = node.objectValue else { continue }
+      let rows = object["data"]?.objectValue?["datalog-result"]?.objectValue?["join-rows"]?.arrayValue ?? []
+      for row in rows {
+        for triple in row.arrayValue ?? [] {
+          guard let elements = triple.arrayValue, elements.count >= 4,
+            let time = Self.factTimeMilliseconds(elements[3])
+          else { continue }
+          newest = max(newest ?? time, time)
+        }
+      }
+      pending.append(contentsOf: object["child-nodes"]?.arrayValue ?? [])
+    }
+    return newest
+  }
+
+  private static func factTimeMilliseconds(_ value: InstantLiveJSONValue) -> Int64? {
+    switch value {
+    case let .number(number):
+      guard number.isFinite, abs(number) < 9.0e18 else { return nil }
+      return Int64(number.rounded())
+    case let .string(text):
+      return Int64(text)
+    case .null, .bool, .array, .object:
+      return nil
+    }
+  }
 }
 
 /// The frames one live generation's reader has received and its applier has not taken yet (#296).
@@ -80,11 +126,20 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     case full
   }
 
-  /// One received frame, what it restates when it is a `refresh-ok`, and when the reader received it.
+  /// One received frame, what it restates when it is a `refresh-ok`, its newest fact, and when the reader received it.
   private struct Received {
     var message: InstantLiveMessage
     var restatement: InstantLiveRefreshRestatement?
+    var newestFact: NewestFact?
     var receivedAt: ContinuousClock.Instant
+  }
+
+  /// The newest server time among a query result's facts, and whether its age counts as lag (#1796). A `refresh-ok`
+  /// follows a change on the server; an answer to `add-query` restates what the server already holds, however old, so
+  /// it only moves the mark the next refresh is measured against.
+  private struct NewestFact {
+    var milliseconds: Int64
+    var counts: Bool
   }
 
   private let lock = NSLock()
@@ -103,6 +158,9 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
   private var lastTakenAt: ContinuousClock.Instant?
   /// This device's wall clock in milliseconds since 1970, the scale of the server's fact times (#1796).
   private let wallClockMilliseconds: @Sendable () -> Int64
+  /// The newest fact of the frame the applier took last, and the newest fact applied before it.
+  private var lastTakenFact: NewestFact?
+  private var newestAppliedFact: Int64?
 
   init(
     capacity: Int,
@@ -148,6 +206,7 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     let frame = Received(
       message: message,
       restatement: InstantLiveRefreshRestatement(message),
+      newestFact: message.newestFactMilliseconds.map { NewestFact(milliseconds: $0, counts: message.op == "refresh-ok") },
       receivedAt: clock.now
     )
     switch lock.withLock({ offerLocked(frame) }) {
@@ -295,6 +354,7 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
       progress.takenFrameCount += 1
       meter.recordTake(waited: .zero, buffered: 0)
       lastTakenAt = clock.now
+      lastTakenFact = frame.newestFact
       return .handed(applier)
     }
     if let restatement = frame.restatement {
@@ -334,6 +394,8 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
       } else {
         frames[index].message.fields["computations"] = .array(kept)
         frames[index].restatement?.queries.subtract(newer.queries)
+        // Its newest fact may have left with the results; the newer frame carries those, and counts them.
+        frames[index].newestFact = nil
       }
     }
   }
@@ -346,6 +408,7 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     progress.takenFrameCount += 1
     meter.recordTake(waited: now - frame.receivedAt, buffered: frames.count)
     lastTakenAt = now
+    lastTakenFact = frame.newestFact
     guard let reader = waitingReader else { return (frame.message, nil) }
     waitingReader = nil
     // Nothing arrived after the waiting frame, and it already replaced what it restates, so it only moves in.
@@ -359,6 +422,16 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     if let lastTakenAt {
       meter.recordApply(now - lastTakenAt)
       self.lastTakenAt = nil
+    }
+    if let fact = lastTakenFact {
+      lastTakenFact = nil
+      if fact.milliseconds > newestAppliedFact ?? .min {
+        if fact.counts {
+          // A device clock behind the server's reads as a negative age, which counts as none.
+          meter.recordFactLag(milliseconds: Int(max(0, wallClockMilliseconds() - fact.milliseconds)))
+        }
+        newestAppliedFact = fact.milliseconds
+      }
     }
     return meter.summary(at: now, buffered: frames.count)
   }
@@ -473,7 +546,13 @@ struct InstantLiveReceiveMeter: Sendable {
     replacedFrames += 1
   }
 
-  mutating func recordFactLag(milliseconds: Int) {}
+  mutating func recordFactLag(milliseconds: Int) {
+    factLagFrames += 1
+    longestFactLag = max(longestFactLag, milliseconds)
+    if factLagsMilliseconds.count < Self.maximumKeptWaits {
+      factLagsMilliseconds.append(milliseconds)
+    }
+  }
 
   var factLagsMillisecondsForTesting: [Int] { factLagsMilliseconds }
 
@@ -535,9 +614,11 @@ struct InstantLiveReceiveSummary: Sendable, Equatable {
     windowMilliseconds > 0 ? applyingMilliseconds * 100 / windowMilliseconds : 0
   }
 
-  /// A notice when a frame waited a second or more, which a follower sees as lag; otherwise a routine line.
+  /// A notice when a frame waited a second or more, or the newest writes reached this store 10 s or more after the
+  /// server stored them, which a follower sees as lag; otherwise a routine line.
   func log() {
-    let level: InstantDiagnosticLevel = waitMaxMilliseconds >= 1_000 ? .notice : .info
+    let level: InstantDiagnosticLevel =
+      waitMaxMilliseconds >= 1_000 || factLagMaxMilliseconds >= 10_000 ? .notice : .info
     guard InstantDiagnostics.shared.isEnabled(at: level) else { return }
     InstantDiagnostics.shared.record(
       level,
@@ -548,7 +629,9 @@ struct InstantLiveReceiveSummary: Sendable, Equatable {
         "The applier took \(takenFrames) frames in \(windowMilliseconds / 1_000) s: they waited \(waitMedianMilliseconds) ms "
         + "at the median, \(waitP95Milliseconds) ms at p95 and \(waitMaxMilliseconds) ms at most, behind up to "
         + "\(deepestBuffer) buffered; applying took \(applyingPercent)% of the time, \(applyMaxMilliseconds) ms at most; "
-        + "newer frames replaced \(replacedFrames) waiting refreshes and \(replacedResults) results.",
+        + "newer frames replaced \(replacedFrames) waiting refreshes and \(replacedResults) results; the newest "
+        + "server writes reached this store \(factLagMedianMilliseconds) ms after the server stored them at the median, "
+        + "\(factLagP95Milliseconds) ms at p95 and \(factLagMaxMilliseconds) ms at most (\(factLagFrames) frames).",
       metadata: [
         "windowMilliseconds": String(windowMilliseconds),
         "takenFrames": String(takenFrames),
@@ -561,6 +644,10 @@ struct InstantLiveReceiveSummary: Sendable, Equatable {
         "applyingPercent": String(applyingPercent),
         "replacedFrames": String(replacedFrames),
         "replacedResults": String(replacedResults),
+        "factLagFrames": String(factLagFrames),
+        "factLagMedianMilliseconds": String(factLagMedianMilliseconds),
+        "factLagP95Milliseconds": String(factLagP95Milliseconds),
+        "factLagMaxMilliseconds": String(factLagMaxMilliseconds),
       ]
     )
   }
