@@ -1,3 +1,36 @@
+## 2026-11-04 23:29:03 EST — scribe `a91a2dd449de59ec95219e26230713f42155aa1b`
+Fix (#1730): the voice-memo import (scripts/media-transcription/recording_ingest.py, deployed to the mini with a backup) sends the whole WAV on its own thread while 8 threads (was 4) send the compressed copy's files, each once, one failure stopping the rest, and logs every step after the words with its seconds: batch 1 spent 39% of its runs on the WAV alone and 44% in a stretch its step log had no event in. What a recording holds is unchanged; tests 40/40.
+
+## 2026-11-04 23:19:47 EST — scribe `b4925e799fae650bd6d184e5181f93660d0a792a`
+Fix (#1585): with the account's owners known, the Mac mirror's per-recording query rides the WebSocket too and reads speakers by owner (production parity on five recordings), so its once-a-minute restatement no longer carries the 854 KB attribute catalog.
+
+## 2026-11-04 23:14:16 EST — instant-data-swift `10f89d53ecc0f4bedd0f8d432451e880c3c74ac3`
+Release (#653, #1517, #1523, #1142, #1648): v1.9.69 tagged on 10f89d53 (ledger 0840aa82), from main merge d3ed3c50 of the lane's job-C-verified 7773cfa5 with v1.9.68: a live write is claimed by its own save (no claim turn; its window goes out only on its session), one projected encode and wire fingerprint less per claim, receipts found by stored bytes, one deadline wake, same-millisecond writes keep their order. Mac mini, release, same job vs v1.9.67: save + claim 5,523.4 -> 4,208.3 us a write (-23.8%), write side -18.8%; the acknowledgement +43% from #1523's key, fixed on the lane branch (6ff60ee9) for the next release.
+
+## 2026-11-04 23:11:18 EST — instant-data-swift `d3ed3c500b0e44a6a02cbcc66853da7e2fd7d24d`
+Landing (#653, #1517, #1523, #1142, #1648): perf-send-1797's lane merged onto main: #1648 (reds 4b6117a5 5535f452, green 3ae5585b, fixes 74fea3ae 94a77045), #1517 (red db5e4365, green d5f4a7d7), #1523 (red d6b239f4, greens 1ef4aa2f 037012ec, fix bca8111b), #653 claim at save (red 096246e4, green 9691ee4d, fixes cdca7eb3 45f92924 2a3c78b1; session red c208d640 green 416ac3b1; attributes red 3e937899 green 7773cfa5), #1142 (red 21c16cfb, green 0adffc2e); the todo seed's pins cd8be798. Job 1797-c: whole debug bundle 1,673 tests, only the two seed pins failed (updated).
+
+## 2026-11-04 21:42:51 EST — scribe `f45f81835a9fb957c316db48e0e8b6aa84e3b86c`
+Fix (#1803, #1423): watchOS -Osize goes through OTHER_SWIFT_FLAGS ($(SCRIBE_SWIFT_PLATFORM_FLAGS_$(PLATFORM_NAME)), set for watchos only): xcodebuild read the conditioned SWIFT_OPTIMIZATION_LEVEL[sdk=watchos*]=-Osize from d763b77be as an unconditioned SWIFT_OPTIMIZATION_LEVEL for every target, so builds 255 and 256 failed every Swift compile and were stopped before any install; landed 701067213, changelog c524cbfb5. Correction to the d763b77be entry: its Watch app was not measured under the line then; the first build with the fix is 259.
+
+## 2026-11-04 22:57:56 EST — scribe `9ee8cce493e42f74420213fdfd13e8371ab4de4d`
+Tool (#1799, #1808): scripts/perf/metrics.py notes a recording whose stored audio is the WAV itself (a recording over twelve hours long kept its 4.43 GB WAV in Instant instead of its 263 MB compressed copy), with both sizes.
+
+## 2026-11-04 22:42:16 EST — scribe `62345216cb4a737fec8f2f25b2979cefdda2b416`
+Tool (#1799): a before/after scene splits speech by how much was said (quiet, light speech under 40 words a minute, talking): 251's speech minutes carried 132 words a minute and 253's 10, so the earlier like-for-like -22% was withdrawn; 248 -> 249 improved 20-36% in three matched scenes, 249 -> 250 did not move.
+
+## 2026-11-04 22:30:02 EST — scribe `7a1600f1dc6daa9772f9262b17db6ee5ddc28a69`
+Tool (#1799): metrics.py --compare and the build watcher lead with recording minutes matched by scene (in front or behind, the screen, speech) before any total, and fit Instant's refresh per final line (quoted only at r2 0.5 or more).
+
+## 2026-11-04 23:00:13 EST — scribe `9306304bb32655f246486e91e5a79043ac613c17`
+Fix (#1585): the Mac mirror reads a recording's attachments once and follows them through a window of the newest written and an ids-only query on the WebSocket, instead of restating all of them at every change (idle Recording 364: 3.09 GB in 31 minutes from the iPad's image uploads).
+
+## 2026-11-04 22:37:49 EST — scribe `fb02550bbca1a2181574dbc28962356cf8168501`
+Docs (#1422): the recording screen's audit (audits/2026-11-04-recording-screen-draws-1422.md, section 5) names what is left once the comb rests: the 1 s tick's 9.6 ms is the root's per-action cost (#1083's lane); the microphone level for the Live Activity is a root action every 2 s that the Live Activity's own throttle ignores (named next slice); the scoped child stores' fan-out is 2.1% of the main thread; behind Twitter at 14:01 SwiftUI ran 1.2 s of 32 s with no Scribe frame, the shape of the breathe effect 3c34c4b88 replaced. It records build 253's before numbers and why 254 and 257 never reached the iPhone (the installer's 1,800 s timeout at load 300, #1806). Changelog 2f84d72a7.
+
+## 2026-11-04 22:37:19 EST — scribe `178ad0b239f9cd3801ba1fb6a3004135e33e9aea`
+Fix (#1585, #1527): the Mac mirror's lines in progress and lines window ride an admin-token WebSocket, so a refresh no longer carries the 854 KB attribute catalog the admin stream sent with each (182 MB in 29 minutes with Recording 366 live); a probe every 10 s is their keepalive, and an unanswered one replaces the socket. Parity on production: identical rows.
+
 ## 2026-11-04 22:09:50 EST — scribe `73460479af02a0e8e8900cf3098289a76a96b92b`
 Cut (#1652): Scribe 0.1 (258) from main after landing B of #1652; the build number 257 to 258, build 258's plain block and four stories.
 

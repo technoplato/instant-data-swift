@@ -1,3 +1,25 @@
+## 2026-11-04 23:20 EST — perf-send-1797 (#653, #1517, #1523, #1142, #1648): v1.9.69, a live write is claimed by its own save
+
+- **Why:** on the phone (builds 248-249, its own write recorder) the claim cost 3.06 ms a write, more than the save's
+  2.79 ms; the save, claim and acknowledgement each found the write's receipt by hashing it; each send started a deadline
+  task; two writes in one millisecond went out in id order.
+- **Landed:** `d3ed3c50` merges the lane's verified head `7773cfa5` (job C) with `main` (v1.9.68); `cd8be798` updates
+  the todo seed's hop pins (8 -> 7: #1648's `94a77045` no longer restamps and re-prepares it); ledger `0840aa82`;
+  release record `docs/releases/v1.9.69.md`.
+- **Measured** (job `1797-c-release-candidate`, Mac mini, release, v1.9.67 vs `7773cfa5`, same job, 225 writes):
+  save + claim 5,523.4 -> 4,208.3 us a write (-23.8%), write side 1,344.5 -> 1,092.2 ms (-18.8%), every metered library
+  operation 8,503.5 -> 8,377.7 ms (-1.5%); the acknowledgement 439.7 -> 628.7 us (+43%, #1523's receipt key missed by
+  the server apply's body pages and staging; fixed on the lane branch, `9b792550`/`6ff60ee9`, not in this release).
+- **Checked:** the whole debug bundle at `7773cfa5` (1,673 tests): only the two seed pins failed (pass at v1.9.67;
+  updated); reds fail as they must; the delivery suites pass twice more. Not compiled as merged before the tag: the
+  consuming app's cut and job E compile it.
+- **Next (resume here):** Scribe pins 1.9.69 (the 10 files of Scribe's `0cc05789e`), cuts the build after 259 and
+  installs it; after an hour, the phone's ledger (`~/Sync/audit/perf-send-1797/scripts/ledger_disk.py`, the CPU split)
+  against `phone/before-1815-*.txt`, one line on #1797. Job `1797-e-receipt-echo` (mini) verifies the lane branch
+  `agent/claude/perf-send-1797` (the ack fix `6ff60ee9`, v1.9.68 merged, the pins) and an A/B against v1.9.67: green ->
+  release it as the next free number. Prepared, not applied: #1517's claim at save measured by the save's own body
+  encode (`/tmp/perf-send-1797-next/`, red test + green; 27 of the claim at save's 100 samples).
+
 ## 2026-11-04 22:05:59 EST — perf-recv-1797 (#1513, #1480, #1109): v1.9.68, a final's publication splices; a restated result is compared once
 
 - **Why:** the phone's ledger (the consuming app's build 248, 88 min recording, 3,811 refresh-ok frames) spent 41.8
