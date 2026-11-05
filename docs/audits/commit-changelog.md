@@ -1,3 +1,6 @@
+## 2026-11-04 19:53:54 EST — scribe `3c34c4b88b2f1b4b78869e5689490cdd90ef693c`
+Performance (#1422, #1502): the recording screen draws when something changed. The floating bar's comb visualizer rests in quiet: its TimelineView pauses while every frame a draw reads is too quiet to lift a tick past its 1-point floor (with VoiceOver on, too quiet to leave Silent), and the meter's new loudFrame wait wakes it off the main thread, keeping capture analyzing; on build 249 those identical frames were a third of the recording screen's main thread (SwiftUI's display link 16.0%, RenderBox's Metal render 16.4%). The Live Activity's excerpt walks back from the timeline's end instead of copying it every tick (162 ms a minute). The bar's record symbol breathes through Styleguide.BreathingSymbol (Core Animation) instead of SwiftUI's per-frame effect (the list in front turned the main run loop 161 times a second against the recording screen's 91 on build 248). Same pixels, same breath, same words; changelog 8ea93259e.
+
 ## 2026-11-04 19:44:13 EST — scribe `be00c65e31e95709c60f2fd7f35639a69b712210`
 Feature (#1790): scribe decision amend says an open question's own lines again in what he can open (a WAITING line's file and line becomes whose note it was), adds drafts and links, keeps his words byte for byte and sends no notice.
 
