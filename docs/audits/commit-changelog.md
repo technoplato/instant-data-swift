@@ -1,3 +1,6 @@
+## 2026-11-04 19:05:28 EST — scribe `0995399f1af21ef05e7cca795a79f216760461cd`
+Cut (#1674): Scribe 0.1 (252) from main after 003ca2598 (#1393 batches 2 and 3: the now-playing card that seeks Scribe Playback, Photos' own live, his UI asks); CURRENT_PROJECT_VERSION 251 to 252 and build 252's plain block and stories.
+
 ## 2026-11-04 19:02:41 EST — scribe `003ca259829bd367f79bf059a12caafcdb579008`
 Feature (#1393, #1674, #1716): his UI asks from Recordings 349-365, batches 2 and 3: what plays now as a Lock Screen-like card whose bar seeks Scribe Playback on this phone through the App Group, Photos' own live, the New Message pill out of the way, the home card's last four sentences, frames without a gray flash, hold a thread's bar to mute, everything copied in one place, and a catch-up deck of unread answers; What's New build 252.
 
