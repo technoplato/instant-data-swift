@@ -1,3 +1,6 @@
+## 2026-11-04 21:42:51 EST — scribe `f45f81835a9fb957c316db48e0e8b6aa84e3b86c`
+Fix (#1803, #1423): watchOS -Osize goes through OTHER_SWIFT_FLAGS ($(SCRIBE_SWIFT_PLATFORM_FLAGS_$(PLATFORM_NAME)), set for watchos only): xcodebuild read the conditioned SWIFT_OPTIMIZATION_LEVEL[sdk=watchos*]=-Osize from d763b77be as an unconditioned SWIFT_OPTIMIZATION_LEVEL for every target, so builds 255 and 256 failed every Swift compile and were stopped before any install; landed 701067213, changelog c524cbfb5. Correction to the d763b77be entry: its Watch app was not measured under the line then; the first build with the fix is 259.
+
 ## 2026-11-04 22:57:56 EST — scribe `9ee8cce493e42f74420213fdfd13e8371ab4de4d`
 Tool (#1799, #1808): scripts/perf/metrics.py notes a recording whose stored audio is the WAV itself (a recording over twelve hours long kept its 4.43 GB WAV in Instant instead of its 263 MB compressed copy), with both sizes.
 
