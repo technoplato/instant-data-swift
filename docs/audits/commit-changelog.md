@@ -1,3 +1,9 @@
+## 2026-11-05 00:02:35 EST — scribe `a2be17609817b62d43ca392bf25915581f6fdd95`
+Cut (#1083): Scribe 0.1 (262) from main after #1083's landing: CURRENT_PROJECT_VERSION 261 to 262, build 262's plain block and two stories (bb0e41534, landed as a2be17609).
+
+## 2026-11-05 00:02:35 EST — scribe `dc733eb205523f53d55ee4a7d23d713556cff06a`
+Perf (#1083, #1220): a root action does less: AppFeature, RecordingList and Recording keep the body their store's first action built (the running app only), the transcript reads the timeline window's stamp instead of comparing every settled row, an interim writes no copy of the rendered timeline, the voice gate is derived once, the quick actions, recent recordings and reply surface read rows in place; the stall watchdog reads the main run loop's passes instead of pinging the main queue twice a second.
+
 ## 2026-11-05 00:01:12 EST — scribe `41837b10bf7fe4730a2b49e95716bac5f7656821`
 Build tooling (#1806): the installer stops a build when it stops printing, never for how long it has run. Its fixed 1,800 s per-build timeout killed 254's and 257's iOS builds and 257's Mac build on 2026-11-04 while they compiled at a 5-min load of 240-420 on a 10-core Mac, so the iPhone got nothing three times. xcodebuild and the Mac install script now stream through run_bounded_by_silence and stop only after 1,800 s with no output, naming the last line; --timeout is an optional total cap; a variant that does not build names the devices that get nothing at once. Build 259's longest quiet stretch at load 326 was 245 s. Changelog 7e95c2931.
 
