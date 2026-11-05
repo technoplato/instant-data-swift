@@ -1,3 +1,6 @@
+## 2026-11-05 11:28:42 EST — scribe `f531a6944e0ba3250ad93e7ec018e41e8bded943`
+Fix (#1276): a take continued after a relaunch rejoins its live room instead of writing a second key the server's set-once rule refuses: the launch's list shows the projection's row (no liveRoomKey) and the take continues before the first page (#1381), so its first beat minted one (build 269, Recording 370, refused at 07:39:08). openRecordingToContinue takes the store row's key, else the key the device session's live capture now keeps. Never derived from the recording id; permission-gated joins wait for the Instant fork (#1805, #1834).
+
 ## 2026-11-05 11:22:59 EST — scribe `da554c8d85a48824c25a9887fa8c5cb13c51c725`
 Diagnostics (#1826): the Mac mirror counts its requests to Instant's API by endpoint with the 429 refusals apart (status.json instantHTTP) and logs each minute in which Instant refused any (instant.http.refused), to aim the post-restart rate-limit fix at its cause.
 
