@@ -226,6 +226,55 @@ struct InstantFollowerLatencyTests {
     }
   }
 
+  /// A one-shot read whose `add-query` met a socket that had just died waits for the reconnect and is answered on the
+  /// next socket (#1796), as upstream `Reactor.js` sends a queryOnce's add-query from `_flushPendingMessages` on the
+  /// next `init-ok`, and as an observer's registration already waits here. A tablet resuming from 229 s suspended
+  /// failed a read this way in 0 ms while its connection still read as open.
+  @Test
+  func aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect() async throws {
+    let transport = FollowerTransport()
+    let gate = FollowerApplyGate()
+    var configuration = try followerConfiguration(appID: "follower-dead-socket", transport: transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = { await gate.enter() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    try await withFollowerCleanup({ await gate.release() }) {
+      _ = try await runtime.connect()
+      let socket = try #require(await transport.socket(0))
+      // The applier is inside a frame when the socket dies, so the runtime has not taken the death yet.
+      await socket.push(followerLongFrame)
+      try await followerWait("the applier to hold the long frame") { await gate.enteredCount == 1 }
+      await socket.die(with: followerSocketAborted)
+
+      let read = Task { try await runtime.queryOnce(TodoExample.query) }
+      try await followerWait("the read's add-query to fail on the dead socket") {
+        await socket.failedSendOps.contains("add-query")
+      }
+      await gate.release()
+
+      try await followerWait("the next socket to send the read's add-query") {
+        await transport.socket(1)?.sentQueries.isEmpty == false
+      }
+      let next = try #require(await transport.socket(1))
+      let query = try #require(await next.sentQueries.first)
+      await next.push(
+        liveReactorAddQueryOK(
+          query: query,
+          processedTransactionID: "120",
+          result: liveReactorTodoQueryResult(
+            id: "todo-line-1",
+            text: "line 1",
+            createdAt: InstantTimestamp(milliseconds: 1_700_000_000_001)
+          )
+        )
+      )
+
+      let emission = try await read.value
+      expectNoDifference(emission.values.map(\.id), ["todo-line-1"])
+      _ = try await runtime.closeConnection()
+    }
+  }
+
   /// A one-shot read on a socket that delivers nothing still fails after the 5 s stall, long before upstream's 30 s
   /// limit: a stall stays loud (F41).
   @Test
@@ -387,6 +436,13 @@ private enum FollowerFrame {
   }
 }
 
+/// The error a suspended app's socket fails with when it resumes (POSIX 53).
+private let followerSocketAborted = NSError(
+  domain: NSPOSIXErrorDomain,
+  code: 53,
+  userInfo: [NSLocalizedDescriptionKey: "Software caused connection abort"]
+)
+
 /// An unknown op: the runtime records it as the frame being applied and ignores it otherwise. The apply gate holds it
 /// to stand in for an apply that takes seconds.
 private let followerLongFrame = InstantLiveMessage(op: "follower-long-frame", clientEventID: nil, fields: [:])
@@ -406,6 +462,9 @@ private actor FollowerSocket {
   private var pendingReceive: PendingReceive?
   private var sent: [InstantLiveMessage] = []
   private var isClosed = false
+  private var death: (any Error)?
+  /// The ops of the frames sent after the socket died, each of which failed.
+  private(set) var failedSendOps: [String] = []
 
   init(frames: [InstantLiveMessage]) {
     self.frames = frames
@@ -441,8 +500,19 @@ private actor FollowerSocket {
     }
   }
 
+  /// Ends the socket the way the system's abort after a suspension did: the pending receive and every later send fail.
+  func die(with error: any Error) {
+    guard death == nil else { return }
+    death = error
+    takePendingReceive()?.continuation.resume(throwing: error)
+  }
+
   private func send(_ message: InstantLiveMessage) throws {
     try abortState.check()
+    if let death {
+      failedSendOps.append(message.op)
+      throw death
+    }
     sent.append(message)
   }
 
@@ -451,6 +521,7 @@ private actor FollowerSocket {
     if !frames.isEmpty {
       return frames.removeFirst()
     }
+    if let death { throw death }
     if isClosed { throw CancellationError() }
     let id = UUID()
     defer { clearPendingReceive(id: id) }
