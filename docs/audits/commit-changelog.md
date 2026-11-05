@@ -1,3 +1,6 @@
+## 2026-11-04 23:00:13 EST — scribe `9306304bb32655f246486e91e5a79043ac613c17`
+Fix (#1585): the Mac mirror reads a recording's attachments once and follows them through a window of the newest written and an ids-only query on the WebSocket, instead of restating all of them at every change (idle Recording 364: 3.09 GB in 31 minutes from the iPad's image uploads).
+
 ## 2026-11-04 22:37:49 EST — scribe `fb02550bbca1a2181574dbc28962356cf8168501`
 Docs (#1422): the recording screen's audit (audits/2026-11-04-recording-screen-draws-1422.md, section 5) names what is left once the comb rests: the 1 s tick's 9.6 ms is the root's per-action cost (#1083's lane); the microphone level for the Live Activity is a root action every 2 s that the Live Activity's own throttle ignores (named next slice); the scoped child stores' fan-out is 2.1% of the main thread; behind Twitter at 14:01 SwiftUI ran 1.2 s of 32 s with no Scribe frame, the shape of the breathe effect 3c34c4b88 replaced. It records build 253's before numbers and why 254 and 257 never reached the iPhone (the installer's 1,800 s timeout at load 300, #1806). Changelog 2f84d72a7.
 
