@@ -78,10 +78,7 @@ actor MemoryReplayServer {
         },
         receive: {
           let frame = try await connection.next()
-          // Metered as the production transport meters its decode (`decodedFrame`), so an exercise's per-operation
-          // split names the frame's decode beside its apply (#1109).
-          let energy = InstantEnergyMeter.begin(.frameDecode); defer { energy.end() }
-          return try InstantLiveMessage.decoded(fromFrame: frame)
+          return try Self.decodedFrame(frame)
         },
         close: { connection.abort() },
         abort: { connection.abort() }
@@ -149,6 +146,15 @@ actor MemoryReplayServer {
 
   static func encoded(_ message: InstantLiveMessage) -> String {
     String(decoding: (try? JSONEncoder().encode(message)) ?? Data(), as: UTF8.self)
+  }
+
+  /// Decodes one frame as the production transport does (`decodedFrame`): a synchronous section the energy meter counts
+  /// as the frame's decode, so an exercise's per-operation split names it beside its apply (#1109). It is its own
+  /// function because a meter's section must not span an await.
+  private static func decodedFrame(_ frame: String) throws -> InstantLiveMessage {
+    let energy = InstantEnergyMeter.begin(.frameDecode)
+    defer { energy.end() }
+    return try InstantLiveMessage.decoded(fromFrame: frame)
   }
 
   static func json(_ value: InstantLiveJSONValue) -> String {
