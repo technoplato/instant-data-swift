@@ -144,3 +144,19 @@ Green, in this order (perf-recv-1797 agreed #1122 and #1107 are mine with #1500 
 Measure: the unloaded table's bytes on a copy of the phone's store, the four writers' MB/h (applyReleasedLiveQuery...,
 applyLiveQueryResultPruneBatch, reloadUnloadedLiveQueryResultChunk, beginUnloadedLiveQueryResultReload) from the
 phone's ledger files before and after, and `StorageIOExercises/liveWritesOnThePhoneShapedStore`'s first prune frames.
+
+## Amendment 3 (2026-11-04 19:10 EST): one folded job; #541; the launch's next step
+
+- Build capacity is tonight's bottleneck (the coordinator, scribe-f3): both jobs were cancelled and folded into one,
+  `1797-perf-mem-focused`, shipped from `~/Sync/worktrees/perf-mem-1797-unload` (branch
+  `agent/claude/perf-mem-1797-unload` = this lane's branch plus #1500's WIP, pushed): #1165 red; the sources at
+  #541's red with every test at HEAD (#1165/#1145 green, #541 and #1500 red) over 23 suites; HEAD (#1500 and #541
+  green); the two-hour replay at HEAD (#1145's criterion); S05's large-allocation sites (#1512). Logs in that worktree's
+  `.runs-1500/`. The whole bundle runs once, at release.
+- #541: red abb8ead1 (twelve answered and unregistered live queries leave twelve acknowledgement keys), green ebc6890d
+  (forgotten when the last registration ends; one revision counter). The interner half (about 100-150 B a local
+  transaction, ~0.3 MB an hour on the phone's write rate) needs every stored fact's transaction index remapped; left.
+- #1149/#1107 next, on top of #1500: a launch marks every stored result unloaded and loads only the outbox's entities;
+  each query that subscribes again reloads its own result from disk (upstream `querySubs.waitForKeyToLoad`). Red test
+  waiting: `~/Sync/audit/perf-mem-1797/pending/InstantLaunchResidencyTests.swift`. Tests that read memory right after a
+  launch (InstantLocalReadTests, InstantNonResidentWriteTests' relaunched store) will need a subscription first.
