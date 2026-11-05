@@ -1,3 +1,6 @@
+## 2026-11-04 19:02:41 EST — scribe `003ca259829bd367f79bf059a12caafcdb579008`
+Feature (#1393, #1674, #1716): his UI asks from Recordings 349-365, batches 2 and 3: what plays now as a Lock Screen-like card whose bar seeks Scribe Playback on this phone through the App Group, Photos' own live, the New Message pill out of the way, the home card's last four sentences, frames without a gray flash, hold a thread's bar to mute, everything copied in one place, and a catch-up deck of unread answers; What's New build 252.
+
 ## 2026-11-04 18:41:26 EST — scribe `73987de4649214ee7190c750f1392f9b2ccf7e89`
 Feature (#1790): a decision question carries the draft it names (scribe decision ask --draft) and a link to the place it names (--link, https or the app's own scribe-shared link), and refuses one that shows a file he cannot open; the WAITING gatherer names whose note a line was; the door's evidence link takes scribe-shared://.
 
