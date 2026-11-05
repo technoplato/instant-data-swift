@@ -1,3 +1,13 @@
+## 2026-11-05 00:15 EST — perf-send-1797 (#1523): v1.9.70, the acknowledgement's receipt found by stored bytes again
+
+- **Why:** 1.9.69 keyed kept receipts by stored bytes, but the server apply's body pages and staging looked them up by
+  the write's inputs: replayed writes were fingerprinted again and the acknowledgement cost ~190 us more a call.
+- **Landed:** `37790b67` (the lane's `6ff60ee9` on main), ledger `34458bef`, this release record. Its test (lane
+  `9b792550`, reworked `e153cf39`) waits for job F; #1517's claim-at-save measure (lane `b3b819b4`/`26943d43`) too.
+- **Measured** (job `1797-e-receipt-echo`, Mac mini, release, same job vs v1.9.67): acknowledgement 451.0 -> 457.9 us
+  (1.9.69: 628.7), save + claim -17.0%, write side -15.3%.
+- **Next:** the memory lane lands on top of this; job F (bundle + reds + A/B v1.9.69 vs the lane head) gates #1517 and
+  the #1523 test for the next free release; the phone measure on Scribe's first build with 1.9.69 or later.
 ## 2026-11-05 00:05 EST — perf-send-1797 (#653, #1523, #1517): after v1.9.69: the ack fix measured, the next claim cut, job F
 
 - **v1.9.69** (tag on `10f89d53`, main `0554157e`) is job C's verified `7773cfa5` merged with v1.9.68. Scribe: pin
