@@ -982,7 +982,8 @@ enum InstantServerApplyCascade {
     var reachingAny: Set<String> = []
     // Namespaces any delete can cascade into, through an `onDelete` link that names no target namespace.
     var reachedFromAny: Set<String> = []
-    for attribute in attributes.attributes where attribute.valueType == .ref {
+    // The schema's cascading links, kept with it (#1109): `attributes.attributes` sorted every attribute per call.
+    for attribute in attributes.cascadingLinks {
       if attribute.onDeleteReverse == .cascade {
         if let target = attribute.linkNamespace {
           startedFrom[target, default: []].insert(attribute.namespace)

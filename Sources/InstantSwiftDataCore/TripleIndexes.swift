@@ -17,6 +17,8 @@ import os
 //   read it once per pending write it replayed, and iOS's CPU Monitor killed the app in that walk (#1748).
 // - 2026-11-04: a bounded page can be chosen from given candidates, and a change's links to shown entities listed, so a
 //   publication splices the rows a final line reaches instead of scanning every recording or line again (#1513).
+// - 2026-11-04: the schema's cascading links are kept with its lookup indexes, so a server apply finds them without
+//   sorting every attribute (#1109).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -27,6 +29,10 @@ struct AttributeStore: Hashable, Codable, Sendable {
   private var reverseAttributesByID: [String: InstantAttribute] = [:]
   private var namespaceSet: Set<String> = []
   private var namespacesWithManyCardinality: Set<String> = []
+  /// The links whose deletes cascade (`onDelete` or `onDeleteReverse` is `.cascade`), in id order, kept with the other
+  /// lookup indexes (#1109): a server apply with an empty slot to keep reads them, and sorted every attribute to find
+  /// them (37 ms in a 90 s trace of the phone transcribing speech, build 251).
+  private(set) var cascadingLinks: [InstantAttribute] = []
 
   private enum CodingKeys: String, CodingKey {
     case attributesByID
@@ -342,6 +348,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
     reverseAttributesByID = [:]
     namespaceSet = []
     namespacesWithManyCardinality = []
+    cascadingLinks = []
 
     for attribute in attributesByID.values.sorted(by: { $0.id < $1.id }) {
       namespaceSet.insert(attribute.namespace)
@@ -352,6 +359,9 @@ struct AttributeStore: Hashable, Codable, Sendable {
       attributesByNamespace[attribute.namespace, default: []].append(attribute)
       if let forwardIdentity = attribute.forwardIdentity {
         attributesByForwardIdentity[forwardIdentity] = attribute
+      }
+      if attribute.valueType == .ref, attribute.onDelete == .cascade || attribute.onDeleteReverse == .cascade {
+        cascadingLinks.append(attribute)
       }
       guard
         attribute.valueType == .ref,
