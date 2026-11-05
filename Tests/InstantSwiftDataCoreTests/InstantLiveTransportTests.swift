@@ -8418,6 +8418,40 @@ struct InstantLiveRefreshAttributeContextCacheTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// Each save bounded its result's nested includes by walking every attribute of the schema (#1109). The schema is
+  /// indexed when the attributes load, and reused while they are unchanged.
+  @Test
+  func liveResultSavesIndexTheStoredAttributesOnce() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0) },
+      lastTransactionID: "server-tx-10",
+      suffix: "live-result-schema"
+    )
+    let passes = await runtime.persistence.liveResultSchemaPassCountForTesting()
+    expectNoDifference(passes, 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  /// A merged attribute reaches the next save's nested-limit pass (#1109): the schema is indexed again whenever the
+  /// attributes load again, and only then.
+  @Test
+  func aMergedAttributeIsIndexedForTheNextLiveResultSave() async throws {
+    let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
+      .serverAttr(id: "server-todos-priority", namespace: "todos", name: "priority")
+    ]
+    let runtime = try await Self.applying(
+      [Self.refresh(1), Self.refresh(2), Self.refresh(3, attrs: widened), Self.refresh(4), Self.refresh(5)],
+      lastTransactionID: "server-tx-5",
+      suffix: "live-result-schema-merged-attribute"
+    )
+    let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
+    let passes = await runtime.persistence.liveResultSchemaPassCountForTesting()
+    expectNoDifference(passes, loads)
+    let attributes = try await runtime.persistence.attributesForLiveResultSaveForTesting()
+    #expect(attributes.contains { $0.namespace == "todos" && $0.name == "priority" })
+    _ = try await runtime.closeConnection()
+  }
+
   @Test
   func aNewServerAttributeRebuildsTheAttributeContextAndMergesIt() async throws {
     let widened: [InstantLiveJSONValue] = .todoServerAttrs + [

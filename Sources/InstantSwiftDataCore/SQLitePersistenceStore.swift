@@ -1459,6 +1459,8 @@ public actor SQLitePersistenceStore {
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
+  /// How many times a live-result save, reload or prune walked the whole schema to bound results' nested includes.
+  private var liveResultSchemaPasses = 0
   /// Releases SQLite's memory when the system warns of memory pressure (#653).
   private let memoryPressureMonitor: SQLiteMemoryPressureMonitor
   /// Live-query result saves, and the whole-result JSON this store wrote (#566): for tests and the release's
@@ -1606,6 +1608,11 @@ public actor SQLitePersistenceStore {
   /// How many live-result saves loaded the attributes from SQLite instead of reusing them (#303).
   package func liveResultAttributeLoadCountForTesting() -> Int {
     liveResultAttributeLoads
+  }
+
+  /// How many times live-result saves, reloads and prunes walked the whole schema to bound nested includes (#1109).
+  package func liveResultSchemaPassCountForTesting() -> Int {
+    liveResultSchemaPasses
   }
 
   /// How many live-query results were saved, and how many writes and bytes of result JSON they made (#566).
@@ -14621,6 +14628,7 @@ public actor SQLitePersistenceStore {
       )
       // A save keeps ownership of only the facts the query's nested limits keep; the unloaded row was written from such
       // a save, so with the schema it was written under they keep every fact, and its JSON is this result's.
+      liveResultSchemaPasses += 1
       let limited = InstantLiveQueryNestedLimit.limitedTriples(
         queryKey: key,
         triples: Array(result.triples),
@@ -19563,6 +19571,7 @@ public actor SQLitePersistenceStore {
       guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
         continue
       }
+      liveResultSchemaPasses += 1
       retained.formUnion(
         InstantLiveQueryNestedLimit.retainedEntityIDs(
           queryKey: result.key,
@@ -20588,6 +20597,7 @@ public actor SQLitePersistenceStore {
     let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
     let restatedCount = result.triples.count
+    liveResultSchemaPasses += 1
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
       queryKey: result.key,
       triples: Array(result.triples),

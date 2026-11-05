@@ -31,6 +31,25 @@ enum InstantLiveQueryNestedLimit {
     return kept(triples, retained: retained, lookup: lookup)
   }
 
+  /// A schema for the pass to read.
+  struct Schema: Sendable {
+    let attributes: [InstantAttribute]
+
+    init(_ attributes: [InstantAttribute]) {
+      self.attributes = attributes
+    }
+  }
+
+  /// ``limitedTriples(queryKey:triples:attributes:)`` with `schema`.
+  static func limitedTriples(queryKey: String, triples: [InstantTriple], schema: Schema) -> [InstantTriple] {
+    limitedTriples(queryKey: queryKey, triples: triples, attributes: schema.attributes)
+  }
+
+  /// ``retainedEntityIDs(queryKey:triples:attributes:)`` with `schema`.
+  static func retainedEntityIDs(queryKey: String, triples: [InstantTriple], schema: Schema) -> Set<String> {
+    retainedEntityIDs(queryKey: queryKey, triples: triples, attributes: schema.attributes)
+  }
+
   static func retainedEntityIDs(
     queryKey: String,
     triples: [InstantTriple],
