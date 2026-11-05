@@ -113,6 +113,7 @@
 // - 2026-11-04: the server apply's body pages and staging and the supersession tail's check find a write's kept receipt
 //   by its stored bytes too: by its inputs, which the save no longer hashes, they missed and fingerprinted it again, and
 //   a body the echo changed was fingerprinted once more at its acknowledgement (+200 us a call, #1523).
+// - 2026-11-04: a write its own save claims is measured by the body the save encoded, not encoded again (#1517).
 // - 2026-11-04: a server apply compares each restated result with its stored rows once: the save takes the retractions'
 //   comparison, made in the same read, instead of encoding every restated value and reading every row again (#1480).
 
@@ -15471,7 +15472,8 @@ public actor SQLitePersistenceStore {
         claim = try claimSavedTailForDeliveryWithoutTransaction(
           pendingMutation,
           request: claimRequest,
-          revisions: InstantPersistenceRevisions(store: storeRevision, outbox: outboxRevision)
+          revisions: InstantPersistenceRevisions(store: storeRevision, outbox: outboxRevision),
+          storedBodyByteCount: encodedBody?.body.utf8.count
         )
       }
       return true
@@ -18110,10 +18112,12 @@ public actor SQLitePersistenceStore {
   /// once, already claimed, with the projected body's exact size and fingerprint, and the runtime sends it without a
   /// claim turn, as `Reactor.js` `pushOps` sends a mutation as it records it (`_trySendAuthed`). Otherwise nil, and the
   /// row waits for the pump as before.
+  /// `storedBodyByteCount` is the size of the body this save encoded for `mutation` (#1517).
   private func claimSavedTailForDeliveryWithoutTransaction(
     _ mutation: PendingMutation,
     request: InstantAutomaticOutboxClaimRequest,
-    revisions: InstantPersistenceRevisions
+    revisions: InstantPersistenceRevisions,
+    storedBodyByteCount: Int?
   ) throws -> InstantAutomaticOutboxClaimWindow? {
     guard !request.requiresExclusiveLane, mutation.status == .pending,
       mutation.provesReplayableOptimisticEffectReceipt
@@ -18185,11 +18189,15 @@ public actor SQLitePersistenceStore {
       successorWriteKeys: [],
       hasUnknownSuccessorWriteKeys: false
     ).first else { return nil }
-    claimEncodeCounts.projectedBodyEncodes += 1
+    // #1517: a pending write with no server transaction id or confirmation source is its own stored body, so the body
+    // this save encoded is its sorted-key encoding; the projection is measured by it when it keeps every operation.
     let metadata = try InstantBoundedOutboxDelivery.projectionMetadata(
       for: candidate,
-      visibleWriteFilter: visibleWriteFilter
+      visibleWriteFilter: visibleWriteFilter,
+      writeEncodedByteCount: mutation.serverTransactionID == nil && mutation.confirmationSource == nil
+        ? storedBodyByteCount : nil
     )
+    if metadata.encodedProjectedBody { claimEncodeCounts.projectedBodyEncodes += 1 }
     let remainingBodyByteCount = max(0, request.maximumEncodedBodyByteCount - claimedBodyByteCount)
     guard metadata.requiredScalarKeys.isEmpty,
       metadata.encodedBodyByteCount >= 0,
