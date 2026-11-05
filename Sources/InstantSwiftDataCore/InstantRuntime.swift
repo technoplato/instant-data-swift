@@ -8700,6 +8700,8 @@ public final class InstantRuntime: Sendable {
           // #1500: the unloaded results' rows and facts stay on disk; memory releases, under this batch's gates, what no
           // loaded result owns, no write waits on and no observer shows, as the residency sweep does (#1145). What it
           // cannot release now stays the sweep's candidate.
+          // #1129: a phase of its own: it reads the unloaded entities' ownership and outbox rows, then releases them.
+          phases?.begin("release memory")
           recordActorHop(.persistence)
           if let decision = try await persistence.residencySweepDecision(for: application.unloadedEntityIDs) {
             var kept = decision.pending
