@@ -10,6 +10,388 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 11:12:54 p.m. EST — `cd8be798379d` test(#1648): the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+
+- **Implementation commit:** `cd8be798379de1ed7848e65da1c3a24db087aff2`
+- **Change:** test(#1648): the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+- **Details:**
+  - Job 1797-c (Mac mini, the whole debug bundle at 7773cfa5, 1,673 tests): the only failures not on Tests/known-failing.txt were InstantStoreTests' two deterministic benchmark pins, 7 actor hops for triple-insert.seed where 8 were pinned; both pass at v1.9.67 in the same job. 94a77045 stops restamping a write's step that its own later step overwrites. The seed sets each todo's isCompleted in its upsert and again in its completion, so localWriteStampedToWin restamped it and the runtime prepared it a second time on one more store turn; now it is prepared once (store 3 -> 2 turns).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — #1648 the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — #1648 the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:52 p.m. EST — `7773cfa56c0e` green(#653): a delivery claim's visible-write filter reads its writes' attributes from a decoded copy
+
+- **Implementation commit:** `7773cfa56c0e4e8760a1ab1090464133e7231704`
+- **Change:** green(#653): a delivery claim's visible-write filter reads its writes' attributes from a decoded copy
+- **Details:**
+  - The store keeps every attribute by id while neither this connection (attributeWriteGeneration) nor another process (the attribute revision) has written instant_attributes, as the live-result saves' copy is kept (#303), and reuses that copy on a miss when it is current. Each claim, including the one a write's save makes, read and decoded its writes' attributes from JSON one statement at a time. The filter still holds only its writes' attributes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #653 a delivery claim's visible-write filter reads its writes' attributes from a decoded copy
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:50 p.m. EST — `3e9378994ca2` red(#653): every delivery claim reads and decodes its writes' attributes from SQLite, one statement per attribute
+
+- **Implementation commit:** `3e9378994ca2604e02d6c10042d1054f3698bc3a`
+- **Change:** red(#653): every delivery claim reads and decodes its writes' attributes from SQLite, one statement per attribute
+- **Details:**
+  - On the release recording exercise (Mac mini, 225 writes) the visible-write filter's attribute reads were a quarter of the claim a write's save makes (36 of its 136 samples). The test counts the filter's attribute reads across three claims after the first.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #653 every delivery claim reads and decodes its writes' attributes from SQLite, one statement per attribute
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #653 every delivery claim reads and decodes its writes' attributes from SQLite, one statement per attribute
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:49 p.m. EST — `416ac3b16c16` green(#653): a window a write's save claimed goes out only on the session it was claimed for
+
+- **Implementation commit:** `416ac3b16c16a544dcfa16fb9a1aee6d44e5aeff`
+- **Change:** green(#653): a window a write's save claimed goes out only on the session it was claimed for
+- **Details:**
+  - The save reads the open session's generation from a lock-free snapshot (written in the same actor turn as the open flag and the generation) and the queued window carries it. sendMutations refuses a window claimed for another generation while a newer session is open (InstantClaimedForEndedLiveSession), on the live session's actor, so the check and the send are one turn. The refused window frees only its own claim, under the operation gate (the disconnect already freed it with every claim; releasing every claim again would free the new session's), and the pump runs a pass, which claims the writes again from the head of the outbox. A pass skips such a window among the ones saves claimed before it. With no session open the send fails as before.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #653 a window a write's save claimed goes out only on the session it was claimed for
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #653 a window a write's save claimed goes out only on the session it was claimed for
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #653 a window a write's save claimed goes out only on the session it was claimed for
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:47 p.m. EST — `c208d6409932` red(#653): a window a write's save claimed goes out on the next session ahead of the older write the disconnect put back
+
+- **Implementation commit:** `c208d64099326b907970d70b35cb8004f56549f6`
+- **Change:** red(#653): a window a write's save claimed goes out on the next session ahead of the older write the disconnect put back
+- **Details:**
+  - The pump queues a window a write's save claimed and sends it after the save returns. When the session it was claimed for ends first, the disconnect releases every claim and puts the older in-flight write back; the queued window then goes out on the next session before the pass that resends the older write. The test holds the newer write's window on the pump (a new test hook, onClaimedAtSaveDeliveryStartingForTesting), ends the first session, and expects the second session to get the older write first.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #653 a window a write's save claimed goes out on the next session ahead of the older write the disconnect put back
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #653 a window a write's save claimed goes out on the next session ahead of the older write the disconnect put back
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:45 p.m. EST — `2a3c78b14b05` fix(#653): a write with an explicit creation time is claimed at its save too when it is the outbox tail
+
+- **Implementation commit:** `2a3c78b14b05202abcd13877ce04fb9ec86dd56a`
+- **Change:** fix(#653): a write with an explicit creation time is claimed at its save too when it is the outbox tail
+- **Details:**
+  - Job 1797-b: claim at save never ran in the delivery-pass and claim-at-save tests (claim turns still taken), whose writes pass an explicit createdAt; 9691ee4d asked the save to claim only writes the runtime timed. The store already claims a row only when it is the creation-order tail and nothing else is ready, so the runtime's guard only hid the path; it goes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #653 a write with an explicit creation time is claimed at its save too when it is the outbox tail
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:43 p.m. EST — `94a77045d209` fix(#1648): a write's step that its own later step overwrote is not restamped to win
+
+- **Implementation commit:** `94a77045d209697151a68a1a84f14ace79689dce`
+- **Change:** fix(#1648): a write's step that its own later step overwrote is not restamped to win
+- **Details:**
+  - TypedAPITests.typedLookupUpdateCanResolveEntityCreatedEarlierInSameTransaction failed in order-1648's gate and in job 1797-a: a typed transaction that creates a user (name Draft) and then updates it by lookup (name Resolved in order) showed Draft. localWriteStampedToWin (#296) restamps a pending write's insert whose slot shows another value past the store's newest fact, for a write that lost to a fact with a later stamp; here the slot showed the same write's later step, and the restamp made the earlier step win. The pass runs only for the outbox tail: before #1648 this write tied the bootstrap's row in time and lost the id tie-break, so it never ran; now every write takes its place after the tail. A slot whose shown fact is of the same transaction is no longer counted as lost (TripleIndexes gains a read-only stamp-of-transaction check).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1648 a write's step that its own later step overwrote is not restamped to win
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1648 a write's step that its own later step overwrote is not restamped to win
+  - `_touching/Sources@InstantSwiftDataCore@TripleIndexes.swift/Sources@InstantSwiftDataCore@TripleIndexes.swift/.agents/agents.txt` — #1648 a write's step that its own later step overwrote is not restamped to win
+  - `agent-presence/_channels/2026-11-04-perf-send-1797.md` — #1648 a write's step that its own later step overwrote is not restamped to win
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:41 p.m. EST — `bca8111b64b0` fix(#1523): the acknowledgement's lifecycle record checks the receipt with the fingerprint the acknowledgement found
+
+- **Implementation commit:** `bca8111b64b0adb05a719ad15f5dd69b43674446`
+- **Change:** fix(#1523): the acknowledgement's lifecycle record checks the receipt with the fingerprint the acknowledgement found
+- **Details:**
+  - Job 1797-a: InstantAcknowledgementDigestTests' earlier-process bodies took 2 fingerprints at their acknowledgements (10 claimed; relaunch 0, claim 10, acknowledgements 2). A write with a supersession lifecycle has its terminal record checked once more, by a lookup on the inputs' hash, and since 1ef4aa2f the claim keeps the fingerprint by the stored bytes only. As #1523 asked, the acknowledgement now hands that check the fingerprint it found for the row's body; the fields it changed (status, confirmation, server transaction id, failure) are not inputs of it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1523 the acknowledgement's lifecycle record checks the receipt with the fingerprint the acknowledgement found
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:39 p.m. EST — `1f7c8b3c3aeb` test(#1517 #1523): the claim and receipt tests save one interim per segment, not six writes a segment
+
+- **Implementation commit:** `1f7c8b3c3aebedc6fd1f7354950bec231680fe04`
+- **Change:** test(#1517 #1523): the claim and receipt tests save one interim per segment, not six writes a segment
+- **Details:**
+  - Job 1797-a showed the three FastDrain-based tests failing at every commit, reds included: writeSegments saves six transactions a segment (three interims superseding each other, a final, the recording's summary and duration), so the fixed counts (3, 1, 2 claimed writes) were never right, and supersession checks hash inputs on their own path. Each test now saves each segment's first interim alone: one row a segment, nothing superseded or narrowed.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1517 #1523 the claim and receipt tests save one interim per segment, not six writes a segment
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:36 p.m. EST — `ed0a2f004ce4` test(#1142): the shared deadline wake's bound allows a second task when a slow run outlasts the first deadline
+
+- **Implementation commit:** `ed0a2f004ce42b68fab5bfc5b422216275c817a1`
+- **Change:** test(#1142): the shared deadline wake's bound allows a second task when a slow run outlasts the first deadline
+- **Details:**
+  - test(#1142): the shared deadline wake's bound allows a second task when a slow run outlasts the first deadline
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1142 the shared deadline wake's bound allows a second task when a slow run outlasts the first deadline
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:33 p.m. EST — `0adffc2e8c54` green(#1142): the acknowledgement-deadline wake keeps one sleeping task and re-checks the deadline when it wakes
+
+- **Implementation commit:** `0adffc2e8c540f4fe0cbd1032ff08e221fa90096`
+- **Change:** green(#1142): the acknowledgement-deadline wake keeps one sleeping task and re-checks the deadline when it wakes
+- **Details:**
+  - Each send asked for a wake at its claim's deadline (about 6 s), which started a task, and its acknowledgement asked for none, which cancelled it: one task and one timer a write. A request without a deadline now only clears it, and a later deadline keeps the sleeping task; when the task wakes it ends if no deadline stands, sleeps on to a later one, or runs the pass. A pass still runs at the earliest deadline asked for since the last request without one; a sleep that ends before its time (a test's clock) runs it as before, so the task never spins. Six writes acknowledged within their deadlines: 6 -> 1 wake task.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1142 the acknowledgement-deadline wake keeps one sleeping task and re-checks the deadline when it wakes
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:30 p.m. EST — `21c16cfb7584` red(#1142): every write's send starts a deadline-wake task and its acknowledgement cancels it
+
+- **Implementation commit:** `21c16cfb7584a4781d281eb75fbe4566dadbc19e`
+- **Change:** red(#1142): every write's send starts a deadline-wake task and its acknowledgement cancels it
+- **Details:**
+  - The acknowledgement-deadline wake counts the tasks it starts. Six writes sent and acknowledged one at a time, each within its deadline, start six tasks today (each sleeping about 6 s until its acknowledgement cancels it); the test wants at most one.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1142 every write's send starts a deadline-wake task and its acknowledgement cancels it
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1142 every write's send starts a deadline-wake task and its acknowledgement cancels it
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:28 p.m. EST — `45f92924db5a` fix(#653): the claim-at-save check reads the session's open snapshot, not a hop onto its actor, under the gate
+
+- **Implementation commit:** `45f92924db5a578eafd395aaf5c6e01de7fb787b`
+- **Change:** fix(#653): the claim-at-save check reads the session's open snapshot, not a hop onto its actor, under the gate
+- **Details:**
+  - The check runs while the write holds the operation gate; the live session's actor may be decoding a frame, and an await on it there would lengthen the gate's hold. A session that closes after the read fails the send, which releases the claim as a pass's send does.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #653 the claim-at-save check reads the session's open snapshot, not a hop onto its actor, under the gate
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:25 p.m. EST — `30a344aafcc7` test(#653): writes saved back to back on an open connection reach the socket once each, in the order made
+
+- **Implementation commit:** `30a344aafcc72cdbf3247d7990eb92a8d77e7829`
+- **Change:** test(#653): writes saved back to back on an open connection reach the socket once each, in the order made
+- **Details:**
+  - Ten writes saved without waiting, some claimed by their own saves and some by passes that waited for the operation gate meanwhile (cdca7eb3's race), are sent once each in creation order and all accepted.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #653 writes saved back to back on an open connection reach the socket once each, in the order made
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:23 p.m. EST — `cdca7eb3fd43` fix(#653): a pass sends the windows writes' saves claimed before it took the gate, ahead of its own claim
+
+- **Implementation commit:** `cdca7eb3fd43194afb406966d3cbb218936e9e3c`
+- **Change:** fix(#653): a pass sends the windows writes' saves claimed before it took the gate, ahead of its own claim
+- **Details:**
+  - 9691ee4d sent a write its save claimed from the pump's queue after the turn in progress, so a pass already waiting for the operation gate when that write was saved could claim and send a newer write first. Queues fill only under the gate, so a pass now takes the queue right after it enters the gate and sends those windows, in save order, before its own.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #653 a pass sends the windows writes' saves claimed before it took the gate, ahead of its own claim
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #653 a pass sends the windows writes' saves claimed before it took the gate, ahead of its own claim
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:21 p.m. EST — `9691ee4d18ed` green(#653): a write saved with nothing ahead of it is claimed by its own save, not by a claim turn
+
+- **Implementation commit:** `9691ee4d18edaf3029f72a33ca70cde8dbbbff5f`
+- **Change:** green(#653): a write saved with nothing ahead of it is claimed by its own save, not by a claim turn
+- **Details:**
+  - Each write took a claim turn after its save: the operation gate, a SQLite transaction, its body inflated and decoded, its receipt checked, its projection encoded and fingerprinted again, two log pages (the row and its delivery index): 3.06 ms a claim on the phone (builds 248-249), more than the save's 2.79 ms. Upstream Reactor.js pushOps sends a mutation as it records it (_trySendAuthed).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #653 a write saved with nothing ahead of it is claimed by its own save, not by a claim turn
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #653 a write saved with nothing ahead of it is claimed by its own save, not by a claim turn
+  - `Tests/InstantSwiftDataCoreTests/InstantDeliveryPassTests.swift` — #653 a write saved with nothing ahead of it is claimed by its own save, not by a claim turn
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:20 p.m. EST — `096246e40b3a` red(#653): a write saved with nothing ahead of it still takes a claim turn of the operation gate
+
+- **Implementation commit:** `096246e40b3ac1ced78b86bfd4591d7636df8693`
+- **Change:** red(#653): a write saved with nothing ahead of it still takes a claim turn of the operation gate
+- **Details:**
+  - Six writes saved one at a time on an open connection, each accepted before the next: today each takes a claim turn (the gate, a SQLite transaction, its body inflated and decoded, its projection encoded and fingerprinted again; 3.06 ms a claim on the phone, builds 248-249, more than the save's 2.79 ms). Upstream Reactor.js pushOps sends a mutation as it records it (_trySendAuthed). The test wants no claim turn, every write sent once and in order, and each accepted. Green to come: the save claims a write whose connection is open, whose delivery is active and that has nothing ahead of it, and transact hands that one-write window to the pump (design logged on #653).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #653 a write saved with nothing ahead of it still takes a claim turn of the operation gate
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:19 p.m. EST — `037012ece418` fix(#1523): a kept receipt fingerprint holds the SHA-256 of its body's stored bytes, not the bytes
+
+- **Implementation commit:** `037012ece4180cadef18bee391cd116cef00381f`
+- **Change:** fix(#1523): a kept receipt fingerprint holds the SHA-256 of its body's stored bytes, not the bytes
+- **Details:**
+  - 1ef4aa2f kept each write's stored body binding beside its fingerprint; offline, up to 512 kept entries of compressed bodies (a recording update compresses to about 10 KB) would hold megabytes. The key is now the SHA-256 of the stored bytes (a compressed body's bytes, or a text body's UTF-8 after another first byte), a few microseconds for a live write's body, where the inputs' hash it replaced walked the decoded transaction and rollback (about 180 us).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1523 a kept receipt fingerprint holds the SHA-256 of its body's stored bytes, not the bytes
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:17 p.m. EST — `1ef4aa2f1c21` green(#1523): a write's kept receipt fingerprint is found by its body's stored bytes, not by hashing the write
+
+- **Implementation commit:** `1ef4aa2f1c2166ccbd955bff899b04f885941e77`
+- **Change:** green(#1523): a write's kept receipt fingerprint is found by its body's stored bytes, not by hashing the write
+- **Details:**
+  - The stored body holds every input of the receipt fingerprint (id, createdAt, transaction, rollback, overlay state, receipt version; the row's columns hold only status, server transaction id and confirmation source), so a row whose body is the bytes a save bound has the fingerprint that save minted. The save now encodes the body first, keeps the fingerprint with the binding it writes (and writes that binding, compressed once), and the claim and the acknowledgement, which check exactly the body they decoded from the row, look it up by the row's bytes. Callers that hold a write that may differ from its row still find it by the inputs' hash. Two writes saved, claimed and accepted: 6 -> 0 input hashes (about 180 us each on an M4), still 2 fingerprints minted. A body re-stored in another encoding is fingerprinted once more from its content, and a changed body is still refused.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1523 a write's kept receipt fingerprint is found by its body's stored bytes, not by hashing the write
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:15 p.m. EST — `d6b239f49065` red(#1523): a write's save, claim and acknowledgement each hash its whole transaction and rollback to find its receipt
+
+- **Implementation commit:** `d6b239f49065447e799c7aa65dacba23fc57d8c3`
+- **Change:** red(#1523): a write's save, claim and acknowledgement each hash its whole transaction and rollback to find its receipt
+- **Details:**
+  - A store counts the receipt lookups that hash a write's fingerprint inputs (Hasher over id, createdAt, transaction, rollback, overlay state and receipt version: about 180 us for a transcript line on an M4). Two writes saved, claimed and accepted hash 6 times today; the red test wants none, with each save still minting one fingerprint.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1523 a write's save, claim and acknowledgement each hash its whole transaction and rollback to find its receipt
+  - `Tests/InstantSwiftDataCoreTests/InstantAcknowledgementDigestTests.swift` — #1523 a write's save, claim and acknowledgement each hash its whole transaction and rollback to find its receipt
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1523 a write's save, claim and acknowledgement each hash its whole transaction and rollback to find its receipt
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:13 p.m. EST — `d5f4a7d7f3ea` green(#1517): the delivery claim measures each projected body once and fingerprints each wire intent once
+
+- **Implementation commit:** `d5f4a7d7f3eaf7b754306da1905b550d96c3d8ec`
+- **Change:** green(#1517): the delivery claim measures each projected body once and fingerprints each wire intent once
+- **Details:**
+  - Under the operation gate the claim fingerprinted a claimed row's body as stored, a sorted-key encode and a SHA-256 that the projected body's fingerprint always replaced before the claim committed; it now writes NULL there, as every row it keeps claimed gets the projected fingerprint in the same transaction. And projectionMetadata's projection is the projected body whenever no required scalar is substituted, so the claim records that value and its measured size instead of building it again and encoding it a second time to check the measure. A substitution still builds, encodes and checks as before. Three claimed writes: 6 -> 3 projected-body encodes, 6 -> 3 wire fingerprints.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1517 the delivery claim measures each projected body once and fingerprints each wire intent once
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1517 the delivery claim measures each projected body once and fingerprints each wire intent once
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:11 p.m. EST — `db5e43653427` red(#1517): the delivery claim encodes each projected body twice and fingerprints each wire intent twice
+
+- **Implementation commit:** `db5e436534270d65ac9492c1332af20705933cab`
+- **Change:** red(#1517): the delivery claim encodes each projected body twice and fingerprints each wire intent twice
+- **Details:**
+  - A store counts what its claims encode (InstantClaimEncodeCounts): each projected body measured and each forward wire intent fingerprinted. Three claimed writes take 6 and 6 today, under the operation gate: projectionMetadata encodes the projected body, then the claim encodes the same value again to check that measure, and the claimed row's first fingerprint (of the body as stored) is always replaced by the projected body's before the claim commits. The red test wants 3 and 3; a second test pins that the claimed row still holds the exact projected bytes and fingerprint and is accepted against them.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1517 the delivery claim encodes each projected body twice and fingerprints each wire intent twice
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1517 the delivery claim encodes each projected body twice and fingerprints each wire intent twice
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1517 the delivery claim encodes each projected body twice and fingerprints each wire intent twice
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:06 p.m. EST — `ba690a533ebb` test(#1648): two concurrent typed writes in one millisecond go out in the order they entered the gate
+
+- **Implementation commit:** `ba690a533ebb7ef585af201a20af09b8e030aec6`
+- **Change:** test(#1648): two concurrent typed writes in one millisecond go out in the order they entered the gate
+- **Details:**
+  - The phone's case was two tasks writing revisions of one row at once, 0.5 ms apart. The existing tests make the writes one after another; this one starts them together under a frozen clock and checks the invariant that holds whichever task wins the gate: three distinct times past the tail, each write's facts at its own time, the wire in outbox order, and the row showing the revision the server applies last. Against 1.9.64's sources every write ties at one time.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantWriteCreationOrderTests.swift` — #1648 two concurrent typed writes in one millisecond go out in the order they entered the gate
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:04 p.m. EST — `2cf4e1d89b07` test(#1648): two typed tests expect the order the writes were made under a frozen clock
+
+- **Implementation commit:** `2cf4e1d89b07923cd1ccc372957dca89e3d49ea9`
+- **Change:** test(#1648): two typed tests expect the order the writes were made under a frozen clock
+- **Details:**
+  - With the configuration clock frozen, typedCreateIsStrictAndTypedUpdateUpserts expected its pending writes in id order and the default query in id order, and both it and typedLookupMutationsResolveUniqueAttributesAndPreservePendingLookups expected every fact at the one frozen time: the tie #1648 removes. They now expect the order the writes were made and each write's own time (one millisecond after the write before it).
+- **Files:**
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — #1648 two typed tests expect the order the writes were made under a frozen clock
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:03 p.m. EST — `74fea3ae676d` fix(#1648): every local write holds the operation gate under transact(_:createdAt:source:)
+
+- **Implementation commit:** `74fea3ae676d4f0daa2d704c68d0bdcb514b7e6d`
+- **Change:** fix(#1648): every local write holds the operation gate under transact(_:createdAt:source:)
+- **Details:**
+  - The gate names its holder by the entering function, and 3ae5585b moved the write into transact(_:creation:source:), so the holder of every local write was renamed. The gate timeline, stall reports, the concurrency baselines and an app's stall handling name the holder transact(_:createdAt:source:); three gate tests failed on the new name (build.sh job 1648-gate). The write now enters under that name whichever entry it came through.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1648 every local write holds the operation gate under transact(_:createdAt:source:)
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:12:01 p.m. EST — `3ae5585bd4fa` fix(#1648): green: a local write's outbox time is assigned under the operation gate on every transact path
+
+- **Implementation commit:** `3ae5585bd4fa33054201154b76c9ea3d1645f25b`
+- **Change:** fix(#1648): green: a local write's outbox time is assigned under the operation gate on every transact path
+- **Details:**
+  - Delivery sends the outbox in (created_at_ms, mutation_id) order with a random id, and the runtime stepped a write past the tail (max(now, tail+1)) only when it was given no createdAt. The typed transact, transact(operations:) and Send Again read the clock before the gate and passed it, so writes made in one millisecond tied and went out in id order: on a phone the newer of two revisions of one row went first and a rule requiring a newer updatedAtMs refused the older; the same tie let the immediate-tail supersession keep the wrong write and hid a refused write's later covering write.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — #1648 green: a local write's outbox time is assigned under the operation gate on every transact path
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1648 green: a local write's outbox time is assigned under the operation gate on every transact path
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:11:59 p.m. EST — `5535f4528d4e` test(#1648): red: a quarantined mutation sent again goes after the write made before it in the same millisecond
+
+- **Implementation commit:** `5535f4528d4eb1fd1e5c07d9eb728b0bb9d8cb1f`
+- **Change:** test(#1648): red: a quarantined mutation sent again goes after the write made before it in the same millisecond
+- **Details:**
+  - retryQuarantinedMutation passes now() from before the operation gate, so a mutation sent again in the millisecond of another write ties with it and goes out in id order ("a-sent-again" before "z-written").
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSendAgainCreationOrderTests.swift` — #1648 red: a quarantined mutation sent again goes after the write made before it in the same millisecond
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 11:11:53 p.m. EST — `4b6117a5ac85` test(#1648): red: two typed writes made in one millisecond keep the order they entered the gate
+
+- **Implementation commit:** `4b6117a5ac856d726140dc0805d74d06e9489b52`
+- **Change:** test(#1648): red: two typed writes made in one millisecond keep the order they entered the gate
+- **Details:**
+  - With the configuration's clock frozen and each second write's id sorting first: the outbox and the wire hold the writes in the order they were made with strictly increasing created_at_ms and each fact stamped with its write's creation time; a write after the clock steps back still goes after the tail; a revision replaces the unsent revision of the same row made in the same millisecond; a refused write is superseded by (or resolved as accepted under) the accepted write made after it; transact(operations:) keeps call order. v1.9.64's typed path stamps before the gate, so the writes tie and go out in id order.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantWriteCreationOrderTests.swift` — #1648 red: two typed writes made in one millisecond keep the order they entered the gate
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
 ## November 4th, 2026 at 10:06:53 p.m. EST — `995043755a97` release(#1513 #1480 #1109): v1.9.68: a final's publication splices the rows it reaches; a restated result is compared with its stored rows once
 
 - **Implementation commit:** `995043755a97f26d268100262c9ef91630579dbd`
