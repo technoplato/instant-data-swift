@@ -1,3 +1,6 @@
+## 2026-11-05 04:26:08 EST — scribe `7061c0e936b14e4a3c9929d5290a2e7050e84113`
+Plan (#632): 2026-11-04-perf-audio-1223 amendment 2: a delivered compressed copy that is continued goes on from its stored stream row (instant-data-swift's writer takes the row, release 1.9.71; the app passes it when its spool has none); plan-only landing before the app's red/green (agent/claude/perf-audio-632).
+
 ## 2026-11-05 04:24:44 EST — scribe `68700800966db84caafbbf91b238fa8cdc616710`
 Perf (#1309, #1381, #1470, #1474, #1006): one launch.timeline line per launch; a capturing take continues before the list's first page; an unread session waits for its read; the store opens again at the unlock; every page of a recording's lines is asked for at once.
 
