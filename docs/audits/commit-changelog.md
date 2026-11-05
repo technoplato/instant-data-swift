@@ -1,3 +1,21 @@
+## 2026-11-05 04:26:08 EST — scribe `7061c0e936b14e4a3c9929d5290a2e7050e84113`
+Plan (#632): 2026-11-04-perf-audio-1223 amendment 2: a delivered compressed copy that is continued goes on from its stored stream row (instant-data-swift's writer takes the row, release 1.9.71; the app passes it when its spool has none); plan-only landing before the app's red/green (agent/claude/perf-audio-632).
+
+## 2026-11-05 04:24:44 EST — scribe `68700800966db84caafbbf91b238fa8cdc616710`
+Perf (#1309, #1381, #1470, #1474, #1006): one launch.timeline line per launch; a capturing take continues before the list's first page; an unread session waits for its read; the store opens again at the unlock; every page of a recording's lines is asked for at once.
+
+## 2026-11-05 03:11:22 EST — scribe `70f1d35d5bcd57fdc15ed23f6fb26b2b33d01e4d`
+Tool (#1781): scripts/perf/metrics.py --trend charts each query shape's receive CPU per build (refresh-cost.py's estimate by bytes; the recordings list 6.3-28.9 CPU-s an hour on builds 246-253) and reads net.instant.firstAnswers, the time to each query's first answer with its triples, once the phone's ledger carries it; derived on the Mac, nothing new per refresh on the phone; changelog 85bb8846e.
+
+## 2026-11-05 03:02:03 EST — instant-data-swift `90eba2ee456b7c0d01c4ea94ea56742d755c75b5`
+Plan (#1781): 2026-11-05-perf-metrics-1781, the URLSession socket times each add-query to the add-query-ok or add-query-exists that echoes its client-event-id, by shape, with the answer's triples, once per subscription; claims and channel (red ec0f3c52, green c8ba0995 on agent/claude/perf-metrics-1781, proof queued on the mini).
+
+## 2026-11-05 02:39:45 EST — scribe `3dff2d02bfa6a828c68ecf88c1cff3e43f4311e9`
+Feature (#1777): the voice-print backfill hears a recording whose storage keeps only its compressed copy from the copy (Apple's decoder, the segments a span needs; red/green on the mini, 9/9), not deployed until storage keeps only the copy (#1798); the audit's measured result: the Mac's WAVs 71.93 GB to 0.12 GB (about 68 GB net), every kept WAV with its reason; findings #1800, #1808, #1813; changelog 6f4868fd5.
+
+## 2026-11-05 02:34:45 EST — scribe `9e4aa3f827d203c7ff5dc3e2f1396ab66dea6fd7`
+Fix and diagnostics (#1796): landing 9e4aa3f82 of agent/claude/perf-sync-1796-app: Playback forgets a live-elsewhere compressed copy that failed to load, so the next row looks it up again instead of keeping "Network or live transport failed" on screen (red 23a1c18fa, green 091e9eb1d); the diagnostics bridge forwards the library's live.receive-summary, one line a minute per device, the follower lag measurement (red 404b5bbe2, green fabc9915e); ledger bc8939057. Checked on the mini, job 1796-app-check (02:13-02:30): reds fail on their assertions, green passes.
+
 ## 2026-11-05 02:02:28 EST — scribe `f238975c540b8eb4f2d7d5062511b7d9f19f40b9`
 Perf (#1083): the quick actions and recent recordings read only an older row's creation time before keeping it, and the body-cache test gives each of its two stores its own journal (follow-up to dc733eb20; tested alone in perf-root-1083-green2).
 
