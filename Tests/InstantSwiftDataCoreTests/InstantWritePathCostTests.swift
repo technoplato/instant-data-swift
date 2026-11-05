@@ -128,10 +128,13 @@ struct InstantWritePathCostTests {
   /// samples.
   @Test
   func aServerApplyAndTheAcknowledgementsAfterItFindTheReceiptByTheStoredBytes() async throws {
+    // The reduced apply patches pending writes' receipts without replaying them; the full rebase, which the recording
+    // exercise's store still takes for some frames, loads their body pages and stages each one again.
     var fixture = try await FastDrainFixture.make(
       suffix: "receipt-after-echo",
       serverSegmentCount: 2,
-      pendingSegmentCount: 0
+      pendingSegmentCount: 0,
+      reducesServerApply: false
     )
     let persistence = fixture.runtime.persistence
     _ = try await Self.writeOneInterimPerSegment(3, in: &fixture)
