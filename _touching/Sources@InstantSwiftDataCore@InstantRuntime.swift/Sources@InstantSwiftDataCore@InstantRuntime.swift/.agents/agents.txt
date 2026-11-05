@@ -103,3 +103,4 @@ claude-code/perf-mem-1797@pp 2026-11-04T18:10:00-0500 mower plan=2026-11-04-perf
 claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 (applyLiveRefresh, performApplyServerTransaction's planning turn only)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
 claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-perf-sync-1796 #1796 #998 #1127 (queryOnceThroughLive's acknowledgement wait only; not applyLiveRefresh/performApplyServerTransaction perf-recv-1797, not transact #1648)
+claude-code/perf-sync-1796@pp 2026-11-05T03:40:44-0500 mower plan=2026-11-04-perf-sync-1796 amendment 1 #1796 #1131 #1129 (registration gate phase names; pruneLiveQueryResults, pruneLiveQueryResultsBatch, pruneReleasedLiveQueryResultChunk phase marks and timing line only; not the prune's decisions, #1500 perf-mem-1797)

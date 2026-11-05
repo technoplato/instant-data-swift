@@ -1,6 +1,7 @@
 // History:
 // - 2026-10-31: added (#1504): closing a query's result and a recording's writes write no temporary file of any kind,
 //   the statement journal included.
+// - 2026-11-05: closing a query's result marks its row where it is (#1500); the guard checks the prune unloaded it.
 
 import CustomDump
 import Foundation
@@ -42,12 +43,12 @@ extension StorageIOExercises {
   /// journal) wrote 34,124-36,677 times an hour of recording, 19-49 MB/h, and 470,007 times (166 MB/h) across the 10-30
   /// evening's eight launches: every connection opened with SQLite's default `temp_store`, a file. A statement inside a
   /// transaction that may undo itself journals the pages it changes, in memory up to 64 KiB and then in a file, and a
-  /// closed result's delete cascades over every ownership row it holds. The bytes are transient by definition, deleted
-  /// when the statement ends, and what they hold is bounded by the library's own batches (a prune batch, a released
-  /// chunk, a reload chunk), so they belong in memory. At this size (300 todos, about 1,500 ownership rows) the journal
-  /// stayed under the 64 KiB before the fix too, so this is a guard; which phone statement spilled is not reproduced
-  /// here, and the phone's ledger after the build is the measure. In the suite, which runs one test at a time: the
-  /// shim's counters are the process's.
+  /// closed result's delete cascaded over every ownership row it held (since #1500 closing marks its row where it is
+  /// instead). The bytes are transient by definition, deleted when the statement ends, and what they hold is bounded by
+  /// the library's own batches (a prune batch, a released chunk, a reload chunk), so they belong in memory. At this size
+  /// (300 todos, about 1,500 ownership rows) the journal stayed under the 64 KiB before the fix too, so this is a guard;
+  /// which phone statement spilled is not reproduced here, and the phone's ledger after the build is the measure. In the
+  /// suite, which runs one test at a time: the shim's counters are the process's.
   @Test
   func closingAQuerysResultWritesNoTemporaryFile() async throws {
     StorageIOCounters.install(asDefault: false)
@@ -97,7 +98,9 @@ extension StorageIOExercises {
     )
     let io = StorageIOCounters.snapshot().subtracting(before)
 
-    // The closed page left the stored results, as before.
+    // #1500: the closed page is unloaded where it is (its row marked, its rows and facts kept on disk), so the open page
+    // is the only loaded result; with nothing unloaded, the I/O below would measure no close at all.
+    expectNoDifference(application.result.unloadedQueryKeys, ["query-closed-page"])
     expectNoDifference(application.result.remainingQueryKeys, [openKey])
     expectNoDifference(TemporaryFiles.writtenOfEveryKind(io), TemporaryFiles.noneOfEveryKind)
   }

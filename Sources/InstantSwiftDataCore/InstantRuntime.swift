@@ -1,4 +1,9 @@
 // History:
+// - 2026-11-05: the prune's batches go on while the last one unloaded closed results and left more (#1500, #303).
+// - 2026-11-04: a launch keeps the newest `preloadedLiveQueryResultCount` (10) stored results loaded, as upstream
+//   preloads ten; the rest reload from disk when their query subscribes (#1107, #1149).
+// - 2026-11-04: a one-shot read waits for its answer while the connection receives or applies frames, up to upstream's
+//   30 s, and fails after 5 s without either; a fixed 5 s failed every read behind a tablet's backlog (#1796).
 // - 2026-11-04: the acknowledgement-deadline wake keeps one sleeping task that re-checks the deadline when it wakes; each
 //   send started one and each acknowledgement cancelled it (#1142).
 // - 2026-11-04: a write saved while delivery could send it at once is claimed by its own save and queued on the pump in
@@ -8,6 +13,17 @@
 // - 2026-11-02: a local write's outbox time is assigned under the operation gate, after the tail, on every path: the
 //   typed transact, `transact(operations:)` and Send Again passed a time read before the gate, so writes made in one
 //   millisecond tied and went out in id order; the typed path's facts carry the assigned time (#1648).
+// - 2026-11-04: eviction reads only the file records of the ids it is given (#1104).
+// - 2026-11-04: a prune that unloads a closed result marks it where it is and releases its entities from memory only,
+//   under the batch's gates, by the residency sweep's rule; its reopening reads its rows where they are (#1500).
+// - 2026-11-04: a live query's acknowledgement entries go when its last registration ends, and revisions come from one
+//   counter, so a key forgotten and answered again still moves past any revision read before (#541).
+// - 2026-11-04: a residency sweep releases from memory, every 64 local writes or result-carrying frames, the entities no
+//   stored result owns, no outbox row touches and no observer shows; they stay on disk, as a relaunch leaves them
+//   (#1145). On a phone recording the store grew about 13,000 facts an hour until the next relaunch.
+// - 2026-11-04: a write, local or the server's, reads every fact this device keeps of each entity it names that memory
+//   lacks, with the deferred values it already read, and prepares against the whole entity: one written in part was
+//   saved as a new one, deleting its other facts from SQLite, and a strict update of it threw (#1165).
 // - 2026-10-31: a server frame plans in two persistence turns after its seed, the reduction's context in the planning
 //   reads' turn and the first reverse body page in the plan's; no pass reads the empty page after its last row, and the
 //   plan's end and the status read share a turn (#1494).
@@ -535,6 +551,15 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxTripleCount: 1_000_000
   )
   var liveQueryResultPruningWriteInterval = 64
+  /// How many committed local writes and server frames that restate results start a residency sweep (#1145): the
+  /// entities no stored result owns, no outbox row touches and no observer shows leave memory, as a relaunch leaves them,
+  /// and stay on disk. `Int.max` never sweeps.
+  var residencySweepWriteInterval = 64
+  /// How many stored live-query results a launch keeps loaded, the newest by when the server last stated them (#1107,
+  /// #1149). Upstream `PersistedObject` preloads the `preloadEntryCount` (10) most recently updated query results and
+  /// loads any other when its query subscribes; the rest are unloaded where they are (#1500) and reload from disk when
+  /// their query subscribes again. `Int.max` keeps every stored result loaded.
+  var preloadedLiveQueryResultCount = 10
   /// How many result triples one prune batch removes or checks before it releases the operation gate (#303, item 6). The
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
   /// waited; `nil` prunes everything at once. 1,000 since #1129: a batch also holds the server-apply gate, so a refresh
@@ -655,6 +680,12 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable () async -> Void)? = nil
   package var onLiveQueryOnceAcknowledgedForTesting:
     (@Sendable () async throws -> Void)? = nil
+  /// How long a one-shot read waits for the server's answer while its connection receives no frame and applies none
+  /// (#1796): the stall F41 asks to make loud.
+  package var liveQueryAcknowledgementStallMilliseconds: UInt64 = 5_000
+  /// The longest a one-shot read waits for the server's answer while frames keep arriving or applying ahead of it:
+  /// upstream `Reactor.js`'s `QUERY_ONCE_TIMEOUT` (#1796).
+  package var liveQueryAcknowledgementLimitMilliseconds: UInt64 = 30_000
   /// Runs after a reopened live query read its closed stored result and before it commits the reload (#1131), with the
   /// query's registration key. Tests pause here to see what waits for that read.
   package var onUnloadedLiveQueryResultReadForTesting:
@@ -1669,6 +1700,9 @@ struct InstantServerApplyGateTimeline: Sendable {
   }
 }
 
+/// One stall's length passed while a one-shot read still waited for its answer (#1796).
+private struct InstantLiveQueryAnswerStillOwed: Error {}
+
 private actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
     case acknowledged
@@ -1678,14 +1712,30 @@ private actor InstantLiveQueryAcknowledgementState {
   private var revisions: [String: Int] = [:]
   private var outcomes: [String: (revision: Int, outcome: Outcome)] = [:]
   private var waiters: [String: [UUID: AsyncThrowingStream<Void, Error>.Continuation]] = [:]
+  /// One counter for every key (#541): a key forgotten and answered again still moves past a revision read before.
+  private var lastRevision = 0
 
   func revision(for key: String) -> Int {
     revisions[key, default: 0]
   }
 
+  /// How many keys the state remembers (#541).
+  var keyCount: Int { Set(revisions.keys).union(outcomes.keys).count }
+
+  /// Forgets `key` once its last registration ended (#541), unless a one-shot read still waits on it. The state kept an
+  /// entry for every key a session ever registered; an answer that lands after the query ended is dropped before it is
+  /// recorded (`endedOneShotQueries`, the live session's own check), so nothing reads the entry again.
+  func forget(key: String) {
+    guard waiters[key]?.isEmpty ?? true else { return }
+    waiters[key] = nil
+    revisions[key] = nil
+    outcomes[key] = nil
+  }
+
   func record(key: String) {
-    revisions[key, default: 0] += 1
-    outcomes[key] = (revisions[key, default: 0], .acknowledged)
+    lastRevision += 1
+    revisions[key] = lastRevision
+    outcomes[key] = (lastRevision, .acknowledged)
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.yield(())
@@ -1694,8 +1744,9 @@ private actor InstantLiveQueryAcknowledgementState {
   }
 
   func reject(key: String, error: InstantError) {
-    revisions[key, default: 0] += 1
-    outcomes[key] = (revisions[key, default: 0], .rejected(error))
+    lastRevision += 1
+    revisions[key] = lastRevision
+    outcomes[key] = (lastRevision, .rejected(error))
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.finish(throwing: error)
@@ -1945,6 +1996,11 @@ public final class InstantRuntime: Sendable {
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   /// The cadence prune's task, off the frame applier (#1129).
   private let cadencePruneOwner = InstantRuntimeExactTaskOwner()
+  /// The residency sweep's task, and the entities it may release from memory (#1145).
+  private let residencySweepOwner = InstantRuntimeExactTaskOwner()
+  private let residencySweep = InstantResidencySweepState()
+  /// The candidates one hold of the gates decides (#1145).
+  private static let residencySweepBatchEntityCount = 500
   private let reconnectController = InstantRuntimeReconnectController()
   /// Watches an open socket that may be on an expensive network for a route that is not expensive (#1237).
   private let liveRouteWatcherOwner = InstantRuntimeExactTaskOwner()
@@ -2091,7 +2147,9 @@ public final class InstantRuntime: Sendable {
         startupTrace: startupTrace,
         deferredValueResidency: configuration.deferredValueResidency,
         localLookup: configuration.localLookup,
-        declaredAttributes: configuration.initialAttributes
+        declaredAttributes: configuration.initialAttributes,
+        // #1145: a result's save names the entities it stopped owning, for the residency sweep.
+        recordingOwnershipReleases: configuration.residencySweepWriteInterval < .max
       )
       let bootstrapPruningResult: InstantQueryCachePruningResult?
       let bootstrapSynchronizationBlocker: InstantSynchronizationBlocker?
@@ -2101,12 +2159,14 @@ public final class InstantRuntime: Sendable {
         // (#403); they were three awaits. With application migrations, each keeps its own await and its notice below.
         let queryCachePruningPolicy = configuration.queryCachePruningPolicy
         let bootstrapNow = configuration.now()
+        let preloadedLiveQueryResultCount = configuration.preloadedLiveQueryResultCount
         let retainedMutationRecovery = configuration.retainedMutationsWithoutPreparationReceipt
         configuration.actorHopRecorder?.record(.persistence)
         let opened = try await persistence.run { persistence in
           let pruningResult = try persistence.bootstrap(
             queryCachePruningPolicy: queryCachePruningPolicy,
-            now: bootstrapNow
+            now: bootstrapNow,
+            preloadedLiveQueryResultCount: preloadedLiveQueryResultCount
           )
           // A retained mutation with no preparation receipt is moved aside before the blocker is derived, so it no
           // longer refuses every connection while the writes behind it wait (#696).
@@ -2128,7 +2188,8 @@ public final class InstantRuntime: Sendable {
         configuration.actorHopRecorder?.record(.persistence)
         bootstrapPruningResult = try await persistence.bootstrap(
           queryCachePruningPolicy: configuration.queryCachePruningPolicy,
-          now: configuration.now()
+          now: configuration.now(),
+          preloadedLiveQueryResultCount: configuration.preloadedLiveQueryResultCount
         )
         for migration in configuration.localPersistenceMigrations {
           configuration.actorHopRecorder?.record(.persistence)
@@ -2788,8 +2849,8 @@ public final class InstantRuntime: Sendable {
         else { return nil }
         return predecessor
       }
-      operationGate.markHolderPhase("load deferred values")
-      let deferredTriples = try await deferredValuesForPreparing(transaction)
+      operationGate.markHolderPhase("load facts beside memory")
+      let besideMemory = try await factsBesideMemoryForPreparing(transaction)
       operationGate.markHolderPhase("prepare")
       func prepareLocalWrite(_ transaction: InstantStoreTransaction) async throws -> PreparedStoreMutation {
         if let supersededTail, let rollback = supersededTail.rollbackTransaction {
@@ -2800,12 +2861,14 @@ public final class InstantRuntime: Sendable {
           return try await store.prepare(
             peelingOverlays: [rollback],
             thenApplying: transaction,
-            hydratingDeferredValues: deferredTriples
+            hydratingDeferredValues: besideMemory.deferredValues,
+            loadingFactsKeptOnDisk: besideMemory.keptOnDisk
           )
         }
         return try await store.prepareCurrent(
           transaction,
-          hydratingDeferredValues: deferredTriples
+          hydratingDeferredValues: besideMemory.deferredValues,
+          loadingFactsKeptOnDisk: besideMemory.keptOnDisk
         )
       }
       var prepared = try await prepareLocalWrite(pendingMutation.transaction)
@@ -2902,6 +2965,14 @@ public final class InstantRuntime: Sendable {
               claimedInSessionGeneration: claimAtSave?.sessionGeneration
             )
           )
+        }
+        // #1145: the entities this write changed may leave memory once the server proved it and no stored result owns
+        // them.
+        if residencySweep.recordWrite(
+          changing: committed.prepared.result.changedEntityIDs,
+          interval: configuration.residencySweepWriteInterval
+        ) {
+          requestResidencySweep()
         }
         return InstantLocalWriteCommit(
           result: committed.prepared.result,
@@ -3034,37 +3105,57 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func deferredValuesForPreparing(
+  private func factsBesideMemoryForPreparing(
     _ transaction: InstantStoreTransaction
-  ) async throws -> [InstantTriple] {
-    try await deferredValuesForPreparing([transaction])
+  ) async throws -> InstantFactsBesideMemory {
+    try await factsBesideMemoryForPreparing([transaction])
   }
 
-  private func deferredValuesForPreparing(
+  /// What a write reads from SQLite before it prepares, in one persistence turn: the deferred values of the entities it
+  /// can touch, and every fact this device keeps of each entity it names that memory holds no fact of (#1165).
+  ///
+  /// Upstream keeps one store per query result, so a write never meets an entity its store holds in part. This runtime
+  /// keeps one store for every result over SQLite, and after a relaunch memory holds only what the stored results own
+  /// (#1006): a write prepared against memory alone handled an entity kept on disk as a new one, so its save deleted the
+  /// facts the write did not restate, and a strict update of it threw. The residency sweep (#1145) and closed results
+  /// kept on disk (#1500) make such entities routine.
+  private func factsBesideMemoryForPreparing(
     _ transactions: [InstantStoreTransaction]
-  ) async throws -> [InstantTriple] {
+  ) async throws -> InstantFactsBesideMemory {
+    guard !transactions.isEmpty else { return InstantFactsBesideMemory() }
     // Upstream applies deep merges and optimistic rebases against one complete store. Load only
     // the entities these transactions can touch into the throwaway prepared indexes; commit strips
     // the configured payload attributes before installing the next hot store.
     let policy = configuration.deferredValueResidency
-    guard policy.isEnabled, !transactions.isEmpty else { return [] }
-    recordActorHop(.store)
-    var entityIDs: Set<String> = []
+    var namedEntityIDs: Set<String> = []
     for transaction in transactions {
-      entityIDs.formUnion(policy.directEntityIDs(in: transaction))
-      entityIDs.formUnion(try await store.resolvedMutationEntityIDs(in: transaction))
-      if policy.requiresEntityDiscovery(in: transaction),
-        await mayChangeDeferredValuesItDoesNotName(transaction, policy: policy),
-        let preview = try? await store.prepareCurrent(transaction)
-      {
-        entityIDs.formUnion(preview.result.changedEntityIDs)
+      namedEntityIDs.formUnion(policy.directEntityIDs(in: transaction))
+    }
+    recordActorHop(.store)
+    // One turn finds both. An entity addressed by a lookup resolves against memory, as before: Scribe writes none, and a
+    // lookup on disk needs its attribute's index.
+    let names = try await store.entityIDsForPreparing(
+      named: namedEntityIDs,
+      resolving: policy.isEnabled ? transactions : []
+    )
+    let keptOnDiskEntityIDs = names.withoutFacts
+    var deferredEntityIDs: Set<String> = []
+    if policy.isEnabled {
+      deferredEntityIDs = namedEntityIDs.union(names.resolved)
+      for transaction in transactions where policy.requiresEntityDiscovery(in: transaction) {
+        if await mayChangeDeferredValuesItDoesNotName(transaction, policy: policy),
+          let preview = try? await store.prepareCurrent(transaction)
+        {
+          deferredEntityIDs.formUnion(preview.result.changedEntityIDs)
+        }
       }
     }
-    guard !entityIDs.isEmpty else { return [] }
+    guard !deferredEntityIDs.isEmpty || !keptOnDiskEntityIDs.isEmpty else { return InstantFactsBesideMemory() }
     recordActorHop(.persistence)
-    return try await persistence.loadDeferredValues(
-      attributeIDs: policy.attributeIDs,
-      entityIDs: entityIDs
+    return try await persistence.loadFactsBesideMemory(
+      deferredAttributeIDs: policy.attributeIDs,
+      deferredEntityIDs: deferredEntityIDs,
+      keptOnDiskEntityIDs: keptOnDiskEntityIDs
     )
   }
 
@@ -5467,47 +5558,71 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// `prepared` with what `transactions` need from SQLite beside memory before they are applied to it: the deferred
+  /// values they can touch, and every fact this device keeps of each entity they name that neither `prepared` nor memory
+  /// holds a fact of (#1165).
   private func hydrateDeferredValuesForServerApply(
     _ transactions: [InstantStoreTransaction],
     over prepared: PreparedStoreMutation,
     planID: String
   ) async throws -> PreparedStoreMutation {
+    guard !transactions.isEmpty else { return prepared }
     let policy = configuration.deferredValueResidency
-    guard policy.isEnabled, !transactions.isEmpty else { return prepared }
-    var entityIDs: Set<String> = []
+    var namedEntityIDs: Set<String> = []
     for transaction in transactions {
-      entityIDs.formUnion(policy.directEntityIDs(in: transaction))
-      for operation in transaction.operations {
-        for lookup in Self.serverApplyLookupRefs(in: operation) {
-          guard let lookupAttribute = prepared.attributes.lookupAttribute(id: lookup.attributeID)
-          else { continue }
-          entityIDs.formUnion(
-            prepared.indexes.entityIDs(
-              matching: lookup,
-              lookupAttribute: lookupAttribute
+      namedEntityIDs.formUnion(policy.directEntityIDs(in: transaction))
+    }
+    // #1165: a result that selects some fields of an entity memory lacks restated those fields as a new entity, and the
+    // commit's save deleted the entity's other rows. Memory decides with the apply's own store: an entity a pending write
+    // created is absent from the store once its overlay is peeled, and its rows on disk are that write's, not the
+    // server's. Only an entity absent from both asks the store, so a peel or replay of resident writes costs no turn.
+    var keptOnDiskEntityIDs = namedEntityIDs.filter {
+      !prepared.indexes.containsEntity($0, namespace: nil, attributes: prepared.attributes)
+    }
+    if !keptOnDiskEntityIDs.isEmpty {
+      recordActorHop(.store)
+      keptOnDiskEntityIDs = await store.entityIDsWithoutFacts(among: keptOnDiskEntityIDs)
+    }
+    var entityIDs: Set<String> = []
+    if policy.isEnabled {
+      entityIDs = namedEntityIDs
+      for transaction in transactions {
+        for operation in transaction.operations {
+          for lookup in Self.serverApplyLookupRefs(in: operation) {
+            guard let lookupAttribute = prepared.attributes.lookupAttribute(id: lookup.attributeID)
+            else { continue }
+            entityIDs.formUnion(
+              prepared.indexes.entityIDs(
+                matching: lookup,
+                lookupAttribute: lookupAttribute
+              )
             )
-          )
+          }
+        }
+        if policy.requiresEntityDiscovery(in: transaction) {
+          let preview = try await store.prepare(transaction, applyingTo: prepared)
+          entityIDs.formUnion(preview.result.changedEntityIDs)
         }
       }
-      if policy.requiresEntityDiscovery(in: transaction) {
-        let preview = try await store.prepare(transaction, applyingTo: prepared)
-        entityIDs.formUnion(preview.result.changedEntityIDs)
-      }
     }
-    guard !entityIDs.isEmpty else { return prepared }
+    guard !entityIDs.isEmpty || !keptOnDiskEntityIDs.isEmpty else { return prepared }
     recordActorHop(.persistence)
-    let deferredTriples = try await persistence.loadDeferredValues(
-      attributeIDs: policy.attributeIDs,
-      entityIDs: entityIDs
+    let besideMemory = try await persistence.loadFactsBesideMemory(
+      deferredAttributeIDs: policy.attributeIDs,
+      deferredEntityIDs: entityIDs,
+      keptOnDiskEntityIDs: keptOnDiskEntityIDs
     )
-    guard !deferredTriples.isEmpty else { return prepared }
+    var hydrated = prepared
+    // The facts kept on disk stay when the apply is installed, as a local write's do.
+    hydrated.indexes.loadFactsKeptOnDisk(besideMemory.keptOnDisk, attributes: hydrated.attributes)
+    guard !besideMemory.deferredValues.isEmpty else { return hydrated }
     recordActorHop(.store)
     return try await store.prepare(
       InstantStoreTransaction(
         id: "\(planID)-deferred-hydration",
-        operations: deferredTriples.map(InstantTripleOperation.insert)
+        operations: besideMemory.deferredValues.map(InstantTripleOperation.insert)
       ),
-      applyingTo: prepared
+      applyingTo: hydrated
     )
   }
 
@@ -5581,6 +5696,12 @@ public final class InstantRuntime: Sendable {
       // the server-apply gate, and every frame behind it waited for the whole prune: in #1074's `prune-inline` exercise
       // the refresh queued behind applied after 1,815 ms against 45 ms for the one before it.
       if isPruneDue { requestCadencePrune() }
+      // #1145: a frame that restates results may leave entities no result owns; it counts toward the next sweep.
+      if !translated.queryResultReplacements.isEmpty,
+        residencySweep.recordWrite(changing: [], interval: configuration.residencySweepWriteInterval)
+      {
+        requestResidencySweep()
+      }
       return InstantLiveRefreshApplicationResult(
         transaction: applied.transaction,
         application: applied.application,
@@ -6142,8 +6263,12 @@ public final class InstantRuntime: Sendable {
       // A prune whose batch had captured the open queries before this lease could unload the result after the read
       // above found none: the check under this hold catches it, as before #1131.
       if !reloaded {
+        operationGate.markHolderPhase("reload \(plan.namespace)")
         await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan, holdingOperationGate: true)
       }
+      // #1796: a stall or wait report names the query whose registration holds the gate. A tablet's launch logged one
+      // holding it 4,583 ms with 7 callers queued, its connect among them, and nothing said which query it was.
+      operationGate.markHolderPhase("answer \(plan.namespace)")
     }
     // #1493: the store yields into the stream the consumer reads, and a live query's server error writes into it too.
     let output = InstantObservationOutput(reportsServerErrors: liveRegistration != nil)
@@ -6232,10 +6357,13 @@ public final class InstantRuntime: Sendable {
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
       do {
-        _ = try await self.liveSession.unregisterQuery(
+        if try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
-        )
+        ) {
+          // #541: its last registration ended.
+          await self.liveQueryAcknowledgements.forget(key: registrationKey)
+        }
         InstantDiagnostics.shared.record(
           .debug,
           subsystem: "instant-swift-data-core",
@@ -6391,8 +6519,11 @@ public final class InstantRuntime: Sendable {
       throw error
     }
     if seedsFromStoredResult, !reloaded {
+      operationGate.markHolderPhase("reload \(plan.namespace)")
       await reloadUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan, holdingOperationGate: true)
     }
+    // #1796: named as a standard query's registration is; a page's held the gate 2,852 ms on a tablet, unnamed.
+    operationGate.markHolderPhase("answer \(plan.namespace)")
     let existingPageInfo: InstantQueryPageInfo?
     do {
       existingPageInfo = try await instantLiveWithTimeout(
@@ -6429,10 +6560,13 @@ public final class InstantRuntime: Sendable {
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
       do {
-        _ = try await self.liveSession.unregisterQuery(
+        if try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
-        )
+        ) {
+          // #541: its last registration ended.
+          await self.liveQueryAcknowledgements.forget(key: registrationKey)
+        }
       } catch {
         self.recordLiveOperationFailure(
           error,
@@ -7011,7 +7145,11 @@ public final class InstantRuntime: Sendable {
           key: registrationKey,
           clientEventID: configuration.makeID()
         )
-        if ended == true { await endedOneShotQueries.insert(registrationKey) }
+        if ended == true {
+          await endedOneShotQueries.insert(registrationKey)
+          // #541: its last registration ended.
+          await liveQueryAcknowledgements.forget(key: registrationKey)
+        }
       }
     )
     let emission: InstantQueryEmission
@@ -7030,21 +7168,20 @@ public final class InstantRuntime: Sendable {
       )
       await leaveOperationGate()
       if let owedSend {
-        try await liveSession.sendQueryRegistration(owedSend, clientEventID: configuration.makeID())
+        do {
+          try await liveSession.sendQueryRegistration(owedSend, clientEventID: configuration.makeID())
+        } catch is InstantReceiverOwnedLiveSessionSendFailure {
+          // #1796: the socket died before its receiver took the death. The registration stays recorded and the next
+          // session's init sends it with every registered query, as an observer's registration does and as upstream
+          // `Reactor.js` sends a queryOnce's add-query from `_flushPendingMessages` on the next `init-ok`; the wait
+          // below spans the reconnect. A tablet resuming from 229 s suspended failed a read this way in 0 ms while its
+          // connection still read as open.
+        }
       }
       try await ensureLiveConnectionIfNeeded()
 
-      let liveQueryAcknowledgementTimeoutMilliseconds: UInt64 = 5_000
       do {
-        try await instantLiveWithTimeout(
-          operation: "run Instant live query",
-          timeoutMilliseconds: liveQueryAcknowledgementTimeoutMilliseconds
-        ) {
-          try await self.liveQueryAcknowledgements.wait(
-            for: registrationKey,
-            after: observedRevision
-          )
-        }
+        try await waitForLiveQueryAcknowledgement(key: registrationKey, after: observedRevision)
       } catch {
         if let error = error as? InstantError,
           error.operation == "run Instant live query",
@@ -7076,7 +7213,8 @@ public final class InstantRuntime: Sendable {
             metadata: [
               "registrationKey": registrationKey,
               "namespace": plan.namespace,
-              "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
+              "timeoutMilliseconds": String(configuration.liveQueryAcknowledgementStallMilliseconds),
+              "limitMilliseconds": String(configuration.liveQueryAcknowledgementLimitMilliseconds),
             ],
             correlationID: plan.id
           )
@@ -7099,6 +7237,63 @@ public final class InstantRuntime: Sendable {
     await cleanupOwner.wait()
     try Task.checkCancellation()
     return emission
+  }
+
+  /// Waits for the server's answer to a one-shot read's `add-query` while the connection moves (#1796).
+  ///
+  /// The read fails once `liveQueryAcknowledgementStallMilliseconds` pass in which the connection received no frame
+  /// and applied none, or `liveQueryAcknowledgementLimitMilliseconds` pass in all. It waited a fixed 5 s, and every
+  /// one-shot read on a tablet whose applier was minutes behind failed that way while its socket was open and frames
+  /// kept applying: 1,085 `$files` lookups in 93 minutes (#1768), and the "Network or live transport failed" its
+  /// playback screen showed on 2026-11-04 (#1796). Upstream `Reactor.js` waits 30 s (`QUERY_ONCE_TIMEOUT`) whatever
+  /// the connection does.
+  private func waitForLiveQueryAcknowledgement(key: String, after observedRevision: Int) async throws {
+    let stallMilliseconds = configuration.liveQueryAcknowledgementStallMilliseconds
+    let limit = Duration.milliseconds(configuration.liveQueryAcknowledgementLimitMilliseconds)
+    let clock = ContinuousClock()
+    let started = clock.now
+    var progress = await liveSession.receiveProgress()
+    while true {
+      do {
+        try await instantLiveWithTimeout(
+          operation: "run Instant live query",
+          timeoutMilliseconds: stallMilliseconds,
+          sleep: { milliseconds in
+            try await instantLiveDefaultTimeoutSleep(milliseconds)
+            throw InstantLiveQueryAnswerStillOwed()
+          }
+        ) {
+          try await self.liveQueryAcknowledgements.wait(for: key, after: observedRevision)
+        }
+        return
+      } catch is InstantLiveQueryAnswerStillOwed {
+        let waited = clock.now - started
+        let current = await liveSession.receiveProgress()
+        let moved =
+          switch (progress, current) {
+          case let (earlier?, current?): current.moved(since: earlier)
+          case (nil, .some): true
+          case (_, nil): false
+          }
+        if moved, waited < limit {
+          progress = current
+          continue
+        }
+        let waitedMilliseconds = InstantLiveReceiveMeter.milliseconds(waited)
+        throw InstantError(
+          code: .networkFailed,
+          operation: "run Instant live query",
+          message: moved
+            ? "Instant's answer did not arrive within \(waitedMilliseconds) ms, while the connection kept "
+              + "receiving or applying the frames ahead of it."
+            : "Timed out after \(waitedMilliseconds)ms waiting for Instant live transport: the connection received "
+              + "and applied no frame in the last \(stallMilliseconds) ms.",
+          recovery: moved
+            ? "The device is applying a backlog from the server; read again once it has caught up."
+            : "Check the Instant WebSocket endpoint, credentials, and server response."
+        )
+      }
+    }
   }
 
   /// One answer to `plan` from this device's store, for the local reader (#1006).
@@ -7444,7 +7639,8 @@ public final class InstantRuntime: Sendable {
               rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
               entityTriples: entityTriples,
               ownedFacts: ownedFacts,
-              residentEntityIDs: residentEntityIDs
+              residentEntityIDs: residentEntityIDs,
+              ownsItsFacts: begun.ownsItsFacts
             )
           else {
             stoppedEarly = true
@@ -7905,6 +8101,122 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Waits until the residency sweep the last writes asked for has finished (#1145).
+  package func residencySweepSettledForTesting() async {
+    await residencySweepOwner.runningHandle().wait()
+  }
+
+  /// Starts a residency sweep in a task of its own at background priority (#1145). One already running leaves the
+  /// candidates recorded since for the next.
+  ///
+  /// The sweep records no actor hops: it is background maintenance, and the foreground paths' hop counts (the benchmarks
+  /// assert them exactly) would depend on when a sweep ran. What it did is its result and its diagnostics event.
+  private func requestResidencySweep() {
+    _ = residencySweepOwner.start(priority: .background) { [weak self] in
+      guard let self else { return }
+      do {
+        _ = try await self.sweepResidentEntities()
+      } catch is CancellationError {
+        return
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "store",
+          event: "residency-sweep.failed",
+          message: "Could not release rows no stored result owns from memory."
+        )
+      }
+    }
+  }
+
+  /// Releases from memory the candidates no stored result owns, no outbox row touches and no observer shows (#1145), at
+  /// most 500 entities a hold of the server-apply and operation gates, at background priority. Their rows stay on disk,
+  /// where a local read finds them (#1006) and a write reads them before it prepares (#1165), as after a relaunch.
+  ///
+  /// The candidates are read once without a gate, so a sweep that finds nothing to release takes none; each batch reads
+  /// its own again under the gates. A batch holds both, as a prune batch does: a server apply installs the store it
+  /// prepared from its seed, so one in flight across a release would bring the released entities back. A prune releasing
+  /// a result drops an entity's rows only while memory holds it (#1129), so no batch runs while one does or a released
+  /// result waits; the candidates wait for the next sweep.
+  @discardableResult
+  func sweepResidentEntities() async throws -> InstantResidencySweepResult {
+    var result = InstantResidencySweepResult()
+    var candidates = residencySweep.takeCandidates().union(await persistence.takeOwnershipReleasedEntityIDs())
+    guard !candidates.isEmpty else { return result }
+    var kept: Set<String> = []
+    // A cancelled or deferred sweep leaves what it did not decide for the next one.
+    defer { residencySweep.keep(kept.union(candidates)) }
+    // #1319: inside an activity that keeps the process running; it stops before a batch once the system is about to
+    // suspend the process, so no gate is held across a suspension.
+    let activity = configuration.maintenanceActivity.begin("residency sweep")
+    defer { activity.end() }
+    guard cadencePruneOwner.isIdle, let preview = try await persistence.residencySweepDecision(for: candidates) else {
+      result.deferredForPrune = true
+      result.keptEntityCount = candidates.count
+      return result
+    }
+    // An owned candidate leaves until a save stops owning it; a pending one waits for the server's proof.
+    kept.formUnion(preview.pending)
+    candidates = preview.releasable
+    while !candidates.isEmpty, !activity.isExpired {
+      try Task.checkCancellation()
+      let batch = Set(candidates.prefix(Self.residencySweepBatchEntityCount))
+      try await serverApplyGate.enterUnlessCancelled(operation: "residency sweep", priority: .background)
+      do {
+        try await operationGate.enterUnlessCancelled(operation: "residency sweep", priority: .background, writes: [])
+      } catch {
+        await serverApplyGate.leave()
+        throw error
+      }
+      let decision: InstantResidencySweepDecision?
+      var released: (entityCount: Int, factCount: Int, shown: Set<String>) = (0, 0, [])
+      do {
+        if cadencePruneOwner.isIdle, !activity.isExpired {
+          decision = try await persistence.residencySweepDecision(for: batch)
+        } else {
+          decision = nil
+        }
+        if let decision, !decision.releasable.isEmpty {
+          released = await store.releaseEntitiesNoObserverShows(decision.releasable)
+        }
+      } catch {
+        await operationGate.leave()
+        await serverApplyGate.leave()
+        throw error
+      }
+      await operationGate.leave()
+      await serverApplyGate.leave()
+      guard let decision else {
+        result.deferredForPrune = true
+        break
+      }
+      candidates.subtract(batch)
+      kept.formUnion(decision.pending)
+      kept.formUnion(released.shown)
+      result.releasedEntityCount += released.entityCount
+      result.releasedFactCount += released.factCount
+      result.batchCount += 1
+    }
+    result.keptEntityCount = kept.count + candidates.count
+    if result.releasedEntityCount > 0 {
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "store",
+        event: "residency-sweep.released",
+        message: "Released rows no stored result owns, no write waits on and no observer shows from memory.",
+        metadata: [
+          "releasedEntityCount": String(result.releasedEntityCount),
+          "releasedFactCount": String(result.releasedFactCount),
+          "keptEntityCount": String(result.keptEntityCount),
+          "batchCount": String(result.batchCount),
+        ]
+      )
+    }
+    return result
+  }
+
   /// Removes the results the policy selects in bounded batches, releasing the operation gate between them, so a local
   /// write waits for one batch rather than the whole prune (#303, item 6).
   ///
@@ -8016,7 +8328,10 @@ public final class InstantRuntime: Sendable {
         await Task.yield()
         continue
       }
-      guard let lastRemoval, lastRemoval.hasMoreToRemove, !lastRemoval.result.removedQueryKeys.isEmpty else { break }
+      // #1500: a batch that only unloaded closed results within its budget leaves the rest to the next one.
+      guard let lastRemoval, lastRemoval.hasMoreToRemove,
+        !lastRemoval.result.removedQueryKeys.isEmpty || !lastRemoval.result.unloadedQueryKeys.isEmpty
+      else { break }
       await Task.yield()
     }
     return InstantLiveQueryResultPruningResult(
@@ -8133,10 +8448,10 @@ public final class InstantRuntime: Sendable {
       carriedReleasedIdentities: carriedReleasedIdentities,
       predecoded: predecoded
     )
-    guard !application.result.removedQueryKeys.isEmpty else {
+    guard !application.result.removedQueryKeys.isEmpty || !application.result.unloadedQueryKeys.isEmpty else {
       return application
     }
-    for key in application.result.removedQueryKeys {
+    for key in Set(application.result.removedQueryKeys).union(application.result.unloadedQueryKeys) {
       await liveQueryResultState.unload(key: key)
     }
     InstantDiagnostics.shared.record(
@@ -8192,7 +8507,10 @@ public final class InstantRuntime: Sendable {
         carriedReleasedIdentities: [],
         predecoded: predecoded
       )
-      guard !batch.removedQueryKeys.isEmpty else { return batch.applicationRemovingNothing }
+      // #1500: a batch that only unloads closed results marks them where they are.
+      guard !batch.removedQueryKeys.isEmpty || batch.unloadsResults else {
+        return batch.applicationRemovingNothing
+      }
       let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: batch.releasedEntityIDs)
       batch.releasedIdentities.formUnion(touched)
       recordActorHop(.store)
@@ -8215,6 +8533,22 @@ public final class InstantRuntime: Sendable {
             storeRevision: application.storeRevision,
             attributeRevision: application.attributeRevision
           )
+        }
+        if !application.unloadedEntityIDs.isEmpty {
+          // #1500: the unloaded results' rows and facts stay on disk; memory releases, under this batch's gates, what no
+          // loaded result owns, no write waits on and no observer shows, as the residency sweep does (#1145). What it
+          // cannot release now stays the sweep's candidate.
+          recordActorHop(.persistence)
+          if let decision = try await persistence.residencySweepDecision(for: application.unloadedEntityIDs) {
+            var kept = decision.pending
+            if !decision.releasable.isEmpty {
+              recordActorHop(.store)
+              kept.formUnion(await store.releaseEntitiesNoObserverShows(decision.releasable).shown)
+            }
+            residencySweep.keep(kept)
+          } else {
+            residencySweep.keep(application.unloadedEntityIDs)
+          }
         }
         operationGate.markHolderWrites([])
         return application
@@ -8450,6 +8784,12 @@ public final class InstantRuntime: Sendable {
     await liveSession.applierIsWaitingForAFrameForTesting()
   }
 
+  /// The op of the server frame the live applier is applying, if any (#1796).
+  @concurrent
+  package func liveFrameBeingAppliedForTesting() async -> String? {
+    await liveSession.frameBeingApplied()?.op
+  }
+
   @concurrent
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
@@ -8533,6 +8873,11 @@ public final class InstantRuntime: Sendable {
   /// Observers see the server's rows a moment before the answer is recorded, so a test that reacts to the rows waits
   /// for this before it expects a local answer.
   @concurrent
+  /// How many live-query keys the acknowledgement state remembers (#541).
+  package func liveQueryAcknowledgementKeyCountForTesting() async -> Int {
+    await liveQueryAcknowledgements.keyCount
+  }
+
   package func isAnsweredOnCurrentSocketForTesting(_ plan: InstantQueryPlan) async throws -> Bool {
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: InstantLiveQueryEncoder.encode(plan))
     return await liveSession.isAnsweredOnCurrentSocket(key: registrationKey)
@@ -9036,6 +9381,7 @@ public final class InstantRuntime: Sendable {
     let automaticLiveConnectionTask = automaticLiveConnectionTaskOwner.requestStop()
     let startupCookieSyncTask = startupCookieSyncTaskOwner.requestStop()
     let cadencePruneTask = cadencePruneOwner.requestStop()
+    let residencySweepTask = residencySweepOwner.requestStop()
     let reconnectTask = await reconnectController.requestStop()
     let liveRouteWatcherTask = liveRouteWatcherOwner.requestStop()
     await mutationDeliveryPump.suspend()
@@ -9078,6 +9424,9 @@ public final class InstantRuntime: Sendable {
       // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
       await cadencePruneTask.wait()
       cadencePruneOwner.resume()
+      // So does the residency sweep (#1145); a later write starts it again.
+      await residencySweepTask.wait()
+      residencySweepOwner.resume()
       // The route watcher only waits for the path; a later open starts another (#1237).
       await liveRouteWatcherTask.wait()
       liveRouteWatcherOwner.resume()
@@ -9104,6 +9453,9 @@ public final class InstantRuntime: Sendable {
       // The cadence prune stops between batches once cancelled (#1129); a later refresh starts it again.
       await cadencePruneTask.wait()
       cadencePruneOwner.resume()
+      // So does the residency sweep (#1145); a later write starts it again.
+      await residencySweepTask.wait()
+      residencySweepOwner.resume()
       await liveRouteWatcherTask.wait()
       liveRouteWatcherOwner.resume()
       explicitMutationFlushOwner.resume()
@@ -13550,8 +13902,9 @@ public final class InstantRuntime: Sendable {
       )
     }
     _ = try await resolvedFileUserID(operation: "evict files")
+    // #1104: the records of these ids alone; reading every record to find them decoded 47,393 on a phone's store.
     let records = Dictionary(
-      try await persistence.loadStoredFiles(appID: configuration.appID).map { ($0.id, $0) },
+      try await persistence.loadStoredFiles(appID: configuration.appID, ids: Set(ids)).map { ($0.id, $0) },
       uniquingKeysWith: { _, newest in newest }
     )
     var outcomes: [String: InstantStoredFileEviction] = [:]
@@ -17010,16 +17363,18 @@ public final class InstantRuntime: Sendable {
     }
 
     var rebasedSuccessors = component.successors.sorted(by: PendingMutation.creationOrder)
-    let deferredTriples = try await deferredValuesForPreparing(
+    let besideMemory = try await factsBesideMemoryForPreparing(
       [failedRollback]
         + rebasedSuccessors.compactMap(\.rollbackTransaction)
         + rebasedSuccessors.map(\.transaction)
     )
     // Deferred values join a copy of the base's indexes, marked for removal again when the result is installed, as
-    // `prepareCurrent(_:hydratingDeferredValues:)` does for a local write.
+    // `prepareCurrent(_:hydratingDeferredValues:loadingFactsKeptOnDisk:)` does for a local write; facts kept on disk of
+    // entities memory lacks join it and stay (#1165).
     var hydratedBase = base
-    if !deferredTriples.isEmpty {
-      hydratedBase.indexes.hydrateDeferredValues(deferredTriples, attributes: hydratedBase.attributes)
+    if !besideMemory.isEmpty {
+      hydratedBase.indexes.hydrateDeferredValues(besideMemory.deferredValues, attributes: hydratedBase.attributes)
+      hydratedBase.indexes.loadFactsKeptOnDisk(besideMemory.keptOnDisk, attributes: hydratedBase.attributes)
     }
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
@@ -17160,15 +17515,17 @@ public final class InstantRuntime: Sendable {
         && mutation.status != .failed
         && mutation.optimisticOverlayState != .removed
     }
-    let deferredTriples = try await deferredValuesForPreparing(
+    let besideMemory = try await factsBesideMemoryForPreparing(
       [failedRollback]
         + successors.compactMap(\.rollbackTransaction)
         + successors.map(\.transaction)
     )
-    let hydratedSnapshot = configuration.deferredValueResidency.hydrating(
+    var hydratedSnapshot = configuration.deferredValueResidency.hydrating(
       snapshot,
-      with: deferredTriples
+      with: besideMemory.deferredValues
     )
+    // #1165: the entities these writes name that memory lacks, whole, as a local write prepares against them.
+    hydratedSnapshot.triples += besideMemory.keptOnDisk
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
     var changedFactScope = InstantFactScope()
@@ -17521,11 +17878,12 @@ public final class InstantRuntime: Sendable {
             id: retriedMutation.transaction.id,
             operations: operations
           )
-          let deferredTriples = try await deferredValuesForPreparing(retryTransaction)
+          let besideMemory = try await factsBesideMemoryForPreparing(retryTransaction)
           recordActorHop(.store)
           let prepared = try await store.prepareCurrent(
             retryTransaction,
-            hydratingDeferredValues: deferredTriples
+            hydratingDeferredValues: besideMemory.deferredValues,
+            loadingFactsKeptOnDisk: besideMemory.keptOnDisk
           )
           preparedRetry = prepared
           retryRollback = Self.rollbackTransaction(

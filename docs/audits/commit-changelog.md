@@ -1,3 +1,66 @@
+## 2026-11-05 06:14:41 EST — scribe `e944cd4d40bfbde20ae7c60f793cbd97152a748c`
+Fix and perf (#1809, #1812): a compressed copy whose encoder fails at Stop (AVAssetWriter -11819, Recording 366) is finished as it stands or from the WAV by a fresh encoder, so the phone no longer uploads the whole WAV on top of it (4.43 GB once); the launch sweep finishes a copy begun before the app closed; the iPhone streams to Your Mac as AAC-ELD at 48 kHz 48 kbps (Opus cost 2.33% of a core; AAC-ELD about 60% less encode CPU at the WAV's gold-set WER), Opus or linear16 for an older Mac. Gates 1809-redgreen and 1809-green2 on the mini: red fails, green 17/17 and 29/29.
+
+## 2026-11-05 05:44:14 EST — scribe `7d2fc7319b414bcb8e17df3fcd8b1acc6b413355`
+Performance (#1423, ADR 0128 amendment 1): the recordings list's page holds no row being recorded; the rows stamped active come from a small query of their own (at most 24) and join the window inside its range. Before (build 253): an idle recording minute restated the page once, 149.4 KB, on every device holding the list. Proved on the throwaway app: a duration write restated the old page 115.9 KB, the new page never, the live rows 4.3 KB. Gate liverows1423-green3 on the mini, 211 tests in 22 suites.
+
+## 2026-11-05 05:21:27 EST — scribe `913d11e8b0978d3eecc21cb27ba2d605f3bd7d5c`
+Performance (#1423): the home screen's At work tile reads the agents' rows without their work (InstantAgentStatus.tileQuery: owners, order and limit of the board with ownerUserID, agentKey, name, state, heartbeatAtMs, stoppedAtMs), and the sheet reads each agent's work only while it shows. Before (build 251, home screen in front 30 min): agentStatuses/60 restated 152 times, 148.9 KB each, 45 MB an hour; 89% of the rows' values were workJSON. Gate atwork1423-green on the mini, 41 tests in 4 suites.
+
+## 2026-11-05 05:20:05 EST — instant-data-swift `e5a96d824577c2a885ba63949e30f2d32485613f`
+Release (#1500, #1145, #1165, #1107, #1149, #541, #1104, #1105): v1.9.72 tagged on e5a96d82, from the landing d7dcf707: memory in proportion to what is on screen; docs/releases/v1.9.72.md. It carries 1.9.71 (#1796) and 1.9.70.
+
+## 2026-11-05 05:19:34 EST — instant-data-swift `d7dcf707a501bd6edac050033037df37728d961d`
+Landing (#1500, #1165, #1145, #541, #1104, #1105, #1107, #1149): the memory lane's tree merged with main (with v1.9.71, #1796). Gate: the two-hour replay +15,102 -> +1,380 resident facts and +9.2 -> +2.7 MB of heap an hour (Mac mini, release, same job); Job `1797-1500-fixtests` (Mac mini, 2026-11-05 05:01-05:14, the whole bundle at `6779994f`): 1,700 tests, 3 failing, 2 new: `InstantLiveQueryCompactOwnershipTests`' pinned digest, re-pinned from that run in `d7dcf707` (an unloaded page keeps its ownership rows: 22,178 -> 22,778 answers), and `InstantLiveFrameDecodeTests`' timing ratio, 0.366 against a 0.33 ceiling (0.374 at `518b7418`, 0.323 at `f504ed51`, 0.325 on the sync lane's tree): it times a pure frame-decode loop no commit here touches, read as load (inference) until an alone-run A/B after the landing says otherwise. The merge of main with v1.9.71 (`6ed41621`) conflicted in two history headers only and lands without another whole-bundle run; main's new suites run on the landed tree next.
+
+## 2026-11-05 05:19:33 EST — instant-data-swift `6779994f96819085ac943768eceda55035d058d7`
+Fix (#1500): the store's own prune marks closed results as the runtime's does; a collection after an unload counts, and moves the store revision for, the facts it deletes from disk.
+
+## 2026-11-05 05:19:33 EST — instant-data-swift `74e65b5697f6b46b589447b559eb5c3fa7e8fcc7`
+Fix (#1500, #303): a bounded prune batch unloads closed results within its triple budget, so a write waits for one batch's release from memory, not every closed result's.
+
+## 2026-11-05 05:19:33 EST — instant-data-swift `518b741820e93af604b41515f9ef71016d94d7d6`
+Perf (#1149): a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read, instead of reading each result whole and binding every entity id. E07 (Mac mini, release) with #1107: 54,720 -> 9,728 resident facts, 24.9 -> 9.0 MB retained, 234 -> 59 ms.
+
+## 2026-11-05 05:19:32 EST — instant-data-swift `83446b22895178fb48240d5774afb9cf4cc0c97d`
+Perf (#1107, #1149): a launch keeps the newest ten stored results loaded (upstream's preloadEntryCount) and unloads the rest where they are; each reloads from disk when its query subscribes.
+
+## 2026-11-05 05:19:32 EST — instant-data-swift `f504ed511371e9e392264c1dce0cd1496022dcfd`
+Merge (#1104, #1105): eviction reads only the file records it names, the storage snapshot counts copies in SQL, and a file record is read from its columns and json_extract instead of JSONDecoder.
+
+## 2026-11-05 05:19:31 EST — instant-data-swift `cfd74320e5cac5e195a1482dffcc33b4948b3257`
+Merge (#1165, #1145, #541, #1500): a write reads what memory lacks from SQLite first (#1165), a residency sweep releases from memory the rows no result owns, no write waits on and no observer shows (#1145), a closed live query's acknowledgement entries go (#541), and a closed query's result is unloaded where it is instead of copied whole into another table (#1500).
+
+## 2026-11-05 04:52:42 EST — scribe `93a3aea0699741886ffd5986012003ff7c877f2a`
+Test (#1716, #1674): snapshot references for batch 1-3's pictures, drawn on the laptop: the now-playing card per device, the picture sizes with Small, and playback's pinned name.
+
+## 2026-11-05 04:52:22 EST — instant-data-swift `7bac40a2433c935b8831733374c18e136231dc07`
+Release (#1796): v1.9.71 tagged on 7bac40a2 (ledger 50f2b61e), landed on main as da110d5d with the lane's a5b5174d (merged with main as 5f848b89, ledger e56d179e): a waiting refresh-ok loses the results a newer one restates, a one-shot read waits while the connection works (up to 30 s) and survives a socket's death, live.receive-summary measures the follower's lag, a registration names its query in the gate's phase. Mac mini 1796-check2: reds fail on their own sources, green 99 tests, bundle 1,691 tests and 0 failing; the writer-and-follower test's worst lag 40,313 -> 13,469 ms, newest line 29,502 -> 1,500 ms.
+
+## 2026-11-05 04:52:22 EST — instant-data-swift `da110d5d72d774469c67a91fb64f943fd058f8ba`
+Fix (#1796): landing da110d5d of agent/claude/perf-sync-1796: a tablet following a live recording showed it about six minutes late and failed its reads as "Network or live transport failed"; its applier took every frame in arrival order, superseded list refreshes included, and its one-shot reads failed at a fixed 5 s behind it.
+
+## 2026-11-05 04:26:08 EST — scribe `7061c0e936b14e4a3c9929d5290a2e7050e84113`
+Plan (#632): 2026-11-04-perf-audio-1223 amendment 2: a delivered compressed copy that is continued goes on from its stored stream row (instant-data-swift's writer takes the row, release 1.9.71; the app passes it when its spool has none); plan-only landing before the app's red/green (agent/claude/perf-audio-632).
+
+## 2026-11-05 04:24:44 EST — scribe `68700800966db84caafbbf91b238fa8cdc616710`
+Perf (#1309, #1381, #1470, #1474, #1006): one launch.timeline line per launch; a capturing take continues before the list's first page; an unread session waits for its read; the store opens again at the unlock; every page of a recording's lines is asked for at once.
+
+## 2026-11-05 03:11:22 EST — scribe `70f1d35d5bcd57fdc15ed23f6fb26b2b33d01e4d`
+Tool (#1781): scripts/perf/metrics.py --trend charts each query shape's receive CPU per build (refresh-cost.py's estimate by bytes; the recordings list 6.3-28.9 CPU-s an hour on builds 246-253) and reads net.instant.firstAnswers, the time to each query's first answer with its triples, once the phone's ledger carries it; derived on the Mac, nothing new per refresh on the phone; changelog 85bb8846e.
+
+## 2026-11-05 03:02:03 EST — instant-data-swift `90eba2ee456b7c0d01c4ea94ea56742d755c75b5`
+Plan (#1781): 2026-11-05-perf-metrics-1781, the URLSession socket times each add-query to the add-query-ok or add-query-exists that echoes its client-event-id, by shape, with the answer's triples, once per subscription; claims and channel (red ec0f3c52, green c8ba0995 on agent/claude/perf-metrics-1781, proof queued on the mini).
+
+## 2026-11-05 02:39:45 EST — scribe `3dff2d02bfa6a828c68ecf88c1cff3e43f4311e9`
+Feature (#1777): the voice-print backfill hears a recording whose storage keeps only its compressed copy from the copy (Apple's decoder, the segments a span needs; red/green on the mini, 9/9), not deployed until storage keeps only the copy (#1798); the audit's measured result: the Mac's WAVs 71.93 GB to 0.12 GB (about 68 GB net), every kept WAV with its reason; findings #1800, #1808, #1813; changelog 6f4868fd5.
+
+## 2026-11-05 02:34:45 EST — scribe `9e4aa3f827d203c7ff5dc3e2f1396ab66dea6fd7`
+Fix and diagnostics (#1796): landing 9e4aa3f82 of agent/claude/perf-sync-1796-app: Playback forgets a live-elsewhere compressed copy that failed to load, so the next row looks it up again instead of keeping "Network or live transport failed" on screen (red 23a1c18fa, green 091e9eb1d); the diagnostics bridge forwards the library's live.receive-summary, one line a minute per device, the follower lag measurement (red 404b5bbe2, green fabc9915e); ledger bc8939057. Checked on the mini, job 1796-app-check (02:13-02:30): reds fail on their assertions, green passes.
+
+## 2026-11-05 02:02:28 EST — scribe `f238975c540b8eb4f2d7d5062511b7d9f19f40b9`
+Perf (#1083): the quick actions and recent recordings read only an older row's creation time before keeping it, and the body-cache test gives each of its two stores its own journal (follow-up to dc733eb20; tested alone in perf-root-1083-green2).
+
 ## 2026-11-05 01:24:40 EST — scribe `8afa49fd679d4e6348d737231f56ec2f9c4e60ef`
 Feature (#1777): the phone's keeper counts a finished 48 kbps copy in storage that reaches the WAV's end (storage is to keep only the copy); the media scan leaves an audio row left to its copy alone, the detail projection shows its audio uploaded, and an Unnamed Voices clip plays from the stored copy when the row has no file; red/green on the mini (5 new tests, 64 pass); FEATURES item 24's keeper clause.
 

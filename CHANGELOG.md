@@ -10,6 +10,500 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 5:20:05 a.m. EST — `e5a96d824577` release(#1500): v1.9.72: memory in proportion to what is on screen
+
+- **Implementation commit:** `e5a96d824577c2a885ba63949e30f2d32485613f`
+- **Change:** release(#1500): v1.9.72: memory in proportion to what is on screen
+- **Details:**
+  - The release document and PROGRESS for v1.9.72, tagged from main (merges cfd74320 and f504ed51 plus their ledger) for Scribe's next build: #1500 a closed query's result unloaded where it is, #1165 a write reads what memory lacks first, #1145 the residency sweep, #541 a closed query's acknowledgement entries go, #1104 and #1105 file records read where they are kept. It carries 1.9.71 (#1796) and 1.9.70.
+- **Files:**
+  - `docs/releases/v1.9.72.md` — #1500 #1165 #1145 #541 #1104 #1105 #1107 #1149 the release: what changed, the checks, what did not run
+  - `PROGRESS.md` — #1500 the release checkpoint and what comes next
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:31 a.m. EST — `d7dcf707a501` test(#1500): the compact ownership answers' digest, re-pinned: an unloaded page keeps its ownership rows
+
+- **Implementation commit:** `d7dcf707a501bd6edac050033037df37728d961d`
+- **Change:** test(#1500): the compact ownership answers' digest, re-pinned: an unloaded page keeps its ownership rows
+- **Details:**
+  - The fixture's prune unloads its first page where it is since #1500, so its 600 ownership rows stay and answer: 22,178 -> 22,778 answers, digest e5f08f8f40ae0900 -> 7b4abdccc1163c64, read from job 1797-1500-fixtests; both layouts still answer alike.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryCompactOwnershipTests.swift` — #1500 the digest after an unload in place
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:29 a.m. EST — `6779994f9681` green(#1500): the store's own prune marks closed results; a collection counts what it deletes from disk
+
+- **Implementation commit:** `6779994f96819085ac943768eceda55035d058d7`
+- **Change:** green(#1500): the store's own prune marks closed results; a collection counts what it deletes from disk
+- **Details:**
+  - The store's prune applies a batch that only unloads, and judges the entities its snapshot lacks from SQLite; the fact release returns how many facts it deleted from disk, so removedOrphanedTripleCount and the store revision follow the disk in the batch, the released-row chunk and the interrupted release at open.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1500 the store prune's unload and residency; disk deletion counts
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:28 a.m. EST — `cb0e85781a4a` red(#1500): the store's own prune leaves closed results loaded; a collection after an unload counts no deletion
+
+- **Implementation commit:** `cb0e85781a4a13f5ac1101396c9118ca77c7f388`
+- **Change:** red(#1500): the store's own prune leaves closed results loaded; a collection after an unload counts no deletion
+- **Details:**
+  - The store's prune returned before applying a batch that collects nothing, so it marked no closed result (the reload, inactive-page and temporary-file tests); a collection of results unloaded where they are deleted their facts from disk but reported 0 and left the store revision; two tests for an older build's copy.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — #1500 #1131 reloads of an unloaded row; an older build's copy
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredResultReloadTests.swift` — #1500 the policy and the save against unloaded rows; an older build's copy
+  - `Tests/InstantSwiftDataCoreTests/InstantInactiveLiveQueryPruneMemoryTests.swift` — #1500 inactive pages unloaded
+  - `Tests/InstantSwiftDataCoreTests/InstantTemporaryStoreTests.swift` — #1504 #1500 the unload writes no temporary file
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneCostTests.swift` — #1500 a collection after an unload counts its deletions
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:27 a.m. EST — `7982385d655c` test(#1107 #1149): E07 bounds a launch's retained bytes by a fixed cost plus 540 B a resident fact
+
+- **Implementation commit:** `7982385d655cdf7bd0f6177744a5d214269dcaea`
+- **Change:** test(#1107 #1149): E07 bounds a launch's retained bytes by a fixed cost plus 540 B a resident fact
+- **Details:**
+  - E07 (Mac mini, release) before -> after: 54,720 -> 9,728 resident facts, 634,027 -> 163,454 allocations, 24.9 -> 9.0 MB retained, 234 -> 59 ms; with so few facts the fixed cost dominates the per-fact ratio, so the bound is 5 MB plus 540 B a fact.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — #1107 #1149 E07's bound
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:27 a.m. EST — `b6a80186392b` test(#1165): a fact adopted from another runtime's write keeps that write's own time
+
+- **Implementation commit:** `b6a80186392b70b9d66716d07dab32197fd43823`
+- **Change:** test(#1165): a fact adopted from another runtime's write keeps that write's own time
+- **Details:**
+  - The empty server apply reads the entity another runtime's pending write created from disk before it prepares (#1165), so memory and SQLite keep the peer's time, as upstream's getCreatedAt keeps a resident fact's time; the durable mutation keeps the rebase's stamp.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — #1165 the adopted fact's time
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:25 a.m. EST — `caf33f20ac28` test(#1500 #1107): prune tests state the unload in place: rows and facts stay; collection releases
+
+- **Implementation commit:** `caf33f20ac28030fca4cbeff9b3020267fd1d648`
+- **Change:** test(#1500 #1107): prune tests state the unload in place: rows and facts stay; collection releases
+- **Details:**
+  - Twenty tests still expected the copy #1500 removed: the results table's unloaded_at_ms column; released rows, batched releases, ownership rows and residency reads now tested on the policy's collection; the forty-thousand-fact prune proves the unload; a by-id file lookup's result is unloaded in place.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryCompactOwnershipTests.swift` — #1500 the layout's new column
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneCostTests.swift` — #1500 the unload and the collection
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneMaintenanceActivityTests.swift` — #1500 unloaded counts
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneOffTheApplierTests.swift` — #1500 #1129 on collection; #1107 the open read from its file
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneResidencyCostTests.swift` — #1500 #1319 on collection
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` — #1500 the lookup's result unloaded in place
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:24 a.m. EST — `74e65b5697f6` green(#1500 #303): a bounded prune batch unloads closed results within its triple budget
+
+- **Implementation commit:** `74e65b5697f6b46b589447b559eb5c3fa7e8fcc7`
+- **Change:** green(#1500 #303): a bounded prune batch unloads closed results within its triple budget
+- **Details:**
+  - A bounded batch unloads closed results within the triple budget it collects with, oldest first and at least one, and says it has more; the runtime's batches go on while the last one removed or unloaded results and left more, so a write waits for one batch's release from memory (#303 measured 5.8-13.2 s in one hold).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1500 #303 the batch's unloading bound
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1500 #303 the batches go on while unloads remain
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:23 a.m. EST — `708ded11b0f1` red(#1500 #303): a session prune unloads every closed result in one gate hold
+
+- **Implementation commit:** `708ded11b0f168c8b6f36592e6a3a521bb5dd71c`
+- **Change:** red(#1500 #303): a session prune unloads every closed result in one gate hold
+- **Details:**
+  - InstantPruneGateHoldTests restated for #1500's unload in place: with a 2,000-triple budget a write queued behind the prune of 24 closed results must land after the first batch, in 5 or more batches; the prune unloaded all 24, and released their entities from memory, in one hold.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneGateHoldTests.swift` — #1500 #303 the unload in bounded batches
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:22 a.m. EST — `518b741820e9` green(#1149): a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read
+
+- **Implementation commit:** `518b741820e93af604b41515f9ef71016d94d7d6`
+- **Change:** green(#1149): a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read
+- **Details:**
+  - The launch read each loaded stored result whole, ran its nested limits again and bound every entity id it found; a save already keeps ownership of only the facts the nested limits keep, so the facts' read now selects the entities with one subquery over the loaded, unreleased results' ownership rows and the outbox's, and checks for ownership rows with EXISTS instead of a COUNT(*) over every row. E07: E07_NUMBERS.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1149 the launch's subquery
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:22 a.m. EST — `44fc0c03d339` red(#1149): a relaunch reads every loaded stored result whole to find the entities it loads
+
+- **Implementation commit:** `44fc0c03d3398d24180146f7b6bf7d65c6f6f134`
+- **Change:** red(#1149): a relaunch reads every loaded stored result whole to find the entities it loads
+- **Details:**
+  - A relaunch reads no stored result whole: the persistence's residency metrics count stored-result reads (storedLiveQueryResultReadCount) and the launch must leave them at zero.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLaunchResidencyTests.swift` — #1149 a relaunch reads no stored result whole
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1149 the read count the test reads
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:21 a.m. EST — `83446b228951` green(#1107 #1149): a launch keeps the newest ten stored results loaded and unloads the rest where they are
+
+- **Implementation commit:** `83446b22895178fb48240d5774afb9cf4cc0c97d`
+- **Change:** green(#1107 #1149): a launch keeps the newest ten stored results loaded and unloads the rest where they are
+- **Details:**
+  - At the runtime's bootstrap every stored result past the newest preloadedLiveQueryResultCount (10) by updated_at_ms is unloaded where it is with one UPDATE, as upstream PersistedObject preloads ten (preloadEntryCount); each reloads from disk when its query subscribes. On a copy of the phone's store a launch held 46 results' 1,915 entities and 48,202 facts; the newest ten own 677 and 31,070 (-36%).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1107 the bootstrap's unload past the newest
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1107 preloadedLiveQueryResultCount and the two bootstrap calls
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:20 a.m. EST — `9da1fbf5e713` red(#1107 #1149): a relaunch loads every stored result's rows, the oldest too
+
+- **Implementation commit:** `9da1fbf5e71357efb1d9d21665f25b723ce7b1c6`
+- **Change:** red(#1107 #1149): a relaunch loads every stored result's rows, the oldest too
+- **Details:**
+  - InstantLaunchResidencyTests: with more stored results than a launch preloads, a relaunch holds only the newest ones' entities and reads an older result from disk when its query subscribes again, offline included; the configuration's preloadedLiveQueryResultCount (10, upstream's preloadEntryCount) is added unused.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLaunchResidencyTests.swift` — #1107 the relaunch holds the newest result; the older reopens from disk
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1107 the configuration's count, unused until the green
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:19 a.m. EST — `79a90b8b25d4` green(#1105): a file record is read from its columns and SQLite's json_extract, not with JSONDecoder
+
+- **Implementation commit:** `79a90b8b25d45b85298d13510067f440c77ac832`
+- **Change:** green(#1105): a file record is read from its columns and SQLite's json_extract, not with JSONDecoder
+- **Details:**
+  - The three readers of instant_files read the id, app, name and times from the record's columns and the size, copy, owner, content type and URL with json_extract instead of JSONDecoder (about 25 allocations and 5 us a record); a record in another form is decoded as before.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1105 the column reader for file records
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:18 a.m. EST — `69ceae528185` green(#1104): eviction reads only the file records it is given; the storage snapshot counts copies in SQL
+
+- **Implementation commit:** `69ceae528185780c97745798372cc1fa0f0fed5e`
+- **Change:** green(#1104): eviction reads only the file records it is given; the storage snapshot counts copies in SQL
+- **Details:**
+  - evictStoredFiles(ids:) reads the records of its ids alone (at most 500 ids a statement) and storageSnapshot(appID:) counts and sums held copies in one SQL statement; on a phone's store (2026-10-30) both decoded all 47,393 records (19.1 MB of JSON) to find 13 copies.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1104 the id read and the snapshot's SQL count
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1104 eviction passes its ids
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:17 a.m. EST — `f46d1e0ec9de` test(#1165): the local benchmark's actor hops: one more store turn a write, one more persistence turn a create
+
+- **Implementation commit:** `f46d1e0ec9defc3404890a246217ca239f415a82`
+- **Change:** test(#1165): the local benchmark's actor hops: one more store turn a write, one more persistence turn a create
+- **Details:**
+  - Without deferred values a write now takes one more store turn (the residency check) and one that creates an entity one more persistence turn (the probe for facts kept on disk); with deferred values configured, as in the consuming app, a write takes no new turn. The exact counts follow the gate's measured values.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — #1165 measured actor hops
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — #1165 measured actor hops
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:16 a.m. EST — `bbf40f04bee5` green(#1500): the in-place reload's condition is one throwing expression, so it compiles
+
+- **Implementation commit:** `bbf40f04bee54b338a092ba758c7911cb05e6f61`
+- **Change:** green(#1500): the in-place reload's condition is one throwing expression, so it compiles
+- **Details:**
+  - The gate's build stopped on the in-place reload's condition: an operator that can throw needs try over the whole expression.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1500 the reload's condition
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:16 a.m. EST — `93e7945945c9` green(#1500 #1145): the runtime asks whether a prune batch unloads results; the sweep tests claim until every write is taken
+
+- **Implementation commit:** `93e7945945c9529fcd12b714463a2fcb92b0ea74`
+- **Change:** green(#1500 #1145): the runtime asks whether a prune batch unloads results; the sweep tests claim until every write is taken
+- **Details:**
+  - The gate's build failed on InstantRuntime reading a file-private property of the prune batch; the sweep tests' proving helper claims bounded windows until all 64 writes are taken.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1500 batch.unloadsResults
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1500 asks the batch
+  - `Tests/InstantSwiftDataCoreTests/InstantResidencySweepTests.swift` — #1145 claim windows in a loop
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:15 a.m. EST — `623a8a8be2da` green(#1500): a closed query's result is unloaded where it is: no copy, its rows and facts stay on disk
+
+- **Implementation commit:** `623a8a8be2da90088147345ecb80ee54c6eb6eaa`
+- **Change:** green(#1500): a closed query's result is unloaded where it is: no copy, its rows and facts stay on disk
+- **Details:**
+  - The session prune marks a closed result (instant_live_query_results.unloaded_at_ms) instead of copying it whole into instant_unloaded_live_query_results and deleting its rows and facts; a reopening clears the mark and loads the entities memory lacks from instant_triples without writing them. The four unload writers wrote 149.2 MB an hour on builds 247-249 and 413.8 MB an hour on build 253 (the phone's energy ledger).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1500 the column, the mark, the in-place read and reload, loaded-only ownership
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — #1500 the read connection finds a marked row
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1500 memory releases an unloaded result's entities under the batch's gates
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1500 the prune's residency names entities memory holds
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:14 a.m. EST — `820d412a0616` green(#541): a live query's acknowledgement entries go when its last registration ends
+
+- **Implementation commit:** `820d412a0616ff793243da48616a5376018a205b`
+- **Change:** green(#541): a live query's acknowledgement entries go when its last registration ends
+- **Details:**
+  - The acknowledgement state forgets a key when its last registration ends unless a one-shot read waits on it; revisions come from one counter, so a key forgotten and answered again moves past any revision read before (E06 measured 3,151 B kept per closed lease).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #541 forget the key at the last registration's end
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:14 a.m. EST — `b3c844ce4943` test(#1512): S05's finished-line recording is named finishedLines, not a modifier's word
+
+- **Implementation commit:** `b3c844ce494388cdcf1b9b14a33fa7cffad79f63`
+- **Change:** test(#1512): S05's finished-line recording is named finishedLines, not a modifier's word
+- **Details:**
+  - S05 named its recording with a word Swift reads as a modifier, so it did not compile in release.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemorySiteExercises.swift` — #1512 the recording's name
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:13 a.m. EST — `e7027553e2fd` test(#1512): name the sites of the allocations of 32 KB and more a page refresh and a finished line make
+
+- **Implementation commit:** `e7027553e2fd4cf08db2fc00bfefb763b16c5252`
+- **Change:** test(#1512): name the sites of the allocations of 32 KB and more a page refresh and a finished line make
+- **Details:**
+  - A trace of the consuming app's build 247 counted 960 large-cache traps a second, nearly all under the store's SQLite reads; S05 records allocations of at least 32 KB by site for E03's page refresh and E04's finished line (INSTANT_MEMORY_SITES=1, release, alone).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryAllocationSites.swift` — #1512 a minimum size for the recorder
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemorySiteExercises.swift` — #1512 S05
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:13 a.m. EST — `221512b900e7` green(#1145): the background sweep records no actor hops
+
+- **Implementation commit:** `221512b900e7bf80c481289a5f85ac563c194844`
+- **Change:** green(#1145): the background sweep records no actor hops
+- **Details:**
+  - The benchmarks assert the foreground paths' actor hops exactly; a sweep that ran in a measured window would have added its own.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1145 the sweep's turns are not counted as the foreground's
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:10 a.m. EST — `ef358515e06a` green(#1145): a residency sweep releases from memory the rows no result owns, no write waits on and no observer shows
+
+- **Implementation commit:** `ef358515e06ab9c8a8bc920aa5076cd7bf74a90a`
+- **Change:** green(#1145): a residency sweep releases from memory the rows no result owns, no write waits on and no observer shows
+- **Details:**
+  - Every 64 local writes or result-carrying frames a background sweep releases from memory, never from disk, entities no stored result owns, no outbox row touches and no observer shows (at most 500 a gate hold, background priority); on the phone (build 248) resident facts grew 44,127 -> 64,874 and heap in use 135.8 -> 187.3 MB in 95 minutes of recording.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantResidencySweep.swift` — #1145 the sweep's candidates and batches
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1145 the sweep's ticks and gate holds
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1145 releaseEntitiesNoObserverShows
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1145 a save names the entities it stopped owning; the sweep's ownership and outbox reads
+  - `Tests/InstantSwiftDataCoreTests/InstantResidencySweepTests.swift` — #1145 proven lines leave memory and stay on disk
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 5:19:08 a.m. EST — `680459377984` green(#1165): a write reads the entities memory lacks from SQLite first and prepares against them whole
+
+- **Implementation commit:** `68045937798458c0e0919a32861294802e5596db`
+- **Change:** green(#1165): a write reads the entities memory lacks from SQLite first and prepares against them whole
+- **Details:**
+  - A local write, its retry and refused-write rebases, and a server apply read every fact SQLite keeps of an entity they name that memory holds none of, beside the deferred values, so memory never holds part of an entity; a one-attribute write to a line kept on disk had erased its other facts and a strict update of it threw.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1165 the load before a write and a server apply prepare
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1165 entity ids for preparing, facts kept on disk joined to the prepared indexes
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1165 one read of deferred values and facts beside memory
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1165 loadFactsKeptOnDisk
+  - `Tests/InstantSwiftDataCoreTests/InstantNonResidentWriteTests.swift` — #1165 the red test's expectations
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 4:51:44 a.m. EST — `7bac40a2433c` release(#1796): v1.9.71: a follower applies each query's newest result next, its one-shot reads survive a busy applier and a dying socket, and it measures its lag
+
+- **Implementation commit:** `7bac40a2433c935b8831733374c18e136231dc07`
+- **Change:** release(#1796): v1.9.71: a follower applies each query newest result next, its one-shot reads survive a busy applier and a dying socket, and it measures its lag
+- **Details:**
+  - The release record docs/releases/v1.9.71.md, FOOTGUNS F68 and PROGRESS: Mac mini job 1796-check2, each red failing on its own sources, green 99 tests in 11 suites, the whole bundle 1,691 tests and 0 failing; the writer-and-follower test worst lag 40,313 -> 13,469 ms, newest 29,502 -> 1,500 ms.
+- **Files:**
+  - `docs/releases/v1.9.71.md` — #1796 the release record
+  - `docs/FOOTGUNS.md` — #1796 F68, a buffered refresh a newer one restates, and a read behind a busy applier
+  - `PROGRESS.md` — #1796 the release checkpoint and the next steps
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp); no SpecStory capture
+
+## November 5th, 2026 at 4:50:43 a.m. EST — `d75028325841` green(#1796): an observer's registration names its query's namespace in the gate's phase
+
+- **Implementation commit:** `d75028325841410cff76307b1093d883c9b93180`
+- **Change:** green(#1796): an observer's registration names its query's namespace in the gate's phase
+- **Details:**
+  - A standard query's and an infinite query page's registration mark the gate's phase reload <namespace> before a closed result's reload under the hold and answer <namespace> before the store's first answer (markHolderPhase, lock only): a stall or wait report names the query and the part that held the gate.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 the registration's phase marks
+- **User context (verbatim):**
+  > We're not going to remove any features or functionality from the application. We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:42 a.m. EST — `fac026557c20` red(#1796): an observer's registration holds the gate without naming its query
+
+- **Implementation commit:** `fac026557c20778bf06c46c34f66ece6fef5e905`
+- **Change:** red(#1796): an observer's registration holds the gate without naming its query
+- **Details:**
+  - The tablet's launch (2026-11-04 21:40:47) logged an observer registration holding the operation gate 4,583 ms with 7 callers queued, its connect among them, and an infinite query page's registration holding it 2,852 ms a minute later, both without a phase. aRegistrationsHoldNamesItsQuerysNamespace reads the phase each registration's hold named when it left the gate.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — #1796 the phase test and InstantGateReleasePhases
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:41 a.m. EST — `a5b5174d17e8` test(#1796): the two-client test prints its lag distribution when it passes
+
+- **Implementation commit:** `a5b5174d17e8f3ca150a3763ac1c714be074538e`
+- **Change:** test(#1796): the two-client test prints its lag distribution when it passes
+- **Details:**
+  - A passing #expect prints nothing, so the job that ran the guard on the fixed sources reported no number; the release record needs the distribution on both sides (the red run failure message carries the before).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift` — #1796 print the lag distribution
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:40 a.m. EST — `076ed107235b` test(#1796): a writer's lines reach a slow follower within seconds, and the lag stays flat
+
+- **Implementation commit:** `076ed107235b2bf129a889f879b73c87169c9176`
+- **Change:** test(#1796): a writer's lines reach a slow follower within seconds, and the lag stays flat
+- **Details:**
+  - A writer and a follower runtime over scripted sockets, the test as the server, the tablet measured minute (29 list refreshes and 31 own acknowledgements a minute, about 1.5 s an apply) replayed for two minutes on the test clock; each line lag at most 20 s, the last at most 8 s. It must fail on red1 sources (the job runs it there).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift` — #1796 the two-client latency guard
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:38 a.m. EST — `75915233b31e` green(#1796): the receive summary measures how old the newest server write is when it is applied
+
+- **Implementation commit:** `75915233b31e7aaac8d48149284dbf03a71de407`
+- **Change:** green(#1796): the receive summary measures how old the newest server write is when it is applied
+- **Details:**
+  - For each applied refresh-ok carrying a fact newer than any applied before: wall clock minus the newest fact server time (the join-row triple fourth element, child nodes included); add-query answers only move the mark. live.receive-summary adds factLag median, p95 and maximum a minute and is a notice at 10 s or more.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1796 the newest-fact lag in the receive meter and summary
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:37 a.m. EST — `882448d26631` red(#1796): nothing measures how old the newest server write is when a follower applies it
+
+- **Implementation commit:** `882448d2663185bcb732e910ecd122d16c8561e7`
+- **Change:** red(#1796): nothing measures how old the newest server write is when a follower applies it
+- **Details:**
+  - The tablet behind #1796 logged no lag; about six minutes was the user reading two screens. The tests ask the buffer for the age of the newest fact of each refresh it applies and the summary for its median, p95 and maximum.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` — #1796 theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied, theReceiveSummaryReportsHowOldTheNewestWritesWere
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1796 the test accessors the lag tests read
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:32 a.m. EST — `1fd79eb8020a` green(#1796): a one-shot read whose add-query met a dead socket waits for the reconnect
+
+- **Implementation commit:** `1fd79eb8020a6e57d14ae05badf1b2322851c4d8`
+- **Change:** green(#1796): a one-shot read whose add-query met a dead socket waits for the reconnect
+- **Details:**
+  - queryOnceThroughLive keeps its registration when its add-query meets a socket whose receiver owns the failure; the next session init sends it with every registered query, as an observer registration is sent and as upstream Reactor.js sends a queryOnce add-query from _flushPendingMessages on the next init-ok.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 InstantReceiverOwnedLiveSessionSendFailure leaves the registration for the next session
+- **User context (verbatim):**
+  > We're not going to remove any features or functionality from the application. We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:30 a.m. EST — `25923d45812f` red(#1796): a one-shot read sent on a socket that just died fails at once and is never sent again
+
+- **Implementation commit:** `25923d45812f517b08641df963ed8573821b30f4`
+- **Change:** red(#1796): a one-shot read sent on a socket that just died fails at once and is never sent again
+- **Details:**
+  - At the 17:33 resume (229 s suspended) the tablet socket was dead (POSIX 53) for 12 s while its connection read as open; a recordingAttachments read failed in 0 ms and dropped its registration, so the reconnect never sent it.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` — #1796 aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:28 a.m. EST — `3f66c9555731` green(#1796): a waiting refresh loses what a newer one restates, and a one-shot read waits while the applier works
+
+- **Implementation commit:** `3f66c955573173fe52b654969d4433910ba01104`
+- **Change:** green(#1796): a waiting refresh loses what a newer one restates, and a one-shot read waits while the applier works
+- **Details:**
+  - InstantLiveReceivedFrames: when a refresh-ok arrives, older waiting ones lose the results it restates and one left with none leaves the buffer; frames carrying attrs or reflecting a later transaction keep everything (the server combines queued refreshes the same way, session.clj combine [:refresh :refresh]).
+  - queryOnceThroughLive waits for its answer while the connection receives or applies frames, up to upstream 30 s QUERY_ONCE_TIMEOUT, and fails after 5 s with neither; it waited a fixed 5 s. live.receive-summary logs a minute of buffer waits, depth, applier busy share and replaced frames.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1796 the buffer replaces restated results; the receive meter and summary; receiveProgress
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 the progress-based answer wait; the stall and limit configuration values
+- **User context (verbatim):**
+  > We're not going to remove any features or functionality from the application. We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:27 a.m. EST — `bd5d9017a2db` red(#1796): a follower applies every buffered refresh, and a one-shot read fails behind a busy applier
+
+- **Implementation commit:** `bd5d9017a2db1046fd7f33524431cedfba58799b`
+- **Change:** red(#1796): a follower applies every buffered refresh, and a one-shot read fails behind a busy applier
+- **Details:**
+  - A tablet following a live recording, 8,240 of its own writes pending, applied every server frame in arrival order at about 1.5 s each, superseded list refreshes included, and showed the recording about six minutes late; its one-shot reads failed at a fixed 5 s while its socket was open (Mac diagnostics collector, 2026-11-04 17:09-17:33).
+  - InstantFollowerLatencyTests: the buffer tests, a follower held in a long apply behind twelve list refreshes and three acknowledgements, and a one-shot read answered 6.5 s behind a held frame; liveFrameBeingAppliedForTesting and the stall and limit configuration values the tests set.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` — #1796 the failing follower tests
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 the test hook for the frame being applied
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
 ## November 5th, 2026 at 12:15:39 a.m. EST — `7b3ee47d359b` release(#1523): v1.9.70: the acknowledgement and the server apply find a write's receipt by its stored bytes again
 
 - **Implementation commit:** `7b3ee47d359be606fc535ab4321158c806a032ff`

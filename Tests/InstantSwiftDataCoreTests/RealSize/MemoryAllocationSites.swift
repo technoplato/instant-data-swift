@@ -14,6 +14,7 @@ import Foundation
 //
 // History:
 // - 2026-10-24: #1147: the sampler.
+// - 2026-11-04: #1512: a recording can keep only allocations of at least a size, to name what makes the large ones.
 
 enum MemoryAllocationSites {
   /// Allocations grouped by where they were made.
@@ -38,10 +39,16 @@ enum MemoryAllocationSites {
     var sites: [Site]
   }
 
-  /// Records the allocations `body` makes, grouped by site, largest count first.
-  static func record(depth: Int = 64, capacity: Int = 200_000, _ body: () async throws -> Void) async throws -> Recording {
+  /// Records the allocations `body` makes, grouped by site, largest count first; with `minimumSize`, only those of at
+  /// least that many bytes.
+  static func record(
+    depth: Int = 64,
+    capacity: Int = 200_000,
+    minimumSize: Int = 0,
+    _ body: () async throws -> Void
+  ) async throws -> Recording {
     precondition(depth > 0 && capacity > 0)
-    let buffer = Buffer(depth: depth, capacity: capacity)
+    let buffer = Buffer(depth: depth, capacity: capacity, minimumSize: minimumSize)
     defer { buffer.deallocate() }
     guard let slot = loggerSlot else {
       preconditionFailure("libmalloc's malloc_logger is missing: allocations cannot be recorded on this system.")
@@ -101,6 +108,7 @@ enum MemoryAllocationSites {
     var droppedBytes = 0
     var depth = 0
     var capacity = 0
+    var minimumSize = 0
     var frames: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
     var sizes: UnsafeMutablePointer<Int>?
   }
@@ -110,13 +118,15 @@ enum MemoryAllocationSites {
     // is removed.
     let state: UnsafeMutablePointer<State>
 
-    init(depth: Int, capacity: Int) {
+    init(depth: Int, capacity: Int, minimumSize: Int = 0) {
       let frames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: depth * capacity)
       frames.initialize(repeating: nil, count: depth * capacity)
       let sizes = UnsafeMutablePointer<Int>.allocate(capacity: capacity)
       sizes.initialize(repeating: 0, count: capacity)
       state = .allocate(capacity: 1)
-      state.initialize(to: State(depth: depth, capacity: capacity, frames: frames, sizes: sizes))
+      state.initialize(
+        to: State(depth: depth, capacity: capacity, minimumSize: minimumSize, frames: frames, sizes: sizes)
+      )
     }
 
     func deallocate() {
@@ -186,6 +196,7 @@ enum MemoryAllocationSites {
       let state = MemoryAllocationSites.current
     else { return }
     let size = Int(type & MemoryAllocationSites.deallocateBit != 0 ? argument3 : argument2)
+    guard size >= state.pointee.minimumSize else { return }
     os_unfair_lock_lock(&state.pointee.lock)
     let slot = state.pointee.count
     let capacity = state.pointee.capacity

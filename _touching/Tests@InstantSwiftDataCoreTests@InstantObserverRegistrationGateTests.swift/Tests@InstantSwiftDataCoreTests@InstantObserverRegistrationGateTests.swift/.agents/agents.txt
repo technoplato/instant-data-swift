@@ -1,0 +1,1 @@
+claude-code/perf-sync-1796@pp 2026-11-05T03:40:44-0500 mower plan=2026-11-04-perf-sync-1796 amendment 1 #1796 (one test and its helper)
