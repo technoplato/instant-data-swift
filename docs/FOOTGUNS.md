@@ -57,7 +57,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F18](#f18) | Pay for the schema once per attribute revision, not per observe or read | #1111, #1147, #1150 | release only |
 | [F19](#f19) | Register an observer without holding the store across its send and its reload | #1074, #1131, #1134 | always |
 | [F20](#f20) | Hydrate deferred values for what changed, not for every row of every emission | #044, #1006, #1110, #1133 | partial |
-| [F21](#f21) | Make a page refresh cost its change on the client too | #654, #1109, #1116, #1147 | partial |
+| [F21](#f21) | Make a page refresh cost its change on the client too | #654, #1109, #1116, #1147 | partial (the comparison fixed in 1.9.73; decode and translate still follow the page) |
 | [F22](#f22) | End a screen's live queries when it leaves the screen or the app leaves the foreground | #394, #655, #1100, #1102 | partial |
 | [F23](#f23) | Load what stored results own at launch, and let go of what no result owns | #044, #654, #1107, #1145 | partial |
 | [F24](#f24) | Never copy a collection the size of its parent on a per-write path | #044, #654, #1152, #1153 | always |
@@ -591,7 +591,8 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   followed the page size (on top of the bytes in the first entry).
 - Measured cost: E03, 64-line refresh with one line changed: 23,947 allocations / 22.8 MB before, 6,171 / 6.6 MB after
   five steps; frame decode 111 -> 36.5 allocations a line; a whole file-list answer 548,414 -> 160,779 allocations.
-  Echo: 257 KB read from the database and 6.83 ms CPU per write for 9 changed facts on a 256-line page (#1116, open).
+  Echo: 257 KB read from the database and 6.83 ms CPU per write for 9 changed facts on a 256-line page (#1116); 1.9.73's
+  merge check: 3.95 -> 3.64 ms a write at 20 lines, and a 32-line page with one line changed reads 3 rows, not 96.
   Device: with 1.9.8, `observerRefresh` 20% of a core while recording.
 - Rule: diff the frame against the result already held in memory, write ownership rows and hydrate only what changed,
   and decode frames as a stream into compact triples.
@@ -600,13 +601,16 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   192 -> 96 rows read and values encoded for a 32-line page with one line changed), 4fff7e5c (#1109: no identity set
   when the nested limit kept every fact), f8b7c453 and 428411d9 (#1513: the publication splices, see F10). E03 at
   64 lines after them: 6,485 allocations / 5.5 MB a refresh (6,522 / 5.8 MB before, same job).
+  1.9.73: b95e87f9 and 949064a2 (#1116: each stored result keeps its entities' fingerprints from its last save, so a
+  refresh compares only the entities it changed with the rows SQLite holds), 2ce76178 (#1109: the save takes what the
+  translation limited); E03 at 64 lines 5.89 -> 5.22 ms a refresh, retractions 1.23 -> 0.79 ms, planning 0.40 -> 0.10 ms.
 - Guard: `RefreshCostTests/decodingARefreshFrameCostsLittlePerLine` (always); `Tests/InstantSwiftDataCoreTests/LiveQueryOwnershipDiffTests.swift`
   (always); E03's budget in `RealSize/MemoryExercises.swift` (exercise-only, `INSTANT_MEMORY_EXERCISES=1`);
   `RealSizeBudgetTests` rule `server-apply.refresh-128` (release-only);
   `InstantRefreshPlanningReadTests/aRefreshComparesARestatedResultWithItsStoredRowsOnce` (always) and the ratio guard
   proposed here, `aLargerPageWithOneLineChangedCostsAboutWhatASmallerOneDoes` (always: a 256-line page's rows read and
-  values encoded within twice a 64-line page's, about 4x today, a known issue until #1116 keeps each result's rows in
-  memory).
+  values encoded within twice a 64-line page's; it holds since 1.9.73) and the seeded differential
+  `comparingTheChangedEntitiesLeavesWhatTheFullComparisonLeaves` (always).
 - Upstream: `reactive/session.clj:467-534` (the server restates; the client chooses how much work a restatement costs).
 
 <a id="f22"></a>

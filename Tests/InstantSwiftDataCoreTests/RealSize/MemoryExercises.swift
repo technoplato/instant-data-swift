@@ -166,6 +166,7 @@ struct MemoryExercises {
         let frames = await page.frames(count: 1 + 2 * iterations)
         let contexts = await context.runtime.liveRefreshAttributeContextBuildCountForTesting()
         let writes = await context.runtime.liveQueryResultJSONWriteStatsForTesting()
+        let energy = InstantEnergyMeter.snapshot()
         let measurement = try await RealSizeMeter.measure("refresh-\(rows)", label: Self.label, iterations: iterations, warmup: 1) { index in
           await context.server.push(encoded: frames[index].frame)
           try await context.waitApplies.wait(for: frames[index].tx)
@@ -181,6 +182,9 @@ struct MemoryExercises {
             ("attributeContextBuilds", String(contextsAfter - contexts)),
             ("resultJSONWrites", String(writesAfter.writes - writes.writes)),
           ]
+            // #1109: each metered step of a refresh (decode, translate, plan, retractions, commit, publication), named
+            // as the phone's energy ledger names them, so a change is measured where the phone measures it.
+            + MemoryEnergy.operations(since: energy, iterations: 1 + 2 * iterations)
         )
         if rows == 64 {
           // #1147: Scribe's live window. 23,947 allocations and 22,769 KB a refresh on the Mac mini before #1147, 8,911 and

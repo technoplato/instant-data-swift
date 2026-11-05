@@ -10,6 +10,300 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 7:04:20 a.m. EST — `49e090c79c87` release(#1109 #1513 #1116): v1.9.73: a server refresh compares only what it changed; its save takes the translation's limit
+
+- **Implementation commit:** `49e090c79c87c3504f160359370ba2bf7eebaff1`
+- **Change:** release(#1109 #1513 #1116): v1.9.73
+- **Details:**
+  - The release document, PROGRESS and FOOTGUNS F21 for v1.9.73, tagged from main for Scribe's next build.
+- **Files:**
+  - `docs/releases/v1.9.73.md` — #1109 #1513 #1116 the release record with the merge check's numbers
+  - `PROGRESS.md` — #1109 the lane's checkpoint: what landed, how it was checked, what is next
+  - `docs/FOOTGUNS.md` — F21 what 1.9.73 fixed; the ratio guard holds
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:04:09 a.m. EST — `f4e1367e1083` test(#1109 #1116): the differential counts the refreshes' reads; the schema-index tests state what the save change left
+
+- **Implementation commit:** `f4e1367e108361a790f83d137b1e7a0e4e84a6c2`
+- **Change:** test(#1109 #1116): the differential counts the refreshes' reads; the schema-index tests state what the save change left
+- **Details:**
+  - Found by the lane's merge check (Mac mini, 06:13-06:39, ef016ef0): the seeded differential's last check compared every row read in each runtime, and its own per-frame checks read every row of both pages through the same counter (7,434 with fingerprints, 11,862 without), so it judged the checks as much as the refreshes; it now counts the rows read inside each applyLiveRefresh only. Every frame's rows, stored results and facts already matched the full comparison's.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — #1109 #1116 the differential counts the refreshes' reads; the schema-index tests state what the save change left
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshPlanningReadTests.swift` — #1109 #1116 the differential counts the refreshes' reads; the schema-index tests state what the save change left
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:04:08 a.m. EST — `9d17ce5a6b2b` test(#1109): the replay server decodes a frame in a synchronous metered section, as the transport does
+
+- **Implementation commit:** `9d17ce5a6b2b7c509a390a137aae5edff7db4e8f`
+- **Change:** test(#1109): the replay server decodes a frame in a synchronous metered section, as the transport does
+- **Details:**
+  - 736c86d5 metered the replay server's frame decode inside its async receive closure, and InstantEnergyMeter.begin is noasync (a section must not span an await, since a thread's CPU clock says nothing about a task that moved threads), so the test target did not compile; the lane's merge check found it (Mac mini, 05:27). The decode now runs in a static synchronous decodedFrame(_:), as InstantLiveTransport's does, and the receive closure awaits the frame first.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryReplayServer.swift` — #1109 the replay server decodes a frame in a synchronous metered section, as the transport does
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:04:07 a.m. EST — `2ce761789ad3` green(#1109): a server refresh saves what its translation limited without limiting it again
+
+- **Implementation commit:** `2ce761789ad3100f004033270f2427f76792926d`
+- **Change:** green(#1109): a server refresh saves what its translation limited without limiting it again
+- **Details:**
+  - applyLiveRefresh names the attribute revision of the seed whose attributes the translation limited the restated results' nested includes with, when the frame merges no attributes (a frame that merges saves in its commit, as before). The planning read compares it with the store's attribute revision, and the saves it prepares at that revision take the results as they are: the store's schema there is the translation's, and the limit keeps what it kept, so the second pass over every restated fact kept every one. A save that commits is at that revision: the commit checks it. Every other save (the commit's, the test hook's, a retry after the attribute revision moved) still limits, as the defense the nested-limit containment kept (#044, #155). Measured in the phone's speech trace (build 251, 90 s): the save's pass was 150 ms, 106 of it the schema walk this lane removed in 0ff1bd60, so about 44 ms a 90 s, and the same pass at every restated result of every frame.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1109 a server refresh saves what its translation limited without limiting it again
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1109 a server refresh saves what its translation limited without limiting it again
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:04:05 a.m. EST — `aa7132d7d8f1` red(#1109): a server refresh's save limits each restated result's nested includes again after its translation did
+
+- **Implementation commit:** `aa7132d7d8f15e32fe2a8b89a6c5d952abba6f04`
+- **Change:** red(#1109): a server refresh's save limits each restated result's nested includes again after its translation did
+- **Details:**
+  - The live-refresh translator limits every restated result's nested includes (InstaQL $limit per parent) with the schema it resolved for the frame, and a server apply's planning read then prepares each result's save, which ran the same pass over every restated fact again, as a defense. Those saves are prepared only for a frame that merges no attributes (a frame that does saves in its commit), and the commit checks the attribute revision, so for every save that commits the translation's schema is the store's, and the limit keeps what it kept: the second pass kept every fact. In the phone's speech trace (build 251, 90 s) the save's pass was 150 ms, 106 of it the schema walk the lane already removed, about 44 ms the pass itself.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1109 a server refresh's save limits each restated result's nested includes again after its translation did
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — #1109 a server refresh's save limits each restated result's nested includes again after its translation did
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:04:02 a.m. EST — `949064a21db5` green(#1116): the entity fold takes a value as exactly as the store keeps its text
+
+- **Implementation commit:** `949064a21db51af4a9bd8124179b792a1ea19037`
+- **Change:** green(#1116): the entity fold takes a value as exactly as the store keeps its text
+- **Details:**
+  - LiveQueryEntityFingerprints fed each fact's value to its two hashers through InstantValue's synthesized Hashable, which takes "é" composed and decomposed as equal and 0 and -0 as equal, while the store keeps each value's text byte for byte (InstantStoredJSON: -0 is "-0") and SQLite compares it so. A value restated in the other bytes read as unchanged and its rows kept the old text, where the full comparison replaced them. The fold now takes strings (entity, attribute, string and ref values, JSON strings and keys) as their UTF-8 bytes through the row diff's own helpers, numbers and dates as their bits, a JSON object's members in the order of their keys' bytes (the stored text is sorted by key; two equal dictionaries can list their members differently), each case behind its own tag. Two values that go in alike keep the same text; two that keep the same text but go in differently still read as a change, which the row comparison settles.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` — #1116 the entity fold takes a value as exactly as the store keeps its text
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:04:00 a.m. EST — `22c0d486e346` red(#1116): a value restated in other bytes that Hashable takes as equal keeps its rows' old text
+
+- **Implementation commit:** `22c0d486e34608f97d17dbbc6f1c46094f3481bb`
+- **Change:** red(#1116): a value restated in other bytes that Hashable takes as equal keeps its rows' old text
+- **Details:**
+  - The entity fingerprints fold each fact's value through InstantValue's synthesized Hashable, which takes "é" composed and decomposed as equal (Swift strings compare by canonical equivalence) and 0 and -0 as equal numbers. The store keeps each value's text byte for byte (InstantStoredJSON) and SQLite compares it so, as the full comparison does: restated in the other bytes, the full comparison replaces the rows, while the fingerprinted refresh finds the entity unchanged and keeps the old text. aValueRestatedInOtherBytesReadsAsAChange holds the rows' bytes to the full comparison's. FingerprintPage keeps a line's index as a Double so a line can hold -0.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshPlanningReadTests.swift` — #1116 a value restated in other bytes that Hashable takes as equal keeps its rows' old text
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:58 a.m. EST — `b95e87f992ef` green(#1116): a refresh compares only the entities it changed with a stored result's rows
+
+- **Implementation commit:** `b95e87f992eff0e26773eb3dc9bebbb4c4d80c86`
+- **Change:** green(#1116): a refresh compares only the entities it changed with a stored result's rows
+- **Details:**
+  - Each stored live-query result keeps, in the persistence actor's memory, one fingerprint per entity of the facts its last save stored (LiveQueryEntityFingerprints: two seeded 64-bit hashes of each distinct fact's entity, attribute and value, summed per entity with their count), tagged with the query-result revision the save's commit left and the header it wrote. A refresh whose read checked that revision compares the restated result's entity fingerprints with them and reads and encodes only the entities that joined, left or changed, through the ownership table's key (query_id, entity_id, ...); the others hold the same facts as their rows. One comparison a refresh read every stored row and encoded every restated value: 6.39 ms of serverApplyRetractions per refresh-ok on the phone (build 253, 1,596 frames), a 32-line page with one line changed 96 rows and 96 values, now 3 and 3.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` — #1116 a refresh compares only the entities it changed with a stored result's rows
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1116 a refresh compares only the entities it changed with a stored result's rows
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshPlanningReadTests.swift` — #1116 a refresh compares only the entities it changed with a stored result's rows
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:58 a.m. EST — `0aa0363cd0d0` red(#1116): a refresh with one line changed reads every stored row of its page and encodes every restated value
+
+- **Implementation commit:** `0aa0363cd0d050ea2c98e2aed0d388b092d67d46`
+- **Change:** red(#1116): a refresh with one line changed reads every stored row of its page and encodes every restated value
+- **Details:**
+  - A 32-line page restated with one line changed reads its 96 ownership rows and encodes its 96 values (one comparison a refresh since #1480), so a refresh's planning costs its page, not its change: 6.39 ms of serverApplyRetractions per refresh-ok on the phone (build 253, 1,596 frames). The tests now expect the changed line's three rows and three values, and F21's ratio guard (256 lines against 64) is no longer held as a known issue.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshPlanningReadTests.swift` — #1116 a refresh with one line changed reads every stored row of its page and encodes every restated value
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:57 a.m. EST — `736c86d5ae69` test(#1109): a page refresh's exercise reports each metered step, its frame's decode included
+
+- **Implementation commit:** `736c86d5ae6945b793f6bf4b1b27a3693e0483ee`
+- **Change:** test(#1109): a page refresh's exercise reports each metered step, its frame's decode included
+- **Details:**
+  - E03 (a transcript page's refresh-ok at 32-256 lines) now prints the library's metered operations per refresh (op.<name> times and opMs.<name> wall ms: frameDecode, refreshTranslate, serverApplyPlan, serverApplyRetractions, serverApplyCommit, observerRefresh, ...), the names the phone's energy ledger uses, so the lane's next change is ranked and measured on the Mac where the phone measures it. The replay server's decode is metered as frameDecode, as the production transport meters it; before, its frames were decoded outside any meter.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift` — #1109 a page refresh's exercise reports each metered step, its frame's decode included
+  - `Tests/InstantSwiftDataCoreTests/RealSize/MemoryReplayServer.swift` — #1109 a page refresh's exercise reports each metered step, its frame's decode included
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:57 a.m. EST — `88b3c6334a1d` green(#1513): a page with no limit, ordered by an indexed field, orders only its indexed filters' hits
+
+- **Implementation commit:** `88b3c6334a1d4c7ca1605231388b26e8d6e11e61`
+- **Change:** green(#1513): a page with no limit, ordered by an indexed field, orders only its indexed filters' hits
+- **Details:**
+  - materializeOrderedSnapshots now takes the rows the plan's indexed equality filters admit (resolveBoundedCandidateSource, as the bounded selection does) when they are fewer than the namespace's, and orders, materializes and matches those alone, with the same comparator; with no such filter it orders every row as before. Every row the filters match is among the hits, and each is still matched against every filter. A recording's attachments page and an infinite query's frozen pages of a recording's lines read that recording's rows, not every row the device holds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1513 a page with no limit, ordered by an indexed field, orders only its indexed filters' hits
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:56 a.m. EST — `dbc506725a60` red(#1513): a page with no limit, ordered by an indexed field, orders every row of its namespace before its filter
+
+- **Implementation commit:** `dbc506725a6094f92d2f96d8f6f6ad062e99ca69`
+- **Change:** red(#1513): a page with no limit, ordered by an indexed field, orders every row of its namespace before its filter
+- **Details:**
+  - materializeOrderedSnapshots ordered and materialized every entity of the plan's namespace, then applied the filters, so a recording's attachments (filtered by the recording, newest first, no limit) and an infinite query's frozen pages of a recording's lines each read every attachment or line the device holds. The path now counts what it examines, materializes and matches (QueryMaterializationMetrics, as the bounded selection does), and InstantFilteredOrderedPageTests expects a recording's 30 attachments examined out of the namespace's 600, for the plain page, a frozen page between two cursors, and a page with a second filter no index covers.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1513 a page with no limit, ordered by an indexed field, orders every row of its namespace before its filter
+  - `Tests/InstantSwiftDataCoreTests/InstantFilteredOrderedPageTests.swift` — #1513 a page with no limit, ordered by an indexed field, orders every row of its namespace before its filter
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:56 a.m. EST — `9fc6eff802d8` green(#1513): a change outside the rows a page's server page info bounds does not refresh the page
+
+- **Implementation commit:** `9fc6eff802d8fe101688d8e7f2baddbc9ed13cfc`
+- **Change:** green(#1513): a change outside the rows a page's server page info bounds does not refresh the page
+- **Details:**
+  - A page whose rows follow the server's page info shows only the rows between its start and end cursors and reports the server's page info (paginate and the bounded selection compare the same way); while that page info is awaited or names no first row it shows none. So a changed entity whose place in the result set moved but lies outside those rows both before and after the change cannot change the page, and the publication skips it. An infinite query's frozen pages now skip each new line past their cursors; a line written inside a page's cursors still refreshes it. A date order, whose indexed value is normalized, is left to a refresh.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1513 a change outside the rows a page's server page info bounds does not refresh the page
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1513 a change outside the rows a page's server page info bounds does not refresh the page
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:55 a.m. EST — `f23d0f69a392` red(#1513): an infinite query's frozen pages are materialized again for each new line past their cursors
+
+- **Implementation commit:** `f23d0f69a3923ccdd965d91dbb8926650bb5d5c8`
+- **Change:** red(#1513): an infinite query's frozen pages are materialized again for each new line past their cursors
+- **Details:**
+  - An infinite query freezes each full page as a live query between two cursors with no limit (upstream freezeForward), so a long transcript is many frozen pages. A new line of the recording matches every page's filter, so the publication judged it as entering each page's result set and materialized every frozen page again, from every line, for a line none of them can show (the server's page info bounds their rows). aFinalLineBeyondTheFrozenPagesLeavesThemAsTheyAre expects no page re-materialized and five skipped; the random test holds every page fresh through lines written inside and outside the pages, on their boundary values, moved, deleted and with new server page info. The publication fan-out exercise gains INSTANT_PUBLISH_FANOUT_HISTORY=frozen, the consuming app's shape for its older transcript pages.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFrozenPageRefreshTests.swift` — #1513 an infinite query's frozen pages are materialized again for each new line past their cursors
+  - `Tests/InstantSwiftDataCoreTests/RealSize/PublishFanOutExercises.swift` — #1513 an infinite query's frozen pages are materialized again for each new line past their cursors
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:53 a.m. EST — `053e7ecb1c2b` green(#1109): a text frame bridged from the socket takes its UTF-8 from CoreFoundation in one pass
+
+- **Implementation commit:** `053e7ecb1c2b3637dcdd3f4afbfb8cca5c41eaf2`
+- **Change:** green(#1109): a text frame bridged from the socket takes its UTF-8 from CoreFoundation in one pass
+- **Details:**
+  - When the frame's String is not native (bridged from the socket's NSString), the decoder asks CoreFoundation for its UTF-8 in two bulk passes (the byte count, then the bytes) and parses those bytes as a data frame: the same bytes, the same byte count for the wire meter, the same JSONDecoder fallback. A character that does not convert (an unpaired surrogate) leaves the frame to the String path's own error-corrected copy, as before.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveFrameDecoding.swift` — #1109 a text frame bridged from the socket takes its UTF-8 from CoreFoundation in one pass
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:52 a.m. EST — `132e23dce8ed` red(#1109): a text frame from the socket is copied to UTF-8 one character at a time
+
+- **Implementation commit:** `132e23dce8edea5d114b32d3a9e616ab0254c4eb`
+- **Change:** red(#1109): a text frame from the socket is copied to UTF-8 one character at a time
+- **Details:**
+  - A text frame arrives as the socket's NSString, which holds UTF-16 once the frame has any character outside ASCII (a transcript's curly quote is enough), so the String bridged from it is not native, and the frame decoder's withUTF8 copied it one character at a time through the NSString (String._copying, characterAtIndex:): 84 of the frame decode's 155 ms in a 90 s trace of the phone transcribing speech (build 251). The test builds the frame as the socket does (CFStringCreateWithBytes over its UTF-8) and asks that it decodes to the same message at under 1.5 times the cost of the same text as a native string.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveFrameDecodeTests.swift` — #1109 a text frame from the socket is copied to UTF-8 one character at a time
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:51 a.m. EST — `c3693f357339` green(#1109): the schema's cascading links are kept with its lookup indexes
+
+- **Implementation commit:** `c3693f357339e74981622d3e2a7f93c92561e34c`
+- **Change:** green(#1109): the schema's cascading links are kept with its lookup indexes
+- **Details:**
+  - AttributeStore keeps its links whose deletes cascade (onDelete or onDeleteReverse .cascade), in id order, with its other lookup indexes, rebuilt wherever they are; InstantServerApplyCascade.sources reads those instead of sorting every attribute per call. The answer is the same set: it reads only cascading ref links, in an order its sets ignore.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1109 the schema's cascading links are kept with its lookup indexes
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1109 the schema's cascading links are kept with its lookup indexes
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:51 a.m. EST — `2521dbcb252c` red(#1109): a server apply sorts every attribute to find the schema's cascading links
+
+- **Implementation commit:** `2521dbcb252cf8092aec20a6bfcb8df5783629e8`
+- **Change:** red(#1109): a server apply sorts every attribute to find the schema's cascading links
+- **Details:**
+  - InstantServerApplyCascade.sources(into:attributes:) (#1756) read `AttributeStore.attributes`, which sorts every attribute of the schema, to find the few links whose deletes cascade: 37 ms in a 90 s trace of the phone transcribing speech (build 251), every sample of that sort. The test asks that the answer costs about the same with 2,283 attributes as with 16, and pins what it answers for a recording that cascades to its lines.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantNestedLimitSchemaTests.swift` — #1109 a server apply sorts every attribute to find the schema's cascading links
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:50 a.m. EST — `5ccfb473fc5e` green(#1513): an observer keeps what its plan depends on from when it registers
+
+- **Implementation commit:** `5ccfb473fc5e79ac98bc568d98524414d620e4ab`
+- **Change:** green(#1513): an observer keeps what its plan depends on from when it registers
+- **Details:**
+  - An observer's plan never changes after it registers, so its dependent namespaces and whether every field path is its own namespace's are worked out once there and kept beside the plan. A publication's judgments and splices read them instead of walking the plan and building each include's plan again for every observer and change (93 of the observer refreshes' 725 ms in a 90 s trace of the phone transcribing speech, build 251). The plan is a let now.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1513 an observer keeps what its plan depends on from when it registers
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:49 a.m. EST — `76950aca3bb0` red(#1513): a publication walks every judged observer's plan and its includes' plans again
+
+- **Implementation commit:** `76950aca3bb0c5f9531b08bd0216f4dc09845861`
+- **Change:** red(#1513): a publication walks every judged observer's plan and its includes' plans again
+- **Details:**
+  - Each judgment of a change (refreshDecision) and each splice (rootSplicedEmission) asked the observer's plan which namespaces it depends on, walking the plan and building every include's plan again, though an observer's plan never changes after it registers. In a 90 s trace of the phone transcribing speech (build 251) that walk was 93 of the observer refreshes' 725 ms. The test asks that a publication that skips or splices pages walks no plan; the seam is InstantStorePublishMetrics.planWalkCount, counted where a publication walks a plan.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1513 a publication walks every judged observer's plan and its includes' plans again
+  - `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift` — #1513 a publication walks every judged observer's plan and its includes' plans again
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:49 a.m. EST — `2c0b7d7e5de4` test(#1109): the store's schema-index tests judge with #expect, so a release run judges them too
+
+- **Implementation commit:** `2c0b7d7e5de429ebf736e7aeaaeaa3841858387f`
+- **Change:** test(#1109): the store's schema-index tests judge with #expect, so a release run judges them too
+- **Details:**
+  - IssueReporting records Swift Testing issues only in debug builds, so expectNoDifference passes silently in the release lane where the cost tests run.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — #1109 the store's schema-index tests judge with #expect, so a release run judges them too
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:48 a.m. EST — `0ff1bd6033a3` green(#1109): the nested-limit pass reads a schema indexed once per attribute revision
+
+- **Implementation commit:** `0ff1bd6033a30700e6aa57c6063f8a5c8e4982cb`
+- **Change:** green(#1109): the nested-limit pass reads a schema indexed once per attribute revision
+- **Details:**
+  - The translator's attribute context, cached across refreshes, now holds its resolved schema indexed for the pass (by id, reverse identity, namespace and name, and ref namespace and name, each the first attribute of its key as the searches found it), and the store keeps one index of its stored attributes per load of them for every save and reload. The pass looks attributes up in it instead of walking every attribute per call, and parses the query key once a call, not twice. A snapshot load indexes its attributes once for every stored result instead of walking them once per result.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` — #1109 the nested-limit pass reads a schema indexed once per attribute revision
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — #1109 the nested-limit pass reads a schema indexed once per attribute revision
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1109 the nested-limit pass reads a schema indexed once per attribute revision
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 5th, 2026 at 7:03:48 a.m. EST — `d4e335ac1e0e` red(#1109): the nested-limit pass walks the whole schema on every call
+
+- **Implementation commit:** `d4e335ac1e0ec2db6090d03be30e880f23cbbf8d`
+- **Change:** red(#1109): the nested-limit pass walks the whole schema on every call
+- **Details:**
+  - The pass bounds each restated result's nested includes twice a refresh, in the translator and in the result's save, and found the attributes it needed by walking the whole schema each time: hashing every attribute's id and copying every attribute (2,283 on the phone). In a 90 s trace of the phone transcribing speech (build 251) the pass was 374 ms and the walk 258 ms of it, 1.1% of all the app's CPU. The tests ask for a schema indexed once: the pass and the translator cost the same with 2,283 attributes as with 16, and a store indexes its stored attributes once per load. The seam: `InstantLiveQueryNestedLimit.Schema` (still walked per call here) and the store's count of schema walks.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` — #1109 the nested-limit pass walks the whole schema on every call
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1109 the nested-limit pass walks the whole schema on every call
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — #1109 the nested-limit pass walks the whole schema on every call
+  - `Tests/InstantSwiftDataCoreTests/InstantNestedLimitSchemaTests.swift` — #1109 the nested-limit pass walks the whole schema on every call
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
 ## November 5th, 2026 at 5:20:05 a.m. EST — `e5a96d824577` release(#1500): v1.9.72: memory in proportion to what is on screen
 
 - **Implementation commit:** `e5a96d824577c2a885ba63949e30f2d32485613f`

@@ -1,3 +1,21 @@
+## 2026-11-05 07:04:14 EST — perf-recv-1797 (#1109, #1513, #1116): v1.9.73, a server refresh costs what changed
+
+- **Why:** on the phone (the consuming app's build 253, 192.5 recording minutes, 1,596 refresh-ok frames) a frame's
+  retractions took 6.39 ms and its saves' planning 5.88 ms, both comparing every restated fact with every stored row;
+  in the build-251 speech trace the nested-limit pass's schema walk was 1.1% of the app's CPU and each new transcript
+  line re-materialized every frozen page of the recording.
+- **Landed:** `9d76a581` (#1109: the schema indexed once `0ff1bd60`, cascade sources `c3693f35`, socket UTF-8 `053e7ecb`,
+  the save takes the translation's limit `2ce76178`; #1513: plan dependencies `5ccfb473`, frozen pages `9fc6eff8`,
+  filtered ordered pages `88b3c633`; #1116: entity fingerprints `b95e87f9`, the exact fold `949064a2`; tests `2c0b7d7e`
+  `736c86d5` `9d17ce5a` `f4e1367e`).
+- **Checked:** Mac mini jobs `1797-recv-merge-check` and `1109-recv-testfix` (22 tests in 3 suites passed, debug, 07:03): reds fail on their own
+  sources; E03 64-line refresh 5.89 -> 5.22 ms (retractions 1.23 -> 0.79, planning 0.40 -> 0.10), 256 lines 21.9 -> 18.9
+  ms; the echo 3.95 -> 3.64 ms CPU a write; a final's publication on the frozen history 118 -> 1.3 ms (job
+  `1797-recv-schema-ab`); the seeded differential keeps rows, results and facts equal to the full comparison's; the
+  debug bundle's new failures were restated tests and the load-sensitive frame-decode ratio (passes alone).
+- **Next:** Scribe pins 1.9.73 and cuts a build; after an hour of recording, refresh-cost.py's serverApplyRetractions,
+  serverApplyPlan, refreshTranslate and observerRefresh per refresh frame against builds 248 and 253.
+
 ## 2026-11-05 05:19 EST — perf-mem-1797 (#1500, #1165, #1145, #541, #1104, #1105, #1107, #1149): v1.9.72, memory in proportion to what is on screen
 
 - **Why:** on the phone (2026-11-04, the consuming app's builds 246-253) the store's resident facts grew 9,000-24,000

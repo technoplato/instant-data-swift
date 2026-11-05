@@ -29,6 +29,38 @@ struct InstantLiveFrameDecodeTests {
     #expect(ratio < 0.33, "decoding the frame cost \(ratio) times JSONDecoder's")
   }
 
+  /// A text frame arrives as the socket's NSString, which holds UTF-16 once the frame has any character outside ASCII, so
+  /// the String bridged from it is not native. Reading its UTF-8 copied it one character at a time through the NSString:
+  /// 84 of the frame decode's 155 ms in a 90 s trace of the phone transcribing speech (build 251) (#1109). It decodes to
+  /// what the same text decodes to as a native string, at about that cost.
+  @Test
+  func aTextFrameFromTheSocketDecodesAtAboutTheCostOfANativeOne() throws {
+    var native = String(decoding: try JSONEncoder().encode(Self.refreshOK(lineCount: 64)), as: UTF8.self)
+      .replacingOccurrences(of: "worth keeping", with: "worth \u{2018}keeping\u{2019} \u{2014} caf\u{E9}")
+    native.makeContiguousUTF8()
+    let bytes = Array(native.utf8)
+    // As the socket makes it: an NSString from the frame's UTF-8 bytes.
+    let socketString = try #require(
+      CFStringCreateWithBytes(nil, bytes, bytes.count, CFStringBuiltInEncodings.UTF8.rawValue, false)
+    )
+    let bridged = socketString as String
+    try #require(bridged.utf8.withContiguousStorageIfAvailable { _ in true } == nil, "the bridged frame is native")
+    let expected = try InstantLiveMessage.decoded(fromFrame: native)
+    #expect(try InstantLiveMessage.decoded(fromFrame: bridged) == expected)
+    guard RealSizeBudget.isOptimized else { return }
+    var best = (native: UInt64.max, bridged: UInt64.max)
+    for _ in 0..<5 {
+      best.native = min(best.native, try Self.threadCPUNanoseconds {
+        for _ in 0..<10 { _ = try InstantLiveMessage.decoded(fromFrame: native) }
+      })
+      best.bridged = min(best.bridged, try Self.threadCPUNanoseconds {
+        for _ in 0..<10 { _ = try InstantLiveMessage.decoded(fromFrame: bridged) }
+      })
+    }
+    let ratio = Double(best.bridged) / Double(max(best.native, 1))
+    #expect(ratio < 1.5, "decoding the socket's string cost \(ratio) times decoding the same text as a native string")
+  }
+
   /// A frame of any shape decodes to what `JSONDecoder` decodes from the same bytes, as data and as text: nested
   /// objects and arrays, every number form, strings with every escape and with characters outside the BMP, whitespace.
   @Test(arguments: [UInt64(61_007), 61_008, 61_009, 61_010, 61_011, 61_012])

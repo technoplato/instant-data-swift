@@ -1,3 +1,15 @@
+## 2026-11-05 07:08:38 EST — scribe `0b3e35ca4acfb56486fac5537f886216bb2a1ee3`
+Feature (#1679): select text in Notes with Lines' selection (its paragraph stays one attributed string, each line found by its UTF-16 range), and Expand Selection to Here, first in every line's and paragraph's menu while words are selected, grows the selection up or down to the pressed word; one decision for both reducers, logged; a selection belongs to its view.
+
+## 2026-11-05 07:04:20 EST — instant-data-swift `49e090c79c87c3504f160359370ba2bf7eebaff1`
+Release (#1109, #1513, #1116): v1.9.73, tag on this commit: a server refresh compares only the entities it changed with a stored result's rows, its save takes the translation's limit; the second set (schema index, cascade sources, socket UTF-8, plan dependencies, frozen and filtered pages).
+
+## 2026-11-05 07:04:10 EST — instant-data-swift `9d76a581f8c15105bf29f8b6291306b5327ccff2`
+Landing (#1109, #1513, #1116): the receive lane on main (with v1.9.72's record). Gate: Mac mini 1797-recv-merge-check and 1109-recv-testfix (22 tests in 3 suites passed, debug, 07:03); E03 64-line refresh 5.89 -> 5.22 ms, the echo 3.95 -> 3.64 ms CPU a write.
+
+## 2026-11-05 07:04:10 EST — instant-data-swift `417f0442f34385c8c49d83986fdf2f55667f49af`
+Merge (#1109, #1513, #1116): the receive lane onto main after the memory lane's landing: the nested-limit pass reads a schema indexed once, the cascading links kept with it, a socket frame's UTF-8 in one pass, observers keep their plan dependencies, frozen pages skip lines past their cursors, unlimited ordered pages read their filter's rows, a refresh compares only the entities it changed with a stored result's rows, and its save takes what its translation limited.
+
 ## 2026-11-05 06:14:41 EST — scribe `e944cd4d40bfbde20ae7c60f793cbd97152a748c`
 Fix and perf (#1809, #1812): a compressed copy whose encoder fails at Stop (AVAssetWriter -11819, Recording 366) is finished as it stands or from the WAV by a fresh encoder, so the phone no longer uploads the whole WAV on top of it (4.43 GB once); the launch sweep finishes a copy begun before the app closed; the iPhone streams to Your Mac as AAC-ELD at 48 kHz 48 kbps (Opus cost 2.33% of a core; AAC-ELD about 60% less encode CPU at the WAV's gold-set WER), Opus or linear16 for an older Mac. Gates 1809-redgreen and 1809-green2 on the mini: red fails, green 17/17 and 29/29.
 
