@@ -1,3 +1,6 @@
+## 2026-11-05 09:47:47 EST — scribe `258073f5e0ea9c253167cb7da14432d9845202c6`
+Test (#1662): the welcome's and the drawer's layout-harness pictures on iPhone and iPad (17 references), recorded from main as landed; run 2 passed against them, and the harness build compiled every welcome file for the iPhone simulator.
+
 ## 2026-11-05 08:33:12 EST — scribe `9b407749d9ac41e052896ef96765d5d30eac7865`
 Feature (#1662): a stranger's first minutes with Vakyume: the welcome before Recording Setup (the speech model's download at once with its progress, made by one person, the Mac tool, a spoken-feedback demo, five quests and a free month with no price), the drawer's Getting Started, Send Feedback and Share Vakyume with Friends, and the feedback door (feedback.pisspoursoftware.xyz behind Access, the intake that files each piece as untrusted data, the vakyume-feedback skill); green on the mini, every welcome file compiled for the iPhone simulator.
 
