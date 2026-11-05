@@ -1,3 +1,20 @@
+## 2026-11-04 22:05:59 EST — perf-recv-1797 (#1513, #1480, #1109): v1.9.68, a final's publication splices; a restated result is compared once
+
+- **Why:** the phone's ledger (the consuming app's build 248, 88 min recording, 3,811 refresh-ok frames) spent 41.8
+  CPU-s refreshing observers, 15.3 planning result saves and 15.0 working out retractions. A final line
+  re-materialized the recordings list (every recording) and each transcript window (every line of the recording), and
+  each restated result was compared with its stored rows twice.
+- **Landed:** merge `0df9d697` (#1513 red `a0dee714`, greens `f8b7c453` `428411d9`; #1480 red `322c3993`, green
+  `ca9dd8d2`; #1109 `4fff7e5c`; tests `fe0b7951` `eecdc2d7` `b3435d8d`; #1116 guard `0459f173`).
+- **Checked:** Mac mini job `1797-recv-splice-ab2`: reds fail and greens pass as expected; a final's publication p50
+  17.6-18.2 -> 15.6-16.0 ms, materialized snapshots -43% (-79% with linked interims); 192 -> 96 rows read a restated
+  32-line page; the debug bundle (1,669 tests) fails only the three tests that fail on `main` since 1.9.64-1.9.67.
+- **Next:** Scribe pins 1.9.68 and cuts a build; after an hour on the phone, refresh-cost.py's observerRefresh,
+  serverApplyPlan and serverApplyRetractions per refresh frame against build 248. The lane branch's later commits
+  (#1109's schema index `0ff1bd60` and cascade sources `c3693f35`, #1513's kept plan dependencies `5ccfb473`,
+  #1109's one-pass socket UTF-8 `053e7ecb`) wait for Mac mini job `1797-recv-schema-ab`, then 1.9.69 or the next
+  free number.
+
 ## 2026-11-04 20:35 EST — perf-send-1797 (#653): job A measured; four fixes after it; job B verifies before any release
 
 - **Job A** (`1797-a-gate1648-1517`, mini, 19:49-20:18; outputs `~/Sync/audit/perf-send-1797/jobs/out-1797-a/`): release

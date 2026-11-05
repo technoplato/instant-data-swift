@@ -1,3 +1,69 @@
+## 2026-11-04 21:42:51 EST — scribe `f45f81835a9fb957c316db48e0e8b6aa84e3b86c`
+Fix (#1803, #1423): watchOS -Osize goes through OTHER_SWIFT_FLAGS ($(SCRIBE_SWIFT_PLATFORM_FLAGS_$(PLATFORM_NAME)), set for watchos only): xcodebuild read the conditioned SWIFT_OPTIMIZATION_LEVEL[sdk=watchos*]=-Osize from d763b77be as an unconditioned SWIFT_OPTIMIZATION_LEVEL for every target, so builds 255 and 256 failed every Swift compile and were stopped before any install; landed 701067213, changelog c524cbfb5. Correction to the d763b77be entry: its Watch app was not measured under the line then; the first build with the fix is 259.
+
+## 2026-11-04 22:57:56 EST — scribe `9ee8cce493e42f74420213fdfd13e8371ab4de4d`
+Tool (#1799, #1808): scripts/perf/metrics.py notes a recording whose stored audio is the WAV itself (a recording over twelve hours long kept its 4.43 GB WAV in Instant instead of its 263 MB compressed copy), with both sizes.
+
+## 2026-11-04 22:42:16 EST — scribe `62345216cb4a737fec8f2f25b2979cefdda2b416`
+Tool (#1799): a before/after scene splits speech by how much was said (quiet, light speech under 40 words a minute, talking): 251's speech minutes carried 132 words a minute and 253's 10, so the earlier like-for-like -22% was withdrawn; 248 -> 249 improved 20-36% in three matched scenes, 249 -> 250 did not move.
+
+## 2026-11-04 22:30:02 EST — scribe `7a1600f1dc6daa9772f9262b17db6ee5ddc28a69`
+Tool (#1799): metrics.py --compare and the build watcher lead with recording minutes matched by scene (in front or behind, the screen, speech) before any total, and fit Instant's refresh per final line (quoted only at r2 0.5 or more).
+
+## 2026-11-04 23:00:13 EST — scribe `9306304bb32655f246486e91e5a79043ac613c17`
+Fix (#1585): the Mac mirror reads a recording's attachments once and follows them through a window of the newest written and an ids-only query on the WebSocket, instead of restating all of them at every change (idle Recording 364: 3.09 GB in 31 minutes from the iPad's image uploads).
+
+## 2026-11-04 22:37:49 EST — scribe `fb02550bbca1a2181574dbc28962356cf8168501`
+Docs (#1422): the recording screen's audit (audits/2026-11-04-recording-screen-draws-1422.md, section 5) names what is left once the comb rests: the 1 s tick's 9.6 ms is the root's per-action cost (#1083's lane); the microphone level for the Live Activity is a root action every 2 s that the Live Activity's own throttle ignores (named next slice); the scoped child stores' fan-out is 2.1% of the main thread; behind Twitter at 14:01 SwiftUI ran 1.2 s of 32 s with no Scribe frame, the shape of the breathe effect 3c34c4b88 replaced. It records build 253's before numbers and why 254 and 257 never reached the iPhone (the installer's 1,800 s timeout at load 300, #1806). Changelog 2f84d72a7.
+
+## 2026-11-04 22:37:19 EST — scribe `178ad0b239f9cd3801ba1fb6a3004135e33e9aea`
+Fix (#1585, #1527): the Mac mirror's lines in progress and lines window ride an admin-token WebSocket, so a refresh no longer carries the 854 KB attribute catalog the admin stream sent with each (182 MB in 29 minutes with Recording 366 live); a probe every 10 s is their keepalive, and an unanswered one replaces the socket. Parity on production: identical rows.
+
+## 2026-11-04 22:09:50 EST — scribe `73460479af02a0e8e8900cf3098289a76a96b92b`
+Cut (#1652): Scribe 0.1 (258) from main after landing B of #1652; the build number 257 to 258, build 258's plain block and four stories.
+
+## 2026-11-04 22:06:36 EST — scribe `03ed6805878ca87dcf03404ae55bb3c60a84a35d`
+Feature (#1652): an agent's chat has a message box (agentCommands message-agent, carried out by the mirror through tools/agent-run --steer); a long-press holds or resumes a session's issue (Backlog, with the recording and moment noted on the issue); Agent chats sorts by most recent, cost or needing you and can show only agents needing you; an open brief shows his linked lines.
+
+## 2026-11-04 22:06:53 EST — instant-data-swift `995043755a97f26d268100262c9ef91630579dbd`
+Release (#1513, #1480, #1109): v1.9.68 tagged on 99504375 (ledger bd929885), from main merge 0df9d697: #1513 a final's publication splices the rows it reaches (red a0dee714, greens f8b7c453 428411d9; a final's publication p50 17.6-18.2 -> 15.6-16.0 ms on the Mac mini, materialized snapshots -43%), #1480 a restated result compared with its stored rows once (red 322c3993, green ca9dd8d2; 192 -> 96 rows read for a 32-line page), #1109 no identity set when the nested limit kept every fact (4fff7e5c). No API or storage change. Debug bundle: 1,669 tests, only the three failing on main since 1.9.64-1.9.67.
+
+## 2026-11-04 22:05:06 EST — scribe `a4f2cd2860d765651d79ed491b1388cdc32c2801`
+Tooling (#1776): build.sh's pass-over of an old waiter that leaves a free slot unused now counts only time it was watched (a look over 120 s after the last restarts the clock; live, a 5-min-old look passed over an old P0 waiter), and an old-code waiter's resubmit keeps its place from its own journal line (red e9ed47495).
+
+## 2026-11-04 21:20:41 EST — scribe `896de971e768950b223ac290f9dc496c3252ec4c`
+Cut (#1423): Scribe 0.1 (256) from main after the list's sealed summary (ADR 0128, #1423, #1195, #1506); CURRENT_PROJECT_VERSION to 256 and build 256's plain block and stories.
+
+## 2026-11-04 21:18:33 EST — scribe `5c293a67a4551cc0fc67d368838ae9acd5b2a474`
+Performance (#1423, #1195, #1506): the recordings list follows no line being recorded. A final links no preview slot and the list's page includes no transcriptions and no newest image (ADR 0128); Stop seals the two slots and the new recordings.wordCount (schema pushed, 550 rows backfilled with backup); a live take's row reads its newest two lines and count from the take or from two small queries per recording another device records, while the list shows in front; the map reads its pins' pictures while it shows, and an image's write leaves updatedAtMs to the heartbeat; a recording's chapters follow a live window of the newest 8 plus one read, with the drawn fields. Before (build 248): the page restated 144.8 KB 1,552 times in 88 minutes (0.98 per final), chapters 869 KB a frame.
+
+## 2026-11-04 19:51:28 EST — scribe `d763b77be632f66cff4c1e419ae09ad433eabc9a`
+Fix (#1803): the Watch app fits App Store Connect again (ITMS-90389 refused 249 and 250 at 76.1 MB, arm64_32): the Watch app and its widget link without their 3.66 MB of export tables, watchOS compiles at -Osize under -O device builds (other platforms keep -O), each production cut measures its kept Watch app and fails over 70 MB after every install, and each TestFlight upload measures its IPA and stops only at a size Apple refused; red b650b38c9, landed dfbdbceec, changelog 5a8d16af2.
+
+## 2026-11-04 19:53:54 EST — scribe `3c34c4b88b2f1b4b78869e5689490cdd90ef693c`
+Performance (#1422, #1502): the recording screen draws when something changed. The floating bar's comb visualizer rests in quiet: its TimelineView pauses while every frame a draw reads is too quiet to lift a tick past its 1-point floor (with VoiceOver on, too quiet to leave Silent), and the meter's new loudFrame wait wakes it off the main thread, keeping capture analyzing; on build 249 those identical frames were a third of the recording screen's main thread (SwiftUI's display link 16.0%, RenderBox's Metal render 16.4%). The Live Activity's excerpt walks back from the timeline's end instead of copying it every tick (162 ms a minute). The bar's record symbol breathes through Styleguide.BreathingSymbol (Core Animation) instead of SwiftUI's per-frame effect (the list in front turned the main run loop 161 times a second against the recording screen's 91 on build 248). Same pixels, same breath, same words; changelog 8ea93259e.
+
+## 2026-11-04 19:44:13 EST — scribe `be00c65e31e95709c60f2fd7f35639a69b712210`
+Feature (#1790): scribe decision amend says an open question's own lines again in what he can open (a WAITING line's file and line becomes whose note it was), adds drafts and links, keeps his words byte for byte and sends no notice.
+
+## 2026-11-04 19:26:58 EST — scribe `29e42144ea489ae00b51387918ac04d910938010`
+Fix (#1751): in-app requests outlive the app store's listener. Start or Resume Recording (the Action button), the Home Screen quick actions, the Live Activity's and Control Center's recording controls, the timers' Live Activity presses (#612) and Pause Playback each went to the store through one process-wide AsyncStream; the store listens in an effect of the app view's .task, and an AsyncStream finishes for good when its one consumer is cancelled, so after the view went away once every later press only brought the app to the front. A new RequestMailbox target gives each listener its own stream (the newest takes each request, the newest N wait while none listens, it never finishes), the four listeners run per window without cancelInFlight, and each link and control logs system-surface.request.sent (delivered or waiting). Red 1b7b4e81b and d2b992fec, test stub 8699bdd82, changelog 94ea7e627, landed as b8523e940; measured on the mini (1751-redgreen, 1751-stub).
+
+## 2026-11-04 19:09:58 EST — scribe `5d7d280231a8ba7361e2c49712bbe47ef5c5fe4e`
+Tooling (#1776): build.sh orders queued builds by their issue's P level (P0 before P1 before P2 and lower; the agent's flag only breaks ties; low last), read through build_jobs.py class (a 5-s tracker timeout, a cache every waiter shares, the last level or the flag when it cannot answer, P2 with no issue), aged one class per 3 h from the real queue time; waiters queued before the install keep the old code and are held back by a blocker and a gate; BUILD_QUEUED_AT only for a resubmit; reaps from one listing; holders yield to a higher class (green 5d7d28023, fix 349eab915, merge 67561d79d).
+
+## 2026-11-04 19:05:28 EST — scribe `0995399f1af21ef05e7cca795a79f216760461cd`
+Cut (#1674): Scribe 0.1 (252) from main after 003ca2598 (#1393 batches 2 and 3: the now-playing card that seeks Scribe Playback, Photos' own live, his UI asks); CURRENT_PROJECT_VERSION 251 to 252 and build 252's plain block and stories.
+
+## 2026-11-04 19:02:41 EST — scribe `003ca259829bd367f79bf059a12caafcdb579008`
+Feature (#1393, #1674, #1716): his UI asks from Recordings 349-365, batches 2 and 3: what plays now as a Lock Screen-like card whose bar seeks Scribe Playback on this phone through the App Group, Photos' own live, the New Message pill out of the way, the home card's last four sentences, frames without a gray flash, hold a thread's bar to mute, everything copied in one place, and a catch-up deck of unread answers; What's New build 252.
+
+## 2026-11-04 18:41:26 EST — scribe `73987de4649214ee7190c750f1392f9b2ccf7e89`
+Feature (#1790): a decision question carries the draft it names (scribe decision ask --draft) and a link to the place it names (--link, https or the app's own scribe-shared link), and refuses one that shows a file he cannot open; the WAITING gatherer names whose note a line was; the door's evidence link takes scribe-shared://.
+
+## 2026-11-04 18:19:14 EST — scribe `e82bf7c56648ce3ea3465cb9aeabe6bb3d0219f9`
+Tooling (#1799): scripts/perf/metrics.py prints his five metrics (size of the recording, size per minute, usage per minute, CPU per minute by state, heat) per build and per recording, each number with its source (energy ledger, a sysdiagnose powerlog read over unplugged minutes only, iOS hang reports, the recording's Instant rows), --compare A B with a scenario check, and --trend --write one row per build in ~/Sync/audit/perf-metrics/trend.jsonl; it keeps the collector's ledger lines by day (the 64 MB journal prunes). Nothing new runs on the phone (#1285). Red eb2d95791, green 808312e2a, changelog 538abc916; 39 tests.
+
 ## 2026-11-04 17:34:54 EST — scribe `a64e397d13287bd481ee16714c3b717824ce6a67`
 Tooling (#1793): agent-run ranks the eligible Claude Max logins by the week most at risk of going unused (weekly % left per hour until that login's weekly reset, highest first; ties to more 5-hour left; no reset read after, by weekly % left), not the fixed accountOrder; the interactive login and --spare stay last; --quota says each login's place and why. Red 85aa7eef0, green c65c4d950, installed into ~/Scribe/tools 17:30; changelog c46543758. Live 17:31: pp (100% left, 11h28m: 8.7%/h) then halfjew22.
 

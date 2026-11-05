@@ -15,6 +15,8 @@ import os
 // - 2026-10-28: `holdsFact` and `factCount(entityID:)` answer a prune batch without materializing an entity (#1319).
 // - 2026-11-04: the newest transaction time is kept in time-ordered counts, not walked: the full-rebase server apply
 //   read it once per pending write it replayed, and iOS's CPU Monitor killed the app in that walk (#1748).
+// - 2026-11-04: a bounded page can be chosen from given candidates, and a change's links to shown entities listed, so a
+//   publication splices the rows a final line reaches instead of scanning every recording or line again (#1513).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -1956,6 +1958,39 @@ struct TripleIndexes: Codable, Sendable {
     return false
   }
 
+  /// The entities among `entityIDs` that `entityID` holds a ref to, or that hold a ref to it (#1513): which shown
+  /// entities a change of `entityID` reaches through a link, probed from each link's smaller side as ``hasLink`` is.
+  func linkedEntityIDs(_ entityID: String, among entityIDs: Set<String>, attributes: AttributeStore) -> Set<String> {
+    guard !entityIDs.isEmpty else { return [] }
+    var linked: Set<String> = []
+    if let attributesByID = eav[entityID] {
+      for (attributeID, slot) in attributesByID where attributes[attributeID]?.valueType == .ref {
+        switch slot {
+        case let .one(value, _):
+          if case let .ref(target) = value, entityIDs.contains(target) { linked.insert(target) }
+        case let .many(map):
+          if map.count > entityIDs.count {
+            for id in entityIDs where map[.ref(id)] != nil { linked.insert(id) }
+          } else {
+            for value in map.keys {
+              if let target = value.refValue, entityIDs.contains(target) { linked.insert(target) }
+            }
+          }
+        }
+      }
+    }
+    if let byAttribute = vae[.ref(entityID)] {
+      for byEntity in byAttribute.values {
+        if byEntity.count > entityIDs.count {
+          for id in entityIDs where byEntity[id] != nil { linked.insert(id) }
+        } else {
+          for source in byEntity.keys where entityIDs.contains(source) { linked.insert(source) }
+        }
+      }
+    }
+    return linked
+  }
+
   /// `lazy` matters here: the outbox is rescanned on every inbound server event, and this is asked
   /// once per write key in that scan. Materialising an array per key just to take a maximum made
   /// the scan allocate in proportion to outbox depth × versions per key.
@@ -2351,6 +2386,38 @@ struct TripleIndexes: Codable, Sendable {
     var metrics = QueryMaterializationMetrics()
     let page = materializePage(
       plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo,
+      metrics: &metrics
+    )
+    return (page, metrics)
+  }
+
+  /// `plan`'s page chosen from `candidateIDs` alone, with the bounded selection ``materializePageWithMetrics(_:attributes:remotePageInfo:)``
+  /// runs over every candidate the store holds (#1513); nil when `plan` has no finite bound that selection supports.
+  ///
+  /// The two pages are equal when every entity the whole selection would keep, its lookahead row included, is among
+  /// `candidateIDs`: a window's rows and an entity entering it, when nothing the window shows leaves it. The caller
+  /// proves that. The selection orders by value and then id, a total order, so the candidates' order does not matter.
+  func materializeBoundedPage(
+    _ plan: InstantQueryPlan,
+    amongCandidates candidateIDs: some Sequence<String>,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> (page: InstantQueryPage, metrics: QueryMaterializationMetrics)? {
+    guard Self.hasFiniteResultBound(plan), Self.supportsBoundedSelection(plan) else { return nil }
+    var metrics = QueryMaterializationMetrics()
+    // Unlike an index's set, these candidates are not known to be in the plan's namespace or to match its filters:
+    // each is materialized and checked, as a candidate the indexes do not cover is.
+    let page = materializeBoundedPage(
+      plan,
+      order: Self.effectiveOrder(plan.order),
+      candidateSource: BoundedCandidateSource(
+        baseEntityIDs: ShardedSet(candidateIDs),
+        additionalMemberships: [],
+        filtersFullyCoveredByIndex: false,
+        candidateNamespaceIsKnown: false
+      ),
       attributes: attributes,
       remotePageInfo: remotePageInfo,
       metrics: &metrics
@@ -4389,6 +4456,12 @@ private struct PreparedInclude {
   }
 
   private func requiresRemotePageInfo(_ plan: InstantQueryPlan) -> Bool {
+    Self.pageRowsDependOnRemotePageInfo(plan)
+  }
+
+  /// Whether the server's page info bounds which rows `plan`'s page shows (an offset or a cursor), rather than only
+  /// being the page info it reports (#1513).
+  static func pageRowsDependOnRemotePageInfo(_ plan: InstantQueryPlan) -> Bool {
     plan.offset.map { $0 > 0 } ?? false
       || plan.after != nil
       || plan.before != nil
