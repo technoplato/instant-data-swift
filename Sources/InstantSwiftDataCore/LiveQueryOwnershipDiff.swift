@@ -6,6 +6,8 @@ import Foundation
 // - 2026-10-25: rows are compared by 128-bit fingerprints of their bytes: a row that stays costs a hash, not three
 //   strings, and a fact that stays a hash of its value's text written into one reused buffer, not a string. On a
 //   64-line page with one line changed that was about 5,000 allocations a refresh (#1147).
+// - 2026-11-04: a diff reports its distinct facts, so a server apply's save takes the retractions' diff of the same facts
+//   instead of making its own (#1480).
 
 /// One fact a stored live-query result owns, as its ownership row names it: the value as the store keeps its text.
 struct LiveQueryOwnershipIdentity: Hashable, Sendable {
@@ -26,6 +28,8 @@ struct LiveQueryOwnershipDiff {
   /// The rows the result owns now and did not, in the store's order, once `finish()` ran.
   private(set) var inserted: [LiveQueryOwnershipIdentity] = []
   var isUnchanged: Bool { removed.isEmpty && inserted.isEmpty }
+  /// How many distinct facts the result holds now (#1480): a save checks it compares the facts it saves.
+  var distinctFactCount: Int { factIndexByFingerprint.count }
 
   private struct Fingerprint: Hashable {
     var first: Int

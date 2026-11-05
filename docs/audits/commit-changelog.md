@@ -1,3 +1,27 @@
+## 2026-11-04 22:37:49 EST — scribe `fb02550bbca1a2181574dbc28962356cf8168501`
+Docs (#1422): the recording screen's audit (audits/2026-11-04-recording-screen-draws-1422.md, section 5) names what is left once the comb rests: the 1 s tick's 9.6 ms is the root's per-action cost (#1083's lane); the microphone level for the Live Activity is a root action every 2 s that the Live Activity's own throttle ignores (named next slice); the scoped child stores' fan-out is 2.1% of the main thread; behind Twitter at 14:01 SwiftUI ran 1.2 s of 32 s with no Scribe frame, the shape of the breathe effect 3c34c4b88 replaced. It records build 253's before numbers and why 254 and 257 never reached the iPhone (the installer's 1,800 s timeout at load 300, #1806). Changelog 2f84d72a7.
+
+## 2026-11-04 22:37:19 EST — scribe `178ad0b239f9cd3801ba1fb6a3004135e33e9aea`
+Fix (#1585, #1527): the Mac mirror's lines in progress and lines window ride an admin-token WebSocket, so a refresh no longer carries the 854 KB attribute catalog the admin stream sent with each (182 MB in 29 minutes with Recording 366 live); a probe every 10 s is their keepalive, and an unanswered one replaces the socket. Parity on production: identical rows.
+
+## 2026-11-04 22:09:50 EST — scribe `73460479af02a0e8e8900cf3098289a76a96b92b`
+Cut (#1652): Scribe 0.1 (258) from main after landing B of #1652; the build number 257 to 258, build 258's plain block and four stories.
+
+## 2026-11-04 22:06:36 EST — scribe `03ed6805878ca87dcf03404ae55bb3c60a84a35d`
+Feature (#1652): an agent's chat has a message box (agentCommands message-agent, carried out by the mirror through tools/agent-run --steer); a long-press holds or resumes a session's issue (Backlog, with the recording and moment noted on the issue); Agent chats sorts by most recent, cost or needing you and can show only agents needing you; an open brief shows his linked lines.
+
+## 2026-11-04 22:06:53 EST — instant-data-swift `995043755a97f26d268100262c9ef91630579dbd`
+Release (#1513, #1480, #1109): v1.9.68 tagged on 99504375 (ledger bd929885), from main merge 0df9d697: #1513 a final's publication splices the rows it reaches (red a0dee714, greens f8b7c453 428411d9; a final's publication p50 17.6-18.2 -> 15.6-16.0 ms on the Mac mini, materialized snapshots -43%), #1480 a restated result compared with its stored rows once (red 322c3993, green ca9dd8d2; 192 -> 96 rows read for a 32-line page), #1109 no identity set when the nested limit kept every fact (4fff7e5c). No API or storage change. Debug bundle: 1,669 tests, only the three failing on main since 1.9.64-1.9.67.
+
+## 2026-11-04 22:05:06 EST — scribe `a4f2cd2860d765651d79ed491b1388cdc32c2801`
+Tooling (#1776): build.sh's pass-over of an old waiter that leaves a free slot unused now counts only time it was watched (a look over 120 s after the last restarts the clock; live, a 5-min-old look passed over an old P0 waiter), and an old-code waiter's resubmit keeps its place from its own journal line (red e9ed47495).
+
+## 2026-11-04 21:20:41 EST — scribe `896de971e768950b223ac290f9dc496c3252ec4c`
+Cut (#1423): Scribe 0.1 (256) from main after the list's sealed summary (ADR 0128, #1423, #1195, #1506); CURRENT_PROJECT_VERSION to 256 and build 256's plain block and stories.
+
+## 2026-11-04 21:18:33 EST — scribe `5c293a67a4551cc0fc67d368838ae9acd5b2a474`
+Performance (#1423, #1195, #1506): the recordings list follows no line being recorded. A final links no preview slot and the list's page includes no transcriptions and no newest image (ADR 0128); Stop seals the two slots and the new recordings.wordCount (schema pushed, 550 rows backfilled with backup); a live take's row reads its newest two lines and count from the take or from two small queries per recording another device records, while the list shows in front; the map reads its pins' pictures while it shows, and an image's write leaves updatedAtMs to the heartbeat; a recording's chapters follow a live window of the newest 8 plus one read, with the drawn fields. Before (build 248): the page restated 144.8 KB 1,552 times in 88 minutes (0.98 per final), chapters 869 KB a frame.
+
 ## 2026-11-04 19:51:28 EST — scribe `d763b77be632f66cff4c1e419ae09ad433eabc9a`
 Fix (#1803): the Watch app fits App Store Connect again (ITMS-90389 refused 249 and 250 at 76.1 MB, arm64_32): the Watch app and its widget link without their 3.66 MB of export tables, watchOS compiles at -Osize under -O device builds (other platforms keep -O), each production cut measures its kept Watch app and fails over 70 MB after every install, and each TestFlight upload measures its IPA and stops only at a size Apple refused; red b650b38c9, landed dfbdbceec, changelog 5a8d16af2.
 

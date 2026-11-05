@@ -366,7 +366,11 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 - Issues: #1081, #1007, #654, #653. Library c086d927 (#654: refresh only observers that show the change),
   47333e5e (#1007: an entity held neither before nor after refreshes nobody), b7e619bf (#1007: a page with includes
   skips a change it cannot show), 8d912a74 (#653: an observer is not handed an equal result, as Reactor.js
-  `notifyOne` drops a deep-equal result).
+  `notifyOne` drops a deep-equal result), f8b7c453 and 428411d9 (#1513, 1.9.68: an observer the change does reach
+  makes again only the roots it reaches, and a head window places an entering row among its own rows; a final's
+  publication p50 17.6-18.2 -> 15.6-16.0 ms in `PublishFanOutExercises`, Mac mini, release, materialized snapshots
+  -43%; the fixture's remaining re-materializations are its seven live offset pages, which the consuming app does not
+  observe).
 - Guard: `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift:
   anUpdateThatKeepsAnEntitysPlaceRefreshesOnlyThePageThatShowsIt` (always), `InstantIncludePlanSkipTests/aNewLineRefreshesOnlyThePageThatShowsItsRecording`,
   `anAttachmentNoPageCanReachRefreshesNoPage` (always), `InstantUnresolvedEntityRefreshTests` (always). Nothing counts
@@ -589,12 +593,18 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   Device: with 1.9.8, `observerRefresh` 20% of a core while recording.
 - Rule: diff the frame against the result already held in memory, write ownership rows and hydrate only what changed,
   and decode frames as a stream into compact triples.
-- Issues: #1147, #1109, #1116, #654. Library a9751099, 553cb332, 3e787d2d, 560540fe, ffbd3e87.
+- Issues: #1147, #1109, #1116, #654, #1480, #1513. Library a9751099, 553cb332, 3e787d2d, 560540fe, ffbd3e87;
+  1.9.68: ca9dd8d2 (#1480: the retractions' comparison of a restated result with its stored rows is the save's too,
+  192 -> 96 rows read and values encoded for a 32-line page with one line changed), 4fff7e5c (#1109: no identity set
+  when the nested limit kept every fact), f8b7c453 and 428411d9 (#1513: the publication splices, see F10). E03 at
+  64 lines after them: 6,485 allocations / 5.5 MB a refresh (6,522 / 5.8 MB before, same job).
 - Guard: `RefreshCostTests/decodingARefreshFrameCostsLittlePerLine` (always); `Tests/InstantSwiftDataCoreTests/LiveQueryOwnershipDiffTests.swift`
   (always); E03's budget in `RealSize/MemoryExercises.swift` (exercise-only, `INSTANT_MEMORY_EXERCISES=1`);
-  `RealSizeBudgetTests` rule `server-apply.refresh-128` (release-only). Propose moving E03's 64-line bound into an
-  always-run ratio test: one-thread allocations of one refresh on a 64-row page versus a 256-row page with one row
-  changed, `#expect(big < small * 2)` (today about 3x: a known issue until #1109).
+  `RealSizeBudgetTests` rule `server-apply.refresh-128` (release-only);
+  `InstantRefreshPlanningReadTests/aRefreshComparesARestatedResultWithItsStoredRowsOnce` (always) and the ratio guard
+  proposed here, `aLargerPageWithOneLineChangedCostsAboutWhatASmallerOneDoes` (always: a 256-line page's rows read and
+  values encoded within twice a 64-line page's, about 4x today, a known issue until #1116 keeps each result's rows in
+  memory).
 - Upstream: `reactive/session.clj:467-534` (the server restates; the client chooses how much work a restatement costs).
 
 <a id="f22"></a>
