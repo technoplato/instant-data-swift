@@ -629,6 +629,11 @@ struct InstantMutationLifecycleResolution: Sendable {
   var event: InstantMutationLifecycleEvent
 }
 
+/// A write's receipt fingerprint a caller already computed (#1523), `nil` inside when the write has none.
+private struct InstantKnownReceiptFingerprint {
+  var value: String?
+}
+
 /// A write's receipt fingerprint, found by the bytes its row stores (#1523) or by the hash of its inputs (#1497).
 private struct InstantKeptReceiptFingerprint {
   /// The SHA-256 of the body as its row stored it when this fingerprint was computed (#1523). The stored body holds every
@@ -11397,8 +11402,11 @@ public actor SQLitePersistenceStore {
         }
         try setOptimisticOverlayActiveIfChangedWithoutTransaction(mutation)
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
-        // Its lifecycle record checks the receipt once more, with the kept fingerprint.
-        try saveMutationLifecycleWithoutTransaction(mutation)
+        // Its lifecycle record checks the receipt once more, with the fingerprint this acknowledgement found (#1523).
+        try saveMutationLifecycleWithoutTransaction(
+          mutation,
+          knownReceiptFingerprint: InstantKnownReceiptFingerprint(value: effectFingerprint)
+        )
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
         // Accepted: no claim or acknowledgement checks this write again (#1497).
         keptReceiptFingerprints[mutation.id] = nil
@@ -20558,10 +20566,13 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// `knownReceiptFingerprint` is `mutation`'s receipt fingerprint when the caller computed it already (#1523): the
+  /// acknowledgement's, whose status and confirmation fields are not inputs of it.
   private func saveMutationLifecycleWithoutTransaction(
     _ mutation: PendingMutation,
     lifecycleID requestedLifecycleID: String? = nil,
-    advancingFromMutationID: String? = nil
+    advancingFromMutationID: String? = nil,
+    knownReceiptFingerprint: InstantKnownReceiptFingerprint? = nil
   ) throws {
     let existingLifecycleID = try lifecycleIDWithoutTransaction(for: mutation.id)
     // Ordinary mutations keep their existing row-addressed lifecycle behavior
@@ -20578,7 +20589,7 @@ public actor SQLitePersistenceStore {
             "A supersession newcomer must have a distinct transaction id that has never belonged to a lifecycle."
         )
       }
-      let terminal = try terminalLifecycleRecord(for: mutation)
+      let terminal = try terminalLifecycleRecord(for: mutation, knownReceiptFingerprint: knownReceiptFingerprint)
 
       let currentMutationID = try currentMutationIDWithoutTransaction(
         lifecycleID: lifecycleID
@@ -20664,7 +20675,7 @@ public actor SQLitePersistenceStore {
           "Refused to move lifecycle '\(lifecycleID)' backward through stale alias '\(mutation.id)'."
       )
     }
-    let terminal = try terminalLifecycleRecord(for: mutation)
+    let terminal = try terminalLifecycleRecord(for: mutation, knownReceiptFingerprint: knownReceiptFingerprint)
     try execute(
       """
       UPDATE instant_outbox_lifecycles
@@ -20719,15 +20730,17 @@ public actor SQLitePersistenceStore {
   }
 
   private func terminalLifecycleRecord(
-    for mutation: PendingMutation
+    for mutation: PendingMutation,
+    knownReceiptFingerprint: InstantKnownReceiptFingerprint? = nil
   ) throws -> InstantTerminalLifecycleRecord? {
     guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutation.id) else {
       return nil
     }
-    let hasPreparedReceipt = try hasStoredPreparedOptimisticEffectReceipt(
-      mutation,
-      in: row
-    )
+    let hasPreparedReceipt = if let knownReceiptFingerprint {
+      hasStoredPreparedOptimisticEffectReceipt(mutation, in: row, fingerprint: knownReceiptFingerprint.value)
+    } else {
+      try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+    }
     let lifecycle = compactedLifecycleForInspection(
       mutation,
       hasStoredReceiptFingerprint: hasPreparedReceipt
