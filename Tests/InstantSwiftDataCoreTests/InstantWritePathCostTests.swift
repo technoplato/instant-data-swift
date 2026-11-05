@@ -188,7 +188,8 @@ struct InstantWritePathCostTests {
     }
 
     let tasks = await runtime.mutationDeadlineWakeTaskCountForTesting() - before
-    #expect(tasks <= 1, "\(tasks) deadline-wake tasks for \(writes) writes acknowledged within their deadlines")
+    // One task sleeps through every write; a second only if a slow run outlasts the first deadline (about 6 s).
+    #expect(tasks <= 2, "\(tasks) deadline-wake tasks for \(writes) writes acknowledged within their deadlines")
     _ = try? await runtime.closeConnection()
   }
 
