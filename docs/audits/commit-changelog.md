@@ -1,3 +1,6 @@
+## 2026-11-04 22:05:06 EST — scribe `a4f2cd2860d765651d79ed491b1388cdc32c2801`
+Tooling (#1776): build.sh's pass-over of an old waiter that leaves a free slot unused now counts only time it was watched (a look over 120 s after the last restarts the clock; live, a 5-min-old look passed over an old P0 waiter), and an old-code waiter's resubmit keeps its place from its own journal line (red e9ed47495).
+
 ## 2026-11-04 21:20:41 EST — scribe `896de971e768950b223ac290f9dc496c3252ec4c`
 Cut (#1423): Scribe 0.1 (256) from main after the list's sealed summary (ADR 0128, #1423, #1195, #1506); CURRENT_PROJECT_VERSION to 256 and build 256's plain block and stories.
 
