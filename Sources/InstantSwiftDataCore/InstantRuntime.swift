@@ -2843,9 +2843,9 @@ public final class InstantRuntime: Sendable {
       operationGate.markHolderWrites(prepared.result.changedEntityIDs.union(prepared.deferredValueChangedEntityIDs))
       // #653: a write delivery could send at once is claimed by its own save, as Reactor.js `pushOps` sends a mutation
       // as it records it; the claim turn read it back and fingerprinted it again (3.06 ms a claim on the phone).
-      let claimRequest = supersededTail == nil && creation.explicitTime == nil
-        ? await claimAtSaveRequest()
-        : nil
+      // A write with an explicit time is claimed too when it is the tail: the store checks that, and that nothing is ready
+      // ahead of it, inside the save.
+      let claimRequest = supersededTail == nil ? await claimAtSaveRequest() : nil
       operationGate.markHolderPhase("save")
       let saved = try await saveLocalMutationReadingConnectionStatus(
         prepared: prepared,
