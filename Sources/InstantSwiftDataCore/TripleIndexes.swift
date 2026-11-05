@@ -976,6 +976,11 @@ struct TripleIndexes: Codable, Sendable {
     internedTxIDsBox.resolved(at: index)
   }
 
+  /// Whether `stamp` is a fact of transaction `transactionID` (#1648): a local write's own later step that won its slot.
+  func stamp(_ stamp: InstantTripleStamp, isOfTransaction transactionID: String) -> Bool {
+    resolvedTxID(at: stamp.txIDIndex) == transactionID
+  }
+
   private mutating func uniqueInternCaches() {
     if !isKnownUniquelyReferenced(&internCaches) {
       internCaches = internCaches.copy()

@@ -4,6 +4,10 @@
 //                    its rollback and a SHA-256, about 1.3 ms an acknowledgement on a Mac mini for a transcript line. The
 //                    store now keeps the fingerprint it computed for each write, keyed by a hash of the fingerprint's
 //                    inputs, and computes it again only for inputs it has not fingerprinted.
+// 2026-11-04  #1523  The kept fingerprint is found by the body's stored bytes at the claim and the acknowledgement, not by
+//                    a hash of the whole transaction and rollback: a body stored again in another encoding is
+//                    fingerprinted once more from its content. The rewrite helper reads a compressed body (#1463): since
+//                    1.9.64 it read the deflated bytes as text and both rewrite tests failed before they began.
 
 import CustomDump
 import Foundation
@@ -83,8 +87,9 @@ struct InstantAcknowledgementDigestTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
-  /// A body stored again in another encoding, with the same content, reuses the kept fingerprint (#1497): its inputs are
-  /// the same, so its fingerprint is; its write is claimed and accepted.
+  /// A body stored again in another encoding, with the same content, is fingerprinted once more by its claim, from its
+  /// content: its bytes are not the ones its save kept (#1523). Its fingerprint is the same, so its write is claimed and
+  /// accepted, and the acknowledgement finds the claim's by the same bytes.
   @Test
   func aBodyStoredInAnotherEncodingReusesTheKeptFingerprint() async throws {
     var fixture = try await FastDrainFixture.make(
@@ -110,7 +115,7 @@ struct InstantAcknowledgementDigestTests {
 
     let pending = try await fixture.pendingCount()
     #expect(window.mutations.map(\.id).contains(reencodedID))
-    #expect(afterClaim - beforeClaim == 0, "the claim fingerprinted \(afterClaim - beforeClaim) bodies")
+    #expect(afterClaim - beforeClaim == 1, "the claim fingerprinted \(afterClaim - beforeClaim) bodies")
     #expect(afterAcknowledgements - afterClaim == 0, "\(afterAcknowledgements - afterClaim) acknowledgement fingerprints")
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
@@ -142,7 +147,8 @@ struct InstantAcknowledgementDigestTests {
     defer { sqlite3_finalize(select) }
     try #require(sqlite3_step(select) == SQLITE_ROW)
     let id = String(cString: sqlite3_column_text(select, 0))
-    let json = String(cString: sqlite3_column_text(select, 1))
+    // The body is stored compressed since #1463; a text body an older version wrote reads as it is.
+    let json = try #require(storedOutboxBodyJSON(select, 1))
     var object = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     try change(&object)
     let reencoded = String(

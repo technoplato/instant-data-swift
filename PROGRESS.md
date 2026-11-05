@@ -1,3 +1,25 @@
+## 2026-11-04 23:20 EST — perf-send-1797 (#653, #1517, #1523, #1142, #1648): v1.9.69, a live write is claimed by its own save
+
+- **Why:** on the phone (builds 248-249, its own write recorder) the claim cost 3.06 ms a write, more than the save's
+  2.79 ms; the save, claim and acknowledgement each found the write's receipt by hashing it; each send started a deadline
+  task; two writes in one millisecond went out in id order.
+- **Landed:** `d3ed3c50` merges the lane's verified head `7773cfa5` (job C) with `main` (v1.9.68); `cd8be798` updates
+  the todo seed's hop pins (8 -> 7: #1648's `94a77045` no longer restamps and re-prepares it); ledger `0840aa82`;
+  release record `docs/releases/v1.9.69.md`.
+- **Measured** (job `1797-c-release-candidate`, Mac mini, release, v1.9.67 vs `7773cfa5`, same job, 225 writes):
+  save + claim 5,523.4 -> 4,208.3 us a write (-23.8%), write side 1,344.5 -> 1,092.2 ms (-18.8%), every metered library
+  operation 8,503.5 -> 8,377.7 ms (-1.5%); the acknowledgement 439.7 -> 628.7 us (+43%, #1523's receipt key missed by
+  the server apply's body pages and staging; fixed on the lane branch, `9b792550`/`6ff60ee9`, not in this release).
+- **Checked:** the whole debug bundle at `7773cfa5` (1,673 tests): only the two seed pins failed (pass at v1.9.67;
+  updated); reds fail as they must; the delivery suites pass twice more. Not compiled as merged before the tag: the
+  consuming app's cut and job E compile it.
+- **Next (resume here):** Scribe pins 1.9.69 (the 10 files of Scribe's `0cc05789e`), cuts the build after 259 and
+  installs it; after an hour, the phone's ledger (`~/Sync/audit/perf-send-1797/scripts/ledger_disk.py`, the CPU split)
+  against `phone/before-1815-*.txt`, one line on #1797. Job `1797-e-receipt-echo` (mini) verifies the lane branch
+  `agent/claude/perf-send-1797` (the ack fix `6ff60ee9`, v1.9.68 merged, the pins) and an A/B against v1.9.67: green ->
+  release it as the next free number. Prepared, not applied: #1517's claim at save measured by the save's own body
+  encode (`/tmp/perf-send-1797-next/`, red test + green; 27 of the claim at save's 100 samples).
+
 ## 2026-11-04 22:05:59 EST — perf-recv-1797 (#1513, #1480, #1109): v1.9.68, a final's publication splices; a restated result is compared once
 
 - **Why:** the phone's ledger (the consuming app's build 248, 88 min recording, 3,811 refresh-ok frames) spent 41.8
@@ -14,6 +36,57 @@
   (#1109's schema index `0ff1bd60` and cascade sources `c3693f35`, #1513's kept plan dependencies `5ccfb473`,
   #1109's one-pass socket UTF-8 `053e7ecb`) wait for Mac mini job `1797-recv-schema-ab`, then 1.9.69 or the next
   free number.
+
+## 2026-11-04 20:35 EST — perf-send-1797 (#653): job A measured; four fixes after it; job B verifies before any release
+
+- **Job A** (`1797-a-gate1648-1517`, mini, 19:49-20:18; outputs `~/Sync/audit/perf-send-1797/jobs/out-1797-a/`): release
+  A/B af35bc58 vs 037012ec, recording exercise energy lines: outboxClaim 2,833.5 -> 2,401.8 us a call (-15%), localSave
+  flat, acknowledgement 411.7 -> 618.7 us (a regression, fixed after: `bca8111b`); pages unchanged (save 14.2, claim 2.0,
+  ack 4.0, echo 18.5 log frames a write). Gate: my three new tests had wrong counts (fixed `1f7c8b3c`), a digest test's
+  acknowledgements fingerprinted twice (fixed `bca8111b`), and #1648's own regression
+  (`typedLookupUpdateCanResolveEntityCreatedEarlierInSameTransaction`, also in order-1648's gate) fixed `94a77045`. The
+  #1648 red stage never ran: a made-up full SHA in my script (job B uses short SHAs).
+- **Do not release 037012ec.** The branch head `94a77045` holds every fix plus claim at save (red `096246e4`, green
+  `9691ee4d`, order fix `cdca7eb3`, snapshot `45f92924`, burst test `30a344aa`) and the shared deadline wake (#1142, red
+  `21c16cfb`, green `0adffc2e`, test bound `ed0a2f00`).
+- **Job B** (`1797-b-claim-at-save`, P0 epic gate, first in the mini's line at 20:24; worktree
+  `~/Sync/worktrees/perf-send-1797-measure` pinned at `94a77045` with `gate-1797-b.sh`; stdout
+  `~/Sync/audit/perf-send-1797/jobs/1797-b.out`, logs `job-b-*.log`, `base-037012ec-*`, `head-94a77045-*` come back to that
+  worktree): the suites at HEAD (InstantWritePathCostTests, delivery, creation order, typed API, digest, live send),
+  reds for #653 (096246e4), #1142 (21c16cfb) and #1648 (cc735cba Sources), and the release A/B vs 037012ec.
+- **Next (resume here):** read job B. If green: `git fetch origin --tags`, rebase the branch on origin/main, push to main,
+  release the first free v1.9.N above 1.9.67 (v1.9.65 was never tagged; draft at
+  `~/Sync/audit/perf-send-1797/jobs/release-draft.md`), pin it in Scribe (8 files: maps file's checklist), cut and
+  install (skill scribe-builds), then the phone's ledger after an hour (`ledger_disk.py`, the CPU split script) and the
+  one-line before/after on #1797. If red: fix on the branch, rerun only the failing suites (`swift test --filter`).
+
+## 2026-11-04 18:52 EST — perf-send-1797 (#653): one write costs one write; three greens on the branch, gate queued
+
+- **Why:** the phone (builds 248-249, its own write recorder, ledger pulled 18:13, 69 recording minutes) writes 49.9
+  MB/min logical; SQLite log pages 3,454/min, ~47% of them the outbox's bookkeeping (~33 pages a write: claim 2,
+  acknowledgement 4-5, save ~21, echo ~9.5 outbox pages); the claim costs as much CPU as the save. Evidence:
+  `~/Sync/audit/perf-send-1797/phone/before-1815-*.txt` (script `../scripts/ledger_disk.py`); code maps
+  `~/Sync/audit/perf-send-1797/maps/2026-11-04-write-path-maps.md`.
+- **On branch `agent/claude/perf-send-1797` (pushed, not on main yet):** `af35bc58` merges #1648 (order-1648's ended
+  worktree, ten commits, clean); #1517 red `db5e4365` / green `d5f4a7d7` (the claim measures each projected body once
+  and fingerprints each wire intent once: 6 -> 3 and 6 -> 3 for three writes); #1523 red `d6b239f4` / green `1ef4aa2f`
+  (the kept receipt fingerprint found by the body's stored bytes: 6 -> 0 input hashes for two writes saved, claimed
+  and accepted; InstantAcknowledgementDigestTests' helper reads compressed bodies, failing on main since 1.9.64).
+- **Running:** job `1797-a-gate1648-1517` (build.sh, high, mini; queued 18:37, worktree
+  `~/Sync/worktrees/perf-send-1797-measure` pinned at `1ef4aa2f`; outputs land there: `job-a-*.log`,
+  `base-af35bc58-*`, `head-1ef4aa2f-*`): the suites at HEAD, the creation-order suites x3, three reds, and the write
+  path in release at `af35bc58` and HEAD (b-tree frames per step, pages and CPU per step on a 7,000-line store, the
+  recording exercise's energy lines and a 60 s sample). Its stdout: `~/Sync/audit/perf-send-1797/jobs/1797-a.out`.
+- **Also on the branch, unverified (not compiled yet):** #653 claim at save: red `096246e4`, green `9691ee4d`, ordering
+  fix `cdca7eb3` (a pass drains the claimed-at-save queue under the gate and sends it first), burst-order test
+  `30a344aa`. The phone's claim cost 3.06 ms a write (more than the save's 2.79 ms); the save now claims a write the
+  pump would claim next as is. Verification: job B, `~/Sync/audit/perf-send-1797/jobs/gate-1797-b.sh` (suites, red at
+  096246e4, release A/B 037012ec vs head), queued once job A starts (the measure worktree repinned to the branch head).
+- **Next:** read job A; if green, land #1648 + #1517 + #1523 on main (rebase first), release the first free v1.9.N
+  (`git fetch --tags`; v1.9.65 was never tagged), pin it in Scribe (8 files: see the maps file), cut and install; then
+  job B's verdict on claim at save (release it only green); then #653 item 4 (the acknowledgement's pages), #1142 (park
+  the pump; a lazy deadline wake; an event-driven waitForAllPendingMutations), #1320 (checkpoint from a wal hook).
+  The send's double encode is not worth it: frameEncode is 0.09 ms a frame on the phone.
 
 ## 2026-11-04 17:35 EST — b1104-1756 (#1756): v1.9.67, a restated unset field reduces on a cascading namespace
 

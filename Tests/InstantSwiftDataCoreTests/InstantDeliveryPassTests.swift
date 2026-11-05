@@ -2,6 +2,8 @@
 // 2026-10-25  #1130  Created. Delivery took two pump passes per write, each starting with a background-priority retry
 //                    turn under the operation gate: 176 claims and 176 retry turns for 88 writes in #1074's recording
 //                    exercise, the largest holder after the prune.
+// 2026-11-04  #653   A write saved with nothing ahead of it on an open connection is claimed by its own save: eight
+//                    writes take no claim turn.
 
 import Foundation
 import Testing
@@ -16,7 +18,8 @@ import Testing
 /// write is waiting to be claimed.
 @Suite(.serialized, .timeLimit(.minutes(2)))
 struct InstantDeliveryPassTests {
-  /// Eight writes, each sent and acknowledged before the next: eight claims, no retry turn.
+  /// Eight writes, each sent and acknowledged before the next: each claimed by its own save (#653), no claim turn and
+  /// no retry turn.
   @Test
   func eachAcknowledgedWriteTakesOneClaimAndNoRetryTurn() async throws {
     let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
@@ -52,7 +55,9 @@ struct InstantDeliveryPassTests {
 
     let claims = holds.count(of: "claim automatic outbox transport mutations for delivery")
     let retryTurns = holds.count(of: "retry one persisted transient mutation failure window")
-    #expect(claims == writes, "#1130: \(claims) delivery claims for \(writes) writes")
+    // #1130 took one claim turn a write; since #653 a write saved with nothing ahead of it on an open connection is
+    // claimed by its own save, so none of these takes a claim turn.
+    #expect(claims == 0, "#653: \(claims) delivery claim turns for \(writes) writes")
     #expect(retryTurns == 0, "#1130: \(retryTurns) retry turns while nothing failed")
     let sent = await session.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
     #expect(sent == (0..<writes).map { "tx-pass-\($0)" }, "every write is sent once, in order: \(sent)")

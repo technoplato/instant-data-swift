@@ -103,6 +103,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
 | [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #296, #932 | always |
 | [F66](#f66) | Keep one stored form of a result: a copy beside its rows must be rewritten, deferred or repaired | #566, #1123, #1426, #1440 | always |
+| [F67](#f67) | Decide a write's place in the outbox under the operation gate, never before it | #1648, #1609 | always |
 
 ## Read path
 
@@ -1247,6 +1248,29 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   no JSON; a store 1.9.54 left converts once, with and without a waiting marker).
 - Upstream: `Reactor.js` keeps one form, each query's result under its key in a `PersistedObject`, written when it
   changes.
+
+<a id="f67"></a>
+#### F67. Decide a write's place in the outbox under the operation gate, never before it
+
+- Symptom: two writes of one row made in the same millisecond reached the server in either order. The newer of two
+  revisions went first and a rule requiring a newer `updatedAtMs` refused the older. With one time on both, the older
+  could also be accepted after the newer and put the row back, the same-entity supersession could keep the older of
+  two unsent revisions, and `failedMutationSupersessions()` did not count the later write that covered a refused one,
+  so the refusal stayed listed.
+- Measured cost: on a phone running library 1.9.64, two revisions of one row written 0.5 ms apart from two tasks got one
+  `created_at_ms` and went out newest first: four refused changes in two recordings (#1609's evidence).
+- Rule: a write's outbox time is assigned once it holds the operation gate, after the outbox tail (`max(now, tail +
+  1)`), and every fact the write stamps with its own time carries that one. Never read the clock for a write before the
+  gate and hand it on: the gate is where writes are serialized, and delivery sends in `(created_at_ms, mutation_id)`
+  order with a random id, so a tie is a coin flip. An explicit `createdAt` is for callers that order their own writes
+  (tests, replays, imports).
+- Issues: #1648, #1609.
+- Guard: `Tests/InstantSwiftDataTests/InstantWriteCreationOrderTests.swift` and
+  `Tests/InstantSwiftDataCoreTests/InstantSendAgainCreationOrderTests.swift` (always: with the clock frozen, typed
+  writes, `transact(operations:)` and Send Again reach the outbox and the wire in the order they were made, with
+  strictly increasing times; the same-row supersession and a refused write's supersession follow that order).
+- Upstream: `Reactor.js` `pushOps` numbers each mutation `max(order) + 1` as it is made and sends in that order
+  (`sortedMutationEntries`).
 
 ## Guards to add first
 

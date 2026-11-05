@@ -11,12 +11,19 @@
 //   buffer counts its progress for one-shot reads and logs a receive summary a minute (#1796).
 // - 2026-11-04: the receive summary measures how old the newest server write is when its frame is applied, the lag a
 //   device following another one sees (#1796).
+// - 2026-11-04: a window a write's own save claimed is sent only on the session generation it was claimed for: a
+//   disconnect releases its claim and puts older writes back, which the next session must get first (#653).
 
 import Foundation
 import IssueReporting
 import os
 
 package struct InstantSupersededLiveSessionSend: Error, Sendable {}
+
+/// A window claimed for a session that has ended since (#653). Its claim was released with that session's claims, and
+/// the next pass claims its writes again behind the writes the release put back; sending it on a newer session would
+/// put a newer write ahead of them.
+package struct InstantClaimedForEndedLiveSession: Error, Sendable {}
 
 /// The exact current receiver owns this send failure's status and reconnect.
 ///
@@ -857,15 +864,15 @@ package actor InstantRuntimeLiveSession {
   private var makeID: (@Sendable () -> String)?
   private var sessionID: String?
   private var isOpened = false {
-    didSet {
-      let opened = isOpened
-      openFlag.withLock { $0 = opened }
-    }
+    didSet { publishOpenSnapshot() }
   }
-  /// Mirrors `isOpened` for ``isOpenSnapshot``, written in the same actor turn (#482). The lock guards one Bool for
-  /// one load or store, as `AsyncSerialGate`'s held flag does.
-  private let openFlag = OSAllocatedUnfairLock(initialState: false)
-  private var generation = 0
+  /// Mirrors `isOpened` and `generation` for ``isOpenSnapshot`` and ``openGenerationSnapshot``, written in the same
+  /// actor turn (#482, #653). The lock guards one small value for one load or store, as `AsyncSerialGate`'s held flag
+  /// does.
+  private let openFlag = OSAllocatedUnfairLock(initialState: OpenSnapshot(isOpen: false, generation: 0))
+  private var generation = 0 {
+    didSet { publishOpenSnapshot() }
+  }
   private var receiverFailure: ReceiverFailure?
   private var inFlightSendCounts: [SendGeneration: Int] = [:]
   /// Unstructured tasks the send path started on sockets this actor let go of (#1496), for tests.
@@ -891,7 +898,23 @@ package actor InstantRuntimeLiveSession {
   /// ``isOpen`` without a hop onto this actor, for ``InstantRuntime/connectionHealth()`` (#482). Like `await isOpen`,
   /// the answer can change right after it is read.
   nonisolated var isOpenSnapshot: Bool {
-    openFlag.withLock { $0 }
+    openFlag.withLock { $0.isOpen }
+  }
+
+  /// The generation of the session open now, or nil, without a hop onto this actor (#653): a write's save claims its
+  /// write for this generation, and ``sendMutations(_:claimToken:claimedInGeneration:)`` sends it on no other.
+  nonisolated var openGenerationSnapshot: Int? {
+    openFlag.withLock { $0.isOpen ? $0.generation : nil }
+  }
+
+  private struct OpenSnapshot {
+    var isOpen: Bool
+    var generation: Int
+  }
+
+  private func publishOpenSnapshot() {
+    let snapshot = OpenSnapshot(isOpen: isOpened, generation: generation)
+    openFlag.withLock { $0 = snapshot }
   }
 
   var currentSessionID: String? {
@@ -1993,11 +2016,18 @@ package actor InstantRuntimeLiveSession {
     return nil
   }
 
+  /// Sends claimed mutations in outbox order. `claimedInGeneration` is the session generation a write's own save claimed
+  /// them for (#653): on a newer open session this throws ``InstantClaimedForEndedLiveSession`` and sends nothing. With
+  /// no session open it fails as any send does.
   @discardableResult
   func sendMutations(
     _ mutations: [InstantTransportMutation],
-    claimToken: String?
+    claimToken: String?,
+    claimedInGeneration: Int? = nil
   ) async throws -> [InstantLiveMutationEncodingFailure] {
+    if let claimedInGeneration, isOpened, claimedInGeneration != generation, !mutations.isEmpty {
+      throw InstantClaimedForEndedLiveSession()
+    }
     guard let session, isOpened else {
       InstantDiagnostics.shared.record(
         .warning,

@@ -1,3 +1,8 @@
+// History:
+// - 2026-11-04: projectionMetadata hands back the projection it measured, so a claim that substitutes no required
+//   scalar records that value and its exact size instead of building and encoding it again (#1517).
+// - 2026-11-04: a window a write's save claimed names the session generation it was claimed for (#653).
+
 import Foundation
 import os
 
@@ -217,6 +222,17 @@ struct InstantOutboxProjectionCandidate: Sendable {
 struct InstantOutboxProjectionMetadata: Sendable {
   var encodedBodyByteCount: Int
   var requiredScalarKeys: Set<InstantVisibleWriteKey>
+  /// The projection before any required-scalar substitution: with no ``requiredScalarKeys`` it is the projected body,
+  /// and ``encodedBodyByteCount`` is its exact sorted-key size (#1517).
+  var projectedMutation: PendingMutation
+}
+
+/// What a store's delivery claims encoded for the writes they claimed (#1517), for the tests that pin it.
+package struct InstantClaimEncodeCounts: Equatable, Sendable {
+  /// Sorted-key encodes of a claimed write's projected body, made to measure it.
+  package var projectedBodyEncodes = 0
+  /// Forward wire-intent fingerprints (a sorted-key encode and a SHA-256) of a claimed write.
+  package var wireIntentFingerprints = 0
 }
 
 struct InstantOutboxDeliveryClaim: Equatable, Sendable {
@@ -235,6 +251,11 @@ struct InstantAutomaticOutboxTransportSelection: Sendable {
   var reclaimedMutationIDs: Set<String>
   var nextClaimDeadlineMilliseconds: Int64?
   var shouldContinueImmediately: Bool
+  /// Windows writes' own saves claimed before this one's claim took the operation gate (#653), sent first, in order.
+  var claimedAtSaveBefore: [InstantAutomaticOutboxTransportSelection] = []
+  /// The live session generation a write's own save claimed this window for (#653): it is sent on that session or not
+  /// at all. Nil for a pass's window, which is claimed from the head of the outbox.
+  var claimedInSessionGeneration: Int? = nil
 }
 
 struct InstantPersistenceRevisions: Equatable, Sendable {
@@ -384,7 +405,8 @@ enum InstantBoundedOutboxDelivery {
     }
     return InstantOutboxProjectionMetadata(
       encodedBodyByteCount: encodedBodyByteCount,
-      requiredScalarKeys: Set(hydrations.map(\.key))
+      requiredScalarKeys: Set(hydrations.map(\.key)),
+      projectedMutation: baseMutation
     )
   }
 

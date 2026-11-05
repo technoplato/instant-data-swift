@@ -11747,9 +11747,10 @@ extension InstantStoreTests {
         [1]
       )
     }
+    // #1648 (94a77045): the seed is prepared once, not restamped and prepared again (BenchmarkTests says why).
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8]
+      [7]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),

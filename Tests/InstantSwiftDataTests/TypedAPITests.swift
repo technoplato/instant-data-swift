@@ -2212,11 +2212,16 @@ struct TypedAPITests {
       let idOnlySnapshots = try await db.query(
         InstantQueryPlan(id: "typed.id-only", namespace: TypedTodo.instantNamespace)
       )
+      // #1648: the clock stands still, so each write takes its place one millisecond after the write before it and
+      // its facts carry that time; the entities come back in the order they were written, not by id.
       expectNoDifference(
         idOnlySnapshots.map(\.id),
-        [idOnlyID.rawValue, todoID.rawValue, upsertedID.rawValue]
+        [todoID.rawValue, upsertedID.rawValue, idOnlyID.rawValue]
       )
-      expectNoDifference(idOnlySnapshots.first?.values["id"]?.first, .string(idOnlyID.rawValue))
+      expectNoDifference(
+        idOnlySnapshots.first(where: { $0.id == idOnlyID.rawValue })?.values["id"]?.first,
+        .string(idOnlyID.rawValue)
+      )
 
       do {
         try await db.transact(id: "tx-typed-id-only-duplicate") {
@@ -2235,7 +2240,7 @@ struct TypedAPITests {
       let pending = await db.pendingMutations()
       #expect(
         pending.map(\.id)
-          == ["tx-typed-create", "tx-typed-id-only-create", "tx-typed-update-upsert"]
+          == ["tx-typed-create", "tx-typed-update-upsert", "tx-typed-id-only-create"]
       )
       let idOnlyMutation = pending.first { $0.id == "tx-typed-id-only-create" }
       expectNoDifference(
@@ -2248,7 +2253,8 @@ struct TypedAPITests {
               attributeID: "todos/id",
               value: .string(idOnlyID.rawValue),
               txID: "tx-typed-id-only-create",
-              txTime: InstantTimestamp(milliseconds: 1_700_000_025_000)
+              // The third write made in the frozen millisecond (#1648).
+              txTime: InstantTimestamp(milliseconds: 1_700_000_025_002)
             )
           ),
         ]
@@ -3154,6 +3160,10 @@ struct TypedAPITests {
       )
 
       let pending = await db.pendingMutations()
+      // #1648: the clock stands still, so each write takes its place one millisecond after the write before it, and
+      // its facts carry that time: the seed at `timestamp`, the update one after it, the link two after it.
+      let updateTime = InstantTimestamp(milliseconds: timestamp.milliseconds + 1)
+      let linkTime = InstantTimestamp(milliseconds: timestamp.milliseconds + 2)
       let lookupUpdate = pending.first { $0.id == "tx-lookup-update" }
       expectNoDifference(
         lookupUpdate?.transaction.operations,
@@ -3163,21 +3173,21 @@ struct TypedAPITests {
             attributeID: "users/id",
             value: .lookupRef(userLookup.lookupRef),
             txID: "tx-lookup-update",
-            txTime: timestamp
+            txTime: updateTime
           ),
           .insertByLookup(
             entity: userLookup.lookupRef,
             attributeID: "users/name",
             value: .string("Blob Jr."),
             txID: "tx-lookup-update",
-            txTime: timestamp
+            txTime: updateTime
           ),
           .insertByLookup(
             entity: userLookup.lookupRef,
             attributeID: "users/email",
             value: .string("blob@instantdb.com"),
             txID: "tx-lookup-update",
-            txTime: timestamp
+            txTime: updateTime
           ),
         ]
       )
@@ -3191,14 +3201,14 @@ struct TypedAPITests {
             attributeID: "posts/id",
             value: .lookupRef(postLookup.lookupRef),
             txID: "tx-lookup-link",
-            txTime: timestamp
+            txTime: linkTime
           ),
           .insertByLookup(
             entity: postLookup.lookupRef,
             attributeID: "posts/author",
             value: .lookupRef(renamedUserLookup.lookupRef),
             txID: "tx-lookup-link",
-            txTime: timestamp
+            txTime: linkTime
           ),
         ]
       )

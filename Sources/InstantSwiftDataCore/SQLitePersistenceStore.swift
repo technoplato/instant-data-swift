@@ -101,9 +101,19 @@
 // - 2026-10-31: an outbox body is stored compressed and its lifecycle derived from it, so a live write's cell fits its
 //   leaf; every budget still counts JSON bytes (`encoded_body_bytes`, `lifecycle_bytes`), and an older row's text body
 //   reads as before (#1463, #1510).
+// - 2026-11-04: the delivery claim measures a projected body once and fingerprints its wire intent once: the body as
+//   stored was fingerprinted and then always replaced, and an unsubstituted projection was encoded a second time to
+//   check its own measure (#1517).
+// - 2026-11-04: a write's kept receipt fingerprint is found by its body's stored bytes at its save, claim and
+//   acknowledgement, where each hashed the whole transaction and rollback to find it (#1523).
+// - 2026-11-04: a local save can claim its own write for delivery in the same transaction when the claim the pump would
+//   run next would take exactly it (#653).
+// - 2026-11-04: a delivery claim's visible-write filter reads its writes' attributes from a decoded copy kept while they
+//   are unchanged, where each claim decoded them from JSON one statement at a time (#653).
 // - 2026-11-04: a server apply compares each restated result with its stored rows once: the save takes the retractions'
 //   comparison, made in the same read, instead of encoding every restated value and reading every row again (#1480).
 
+import CryptoKit
 import Foundation
 import IssueReporting
 import os
@@ -623,9 +633,20 @@ struct InstantMutationLifecycleResolution: Sendable {
   var event: InstantMutationLifecycleEvent
 }
 
-/// A write's receipt fingerprint and the hash of the inputs it was computed from (#1497).
+/// A write's receipt fingerprint a caller already computed (#1523), `nil` inside when the write has none.
+private struct InstantKnownReceiptFingerprint {
+  var value: String?
+}
+
+/// A write's receipt fingerprint, found by the bytes its row stores (#1523) or by the hash of its inputs (#1497).
 private struct InstantKeptReceiptFingerprint {
-  var inputsHash: Int
+  /// The SHA-256 of the body as its row stored it when this fingerprint was computed (#1523). The stored body holds every
+  /// input of the fingerprint (the row's columns hold only status, server transaction id and confirmation source), so a
+  /// row whose body has this digest has this fingerprint. A digest, not the bytes: offline, 512 kept entries of
+  /// compressed bodies would hold megabytes.
+  var storedBodyDigest: SHA256Digest?
+  /// The hash of the fingerprint's inputs (#1497), for a caller that holds a write but not its row's bytes.
+  var inputsHash: Int?
   var fingerprint: String
 }
 
@@ -1427,6 +1448,19 @@ public actor SQLitePersistenceStore {
   private var keptReceiptFingerprints: [String: InstantKeptReceiptFingerprint] = [:]
   /// How many forward wire-intent fingerprints the outbox row write computed for the mutation it saves (#1491).
   private var savedWireIntentFingerprintCount = 0
+  /// What the delivery claim encoded for the writes it claimed (#1517): each projected body it measured, and each
+  /// forward wire intent it fingerprinted.
+  private var claimEncodeCounts = InstantClaimEncodeCounts()
+  /// How many times a kept receipt fingerprint was looked up by hashing its write's inputs: the whole transaction and
+  /// rollback, about 180 us for a transcript line on an M4 (#1523).
+  private var receiptInputsHashCount = 0
+  /// How many local writes their own saves claimed for delivery (#653).
+  private var claimedAtSaveCount = 0
+  /// How many times a delivery claim's visible-write filter read attributes from `instant_attributes` (#653).
+  private var visibleWriteFilterAttributeReads = 0
+  /// Every stored attribute by id, for the delivery claims' visible-write filters (#653), kept while neither this
+  /// connection nor another process has written `instant_attributes`, as `liveResultAttributes` is (#303).
+  private var deliveryAttributesByID: (revision: Int64, generation: Int, byID: [String: InstantAttribute])?
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1548,23 +1582,65 @@ public actor SQLitePersistenceStore {
     savedWireIntentFingerprintCount
   }
 
+  /// What the delivery claims on this store encoded so far (#1517).
+  package func claimEncodeCountsForTesting() -> InstantClaimEncodeCounts {
+    claimEncodeCounts
+  }
+
+  /// How many receipt lookups hashed their write's inputs so far (#1523).
+  package func receiptInputsHashCountForTesting() -> Int {
+    receiptInputsHashCount
+  }
+
+  /// How many local writes their own saves claimed for delivery so far (#653).
+  package func claimedAtSaveCountForTesting() -> Int {
+    claimedAtSaveCount
+  }
+
+  /// How many times a delivery claim's visible-write filter read attributes from SQLite so far (#653).
+  package func visibleWriteFilterAttributeReadCountForTesting() -> Int {
+    visibleWriteFilterAttributeReads
+  }
+
   /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one computed encodes the mutation's
   /// transaction and rollback with `JSONEncoder` and hashes the text; one whose inputs equal the kept one's is reused,
   /// and not counted (#1497).
-  private func optimisticEffectFingerprint(of mutation: PendingMutation) throws -> String? {
+  ///
+  /// `storedBody` is the body as `mutation`'s row stores it, when `mutation` is exactly that body decoded, or the body
+  /// a save is about to bind (#1523). The kept fingerprint is then found by those bytes, so the save, the claim and the
+  /// acknowledgement of a write no longer hash its whole transaction and rollback (about 180 us each on an M4) to find
+  /// it; equal bytes are equal inputs. Without them, the inputs' hash finds it as before.
+  private func optimisticEffectFingerprint(
+    of mutation: PendingMutation,
+    storedBody: SQLiteBinding? = nil
+  ) throws -> String? {
     guard mutation.hasOptimisticEffectReceiptFingerprint else {
       optimisticEffectFingerprintCount += 1
       return nil
     }
-    let inputsHash = mutation.optimisticEffectReceiptFingerprintInputsHash
-    if let kept = keptReceiptFingerprints[mutation.id], kept.inputsHash == inputsHash {
-      return kept.fingerprint
+    let kept = keptReceiptFingerprints[mutation.id]
+    let inputsHash: Int?
+    let storedBodyDigest = storedBody?.storedBodyDigest
+    if let storedBodyDigest {
+      if let kept, kept.storedBodyDigest == storedBodyDigest {
+        return kept.fingerprint
+      }
+      inputsHash = nil
+    } else {
+      receiptInputsHashCount += 1
+      let hash = mutation.optimisticEffectReceiptFingerprintInputsHash
+      if let kept, kept.inputsHash == hash {
+        return kept.fingerprint
+      }
+      inputsHash = hash
     }
     optimisticEffectFingerprintCount += 1
     guard let fingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
       keptReceiptFingerprints[mutation.id] = nil
       return nil
     }
+    // A kept entry with the same fingerprint describes the same inputs, so it keeps the key this call did not have.
+    let sameInputs = kept?.fingerprint == fingerprint
     // An entry lives from the save to the acknowledgement, so a connected recording keeps a few. Past the bound
     // (offline, unacknowledged writes) they are all dropped, and each write is fingerprinted again when next checked.
     if keptReceiptFingerprints.count >= Self.maximumKeptReceiptFingerprints,
@@ -1573,7 +1649,8 @@ public actor SQLitePersistenceStore {
       keptReceiptFingerprints.removeAll(keepingCapacity: true)
     }
     keptReceiptFingerprints[mutation.id] = InstantKeptReceiptFingerprint(
-      inputsHash: inputsHash,
+      storedBodyDigest: storedBodyDigest ?? (sameInputs ? kept?.storedBodyDigest : nil),
+      inputsHash: inputsHash ?? (sameInputs ? kept?.inputsHash : nil),
       fingerprint: fingerprint
     )
     return fingerprint
@@ -10674,7 +10751,7 @@ public actor SQLitePersistenceStore {
               continue
             }
             guard mutation.provesReplayableOptimisticEffectReceipt,
-              try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+              try hasStoredPreparedOptimisticEffectReceipt(decodedFrom: row, mutation)
             else {
               failedMutations.append(
                 try quarantineInvalidOutboxMutationWithoutTransaction(
@@ -10739,6 +10816,8 @@ public actor SQLitePersistenceStore {
               // below includes its write keys.
               break
             }
+            // #1517: no fingerprint here. The projection below records the projected body's fingerprint on every row
+            // it keeps claimed, or releases the claim, before this transaction commits; this one was always replaced.
             try claimOutboxMutationWithoutTransaction(
               id: mutation.id,
               claimantID: request.claimantID,
@@ -10751,7 +10830,7 @@ public actor SQLitePersistenceStore {
                   inFlightOrdinal: claimedCount + mutations.count + 1
                 ),
               projectedBodyByteCount: candidate.encodedBodyByteCount,
-              payloadFingerprint: try mutation.mutationWireIntentFingerprint()
+              payloadFingerprint: nil
             )
             mutations.append(mutation)
             deliveryStartedBeforeClaimByMutationID[mutation.id] = candidate.deliveryStarted
@@ -10850,6 +10929,7 @@ public actor SQLitePersistenceStore {
           continue
         }
 
+        claimEncodeCounts.projectedBodyEncodes += 1
         let metadata = try InstantBoundedOutboxDelivery.projectionMetadata(
           for: candidate,
           visibleWriteFilter: visibleWriteFilter
@@ -10908,6 +10988,22 @@ public actor SQLitePersistenceStore {
           continue
         }
 
+        // #1517: without a required-scalar substitution the projected body is the value projectionMetadata measured,
+        // so its byte count is exact as measured; only a substitution builds and encodes a second value to check.
+        guard !metadata.requiredScalarKeys.isEmpty else {
+          let projectedMutation = metadata.projectedMutation
+          claimEncodeCounts.wireIntentFingerprints += 1
+          try updateProjectedOutboxClaimByteCountWithoutTransaction(
+            id: candidate.mutation.id,
+            claimToken: request.claimToken,
+            projectedBodyByteCount: metadata.encodedBodyByteCount,
+            payloadFingerprint: try projectedMutation.mutationWireIntentFingerprint()
+          )
+          admittedMutations.append(candidate.mutation)
+          projectedMutations.append(projectedMutation)
+          admittedBodyByteCount += metadata.encodedBodyByteCount
+          continue
+        }
         var hydratedScalars: [InstantVisibleWriteKey: InstantTriple] = [:]
         hydratedScalars.reserveCapacity(metadata.requiredScalarKeys.count)
         for key in metadata.requiredScalarKeys.sorted(by: {
@@ -10935,6 +11031,7 @@ public actor SQLitePersistenceStore {
           candidate,
           visibleWriteFilter: hydratedFilter
         )
+        claimEncodeCounts.projectedBodyEncodes += 1
         let encodedProjectedBodyByteCount = try InstantBoundedOutboxDelivery
           .encodedProjectedBodyByteCount(projectedMutation)
         guard encodedProjectedBodyByteCount == metadata.encodedBodyByteCount else {
@@ -10944,6 +11041,7 @@ public actor SQLitePersistenceStore {
               "Metadata-first projected bytes did not match exact sorted-key encoding."
           )
         }
+        claimEncodeCounts.wireIntentFingerprints += 1
         try updateProjectedOutboxClaimByteCountWithoutTransaction(
           id: candidate.mutation.id,
           claimToken: request.claimToken,
@@ -11212,8 +11310,8 @@ public actor SQLitePersistenceStore {
       }
 
       // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007), and the
-      // save's, kept, needs none (#1497).
-      let effectFingerprint = try optimisticEffectFingerprint(of: mutation)
+      // save's, kept, needs none (#1497), found by the row's bytes: `mutation` is its body as decoded (#1523).
+      let effectFingerprint = try optimisticEffectFingerprint(of: mutation, storedBody: row.storedBody)
       let hasPreparedMaterializedEffect = hasStoredPreparedOptimisticEffectReceipt(
         mutation,
         in: row,
@@ -11324,8 +11422,11 @@ public actor SQLitePersistenceStore {
         }
         try setOptimisticOverlayActiveIfChangedWithoutTransaction(mutation)
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
-        // Its lifecycle record checks the receipt once more, with the kept fingerprint.
-        try saveMutationLifecycleWithoutTransaction(mutation)
+        // Its lifecycle record checks the receipt once more, with the fingerprint this acknowledgement found (#1523).
+        try saveMutationLifecycleWithoutTransaction(
+          mutation,
+          knownReceiptFingerprint: InstantKnownReceiptFingerprint(value: effectFingerprint)
+        )
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
         // Accepted: no claim or acknowledgement checks this write again (#1497).
         keptReceiptFingerprints[mutation.id] = nil
@@ -15213,6 +15314,38 @@ public actor SQLitePersistenceStore {
     expectedAttributeRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
+    try saveLocalMutation(
+      changedEntityTriples: changedEntityTriples,
+      changedFactScope: changedFactScope,
+      outbox: outbox,
+      pendingMutation: pendingMutation,
+      supersedingImmediateTail: supersedingImmediateTail,
+      metadataEntries: metadataEntries,
+      deletingMetadataKeys: deletingMetadataKeys,
+      admittingNewWrite: admittingNewWrite,
+      expectedStoreRevision: expectedStoreRevision,
+      expectedAttributeRevision: expectedAttributeRevision,
+      expectedOutboxRevision: expectedOutboxRevision,
+      claimingForDelivery: nil
+    ).didSave
+  }
+
+  /// The save above, and with `claimingForDelivery` the write claimed for delivery inside the same transaction when the
+  /// claim the pump would run next would take exactly it (#653, ``claimSavedTailForDeliveryWithoutTransaction``).
+  func saveLocalMutation(
+    changedEntityTriples: [String: [InstantTriple]],
+    changedFactScope: InstantFactScope = InstantFactScope(),
+    outbox: [PendingMutation]? = nil,
+    pendingMutation: PendingMutation,
+    supersedingImmediateTail: PendingMutation? = nil,
+    metadataEntries: [InstantPersistenceMetadataEntry] = [],
+    deletingMetadataKeys: [String] = [],
+    admittingNewWrite: Bool = false,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64,
+    expectedOutboxRevision: Int64,
+    claimingForDelivery claimRequest: InstantAutomaticOutboxClaimRequest?
+  ) throws -> (didSave: Bool, claim: InstantAutomaticOutboxClaimWindow?) {
     let energy = InstantEnergyMeter.begin(.localSave); defer { energy.end() }
     // The fingerprint itself is computed once, where the receipt is stored (#1007).
     guard pendingMutation.hasOptimisticEffectReceiptFingerprint else {
@@ -15250,6 +15383,7 @@ public actor SQLitePersistenceStore {
       cachedChangedEntityTriples = nil
     }
 
+    var claim: InstantAutomaticOutboxClaimWindow?
     let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
@@ -15316,8 +15450,15 @@ public actor SQLitePersistenceStore {
       for key in deletingMetadataKeys {
         try deleteMetadataValueWithoutTransaction(key: key)
       }
-      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
-      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      let storeRevision = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      let outboxRevision = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      if let claimRequest, supersedingImmediateTail == nil {
+        claim = try claimSavedTailForDeliveryWithoutTransaction(
+          pendingMutation,
+          request: claimRequest,
+          revisions: InstantPersistenceRevisions(store: storeRevision, outbox: outboxRevision)
+        )
+      }
       return true
     }
 
@@ -15343,7 +15484,7 @@ public actor SQLitePersistenceStore {
     } else if didSave {
       cachedState = nil
     }
-    return didSave
+    return (didSave, didSave ? claim : nil)
   }
 
   public func saveStoreSnapshot(
@@ -17947,13 +18088,138 @@ public actor SQLitePersistenceStore {
       && stepCount <= remainingStepCount - admittedStepCount
   }
 
+  /// Claims the write a local save just made the outbox's tail, inside that save's transaction, when the claim the pump
+  /// would run next would take exactly this row and send it as it is (#653): no synchronization blocker, no other
+  /// claimant's claim, none unmeasured or past its deadline, no failed write waiting to be retried, no other row ready
+  /// for delivery, room in the window, and a projection with no required-scalar substitution. Then the row is written
+  /// once, already claimed, with the projected body's exact size and fingerprint, and the runtime sends it without a
+  /// claim turn, as `Reactor.js` `pushOps` sends a mutation as it records it (`_trySendAuthed`). Otherwise nil, and the
+  /// row waits for the pump as before.
+  private func claimSavedTailForDeliveryWithoutTransaction(
+    _ mutation: PendingMutation,
+    request: InstantAutomaticOutboxClaimRequest,
+    revisions: InstantPersistenceRevisions
+  ) throws -> InstantAutomaticOutboxClaimWindow? {
+    guard !request.requiresExclusiveLane, mutation.status == .pending,
+      mutation.provesReplayableOptimisticEffectReceipt
+    else { return nil }
+    guard try synchronizationBlockerWithoutTransaction() == nil,
+      try immediateOutboxTailIDWithoutTransaction() == mutation.id
+    else { return nil }
+    let candidates = try loadAutomaticDeliveryCandidateRowsWithoutTransaction(limit: 2)
+    guard candidates.count == 1, let row = candidates.first, row.mutationID == mutation.id,
+      row.metadataVersion >= InstantOutboxDeliveryMetadata.currentVersion,
+      let stepCount = row.transportStepCount
+    else { return nil }
+    let claimed = InstantOutboxDeliveryClaimState.claimed.rawValue
+    guard
+      try !hasActiveOutboxClaimWithoutTransaction(excludingClaimantID: request.claimantID),
+      try selectInt64(
+        """
+        SELECT EXISTS(
+          SELECT 1 FROM instant_outbox
+          WHERE delivery_claim_state = ?
+            AND (delivery_claim_projected_body_bytes IS NULL OR delivery_claim_deadline_ms <= ?)
+          LIMIT 1
+        )
+        """,
+        [.text(claimed), .int(request.now.milliseconds)]
+      ) == 0,
+      try selectInt64(
+        """
+        SELECT EXISTS(
+          SELECT 1
+          FROM instant_outbox INDEXED BY instant_outbox_failed_retry_window_idx
+          WHERE \(Self.automaticFailedMutationRetryEligibilitySQL)
+            \(Self.automaticFailedMutationRetryAttributeRevisionSQL)
+          LIMIT 1
+        )
+        """,
+        [.int(try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey))]
+      ) == 0
+    else { return nil }
+    let claimedCount = Int(try selectInt64(
+      "SELECT COUNT(*) FROM instant_outbox WHERE delivery_claim_state = ?",
+      [.text(claimed)]
+    ))
+    let claimedStepCount = Int(try selectInt64(
+      "SELECT COALESCE(SUM(transport_step_count), 0) FROM instant_outbox WHERE delivery_claim_state = ?",
+      [.text(claimed)]
+    ))
+    let claimedBodyByteCount = Int(try selectInt64(
+      """
+      SELECT COALESCE(SUM(COALESCE(delivery_claim_projected_body_bytes, encoded_body_bytes)), 0)
+      FROM instant_outbox WHERE delivery_claim_state = ?
+      """,
+      [.text(claimed)]
+    ))
+    guard claimedCount < request.maximumMutationCount,
+      stepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount,
+      automaticDeliveryStepCountFits(
+        stepCount,
+        admittedStepCount: 0,
+        remainingStepCount: max(0, request.maximumStepCount - claimedStepCount)
+      )
+    else { return nil }
+    // The claim's own projection of this one row: nothing follows the tail, so no successor keeps a write of it.
+    let visibleWriteFilter = try loadVisibleWriteFilterWithoutTransaction(
+      for: InstantVisibleWriteFilter.writeKeys(in: [mutation])
+    )
+    guard let candidate = InstantBoundedOutboxDelivery.projectionCandidates(
+      mutations: [mutation],
+      successorWriteKeys: [],
+      hasUnknownSuccessorWriteKeys: false
+    ).first else { return nil }
+    claimEncodeCounts.projectedBodyEncodes += 1
+    let metadata = try InstantBoundedOutboxDelivery.projectionMetadata(
+      for: candidate,
+      visibleWriteFilter: visibleWriteFilter
+    )
+    let remainingBodyByteCount = max(0, request.maximumEncodedBodyByteCount - claimedBodyByteCount)
+    guard metadata.requiredScalarKeys.isEmpty,
+      metadata.encodedBodyByteCount >= 0,
+      metadata.encodedBodyByteCount <= remainingBodyByteCount
+    else { return nil }
+    claimEncodeCounts.wireIntentFingerprints += 1
+    try claimOutboxMutationWithoutTransaction(
+      id: mutation.id,
+      claimantID: request.claimantID,
+      claimToken: request.claimToken,
+      deadlineMilliseconds: InstantMutationAcknowledgementDeadlinePolicy.deadlineMilliseconds(
+        after: request.now,
+        inFlightOrdinal: claimedCount + 1
+      ),
+      projectedBodyByteCount: metadata.encodedBodyByteCount,
+      payloadFingerprint: try metadata.projectedMutation.mutationWireIntentFingerprint()
+    )
+    claimedAtSaveCount += 1
+    return InstantAutomaticOutboxClaimWindow(
+      mutations: [mutation],
+      projectedMutations: [metadata.projectedMutation],
+      failedMutations: [],
+      successorWriteKeys: [],
+      hasUnknownSuccessorWriteKeys: false,
+      visibleWriteFilter: visibleWriteFilter,
+      resultingRevisions: revisions,
+      claimToken: request.claimToken,
+      reclaimedMutationIDs: [],
+      nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction(),
+      shouldContinueImmediately: false,
+      decodedBodyCount: 0,
+      decodedBodyByteCount: 0,
+      synchronizationBlocker: nil
+    )
+  }
+
+  /// Claims a ready row for `claimToken`. `payloadFingerprint` is `nil` when the caller records the projected body's
+  /// fingerprint before its transaction commits (#1517), as the automatic claim does.
   private func claimOutboxMutationWithoutTransaction(
     id: String,
     claimantID: String,
     claimToken: String,
     deadlineMilliseconds: Int64,
     projectedBodyByteCount: Int,
-    payloadFingerprint: String
+    payloadFingerprint: String?
   ) throws {
     precondition(projectedBodyByteCount >= 0)
     try execute(
@@ -17971,7 +18237,7 @@ public actor SQLitePersistenceStore {
         .text(claimantID),
         .int(deadlineMilliseconds),
         .int(Int64(projectedBodyByteCount)),
-        .text(payloadFingerprint),
+        payloadFingerprint.map(SQLiteBinding.text) ?? .null,
         .text(id),
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
       ]
@@ -18221,6 +18487,21 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// ``hasStoredPreparedOptimisticEffectReceipt(_:in:)`` for `mutation` decoded from `row` and not changed since (#1523):
+  /// the kept fingerprint is found by the bytes the row stores. A caller holding a write that may differ from its row
+  /// uses the other form.
+  private func hasStoredPreparedOptimisticEffectReceipt(
+    decodedFrom row: InstantOutboxBodyRow,
+    _ mutation: PendingMutation
+  ) throws -> Bool {
+    guard row.mutationID == mutation.id else { return false }
+    return hasStoredPreparedOptimisticEffectReceipt(
+      mutation,
+      in: row,
+      fingerprint: try optimisticEffectFingerprint(of: mutation, storedBody: row.storedBody)
+    )
+  }
+
   /// ``hasStoredPreparedOptimisticEffectReceipt(_:in:)`` with the mutation's fingerprint already computed (#1007).
   private func hasStoredPreparedOptimisticEffectReceipt(
     _ mutation: PendingMutation,
@@ -18365,6 +18646,24 @@ public actor SQLitePersistenceStore {
     try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: id)
   }
 
+  /// A row's claim columns as its claim left them (#1517): the projected byte count and the payload fingerprint.
+  package func outboxClaimColumnsForTesting(
+    id: String
+  ) throws -> (projectedBodyByteCount: Int?, payloadFingerprint: String?)? {
+    guard
+      try selectInt64("SELECT COUNT(*) FROM instant_outbox WHERE mutation_id = ?", [.text(id)]) == 1
+    else { return nil }
+    let bytes = try selectScalar(
+      "SELECT delivery_claim_projected_body_bytes FROM instant_outbox WHERE mutation_id = ?",
+      [.text(id)]
+    )
+    let fingerprint = try selectScalar(
+      "SELECT delivery_claim_payload_fingerprint FROM instant_outbox WHERE mutation_id = ?",
+      [.text(id)]
+    )
+    return (bytes.flatMap { Int($0) }, fingerprint)
+  }
+
   private func decodeOutboxBody<Value: Decodable>(_ json: String) throws -> Value {
     guard let data = json.data(using: .utf8) else {
       throw persistenceError(
@@ -18497,10 +18796,12 @@ public actor SQLitePersistenceStore {
   /// store the cell then fit its leaf for 6 of 8 live writes, where the JSON and its lifecycle took two to four
   /// overflow pages, allocated at the save and freed at the echo. A row an older version wrote is rewritten so at its
   /// next change.
+  /// `storedBody` is ``storedBodyBinding(_:)`` of `body` when the caller already made it (#1523).
   private func saveOutboxBodyWithoutTransaction(
     mutationID: String,
     body: String,
-    lifecycle: String
+    lifecycle: String,
+    storedBody: SQLiteBinding? = nil
   ) throws {
     try execute(
       """
@@ -18514,7 +18815,7 @@ public actor SQLitePersistenceStore {
         OR instant_outbox_bodies.lifecycle_json IS NOT NULL
         OR instant_outbox_bodies.lifecycle_bytes IS NOT excluded.lifecycle_bytes
       """,
-      [.text(mutationID), Self.storedBodyBinding(body), .int(Int64(lifecycle.utf8.count))]
+      [.text(mutationID), storedBody ?? Self.storedBodyBinding(body), .int(Int64(lifecycle.utf8.count))]
     )
   }
 
@@ -19038,18 +19339,35 @@ public actor SQLitePersistenceStore {
     try selectInt64(Self.automaticDeliveryCandidateExistsSQL, Self.automaticDeliveryCandidateExistsBindings) != 0
   }
 
+  /// Every stored attribute by id, read again only after `instant_attributes` changed here or the attribute revision
+  /// another process bumps moved (#653). A miss reuses the live-result saves' copy when it is current (#303).
+  private func deliveryAttributesByIDWithoutTransaction() throws -> [String: InstantAttribute] {
+    let revision = try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+    if let cached = deliveryAttributesByID, cached.revision == revision, cached.generation == attributeWriteGeneration {
+      return cached.byID
+    }
+    let attributes: [InstantAttribute]
+    if let shared = liveResultAttributes, shared.revision == revision, shared.generation == attributeWriteGeneration {
+      attributes = shared.attributes
+    } else {
+      visibleWriteFilterAttributeReads += 1
+      attributes = try selectJSON("SELECT json FROM instant_attributes ORDER BY id", [])
+    }
+    let byID = Dictionary(attributes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    deliveryAttributesByID = (revision, attributeWriteGeneration, byID)
+    return byID
+  }
+
   private func loadVisibleWriteFilterWithoutTransaction(
     for writeKeys: Set<InstantVisibleWriteKey>
   ) throws -> InstantVisibleWriteFilter {
     let attributeIDs = Set(writeKeys.map(\.attributeID)).sorted()
+    // #653: from the decoded copy; each claim read and decoded these from JSON, one statement per attribute.
+    let storedAttributes = try deliveryAttributesByIDWithoutTransaction()
     var attributesByID: [String: InstantAttribute] = [:]
     attributesByID.reserveCapacity(attributeIDs.count)
     for attributeID in attributeIDs {
-      let attributes: [InstantAttribute] = try selectJSON(
-        "SELECT json FROM instant_attributes WHERE id = ? LIMIT 1",
-        [.text(attributeID)]
-      )
-      if let attribute = attributes.first {
+      if let attribute = storedAttributes[attributeID] {
         attributesByID[attributeID] = attribute
       }
     }
@@ -20043,7 +20361,11 @@ public actor SQLitePersistenceStore {
     receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority,
     encodedBody: (body: String, lifecycle: String)? = nil
   ) throws {
-    let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
+    // #1523: the body is encoded first, so its fingerprint is kept by the bytes this save binds, and the claim and the
+    // acknowledgement find it by the bytes they read.
+    let encoded = try encodedBody ?? encodeOutboxBody(mutation)
+    let storedBody = Self.storedBodyBinding(encoded.body)
+    let candidateFingerprint = try optimisticEffectFingerprint(of: mutation, storedBody: storedBody)
     let durableMutation = mutation
     var statement: OpaquePointer?
     try prepare(
@@ -20169,7 +20491,6 @@ public actor SQLitePersistenceStore {
       hasServerAcceptance: acceptanceFingerprint != nil
     )
     // The body without its delivery fields, which the columns below hold (#1435).
-    let encoded = try encodedBody ?? encodeOutboxBody(durableMutation)
     let effectFootprint = receiptFingerprint == nil
       ? nil
       : InstantOptimisticEffectFootprint.normalized(for: durableMutation)
@@ -20258,7 +20579,8 @@ public actor SQLitePersistenceStore {
     try saveOutboxBodyWithoutTransaction(
       mutationID: durableMutation.id,
       body: encoded.body,
-      lifecycle: encoded.lifecycle
+      lifecycle: encoded.lifecycle,
+      storedBody: storedBody
     )
     try replaceOutboxEffectEntitiesWithoutTransaction(
       mutationID: durableMutation.id,
@@ -20301,10 +20623,13 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// `knownReceiptFingerprint` is `mutation`'s receipt fingerprint when the caller computed it already (#1523): the
+  /// acknowledgement's, whose status and confirmation fields are not inputs of it.
   private func saveMutationLifecycleWithoutTransaction(
     _ mutation: PendingMutation,
     lifecycleID requestedLifecycleID: String? = nil,
-    advancingFromMutationID: String? = nil
+    advancingFromMutationID: String? = nil,
+    knownReceiptFingerprint: InstantKnownReceiptFingerprint? = nil
   ) throws {
     let existingLifecycleID = try lifecycleIDWithoutTransaction(for: mutation.id)
     // Ordinary mutations keep their existing row-addressed lifecycle behavior
@@ -20321,7 +20646,7 @@ public actor SQLitePersistenceStore {
             "A supersession newcomer must have a distinct transaction id that has never belonged to a lifecycle."
         )
       }
-      let terminal = try terminalLifecycleRecord(for: mutation)
+      let terminal = try terminalLifecycleRecord(for: mutation, knownReceiptFingerprint: knownReceiptFingerprint)
 
       let currentMutationID = try currentMutationIDWithoutTransaction(
         lifecycleID: lifecycleID
@@ -20407,7 +20732,7 @@ public actor SQLitePersistenceStore {
           "Refused to move lifecycle '\(lifecycleID)' backward through stale alias '\(mutation.id)'."
       )
     }
-    let terminal = try terminalLifecycleRecord(for: mutation)
+    let terminal = try terminalLifecycleRecord(for: mutation, knownReceiptFingerprint: knownReceiptFingerprint)
     try execute(
       """
       UPDATE instant_outbox_lifecycles
@@ -20462,15 +20787,17 @@ public actor SQLitePersistenceStore {
   }
 
   private func terminalLifecycleRecord(
-    for mutation: PendingMutation
+    for mutation: PendingMutation,
+    knownReceiptFingerprint: InstantKnownReceiptFingerprint? = nil
   ) throws -> InstantTerminalLifecycleRecord? {
     guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutation.id) else {
       return nil
     }
-    let hasPreparedReceipt = try hasStoredPreparedOptimisticEffectReceipt(
-      mutation,
-      in: row
-    )
+    let hasPreparedReceipt = if let knownReceiptFingerprint {
+      hasStoredPreparedOptimisticEffectReceipt(mutation, in: row, fingerprint: knownReceiptFingerprint.value)
+    } else {
+      try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+    }
     let lifecycle = compactedLifecycleForInspection(
       mutation,
       hasStoredReceiptFingerprint: hasPreparedReceipt
@@ -21472,6 +21799,26 @@ private enum SQLiteBinding: Sendable {
   /// A compressed outbox body (#1463).
   case blob(Data)
   case null
+}
+
+extension SQLiteBinding {
+  /// A stored body's digest for the kept receipt fingerprints (#1523): a compressed body's bytes, or a text body's UTF-8
+  /// after another first byte, so the two never share a key. A few microseconds for a live write's body on an M4, where
+  /// the inputs' hash it replaces walked the decoded transaction and rollback (about 180 us).
+  fileprivate var storedBodyDigest: SHA256Digest? {
+    var hash = SHA256()
+    switch self {
+    case let .blob(data):
+      hash.update(data: Data([0]))
+      hash.update(data: data)
+    case let .text(text):
+      hash.update(data: Data([1]))
+      hash.update(data: Data(text.utf8))
+    case .int, .null:
+      return nil
+    }
+    return hash.finalize()
+  }
 }
 
 /// What SQLite's page cache holds on one connection (#653).
