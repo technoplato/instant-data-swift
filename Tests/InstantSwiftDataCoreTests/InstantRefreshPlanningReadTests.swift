@@ -106,6 +106,8 @@ struct InstantRefreshPlanningReadTests {
 
     var random = SplitMix64(seed: seed)
     var pages = [FingerprintPage(name: "a", lines: 24), FingerprintPage(name: "b", lines: 12)]
+    var fingerprintedRowsRead = 0
+    var fullRowsRead = 0
     for step in 1...60 {
       if step % 20 == 0 {
         // One closed result stays; the prune releases or unloads the other, and bumps the query-result revision.
@@ -121,8 +123,14 @@ struct InstantRefreshPlanningReadTests {
       }
       if restated.isEmpty { continue }
       let frame = FingerprintPage.refresh(restated, transactionID: String(step))
+      // Only the refreshes' reads count: the checks below read every row of both pages through the same counter.
+      let fingerprintedBefore = await fingerprinted.persistence.liveQueryResultDiffCountsForTesting().ownershipRowsRead
       _ = try await fingerprinted.applyLiveRefresh(frame, receivedAt: .init(milliseconds: Int64(step)))
+      fingerprintedRowsRead +=
+        await fingerprinted.persistence.liveQueryResultDiffCountsForTesting().ownershipRowsRead - fingerprintedBefore
+      let fullBefore = await full.persistence.liveQueryResultDiffCountsForTesting().ownershipRowsRead
       _ = try await full.applyLiveRefresh(frame, receivedAt: .init(milliseconds: Int64(step)))
+      fullRowsRead += await full.persistence.liveQueryResultDiffCountsForTesting().ownershipRowsRead - fullBefore
       for page in pages {
         let key = try page.queryKey()
         let rows = try await fingerprinted.persistence.liveQueryOwnershipForTesting(queryKey: key)
@@ -136,11 +144,9 @@ struct InstantRefreshPlanningReadTests {
       let expectedFacts = await Set(full.store.snapshot().triples)
       #expect(facts == expectedFacts, "seed \(seed), step \(step): the stores' facts differ")
     }
-    let fingerprintedReads = await fingerprinted.persistence.liveQueryResultDiffCountsForTesting()
-    let fullReads = await full.persistence.liveQueryResultDiffCountsForTesting()
     #expect(
-      fingerprintedReads.ownershipRowsRead < fullReads.ownershipRowsRead / 2,
-      "rows read: \(fingerprintedReads.ownershipRowsRead) with fingerprints, \(fullReads.ownershipRowsRead) without"
+      fingerprintedRowsRead < fullRowsRead / 2,
+      "rows the refreshes read: \(fingerprintedRowsRead) with fingerprints, \(fullRowsRead) without"
     )
   }
 

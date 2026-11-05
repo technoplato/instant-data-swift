@@ -8418,10 +8418,11 @@ struct InstantLiveRefreshAttributeContextCacheTests {
     _ = try await runtime.closeConnection()
   }
 
-  /// Each save bounded its result's nested includes by walking every attribute of the schema (#1109). The schema is
-  /// indexed when the attributes load, and reused while they are unchanged.
+  /// Each save bounded its result's nested includes by walking every attribute of the schema (#1109); then it indexed
+  /// the stored attributes once per load. Since the saves a refresh prepares take what its translation limited, with
+  /// the same schema, refreshes that merge no attribute index none.
   @Test
-  func liveResultSavesIndexTheStoredAttributesOnce() async throws {
+  func attrLessRefreshesSaveWithoutIndexingTheStoredAttributes() async throws {
     let runtime = try await Self.applying(
       (1...10).map { Self.refresh($0) },
       lastTransactionID: "server-tx-10",
@@ -8429,12 +8430,13 @@ struct InstantLiveRefreshAttributeContextCacheTests {
     )
     let passes = await runtime.persistence.liveResultSchemaPassCountForTesting()
     // `#expect`, so a release run judges it too.
-    #expect(passes == 1, "the saves walked the stored attributes \(passes) times")
+    #expect(passes == 0, "the saves walked the stored attributes \(passes) times")
     _ = try await runtime.closeConnection()
   }
 
-  /// A merged attribute reaches the next save's nested-limit pass (#1109): the schema is indexed again whenever the
-  /// attributes load again, and only then.
+  /// A merged attribute reaches the next save's nested-limit pass (#1109): the frame that merges it saves in its
+  /// commit, which limits its results with the merged attributes, indexed once; the frames around it take their
+  /// translations' limits and index none.
   @Test
   func aMergedAttributeIsIndexedForTheNextLiveResultSave() async throws {
     let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
@@ -8445,9 +8447,8 @@ struct InstantLiveRefreshAttributeContextCacheTests {
       lastTransactionID: "server-tx-5",
       suffix: "live-result-schema-merged-attribute"
     )
-    let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
     let passes = await runtime.persistence.liveResultSchemaPassCountForTesting()
-    #expect(passes == loads, "the saves walked the stored attributes \(passes) times for \(loads) loads")
+    #expect(passes == 1, "the saves walked the stored attributes \(passes) times")
     let attributes = try await runtime.persistence.attributesForLiveResultSaveForTesting()
     #expect(attributes.contains { $0.namespace == "todos" && $0.name == "priority" })
     _ = try await runtime.closeConnection()
