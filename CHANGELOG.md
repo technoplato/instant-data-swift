@@ -10,6 +10,70 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 2:34:11 p.m. EST — `82cd08ad5cbf` release(#632): v1.9.74: a delivered progressive media stream that is continued goes on where its stored row ends
+
+- **Implementation commit:** `82cd08ad5cbf04781c482e884b2da3e1f210dc19`
+- **Change:** release(#632): v1.9.74: a delivered progressive media stream that is continued goes on where its stored row ends
+- **Details:**
+  - The release record and PROGRESS for v1.9.74, tagged on main's landing merge a7223ead.
+- **Files:**
+  - `docs/releases/v1.9.74.md` — #632 the release record with the gate's results
+  - `PROGRESS.md` — #632 the lane's checkpoint: what landed, how it was checked, what is next
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:10 p.m. EST — `1a2ed1b9f90d` test(#632): the continued stream's tests read the writer's values in #expect, which takes await (CustomDump's expectNoDifference does not)
+
+- **Implementation commit:** `1a2ed1b9f90d9386a9d18fed2f323b080edcaa89`
+- **Change:** test(#632): the continued stream's tests read the writer's values in #expect, which takes await
+- **Details:**
+  - CustomDump's expectNoDifference takes no await, so the actor's values are read in #expect.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — #632 #expect for awaited reads
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:10 p.m. EST — `b52f287081ca` docs(#632): what a continued stream started over cost, corrected: each re-sent row is refused with its transaction
+
+- **Implementation commit:** `b52f287081ca61e72b330009a0e6977e7d768b05`
+- **Change:** docs(#632): what a continued stream started over cost, corrected: each re-sent row is refused with its transaction
+- **Details:**
+  - Comments only: the rules refuse each re-sent segment with its transaction, so the stored stream row keeps its count.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — #632 the comment states the refusal
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — #632 the tests' comments match
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:09 p.m. EST — `418ff8416e4c` green(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+
+- **Implementation commit:** `418ff8416e4c6d6da066772306a356906c657bf0`
+- **Change:** green(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+- **Details:**
+  - With no spool record and a stored row of this stream that has segments, the spool begins from the row: next index segmentCount at durationSeconds, init counted as stored, createdAtMs kept, stamps from updatedAtMs, the stored format kept. The spool's own record still wins.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaSpool.swift` — #632 begin(continuing:) without an init file
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — #632 the writer begins the spool from the stored row
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:09 p.m. EST — `af95eb36c328` red(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+
+- **Implementation commit:** `af95eb36c328df825b144260afbe2147d230cdaa`
+- **Change:** red(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+- **Details:**
+  - Three tests a writer given the stored row must pass (continued from the row, relaunched mid-continuation, stored format kept) and two that guard what stays; continuing: is accepted and ignored, so they fail.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — #632 continuing: parameter, accepted and not yet used
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — #632 the five tests
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
 ## November 5th, 2026 at 7:04:20 a.m. EST — `49e090c79c87` release(#1109 #1513 #1116): v1.9.73: a server refresh compares only what it changed; its save takes the translation's limit
 
 - **Implementation commit:** `49e090c79c87c3504f160359370ba2bf7eebaff1`
