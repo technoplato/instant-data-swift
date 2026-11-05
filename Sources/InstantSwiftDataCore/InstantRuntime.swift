@@ -24,6 +24,8 @@
 // - 2026-11-04: a write, local or the server's, reads every fact this device keeps of each entity it names that memory
 //   lacks, with the deferred values it already read, and prepares against the whole entity: one written in part was
 //   saved as a new one, deleting its other facts from SQLite, and a strict update of it threw (#1165).
+// - 2026-11-05: a live refresh names the attribute revision its translation limited the restated results' nested includes
+//   at, and their saves at that revision take them as they are instead of limiting them again (#1109).
 // - 2026-10-31: a server frame plans in two persistence turns after its seed, the reduction's context in the planning
 //   reads' turn and the first reverse body page in the plan's; no pass reads the empty page after its last row, and the
 //   plan's end and the status read share a turn (#1494).
@@ -3439,6 +3441,7 @@ public final class InstantRuntime: Sendable {
     confirmingMutationID: String? = nil,
     mergingAttributes attributesToMerge: [InstantAttribute] = [],
     liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = [],
+    liveQueryResultsLimitedAtAttributeRevision: Int64? = nil,
     operationGateAlreadyHeld: Bool = false,
     initialSeed: InstantServerApplySeed? = nil,
     maximumAttempts: Int = 5
@@ -3561,6 +3564,7 @@ public final class InstantRuntime: Sendable {
               replacements: liveQueryResultReplacements,
               retractions: reusedRetractions,
               savingResults: resultsToSave,
+              resultsLimitedAtAttributeRevision: liveQueryResultsLimitedAtAttributeRevision,
               expectedQueryResultRevision: compactState.queryResultRevision,
               expectedOutboxRevision: compactState.outboxRevision,
               processedTransactionID: processedTransactionID
@@ -4520,6 +4524,7 @@ public final class InstantRuntime: Sendable {
           confirmingMutationID: confirmingMutationID,
           mergingAttributes: attributesToMerge,
           liveQueryResultReplacements: liveQueryResultReplacements,
+          liveQueryResultsLimitedAtAttributeRevision: liveQueryResultsLimitedAtAttributeRevision,
           operationGateAlreadyHeld: true,
           maximumAttempts: 1
         )
@@ -5683,6 +5688,10 @@ public final class InstantRuntime: Sendable {
         confirmingMutationID: translated.confirmationMutationID,
         mergingAttributes: translated.attributesToMerge,
         liveQueryResultReplacements: translated.queryResultReplacements,
+        // #1109: the translation limited each result's nested includes with the seed's attributes when the frame merges
+        // none, so a save at the seed's attribute revision takes them as they are.
+        liveQueryResultsLimitedAtAttributeRevision: translated.attributesToMerge.isEmpty
+          ? seed.state.attributeRevision : nil,
         initialSeed: seed
       )
       await liveQueryResultState.record(translated.queryResultReplacements)
