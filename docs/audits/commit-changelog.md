@@ -1,3 +1,6 @@
+## 2026-11-05 14:28:39 EST — scribe `f9102d64820fba1fbd7f99ac3db92f23aee7da75`
+Perf (#507, #1422): the microphone's level reaches the root store once a capture (its first level, which #363's live playback waits for), and the 1 s clock tick reads the newest level from AudioCaptureClient.currentAudioLevel for the Live Activity and widgets. Build 253's ledger had the level running the root store 29.3 times a minute at 4.24 ms each for that one reader; the 2 s gate goes. Red f2c0dcd4b / green 4ea7b4243, tested on the mini by build.sh 507-1422-redgreen (red fails the two new tests, green passes nine suites). Also the recording-screen audit's sections 6-7 (the comb's rest replayed over Recording 366's audio: 96.1% / 93.3% of quiet time). Changelog 9568c6715.
+
 ## 2026-11-05 12:42:24 EST — scribe `1ee34a07357f` and `98ee7dce38ad`
 Fix (#1837): listener-rotate reads Claude Code's own limit turns in the listener's transcript; two within 15 minutes start a move to the account with room (never one in ~/Scribe/listener/never-move-to, seeded with pp) or end the dead session so its Monitors stop, recorded on #1598, with one notice sent only when no recording is live; at 5% weekly (not 0%) the listener is asked once to hand itself off. Also the scribe-agents skill, ADR 0129 part 2 and READMEs.
 
