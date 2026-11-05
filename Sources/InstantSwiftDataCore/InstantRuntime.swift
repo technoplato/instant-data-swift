@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-04: a write saved while delivery could send it at once is claimed by its own save and queued on the pump in
+//   save order, instead of a claim turn that read it back and fingerprinted it again: 3.06 ms a claim on the phone (#653).
 // - 2026-11-02: a local write's outbox time is assigned under the operation gate, after the tail, on every path: the
 //   typed transact, `transact(operations:)` and Send Again passed a time read before the gate, so writes made in one
 //   millisecond tied and went out in id order; the typed path's facts carry the assigned time (#1648).
@@ -984,31 +986,61 @@ private enum InstantRuntimeMutationDeliveryPumpPassResult: Sendable {
   case retryAfterFailure
 }
 
+/// What one turn of the delivery pump does (#653): a pass (retry window, claim, send), or the send of a window a write's
+/// own save claimed.
+private enum InstantRuntimeMutationDeliveryPumpWork: Sendable {
+  case pass
+  case claimedAtSave(InstantAutomaticOutboxTransportSelection)
+}
+
 private actor InstantRuntimeMutationDeliveryPump {
   private var isSuspended = false
   private var task: Task<Void, Never>?
   private var needsAnotherPass = false
+  /// Whether a pass is running now: its claimed rows may not be on the wire yet (#653).
+  private var isRunningPass = false
+  /// Windows their writes' saves claimed (#653), queued under the operation gate in save order and sent in that order
+  /// before the next pass.
+  private var claimedAtSave: [InstantAutomaticOutboxTransportSelection] = []
 
   func isIdleForTesting() -> Bool {
-    task == nil && !needsAnotherPass
+    task == nil && !needsAnotherPass && claimedAtSave.isEmpty
   }
 
   func isSuspendedForTesting() -> Bool {
     isSuspended
   }
 
+  /// Whether a write saved now may be claimed by its save (#653): no pass is running or waiting, so every row claimed
+  /// before it is already on the wire, and the pump sends queued windows in the order they were saved.
+  func acceptsClaimsAtSave() -> Bool {
+    !isSuspended && !isRunningPass && !needsAnotherPass
+  }
+
+  /// Queues a window a write's save claimed. Called under the operation gate, so windows queue in save order (#653).
+  /// A suspended pump queues nothing; the claim is released or expires as any claim does.
+  func enqueueClaimedAtSave(_ selection: InstantAutomaticOutboxTransportSelection) -> Bool {
+    guard !isSuspended else { return false }
+    claimedAtSave.append(selection)
+    return true
+  }
+
   func resume() {
     isSuspended = false
   }
 
+  /// Starts the pump if it is not running. `pass` asks for a delivery pass; without it the pump only sends queued
+  /// windows its writes' saves claimed (#653).
   func request(
     priority: TaskPriority? = nil,
+    pass: Bool = true,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
-    _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
+    _ deliver: @escaping @Sendable (InstantRuntimeMutationDeliveryPumpWork) async
+      -> InstantRuntimeMutationDeliveryPumpPassResult
   ) {
     guard !isSuspended else { return }
-    needsAnotherPass = true
-    guard task == nil else { return }
+    if pass { needsAnotherPass = true }
+    guard task == nil, needsAnotherPass || !claimedAtSave.isEmpty else { return }
 
     task = Task(priority: priority) { [weak self] in
       await self?.run(sleep: sleep, deliver)
@@ -1018,6 +1050,7 @@ private actor InstantRuntimeMutationDeliveryPump {
   func suspend() {
     isSuspended = true
     needsAnotherPass = false
+    claimedAtSave.removeAll()
     task?.cancel()
   }
 
@@ -1030,12 +1063,22 @@ private actor InstantRuntimeMutationDeliveryPump {
 
   private func run(
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
-    _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
+    _ deliver: @escaping @Sendable (InstantRuntimeMutationDeliveryPumpWork) async
+      -> InstantRuntimeMutationDeliveryPumpPassResult
   ) async {
     var localFailureAttempt: UInt64 = 0
-    pump: while !Task.isCancelled, !isSuspended, needsAnotherPass {
-      needsAnotherPass = false
-      switch await deliver() {
+    pump: while !Task.isCancelled, !isSuspended, needsAnotherPass || !claimedAtSave.isEmpty {
+      let work: InstantRuntimeMutationDeliveryPumpWork
+      if claimedAtSave.isEmpty {
+        needsAnotherPass = false
+        isRunningPass = true
+        work = .pass
+      } else {
+        work = .claimedAtSave(claimedAtSave.removeFirst())
+      }
+      let result = await deliver(work)
+      isRunningPass = false
+      switch result {
       case .finished:
         localFailureAttempt = 0
 
@@ -1062,6 +1105,7 @@ private actor InstantRuntimeMutationDeliveryPump {
     task = nil
     if isSuspended {
       needsAnotherPass = false
+      claimedAtSave.removeAll()
     }
   }
 }
@@ -1747,6 +1791,8 @@ private actor InstantAutomaticMutationRetryReservations {
 private struct InstantLocalWriteCommit: Sendable {
   var result: InstantStoreMutationResult
   var publication: InstantStorePublicationTicket?
+  /// Whether the save claimed the write and queued it on the delivery pump (#653), so no pass is needed to send it.
+  var claimedAtSave = false
 }
 
 /// When a local write takes its place in the outbox, and the time its facts carry (#1648).
@@ -2460,7 +2506,8 @@ public final class InstantRuntime: Sendable {
       // Do not await websocket delivery here — that couples every increment/send to
       // RTT and makes onOptimisticCommit fire only after the wire send. Admit the
       // work to the one owned delivery pump (the same helper used while connecting).
-      await startLiveMutationDeliveryIfNeeded()
+      // #653: a write its save claimed needs no pass; the pump sends its queued window.
+      await startLiveMutationDeliveryIfNeeded(pass: !committed.claimedAtSave)
       // Observers refresh after the gate's release (#473), as Reactor.js `pushOps` returns before the `notifyOne`
       // calls its `notifyAll` schedules run. Writes committed before this publication are published with it.
       var result = committed.result
@@ -2740,12 +2787,18 @@ public final class InstantRuntime: Sendable {
       }
       // #1006: the save writes these entities' facts; a hydration that read one of them waits for the store commit.
       operationGate.markHolderWrites(prepared.result.changedEntityIDs.union(prepared.deferredValueChangedEntityIDs))
+      // #653: a write delivery could send at once is claimed by its own save, as Reactor.js `pushOps` sends a mutation
+      // as it records it; the claim turn read it back and fingerprinted it again (3.06 ms a claim on the phone).
+      let claimRequest = supersededTail == nil && creation.explicitTime == nil
+        ? await claimAtSaveRequest()
+        : nil
       operationGate.markHolderPhase("save")
       let saved = try await saveLocalMutationReadingConnectionStatus(
         prepared: prepared,
         pendingMutation: pendingMutation,
         supersededTail: supersededTail,
-        state: state
+        state: state,
+        claimingForDelivery: claimRequest
       )
       if saved.didSave {
         InstantEnergyMeter.record(.transaction)
@@ -2769,7 +2822,31 @@ public final class InstantRuntime: Sendable {
           // #1132: the write changed what the status reads; the next status read reads it again.
           latestConnectionStatusInputs.withLock { $0 = nil }
         }
-        return InstantLocalWriteCommit(result: committed.prepared.result, publication: committed.publication)
+        var claimedAtSave = false
+        if let claim = saved.claim {
+          // #653: queued under the gate, so windows reach the pump in the order their writes were saved.
+          operationGate.markHolderPhase("queue claimed write")
+          recordActorHop(.outbox)
+          for mutation in claim.mutations {
+            await outbox.replace(mutation)
+          }
+          recordActorHop(.deliveryPump)
+          claimedAtSave = await mutationDeliveryPump.enqueueClaimedAtSave(
+            InstantAutomaticOutboxTransportSelection(
+              mutations: InstantBoundedOutboxDelivery.transportMutations(in: claim),
+              claimToken: claim.claimToken,
+              claimedMutationIDs: Set(claim.mutations.map(\.id)),
+              reclaimedMutationIDs: [],
+              nextClaimDeadlineMilliseconds: claim.nextClaimDeadlineMilliseconds,
+              shouldContinueImmediately: false
+            )
+          )
+        }
+        return InstantLocalWriteCommit(
+          result: committed.prepared.result,
+          publication: committed.publication,
+          claimedAtSave: claimedAtSave
+        )
       }
     }
 
@@ -2859,7 +2936,8 @@ public final class InstantRuntime: Sendable {
     prepared: PreparedStoreMutation,
     pendingMutation: PendingMutation,
     supersededTail: PendingMutation?,
-    state: InstantPersistenceState
+    state: InstantPersistenceState,
+    claimingForDelivery claimRequest: InstantAutomaticOutboxClaimRequest? = nil
   ) async throws -> InstantLocalWriteSave {
     let changedEntityTriples = prepared.changedEntityTriples
     let changedFactScope = prepared.factScope
@@ -2868,19 +2946,19 @@ public final class InstantRuntime: Sendable {
     let outboxRevision = state.outboxRevision
     let keys = connectionStatusKeys
     return try await withPersistence { persistence in
-      guard
-        try persistence.saveLocalMutation(
-          changedEntityTriples: changedEntityTriples,
-          changedFactScope: changedFactScope,
-          pendingMutation: pendingMutation,
-          supersedingImmediateTail: supersededTail,
-          // The admission's byte bound, on the body the save encodes for the row (#1491).
-          admittingNewWrite: true,
-          expectedStoreRevision: storeRevision,
-          expectedAttributeRevision: attributeRevision,
-          expectedOutboxRevision: outboxRevision
-        )
-      else {
+      let saved = try persistence.saveLocalMutation(
+        changedEntityTriples: changedEntityTriples,
+        changedFactScope: changedFactScope,
+        pendingMutation: pendingMutation,
+        supersedingImmediateTail: supersededTail,
+        // The admission's byte bound, on the body the save encodes for the row (#1491).
+        admittingNewWrite: true,
+        expectedStoreRevision: storeRevision,
+        expectedAttributeRevision: attributeRevision,
+        expectedOutboxRevision: outboxRevision,
+        claimingForDelivery: claimRequest
+      )
+      guard saved.didSave else {
         return InstantLocalWriteSave(didSave: false, connectionStatus: nil)
       }
       return InstantLocalWriteSave(
@@ -2889,7 +2967,8 @@ public final class InstantRuntime: Sendable {
           in: persistence,
           keys: keys,
           knownPendingMutationCount: nil
-        )
+        ),
+        claim: saved.claim
       )
     }
   }
@@ -8179,14 +8258,40 @@ public final class InstantRuntime: Sendable {
     _ = try await connectLiveSession(reportsFailure: true, onlyIfNeeded: true)
   }
 
-  private func startLiveMutationDeliveryIfNeeded() async {
+  /// The claim a local write's save may make for it (#653): when the connection is open, the pump runs no pass, no
+  /// server error pauses delivery or probes one write, and no explicit flush holds the lane, so the pump would claim and
+  /// send the write at once. The save claims it only if nothing waits ahead of it either.
+  private func claimAtSaveRequest() async -> InstantAutomaticOutboxClaimRequest? {
+    guard configuration.liveTransport != nil, !mutationFlushGate.isHeldSnapshot else { return nil }
+    recordActorHop(.deliveryPump)
+    guard await mutationDeliveryPump.acceptsClaimsAtSave() else { return nil }
+    let now = configuration.now()
+    guard await mutationServerErrorBackoff.pauseDeadline(now: now.milliseconds) == nil,
+      !(await mutationServerErrorBackoff.probesOneWrite)
+    else { return nil }
+    recordActorHop(.liveSession)
+    guard await liveSession.isOpen else { return nil }
+    return InstantAutomaticOutboxClaimRequest(
+      claimantID: automaticDeliveryClaimantID,
+      claimToken: UUID().uuidString.lowercased(),
+      now: now
+    )
+  }
+
+  /// Starts the delivery pump. `pass` asks for a delivery pass; without it the pump only sends the windows writes' own
+  /// saves claimed (#653).
+  private func startLiveMutationDeliveryIfNeeded(pass: Bool = true) async {
     guard configuration.liveTransport != nil else { return }
     recordActorHop(.deliveryPump)
     await mutationDeliveryPump.request(
       priority: configuration.liveSyncTaskPriority,
+      pass: pass,
       sleep: configuration.liveReconnectSleep
-    ) { [weak self] in
+    ) { [weak self] work in
       guard let self else { return .finished }
+      if case let .claimedAtSave(selection) = work {
+        return await self.deliverClaimedAtSave(selection)
+      }
       let liveSessionIsOpen = await self.liveSession.isOpen
       guard self.configuration.autoConnectLiveTransport || liveSessionIsOpen else {
         return .finished
@@ -11003,6 +11108,29 @@ public final class InstantRuntime: Sendable {
         "nextClaimDeadlineMilliseconds": deferral.nextClaimDeadlineMilliseconds.map(String.init) ?? "",
       ]
     )
+  }
+
+  /// Sends a window a write's own save claimed (#653), as a pass sends the window it claims.
+  private func deliverClaimedAtSave(
+    _ selection: InstantAutomaticOutboxTransportSelection
+  ) async -> InstantRuntimeMutationDeliveryPumpPassResult {
+    do {
+      try Task.checkCancellation()
+      return try await deliverAutomaticOutboxSelection(selection) ? .continueImmediately : .finished
+    } catch is CancellationError {
+      return .finished
+    } catch {
+      // As a pass's send: the claims were released for the next pass; a receive-loop failure owns the reconnect.
+      if Self.callerOwnsLiveSessionFailure(error), await liveSession.isOpen {
+        await scheduleReconnect(
+          after: error,
+          event: "connection.mutation-delivery-failed",
+          message: "Instant could not send durable mutations and will reconnect before retrying.",
+          replacesOpenSession: true
+        )
+      }
+      return .finished
+    }
   }
 
   private func deliverAutomaticOutboxSelection(
@@ -18139,6 +18267,8 @@ private struct InstantLocalWriteSave: Sendable {
   var didSave: Bool
   /// `nil` when the save lost its revision race, or when the status read failed.
   var connectionStatus: InstantConnectionStatusInputs?
+  /// The one-write window the save claimed for delivery (#653), when it was asked to and could.
+  var claim: InstantAutomaticOutboxClaimWindow?
 }
 
 private extension InstantStoreMutationResult {
