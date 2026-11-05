@@ -1,3 +1,9 @@
+## 2026-11-04 22:09:50 EST — scribe `73460479af02a0e8e8900cf3098289a76a96b92b`
+Cut (#1652): Scribe 0.1 (258) from main after landing B of #1652; the build number 257 to 258, build 258's plain block and four stories.
+
+## 2026-11-04 22:06:36 EST — scribe `03ed6805878ca87dcf03404ae55bb3c60a84a35d`
+Feature (#1652): an agent's chat has a message box (agentCommands message-agent, carried out by the mirror through tools/agent-run --steer); a long-press holds or resumes a session's issue (Backlog, with the recording and moment noted on the issue); Agent chats sorts by most recent, cost or needing you and can show only agents needing you; an open brief shows his linked lines.
+
 ## 2026-11-04 22:06:53 EST — instant-data-swift `995043755a97f26d268100262c9ef91630579dbd`
 Release (#1513, #1480, #1109): v1.9.68 tagged on 99504375 (ledger bd929885), from main merge 0df9d697: #1513 a final's publication splices the rows it reaches (red a0dee714, greens f8b7c453 428411d9; a final's publication p50 17.6-18.2 -> 15.6-16.0 ms on the Mac mini, materialized snapshots -43%), #1480 a restated result compared with its stored rows once (red 322c3993, green ca9dd8d2; 192 -> 96 rows read for a 32-line page), #1109 no identity set when the nested limit kept every fact (4fff7e5c). No API or storage change. Debug bundle: 1,669 tests, only the three failing on main since 1.9.64-1.9.67.
 
