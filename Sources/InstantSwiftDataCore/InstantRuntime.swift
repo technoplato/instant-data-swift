@@ -567,6 +567,9 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// waited; `nil` prunes everything at once. 1,000 since #1129: a batch also holds the server-apply gate, so a refresh
   /// that arrives during one waits for it, and a batch of 5,000 held both about 100 ms.
   var liveQueryResultPruneBatchTripleCount: Int? = 1_000
+  /// A prune batch that holds its gates this long or longer logs one notice with each phase's milliseconds (#1129). On
+  /// 2026-11-04 a Mac's batches held the server-apply gate 4.5-13.1 s each at 1,000 facts, and nothing named the phase.
+  var liveQueryResultPruneSlowBatchMilliseconds = 1_000
   /// What keeps the process running while the live-query prune works, and says when the system is about to suspend it
   /// (#1319).
   public var maintenanceActivity = InstantMaintenanceActivity.live
@@ -578,6 +581,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   /// Runs as each prune batch starts, holding the operation gate.
   var onLiveQueryResultPruneBatchHoldsOperationGateForTesting: (@Sendable () async -> Void)? = nil
+  /// Each prune batch's phases and their times, once it leaves its gates (#1129).
+  var onLiveQueryResultPruneBatchTimedForTesting: (@Sendable (InstantPruneBatchTiming) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   /// How the live socket's route watcher waits out a backoff or the minute between two moves (#1237).
@@ -1704,6 +1709,91 @@ struct InstantServerApplyGateTimeline: Sendable {
 
 /// One stall's length passed while a one-shot read still waited for its answer (#1796).
 private struct InstantLiveQueryAnswerStillOwed: Error {}
+
+/// One prune batch's hold of the server-apply and operation gates, by phase (#1129).
+struct InstantPruneBatchTiming: Sendable, Equatable {
+  struct Phase: Sendable, Equatable {
+    var name: String
+    var milliseconds: Int
+  }
+
+  /// From the batch's first phase to its last one's end, with both gates held.
+  var heldMilliseconds: Int
+  /// Each phase once, in the order the batch first entered it; a phase entered again (a choice gone stale) adds up.
+  var phases: [Phase]
+
+  /// The phases as one line, such as `choose 12 ms, apply 4,310 ms`.
+  var phasesDescription: String {
+    phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
+  }
+
+  /// The phase that took longest, the first of equals.
+  var slowestPhase: Phase? {
+    phases.reduce(nil) { slowest, phase in
+      guard let slowest, slowest.milliseconds >= phase.milliseconds else { return phase }
+      return slowest
+    }
+  }
+}
+
+/// Names each phase of one prune batch in its gates' holder phase, so a stall or wait report says which part held them,
+/// and times it (#1129). On 2026-11-04 a Mac's batches held the server-apply gate 4.5-13.1 s each with every live
+/// refresh behind them, and a phone's held a recording's first write 1.25 s, while a batch still releases at most 1,000
+/// facts: some phase stopped following the batch's size, and no report named it.
+// SAFETY: `lock` guards `current` and `spent`. One batch's task calls `begin` and `finish` in order.
+final class InstantPruneBatchPhases: @unchecked Sendable {
+  private let lock = NSLock()
+  private let gates: [AsyncSerialGate]
+  private let now: @Sendable () -> ContinuousClock.Instant
+  private var startedAt: ContinuousClock.Instant?
+  private var current: (name: String, startedAt: ContinuousClock.Instant)?
+  private var spent: [(name: String, duration: Duration)] = []
+
+  init(gates: [AsyncSerialGate], now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }) {
+    self.gates = gates
+    self.now = now
+  }
+
+  /// Ends the phase running now and starts `name`, which every gate's report names until the next one.
+  func begin(_ name: String) {
+    let instant = now()
+    lock.withLock {
+      if startedAt == nil { startedAt = instant }
+      endCurrentLocked(at: instant)
+      current = (name, instant)
+    }
+    for gate in gates { gate.markHolderPhase(name) }
+  }
+
+  /// Ends the last phase and returns the batch's timing.
+  func finish() -> InstantPruneBatchTiming {
+    let instant = now()
+    return lock.withLock {
+      endCurrentLocked(at: instant)
+      let start = startedAt ?? instant
+      return InstantPruneBatchTiming(
+        heldMilliseconds: InstantServerApplyGateTimeline.milliseconds(from: start, to: instant),
+        phases: spent.map {
+          InstantPruneBatchTiming.Phase(
+            name: $0.name,
+            milliseconds: InstantServerApplyGateTimeline.milliseconds(from: start, to: start + $0.duration)
+          )
+        }
+      )
+    }
+  }
+
+  private func endCurrentLocked(at instant: ContinuousClock.Instant) {
+    guard let current else { return }
+    self.current = nil
+    let duration = current.startedAt.duration(to: instant)
+    if let index = spent.firstIndex(where: { $0.name == current.name }) {
+      spent[index].duration += duration
+    } else {
+      spent.append((current.name, duration))
+    }
+  }
+}
 
 private actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
