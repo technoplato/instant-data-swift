@@ -10,10 +10,28 @@ import Testing
 /// s (the store fell from about 60,000 triples to 3,000), and the transact queued behind it was that lane's slowest
 /// local write in 7 of 8 lanes. The prune now removes about `liveQueryResultPruneBatchTripleCount` result triples per
 /// gate hold, so a local write waits for one batch, and the end state equals one prune's.
+///
+/// Since #1500 a closed query's result is unloaded where it is: its row is marked, its rows and facts stay on disk, and
+/// under each batch's gates memory releases the entities no loaded result owns, no write waits on and no observer
+/// shows. The prune unloads about as many result triples per gate hold as it removed.
 @Suite(.serialized)
 struct InstantPruneGateHoldTests {
   static let resultCount = 24
   static let todosPerResult = 150
+
+  /// The open query (#1500): its filter shows no todo, so memory may release every closed result's entities, as a list
+  /// left open shows none of the detail queries' rows that closed.
+  static let openQuery = InstantQueryPlan(
+    id: "prune-gate-hold.open",
+    namespace: TodoExample.namespace,
+    filters: [.equals(field: "isCompleted", value: .bool(true))]
+  )
+
+  /// Every todo the seed stores: each result's, the split entity and the entity with local data.
+  static var seededTodoIDs: Set<String> {
+    Set((0..<resultCount * todosPerResult).map { "prune-todo-\($0)" })
+      .union(["prune-todo-1000000", "prune-todo-2000000"])
+  }
 
   final class PausePoint: @unchecked Sendable {
     private let lock = NSLock()
@@ -126,12 +144,27 @@ struct InstantPruneGateHoldTests {
   }
 
   static func persistedResultCount(at url: URL) -> Int {
+    countResults(at: url, where: "1")
+  }
+
+  /// How many stored results are loaded: not unloaded where they are (#1500).
+  static func loadedResultCount(at url: URL) -> Int {
+    countResults(at: url, where: "unloaded_at_ms IS NULL")
+  }
+
+  private static func countResults(at url: URL, where condition: String) -> Int {
     var database: OpaquePointer?
     guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return -1 }
     defer { sqlite3_close(database) }
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM instant_live_query_results", -1, &statement, nil)
-      == SQLITE_OK
+    guard
+      sqlite3_prepare_v2(
+        database,
+        "SELECT COUNT(*) FROM instant_live_query_results WHERE \(condition)",
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK
     else { return -1 }
     defer { sqlite3_finalize(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW else { return -1 }
@@ -139,10 +172,13 @@ struct InstantPruneGateHoldTests {
   }
 
   struct Outcome {
-    var resultsLeftWhenTheWriteLanded: Int
+    var loadedResultsWhenTheWriteLanded: Int
     var batches: Int
     var pruned: InstantLiveQueryResultPruningResult
     var survivingTodoIDs: Set<String>
+    /// The stored results' rows, and the entities `instant_triples` holds, once the prune ended (#1500).
+    var storedResultCount: Int
+    var storedTodoIDs: Set<String>
   }
 
   static func pruneWithAWriteQueued(batchTripleCount: Int?) async throws -> Outcome {
@@ -158,11 +194,14 @@ struct InstantPruneGateHoldTests {
     )
     configuration.autoConnectLiveTransport = false
     configuration.liveQueryResultPruneBatchTripleCount = batchTripleCount
+    // #1107: every seeded result stays loaded at the launch, as the results of queries that closed in a session are; a
+    // launch keeps only the newest ten.
+    configuration.preloadedLiveQueryResultCount = .max
     configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting = { _ in await pause.pauseOnce() }
     configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in pause.recordBatch() }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     // One live query is active, so every seeded result is inactive.
-    let observation = await runtime.observeQueryLease(TodoExample.query)
+    let observation = await runtime.observeQueryLease(Self.openQuery)
     let policy = InstantLiveQueryResultPruningPolicy(
       maxAgeMilliseconds: 1_000 * 60 * 60 * 24 * 7 * 52,
       maxEntries: 1_000,
@@ -184,7 +223,8 @@ struct InstantPruneGateHoldTests {
         ),
         createdAt: createdAt
       )
-      return persistedResultCount(at: url)
+      // #1500: an unloaded result keeps its row, marked; the loaded ones are the results the prune has yet to unload.
+      return loadedResultCount(at: url)
     }
     while await runtime.operationGateWaiterCountForTesting() < 1 {
       try await Task.sleep(for: .milliseconds(5))
@@ -193,42 +233,55 @@ struct InstantPruneGateHoldTests {
     let left = try await write.value
     let pruned = try await prune.value
     let snapshot = await runtime.store.snapshot()
+    let storedResultCount = persistedResultCount(at: url)
+    let storedTodoIDs = InstantPruneCostTests.Fixture.sqliteEntityIDs(at: url)
     await observation.cancel()
     _ = try? await runtime.closeConnection()
     return Outcome(
-      resultsLeftWhenTheWriteLanded: left,
+      loadedResultsWhenTheWriteLanded: left,
       batches: pause.batchCount,
       pruned: pruned,
-      survivingTodoIDs: Set(snapshot.triples.map(\.entityID))
+      survivingTodoIDs: Set(snapshot.triples.map(\.entityID)),
+      storedResultCount: storedResultCount,
+      storedTodoIDs: storedTodoIDs
     )
   }
 
   @Test
   func aLocalWriteWaitsForOnePruneBatchNotTheWholePrune() async throws {
     let outcome = try await Self.pruneWithAWriteQueued(batchTripleCount: 2_000)
-    // Each result holds about 450 triples, so a 2,000-triple batch removes 4 or 5 of the 24.
+    // Each result holds about 450 triples, so a 2,000-triple batch unloads 4 of the 24 (#1500).
     #expect(
-      outcome.resultsLeftWhenTheWriteLanded > 1,
-      "the write landed after the first batch, not after all \(Self.resultCount) results were pruned"
+      outcome.loadedResultsWhenTheWriteLanded > 1,
+      "the write landed after the first batch, not after all \(Self.resultCount) results were unloaded"
     )
     #expect(outcome.batches >= 5)
-    expectNoDifference(outcome.pruned.removedQueryKeys.count, Self.resultCount)
-    expectNoDifference(outcome.pruned.remainingQueryKeys.count, 0, "only the active query's result could remain")
-    // The split entity is removed once both of its results are, and the entity with local data stays.
+    // #1500: every closed result is unloaded where it is; the policy's limits collect none of them.
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.count, Self.resultCount)
+    expectNoDifference(outcome.pruned.removedQueryKeys, [])
+    expectNoDifference(outcome.pruned.remainingQueryKeys.count, 0, "only the active query's result could remain loaded")
+    expectNoDifference(outcome.storedResultCount, Self.resultCount, "an unloaded result keeps its row")
+    #expect(outcome.storedTodoIDs.isSuperset(of: Self.seededTodoIDs), "the unload deleted facts from disk")
+    // Memory releases what no loaded result owns, no write waits on and no observer shows (#1145): the split entity
+    // once both of its results are unloaded, and the entity with local data, whose rows stay on disk.
     #expect(!outcome.survivingTodoIDs.contains("prune-todo-1000000"))
-    #expect(outcome.survivingTodoIDs.contains("prune-todo-2000000"))
+    #expect(!outcome.survivingTodoIDs.contains("prune-todo-2000000"))
     #expect(!outcome.survivingTodoIDs.contains("prune-todo-0"))
     #expect(outcome.survivingTodoIDs.contains("todo-written-during-prune"))
   }
 
   @Test
   func withoutABatchBoundTheWriteWaitsForTheWholePrune() async throws {
-    // The bound off is library-77's single hold: the write lands only after every result is gone.
+    // The bound off is library-77's single hold: the write lands only after every result is unloaded.
     let outcome = try await Self.pruneWithAWriteQueued(batchTripleCount: nil)
-    expectNoDifference(outcome.resultsLeftWhenTheWriteLanded, 0)
+    expectNoDifference(outcome.loadedResultsWhenTheWriteLanded, 0)
     expectNoDifference(outcome.batches, 1)
-    expectNoDifference(outcome.pruned.removedQueryKeys.count, Self.resultCount)
+    // #1500: unloaded where they are, as the bounded prune leaves them.
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.count, Self.resultCount)
+    expectNoDifference(outcome.pruned.removedQueryKeys, [])
+    expectNoDifference(outcome.storedResultCount, Self.resultCount, "an unloaded result keeps its row")
+    #expect(outcome.storedTodoIDs.isSuperset(of: Self.seededTodoIDs), "the unload deleted facts from disk")
     #expect(!outcome.survivingTodoIDs.contains("prune-todo-1000000"))
-    #expect(outcome.survivingTodoIDs.contains("prune-todo-2000000"))
+    #expect(!outcome.survivingTodoIDs.contains("prune-todo-2000000"))
   }
 }
