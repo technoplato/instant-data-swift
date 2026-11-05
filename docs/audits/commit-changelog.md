@@ -1,3 +1,6 @@
+## 2026-11-05 15:30:28 EST — scribe `bee056c24fbfc30447b1d25cdb065e06077259d6`
+Perf (#1006, #1381): a recording's lines this device holds and the pages that answered show at once under the playback's loading row until the whole transcript arrives; on iOS the launch line's scene activation is UIKit's.
+
 ## 2026-11-05 14:28:45 EST — instant-data-swift `a7223eadeac0fc92a20e0aa16997d8c2de767f81`
 Release (#632): v1.9.74, tag on this commit (the landing of agent/claude/perf-audio-1223: red af95eb36, green 418ff841, comments b52f2870, test reads 1a2ed1b9, release record 82cd08ad; its CHANGELOG entries in eb6d4266): InstantProgressiveMediaWriter takes the stream's stored row (continuing:), so a progressive media stream delivered to its end and then continued stores only its new segments instead of starting over at index 0 (whole stream encoded and stored again, every re-sent row refused by the app's rules). Gate: Mac mini 632-lib-redgreen (3 new tests fail at red; 31 + 5 progressive media tests pass at green); the app's side in 632-app-redgreen against this branch in edit mode (red fails 3, green 20/20). One source-compatible API addition, no storage change; carries 1.9.73.
 
