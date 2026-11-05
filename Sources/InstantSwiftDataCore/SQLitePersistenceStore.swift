@@ -132,6 +132,8 @@
 //   load indexes its attributes once for every stored result, instead of each walking the whole schema (#1109).
 // - 2026-11-05: a refresh compares only the entities it changed with a stored result's rows: each result keeps its
 //   entities' fingerprints from its last save in memory, at the query-result revision its commit left (#1116).
+// - 2026-11-05: a server refresh's planning read saves each restated result as its translation limited it, when the
+//   store's attribute revision is the one the translation's schema came from, instead of limiting it again (#1109).
 
 import CryptoKit
 import Foundation
@@ -12513,10 +12515,13 @@ public actor SQLitePersistenceStore {
   ///   - retractions: The retractions the caller worked out at these revisions; nil reads them from `replacements`
   ///     (none are read when `replacements` is empty).
   ///   - results: The results whose saves to work out, or nil when the caller worked them out or saves none.
+  ///   - resultsLimitedAtAttributeRevision: The attribute revision of the schema the results' nested includes were
+  ///     limited with, when the caller limited them (the live-refresh translation, #1109); nil limits them here.
   func serverApplyPlanningReads(
     replacements: [InstantLiveQueryResultReplacement],
     retractions workedOutRetractions: InstantLiveQueryReplacementRetractions?,
     savingResults results: [InstantPersistedLiveQueryResult]?,
+    resultsLimitedAtAttributeRevision: Int64? = nil,
     expectedQueryResultRevision: Int64,
     expectedOutboxRevision: Int64,
     processedTransactionID: String
@@ -12549,7 +12554,18 @@ public actor SQLitePersistenceStore {
           reads.isStale = true
           return reads
         }
-        reads.saves = try preparedLiveQueryResultSavesWithoutTransaction(results, storedDiffs: storedDiffs)
+        // #1109: the translation limited each result's nested includes with the schema of this attribute revision, and the
+        // limit keeps what it kept, so a save at the same revision takes the results as they are. A save that commits is at
+        // that revision: the commit checks it. The pass over every restated fact kept every one, 44 ms in 90 s of the
+        // phone's speech trace (build 251).
+        let resultsAreLimited = try resultsLimitedAtAttributeRevision.map {
+          try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey) == $0
+        } ?? false
+        reads.saves = try preparedLiveQueryResultSavesWithoutTransaction(
+          results,
+          storedDiffs: storedDiffs,
+          resultsAreLimited: resultsAreLimited
+        )
       }
       if let retractions {
         guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision else {
@@ -21560,11 +21576,14 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  /// - Parameter storedDiffs: The retractions' comparison of each key's first replacement with its stored rows, made in
-  ///   the same read from the replacements these results were built from (#1480).
+  /// - Parameters:
+  ///   - storedDiffs: The retractions' comparison of each key's first replacement with its stored rows, made in the same
+  ///     read from the replacements these results were built from (#1480).
+  ///   - resultsAreLimited: Whether the results' nested includes are limited with the schema this read holds (#1109).
   private func preparedLiveQueryResultSavesWithoutTransaction(
     _ results: [InstantPersistedLiveQueryResult],
-    storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
+    storedDiffs: [String: LiveQueryOwnershipDiff] = [:],
+    resultsAreLimited: Bool = false
   ) throws -> [InstantPreparedLiveQueryResultSave] {
     // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
     var storedFactsByKey: [String: [InstantTriple]] = [:]
@@ -21575,7 +21594,8 @@ public actor SQLitePersistenceStore {
         result,
         previousFacts: previousFacts,
         storedDiff: previousFacts == nil ? storedDiffs[result.key] : nil,
-        keepsEntityFingerprints: true
+        keepsEntityFingerprints: true,
+        isLimited: resultsAreLimited
       )
       storedFactsByKey[result.key] = prepared.storedFacts
       saves.append(prepared.save)
@@ -21586,24 +21606,30 @@ public actor SQLitePersistenceStore {
   /// One result's save against the rows `previousFacts` own (an earlier save of the same key in this frame), or the
   /// stored rows when nil, and the facts it stores.
   ///
-  /// - Parameter keepsEntityFingerprints: Whether the save carries the entity fingerprints of what it stores, for a
-  ///   commit that keeps them (#1116); a save made inside a commit does not.
+  /// - Parameters:
+  ///   - keepsEntityFingerprints: Whether the save carries the entity fingerprints of what it stores, for a commit that
+  ///     keeps them (#1116); a save made inside a commit does not.
+  ///   - isLimited: Whether `result`'s nested includes are limited with the schema this save reads (#1109). Otherwise
+  ///     the save limits them, as a defense for every result no translation limited with that schema (#044, #155).
   private func preparedLiveQueryResultSaveWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult,
     previousFacts knownPreviousFacts: [InstantTriple]?,
     storedDiff: LiveQueryOwnershipDiff? = nil,
-    keepsEntityFingerprints: Bool = false
+    keepsEntityFingerprints: Bool = false,
+    isLimited: Bool = false
   ) throws -> (save: InstantPreparedLiveQueryResultSave, storedFacts: [InstantTriple]) {
     let attributeIDs = Set(result.triples.map(\.attributeID))
-    let schema = try nestedLimitSchemaForLiveResultSaveWithoutTransaction()
     var result = result
     let restatedCount = result.triples.count
-    liveResultNestedLimitPasses += 1
-    result.triples = InstantLiveQueryNestedLimit.limitedTriples(
-      queryKey: result.key,
-      triples: Array(result.triples),
-      schema: schema
-    )
+    if !isLimited {
+      let schema = try nestedLimitSchemaForLiveResultSaveWithoutTransaction()
+      liveResultNestedLimitPasses += 1
+      result.triples = InstantLiveQueryNestedLimit.limitedTriples(
+        queryKey: result.key,
+        triples: Array(result.triples),
+        schema: schema
+      )
+    }
     // #1480: the retractions compared these facts with the stored rows already, in this read. The translation limited
     // them with these attributes, so the limit here keeps every one, and the facts are the comparison's: its rows that
     // leave and join are this save's. A limit that drops a fact, or a comparison of other facts, compares again.
