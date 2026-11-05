@@ -2741,7 +2741,8 @@ struct TripleIndexes: Codable, Sendable {
     if let snapshots = materializeOrderedSnapshots(
       plan,
       order: effectiveOrder,
-      attributes: attributes
+      attributes: attributes,
+      metrics: &metrics
     ) {
       let paged = paginate(
         snapshots,
@@ -3614,7 +3615,8 @@ struct TripleIndexes: Codable, Sendable {
   private func materializeOrderedSnapshots(
     _ plan: InstantQueryPlan,
     order: InstantQueryOrder,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
   ) -> [QuerySnapshot]? {
     guard
       !order.isServerCreatedAt,
@@ -3647,6 +3649,7 @@ struct TripleIndexes: Codable, Sendable {
     var snapshots: [QuerySnapshot] = []
     snapshots.reserveCapacity(ordered.count)
     let fields = Self.shownFields(of: plan)
+    metrics.examinedCandidateCount += ordered.count
     for (entityID, sortValue) in ordered {
       guard
         let snapshot = snapshot(
@@ -3654,9 +3657,11 @@ struct TripleIndexes: Codable, Sendable {
           namespace: plan.namespace,
           attributes: attributes,
           fields: fields
-        ),
-        matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
+        )
       else { continue }
+      metrics.materializedSnapshotCount += 1
+      guard matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes) else { continue }
+      metrics.matchingCandidateCount += 1
       snapshots.append(
         QuerySnapshot(
           snapshot: snapshot,
