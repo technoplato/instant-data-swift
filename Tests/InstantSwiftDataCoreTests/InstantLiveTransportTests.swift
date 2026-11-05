@@ -8428,7 +8428,8 @@ struct InstantLiveRefreshAttributeContextCacheTests {
       suffix: "live-result-schema"
     )
     let passes = await runtime.persistence.liveResultSchemaPassCountForTesting()
-    expectNoDifference(passes, 1)
+    // `#expect`, so a release run judges it too.
+    #expect(passes == 1, "the saves walked the stored attributes \(passes) times")
     _ = try await runtime.closeConnection()
   }
 
@@ -8446,7 +8447,7 @@ struct InstantLiveRefreshAttributeContextCacheTests {
     )
     let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
     let passes = await runtime.persistence.liveResultSchemaPassCountForTesting()
-    expectNoDifference(passes, loads)
+    #expect(passes == loads, "the saves walked the stored attributes \(passes) times for \(loads) loads")
     let attributes = try await runtime.persistence.attributesForLiveResultSaveForTesting()
     #expect(attributes.contains { $0.namespace == "todos" && $0.name == "priority" })
     _ = try await runtime.closeConnection()
