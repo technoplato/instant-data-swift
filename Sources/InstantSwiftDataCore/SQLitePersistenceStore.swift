@@ -128,6 +128,8 @@
 // - 2026-11-04: eviction reads only the file records it is given, and the storage snapshot counts copies in SQL, not by
 //   decoding every record (#1104).
 // - 2026-11-04: a file record is read from its columns and SQLite's json_extract, not decoded with JSONDecoder (#1105).
+// - 2026-11-05: a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read, instead
+//   of reading each result whole and binding every entity id (#1149).
 
 import CryptoKit
 import Foundation
@@ -12009,47 +12011,26 @@ public actor SQLitePersistenceStore {
     // mutations. IndexedDB has no second full graph. SQLite Data keeps the
     // corpus on disk and SQL-selects the visible page.
     // When live-query ownership rows exist, InstantStore bootstrap loads only
-    // those entity IDs plus pending outbox effect entities, after applying
-    // nested include limits from the query JSON (InstaQL `$limit` per parent).
+    // the entities loaded results own plus pending outbox effect entities.
     // Empty watermark query results (zero triple rows) keep the legacy full load.
-    let liveQueryTripleCount = try selectInt64(
-      "SELECT COUNT(*) FROM instant_live_query_triples"
-    )
-    if liveQueryTripleCount > 0 {
-      let retainedLiveQueryEntityIDs = try retainedLiveQueryEntityIDsWithoutTransaction(
-        attributes: attributes
+    // #1149: the entities come from the ownership rows, in this statement. A save keeps ownership of only the facts the
+    // query's nested include limits keep (InstaQL `$limit` per parent), so the launch's former pass, each loaded result
+    // read whole and its facts limited again, found the same entities, then bound each one as a parameter. `EXISTS`,
+    // not `COUNT(*)`: a count reads every ownership row, unloaded results' too (#1500).
+    if try selectInt64("SELECT EXISTS (SELECT 1 FROM instant_live_query_triples)") != 0 {
+      // #1500: the loaded results' rows only; an unloaded result's stay on disk, and a released one's are leaving.
+      whereClauses.append(
+        """
+        entity_id IN (
+          SELECT ownership.entity_id
+          FROM instant_live_query_results AS result
+          JOIN instant_live_query_triples AS ownership ON ownership.query_id = result.query_id
+          WHERE result.unloaded_at_ms IS NULL AND \(Self.notReleasedLiveQueryResultSQL)
+          UNION
+          SELECT entity_id FROM instant_outbox_effect_entities
+        )
+        """
       )
-      if retainedLiveQueryEntityIDs.isEmpty {
-        // #1500: the loaded results' rows only; an unloaded result's stay on disk.
-        whereClauses.append(
-          """
-          entity_id IN (
-            SELECT DISTINCT ownership.entity_id
-            FROM instant_live_query_triples AS ownership
-            JOIN instant_live_query_results AS result ON result.query_id = ownership.query_id
-            WHERE result.unloaded_at_ms IS NULL
-            UNION
-            SELECT entity_id FROM instant_outbox_effect_entities
-          )
-          """
-        )
-      } else {
-        let placeholders = Array(
-          repeating: "?",
-          count: retainedLiveQueryEntityIDs.count
-        ).joined(separator: ", ")
-        whereClauses.append(
-          """
-          (
-            entity_id IN (\(placeholders))
-            OR entity_id IN (SELECT entity_id FROM instant_outbox_effect_entities)
-          )
-          """
-        )
-        tripleBindings.append(
-          contentsOf: retainedLiveQueryEntityIDs.sorted().map(SQLiteBinding.text)
-        )
-      }
     }
     if !whereClauses.isEmpty {
       triplesSQL += " WHERE " + whereClauses.joined(separator: " AND ")
@@ -20390,27 +20371,6 @@ public actor SQLitePersistenceStore {
         )
       )
     }
-  }
-
-  private func retainedLiveQueryEntityIDsWithoutTransaction(
-    attributes: [InstantAttribute]
-  ) throws -> Set<String> {
-    let rows = try loadLiveQueryResultRowsWithoutTransaction()
-    var retained: Set<String> = []
-    // #1500: a result unloaded where it is keeps its facts on disk until its query subscribes again.
-    for row in rows where !row.isUnloaded {
-      guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
-        continue
-      }
-      retained.formUnion(
-        InstantLiveQueryNestedLimit.retainedEntityIDs(
-          queryKey: result.key,
-          triples: Array(result.triples),
-          attributes: attributes
-        )
-      )
-    }
-    return retained
   }
 
   private func outboxRequiresConservativeLiveQueryPruningWithoutTransaction() throws -> Bool {
