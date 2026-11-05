@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 11:15:11 p.m. EST — `10f89d53ecc0` release(#653 #1517 #1523 #1142 #1648): v1.9.69: a live write is claimed by its own save; one receipt key and one encode less per write; one deadline wake; same-millisecond writes keep their order
+
+- **Implementation commit:** `10f89d53ecc0f4bedd0f8d432451e880c3c74ac3`
+- **Change:** release(#653 #1517 #1523 #1142 #1648): v1.9.69: a live write is claimed by its own save; one receipt key and one encode less per write; one deadline wake; same-millisecond writes keep their order
+- **Details:**
+  - The release document for v1.9.69, tagged from main (d3ed3c50: the lane's job-C-verified 7773cfa5 merged with v1.9.68; seed pins cd8be798; ledger 0840aa82) for Scribe's next build: #653 claim at save (no claim turn while delivery could send at once; the window goes out only on its session), #1517 one projected encode and wire fingerprint less per claim, #1523 receipts found by stored bytes, #1142 one deadline wake, #1648 same-millisecond order.
+  - Mac mini, release, v1.9.67 vs 7773cfa5 in one job: save + claim 5,523.4 -> 4,208.3 us a write (-23.8%), write side -18.8%, metered library ops -1.5%; the acknowledgement +43% (#1523's key missed by the server apply's body pages and staging; fixed on the lane branch, 6ff60ee9, for the next release). No API or storage change.
+- **Files:**
+  - `docs/releases/v1.9.69.md` — #653 #1517 #1523 #1142 #1648 the release: what changed, what it measured, the checks, what did not run
+  - `PROGRESS.md` — #653 the release checkpoint and the resume point
+  - `agent-presence/_channels/2026-11-04-perf-send-1797.md` — #653 what v1.9.69 holds and what waits for job E
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
 ## November 4th, 2026 at 11:12:54 p.m. EST — `cd8be798379d` test(#1648): the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
 
 - **Implementation commit:** `cd8be798379de1ed7848e65da1c3a24db087aff2`
