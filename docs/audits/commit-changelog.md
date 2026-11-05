@@ -1,3 +1,6 @@
+## 2026-11-05 02:39:45 EST — scribe `3dff2d02bfa6a828c68ecf88c1cff3e43f4311e9`
+Feature (#1777): the voice-print backfill hears a recording whose storage keeps only its compressed copy from the copy (Apple's decoder, the segments a span needs; red/green on the mini, 9/9), not deployed until storage keeps only the copy (#1798); the audit's measured result: the Mac's WAVs 71.93 GB to 0.12 GB (about 68 GB net), every kept WAV with its reason; findings #1800, #1808, #1813; changelog 6f4868fd5.
+
 ## 2026-11-05 02:34:45 EST — scribe `9e4aa3f827d203c7ff5dc3e2f1396ab66dea6fd7`
 Fix and diagnostics (#1796): landing 9e4aa3f82 of agent/claude/perf-sync-1796-app: Playback forgets a live-elsewhere compressed copy that failed to load, so the next row looks it up again instead of keeping "Network or live transport failed" on screen (red 23a1c18fa, green 091e9eb1d); the diagnostics bridge forwards the library's live.receive-summary, one line a minute per device, the follower lag measurement (red 404b5bbe2, green fabc9915e); ledger bc8939057. Checked on the mini, job 1796-app-check (02:13-02:30): reds fail on their assertions, green passes.
 
