@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 3:53:29 p.m. EST — `2eba59159479` release(#1129): v1.9.75: a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
+
+- **Implementation commit:** `2eba59159479cd3de67f03c8a92a1df8a5b93c7e`
+- **Change:** release(#1129): v1.9.75: a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
+- **Details:**
+  - The release record and PROGRESS for v1.9.75, tagged on this commit (merged onto main by 598067f9 after a push race) for Scribe's next build: each prune batch names and times its phases, a slow one logs live-query-results.prune-batch-slow, and the memory release after an unload is its own phase. It carries 1.9.74.
+- **Files:**
+  - `docs/releases/v1.9.75.md` — #1129 the release record with the three jobs' results and what did not run
+  - `PROGRESS.md` — #1129 the lane's checkpoint: what landed, how it was checked, what is next
+- **User context (verbatim):**
+  > I want to restore the work you were working on in the order in which you think it will have the most impact with the P0s and the instant work
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-2@pp); no SpecStory capture
+
 ## November 5th, 2026 at 3:49:35 p.m. EST — `fe1e8fddc402` green(#1129): a batch's memory release after an unload is a phase of its own
 
 - **Implementation commit:** `fe1e8fddc402ea80e628a02d3f255c434900dbf6`

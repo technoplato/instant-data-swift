@@ -1,3 +1,9 @@
+## 2026-11-05 15:53:10 EST — instant-data-swift `598067f9de84c203d1b6d5e1cb00e7a0fdda765d`
+Merge (#1129): main (a #1848 ledger line) into v1.9.75's release commit after main's push lost a race, so the commit the tag names is on main.
+
+## 2026-11-05 15:52:21 EST — instant-data-swift `2eba59159479cd3de67f03c8a92a1df8a5b93c7e`
+Release (#1129): v1.9.75, tag on this commit: each prune batch names and times its phases in both gates' reports, a batch held 1 s or more logs live-query-results.prune-batch-slow, and the memory release after an unload is its own phase; build 270's iPhone prune held the operation gate 10,888 ms with no phase named.
+
 ## 2026-11-05 15:51:49 EST — scribe `2aa3c2595599ffb9392e06dd60e26e4fdc074550`
 Fix (#1848): a take continued at a launch numbers its lines after the saved ones (its row carries the live transcription's counts), and a local read's two-second bound returns at two seconds even when the read waits in the library's operation gate.
 
