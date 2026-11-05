@@ -1,3 +1,6 @@
+## 2026-11-05 15:42:41 EST — scribe `e0f5cec24024d6e9fa6b32e622a49b6d56a99d2d`
+Fix (#645, #331, #583): one clock. The recording clock that stamps screenshots, photos, frames and events waits for the microphone's first buffer after Record, Resume, each capture restart and a continuation, then reads audio.wav's length there and runs from the first sample, so pictures sit beside the words timed on the audio; recording.clock.audio-began logs each start's correction. Changelog e4fc73519.
+
 ## 2026-11-05 15:30:04 EST — scribe `aa770bc67a084dd8a8ae39866d90d41a9dfaea47`
 Fix (#632): a recording's compressed copy delivered to its end and then continued (Continue Recording) goes on where its stored stream row ends, through instant-data-swift 1.9.74's continuing: (pinned here), only on a device that holds the recording's audio; before, the copy started over at 0 s and the whole recording was encoded and stored again, each re-sent row refused by the rules. Red 6c18b1423, green 37782fff6, guard adb3ffe78/73779a5dc; gate 632-app-redgreen (red fails 2, red2 fails 1, green 20/20 RecordingAudioStreamTests); landed before the queued land check 632-pin-check, at Michael's "rip it up". FEATURES.md 24 and 1 kept. CHANGELOG 00b809472.
 
