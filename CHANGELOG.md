@@ -10,6 +10,131 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 4:50:43 a.m. EST — `d75028325841` green(#1796): an observer's registration names its query's namespace in the gate's phase
+
+- **Implementation commit:** `d75028325841410cff76307b1093d883c9b93180`
+- **Change:** green(#1796): an observer's registration names its query's namespace in the gate's phase
+- **Details:**
+  - A standard query's and an infinite query page's registration mark the gate's phase reload <namespace> before a closed result's reload under the hold and answer <namespace> before the store's first answer (markHolderPhase, lock only): a stall or wait report names the query and the part that held the gate.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 the registration's phase marks
+- **User context (verbatim):**
+  > We're not going to remove any features or functionality from the application. We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:42 a.m. EST — `fac026557c20` red(#1796): an observer's registration holds the gate without naming its query
+
+- **Implementation commit:** `fac026557c20778bf06c46c34f66ece6fef5e905`
+- **Change:** red(#1796): an observer's registration holds the gate without naming its query
+- **Details:**
+  - The tablet's launch (2026-11-04 21:40:47) logged an observer registration holding the operation gate 4,583 ms with 7 callers queued, its connect among them, and an infinite query page's registration holding it 2,852 ms a minute later, both without a phase. aRegistrationsHoldNamesItsQuerysNamespace reads the phase each registration's hold named when it left the gate.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObserverRegistrationGateTests.swift` — #1796 the phase test and InstantGateReleasePhases
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:41 a.m. EST — `a5b5174d17e8` test(#1796): the two-client test prints its lag distribution when it passes
+
+- **Implementation commit:** `a5b5174d17e8f3ca150a3763ac1c714be074538e`
+- **Change:** test(#1796): the two-client test prints its lag distribution when it passes
+- **Details:**
+  - A passing #expect prints nothing, so the job that ran the guard on the fixed sources reported no number; the release record needs the distribution on both sides (the red run failure message carries the before).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift` — #1796 print the lag distribution
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:40 a.m. EST — `076ed107235b` test(#1796): a writer's lines reach a slow follower within seconds, and the lag stays flat
+
+- **Implementation commit:** `076ed107235b2bf129a889f879b73c87169c9176`
+- **Change:** test(#1796): a writer's lines reach a slow follower within seconds, and the lag stays flat
+- **Details:**
+  - A writer and a follower runtime over scripted sockets, the test as the server, the tablet measured minute (29 list refreshes and 31 own acknowledgements a minute, about 1.5 s an apply) replayed for two minutes on the test clock; each line lag at most 20 s, the last at most 8 s. It must fail on red1 sources (the job runs it there).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift` — #1796 the two-client latency guard
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:38 a.m. EST — `75915233b31e` green(#1796): the receive summary measures how old the newest server write is when it is applied
+
+- **Implementation commit:** `75915233b31e7aaac8d48149284dbf03a71de407`
+- **Change:** green(#1796): the receive summary measures how old the newest server write is when it is applied
+- **Details:**
+  - For each applied refresh-ok carrying a fact newer than any applied before: wall clock minus the newest fact server time (the join-row triple fourth element, child nodes included); add-query answers only move the mark. live.receive-summary adds factLag median, p95 and maximum a minute and is a notice at 10 s or more.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1796 the newest-fact lag in the receive meter and summary
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:37 a.m. EST — `882448d26631` red(#1796): nothing measures how old the newest server write is when a follower applies it
+
+- **Implementation commit:** `882448d2663185bcb732e910ecd122d16c8561e7`
+- **Change:** red(#1796): nothing measures how old the newest server write is when a follower applies it
+- **Details:**
+  - The tablet behind #1796 logged no lag; about six minutes was the user reading two screens. The tests ask the buffer for the age of the newest fact of each refresh it applies and the summary for its median, p95 and maximum.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` — #1796 theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied, theReceiveSummaryReportsHowOldTheNewestWritesWere
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1796 the test accessors the lag tests read
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:32 a.m. EST — `1fd79eb8020a` green(#1796): a one-shot read whose add-query met a dead socket waits for the reconnect
+
+- **Implementation commit:** `1fd79eb8020a6e57d14ae05badf1b2322851c4d8`
+- **Change:** green(#1796): a one-shot read whose add-query met a dead socket waits for the reconnect
+- **Details:**
+  - queryOnceThroughLive keeps its registration when its add-query meets a socket whose receiver owns the failure; the next session init sends it with every registered query, as an observer registration is sent and as upstream Reactor.js sends a queryOnce add-query from _flushPendingMessages on the next init-ok.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 InstantReceiverOwnedLiveSessionSendFailure leaves the registration for the next session
+- **User context (verbatim):**
+  > We're not going to remove any features or functionality from the application. We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:30 a.m. EST — `25923d45812f` red(#1796): a one-shot read sent on a socket that just died fails at once and is never sent again
+
+- **Implementation commit:** `25923d45812f517b08641df963ed8573821b30f4`
+- **Change:** red(#1796): a one-shot read sent on a socket that just died fails at once and is never sent again
+- **Details:**
+  - At the 17:33 resume (229 s suspended) the tablet socket was dead (POSIX 53) for 12 s while its connection read as open; a recordingAttachments read failed in 0 ms and dropped its registration, so the reconnect never sent it.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` — #1796 aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:28 a.m. EST — `3f66c9555731` green(#1796): a waiting refresh loses what a newer one restates, and a one-shot read waits while the applier works
+
+- **Implementation commit:** `3f66c955573173fe52b654969d4433910ba01104`
+- **Change:** green(#1796): a waiting refresh loses what a newer one restates, and a one-shot read waits while the applier works
+- **Details:**
+  - InstantLiveReceivedFrames: when a refresh-ok arrives, older waiting ones lose the results it restates and one left with none leaves the buffer; frames carrying attrs or reflecting a later transaction keep everything (the server combines queued refreshes the same way, session.clj combine [:refresh :refresh]).
+  - queryOnceThroughLive waits for its answer while the connection receives or applies frames, up to upstream 30 s QUERY_ONCE_TIMEOUT, and fails after 5 s with neither; it waited a fixed 5 s. live.receive-summary logs a minute of buffer waits, depth, applier busy share and replaced frames.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — #1796 the buffer replaces restated results; the receive meter and summary; receiveProgress
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 the progress-based answer wait; the stall and limit configuration values
+- **User context (verbatim):**
+  > We're not going to remove any features or functionality from the application. We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
+## November 5th, 2026 at 4:50:27 a.m. EST — `bd5d9017a2db` red(#1796): a follower applies every buffered refresh, and a one-shot read fails behind a busy applier
+
+- **Implementation commit:** `bd5d9017a2db1046fd7f33524431cedfba58799b`
+- **Change:** red(#1796): a follower applies every buffered refresh, and a one-shot read fails behind a busy applier
+- **Details:**
+  - A tablet following a live recording, 8,240 of its own writes pending, applied every server frame in arrival order at about 1.5 s each, superseded list refreshes included, and showed the recording about six minutes late; its one-shot reads failed at a fixed 5 s while its socket was open (Mac diagnostics collector, 2026-11-04 17:09-17:33).
+  - InstantFollowerLatencyTests: the buffer tests, a follower held in a long apply behind twelve list refreshes and three acknowledgements, and a one-shot read answered 6.5 s behind a held frame; liveFrameBeingAppliedForTesting and the stall and limit configuration values the tests set.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` — #1796 the failing follower tests
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1796 the test hook for the frame being applied
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp and halfjew22); no SpecStory capture
+
 ## November 5th, 2026 at 12:15:39 a.m. EST — `7b3ee47d359b` release(#1523): v1.9.70: the acknowledgement and the server apply find a write's receipt by its stored bytes again
 
 - **Implementation commit:** `7b3ee47d359be606fc535ab4321158c806a032ff`
