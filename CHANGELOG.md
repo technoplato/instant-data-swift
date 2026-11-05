@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 12:14:40 a.m. EST — `37790b67ff25` green(#1523): a server apply and the acknowledgements after it find a write's receipt by its stored bytes
+
+- **Implementation commit:** `37790b67ff25c70b7c8761147e475bbd712668aa`
+- **Change:** green(#1523): a server apply and the acknowledgements after it find a write's receipt by its stored bytes
+- **Details:**
+  - The save keeps a write's receipt fingerprint by the SHA-256 of the body bytes it binds (1ef4aa2f, v1.9.69). The server apply's body pages and staging looked it up by the write's inputs, which the save no longer keys it by, and fingerprinted every replayed write again; a body the echo changed was kept without its bytes, so its acknowledgement fingerprinted it once more. Now the body pages pass their row's bytes, the staging keys by the bytes it stages (compressing them once), the supersession tail's check uses its row's bytes, and a supersession's lifecycle record takes its save's fingerprint. Same comparisons, same stored column. (Cherry-pick of the lane's 6ff60ee9 onto main.)
+  - Mac mini job 1797-e (release recording exercise, same job, v1.9.67 vs the lane head with this fix): acknowledgement 451.0 -> 457.9 us a call (v1.9.69 has 628.7), no acknowledgement among the full-fingerprint callers in the 60 s sample (8 samples at 037012ec); 207 tests in 20 suites pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1523 the server apply's body pages, staging, supersession tail and lifecycle record find the receipt by stored bytes
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
 ## November 4th, 2026 at 11:15:11 p.m. EST — `10f89d53ecc0` release(#653 #1517 #1523 #1142 #1648): v1.9.69: a live write is claimed by its own save; one receipt key and one encode less per write; one deadline wake; same-millisecond writes keep their order
 
 - **Implementation commit:** `10f89d53ecc0f4bedd0f8d432451e880c3c74ac3`
