@@ -234,6 +234,16 @@ Found while writing the red (`48f10a63`, `InstantPartialResidencyTests`): what "
   entities' rows in SQLite at launch, links included, without materializing them; conservative (every loaded entity
   outside the outbox) costs a disk merge of each in every local read by lookup (history pages) and a whole read at its
   first write. Prefer precise, measured on the store copy first.
+- Sized (store copy 2026-11-04 21:20, newest ten loaded, `~/Sync/audit/perf-mem-1797/scripts/partial_launch.py`):
+  31,161 launch facts today, 16,181 partial (-48%); 52 entities held in part. A NOT EXISTS per fact found them in
+  341 ms on a Mac, too slow for a launch: compare per-entity counts (one GROUP BY over the loaded entities' primary-key
+  ranges, deferred attributes left out) against the facts loaded.
+- Plumbing: `loadStoreSnapshotWithoutTransaction` has ten callers (the launch, state reconstruction, another
+  connection's adoption, snapshot replacement, the reconcile and repair paths), and `InstantStoreSnapshot` is public
+  and Codable. Carry the partial set beside it (the internal `InstantPersistenceStateLoad` / `.snapshot` adoption),
+  not in it; every path that installs a snapshot installs its set; a full load (no ownership rows) has none.
+- `TripleIndexes.insert` keeps a resident fact's stamp and counts only new values, so reading a partial entity whole
+  over its resident facts is idempotent.
 Red tests first: a relaunch holds a loaded result's owned attributes of an entity, not its unowned links; a write to it
 keeps its links on disk and leaves it whole in memory; a server apply to it keeps its disk-only facts; a local read
 with a lookup over it answers with its disk facts; reopening an unloaded result completes it. Measure: E07 (resident
