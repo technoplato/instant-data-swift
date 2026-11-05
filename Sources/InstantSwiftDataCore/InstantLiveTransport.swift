@@ -1915,6 +1915,8 @@ actor InstantURLSessionLiveWebSocket {
   private let task: URLSessionWebSocketTask
   private nonisolated let abortHandle: InstantLiveWebSocketAbortHandle
   private let wireMeter: InstantWireMeterStorage
+  // #1781: the add-query frames this socket sent and no answer has closed, so each first answer is timed from its ask.
+  private var firstAnswerNotes = InstantFirstAnswerNotes()
   private var isClosed = false
 
   var urlSessionIdentity: ObjectIdentifier {
@@ -1961,6 +1963,9 @@ actor InstantURLSessionLiveWebSocket {
   }
 
   func send(_ message: InstantLiveMessage) async throws {
+    // #1781: noted before the frame is handed over, since this actor is reentrant and the answer can be received
+    // before the send resumes.
+    let noted = firstAnswerNotes.asked(message, at: clock_gettime_nsec_np(CLOCK_UPTIME_RAW))
     do {
       let (string, byteCount) = try Self.encodedFrame(message)
       try await task.send(.string(string))
@@ -1979,6 +1984,7 @@ actor InstantURLSessionLiveWebSocket {
         correlationID: message.clientEventID
       )
     } catch {
+      if noted { firstAnswerNotes.forget(message) }
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -1997,6 +2003,9 @@ actor InstantURLSessionLiveWebSocket {
       let received = try await task.receive()
       let (message, byteCount) = try Self.decodedFrame(received)
       Self.logWireSummary(wireMeter.record(.received, op: message.op, bytes: byteCount))
+      if let answer = firstAnswerNotes.answered(message, at: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) {
+        wireMeter.recordFirstAnswer(answer)
+      }
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",

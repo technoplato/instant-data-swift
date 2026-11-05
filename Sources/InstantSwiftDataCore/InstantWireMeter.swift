@@ -154,10 +154,22 @@ public struct InstantWireSnapshot: Sendable, Equatable {
         if measure.frames > 0 || measure.bytes > 0 { result[entry.key] = measure }
       }
     }
+    let firstAnswers = firstAnswersByQuery.reduce(into: [String: FirstAnswers]()) { result, entry in
+      let before = earlier.firstAnswersByQuery[entry.key] ?? FirstAnswers()
+      let answers = FirstAnswers(
+        answers: max(0, entry.value.answers - before.answers),
+        waitNanoseconds: entry.value.waitNanoseconds > before.waitNanoseconds
+          ? entry.value.waitNanoseconds - before.waitNanoseconds : 0,
+        slowAnswers: max(0, entry.value.slowAnswers - before.slowAnswers),
+        triples: max(0, entry.value.triples - before.triples)
+      )
+      if answers.answers > 0 { result[entry.key] = answers }
+    }
     return Self(
       sent: delta(sent, earlier.sent),
       received: delta(received, earlier.received),
-      receivedByQuery: delta(receivedByQuery, earlier.receivedByQuery)
+      receivedByQuery: delta(receivedByQuery, earlier.receivedByQuery),
+      firstAnswersByQuery: firstAnswers
     )
   }
 
@@ -179,6 +191,15 @@ public struct InstantWireSnapshot: Sendable, Equatable {
       .prefix(Self.summaryQueryCount)
     for (rank, entry) in heaviest.enumerated() {
       metadata["query.\(rank + 1)"] = "\(entry.key)=\(entry.value.frames)/\(entry.value.bytes)"
+    }
+    // #1781: the shapes that waited longest in all for first answers, `shape=answers/averageMs/slow/triples`.
+    let longest = firstAnswersByQuery.filter { $0.value.answers > 0 }
+      .sorted { ($0.value.waitNanoseconds, $1.key) > ($1.value.waitNanoseconds, $0.key) }
+      .prefix(Self.summaryQueryCount)
+    for (rank, entry) in longest.enumerated() {
+      let averageMilliseconds = entry.value.waitNanoseconds / UInt64(entry.value.answers) / 1_000_000
+      metadata["firstAnswer.\(rank + 1)"] =
+        "\(entry.key)=\(entry.value.answers)/\(averageMilliseconds)/\(entry.value.slowAnswers)/\(entry.value.triples)"
     }
     return metadata
   }
@@ -236,8 +257,21 @@ package final class InstantWireMeterStorage: Sendable {
   /// shapes, so this bounds only a shape built from data.
   package static let maximumQueryShapes = 48
 
-  /// Counts one query's first answer under its shape (#1781).
+  /// Counts one query's first answer under its shape (#1781): once per subscription, under the lock the frame counts
+  /// take; past ``maximumQueryShapes`` it counts as `other`, as the bytes do.
   package func recordFirstAnswer(_ answer: InstantFirstAnswer) {
+    state.withLock { state in
+      let shape =
+        state.counts.firstAnswersByQuery[answer.shape] != nil
+          || state.counts.firstAnswersByQuery.count < Self.maximumQueryShapes
+        ? answer.shape : "other"
+      var counted = state.counts.firstAnswersByQuery[shape] ?? InstantWireSnapshot.FirstAnswers()
+      counted.answers += 1
+      counted.waitNanoseconds &+= answer.waitNanoseconds
+      if answer.waitNanoseconds >= InstantWireSnapshot.slowFirstAnswerNanoseconds { counted.slowAnswers += 1 }
+      counted.triples += max(0, answer.triples)
+      state.counts.firstAnswersByQuery[shape] = counted
+    }
   }
 
   /// Counts one answer for each shape, under one lock for the whole frame (#1117).
@@ -269,34 +303,85 @@ package struct InstantFirstAnswer: Equatable, Sendable {
   }
 }
 
-/// The `add-query` frames a socket sent that no answer has closed yet (#1781).
+/// The `add-query` frames a socket sent that no answer has closed yet (#1781), each by its `client-event-id`, with its
+/// query's shape and the uptime it was handed to the socket.
+///
+/// Instant echoes the asking frame's id in its `add-query-ok` and `add-query-exists` (upstream
+/// `instant/reactive/session.clj`, `handle-add-query!`), so an answer closes exactly its own note, whatever order
+/// answers arrive in. Each socket keeps its own notes, so the asks a reconnect sends again are timed from their own
+/// frames, and a note no answer closes goes with its socket.
 package struct InstantFirstAnswerNotes: Sendable {
-  /// The most asks noted at once.
+  /// The most asks noted at once: past this many, a new ask goes untimed until an answer closes one.
   package static let maximumNotes = 256
+
+  private struct Note: Sendable {
+    var shape: String
+    var askedAt: UInt64
+  }
+
+  private var notes: [String: Note] = [:]
 
   package init() {}
 
-  package var count: Int { 0 }
+  package var count: Int { notes.count }
 
   /// Notes `message` at `now` if it asks a query; whether it was noted.
   @discardableResult
   package mutating func asked(_ message: InstantLiveMessage, at now: UInt64) -> Bool {
-    false
+    guard message.op == "add-query", let clientEventID = message.clientEventID, notes.count < Self.maximumNotes else {
+      return false
+    }
+    notes[clientEventID] = Note(shape: InstantWireMeter.queryShape(of: message.fields["q"] ?? .null), askedAt: now)
+    return true
   }
 
   /// Drops `message`'s note: its frame was never sent.
   package mutating func forget(_ message: InstantLiveMessage) {
+    guard let clientEventID = message.clientEventID else { return }
+    notes[clientEventID] = nil
   }
 
-  /// The noted ask `message` answers at `now`.
+  /// The noted ask `message` answers at `now`: its shape, how long it waited and the triples the answer carried. An
+  /// `error` for a noted ask closes its note with no answer; any other frame is not looked up.
   package mutating func answered(_ message: InstantLiveMessage, at now: UInt64) -> InstantFirstAnswer? {
-    nil
+    switch message.op {
+    case "add-query-ok", "add-query-exists":
+      guard let clientEventID = message.clientEventID, let note = notes.removeValue(forKey: clientEventID) else {
+        return nil
+      }
+      return InstantFirstAnswer(
+        shape: note.shape,
+        waitNanoseconds: now > note.askedAt ? now - note.askedAt : 0,
+        triples: message.firstAnswerTriples
+      )
+    case "error":
+      if let clientEventID = message.clientEventID { notes[clientEventID] = nil }
+      return nil
+    default:
+      return nil
+    }
   }
 }
 
 extension InstantLiveMessage {
-  /// The triples a first answer carries (#1781).
+  /// The triples a first answer carries (#1781): each result node's `join-rows`, children included. Counted with a
+  /// stack rather than recursion, since the result's depth is the server's.
   var firstAnswerTriples: Int {
-    0
+    guard case .array(let results)? = fields["result"] else { return 0 }
+    var nodes = results
+    var triples = 0
+    while let node = nodes.popLast() {
+      guard case .object(let object) = node else { continue }
+      if case .object(let data)? = object["data"],
+        case .object(let datalogResult)? = data["datalog-result"],
+        case .array(let joinRows)? = datalogResult["join-rows"]
+      {
+        for row in joinRows {
+          if case .array(let rowTriples) = row { triples += rowTriples.count }
+        }
+      }
+      if case .array(let children)? = object["child-nodes"] { nodes.append(contentsOf: children) }
+    }
+    return triples
   }
 }
