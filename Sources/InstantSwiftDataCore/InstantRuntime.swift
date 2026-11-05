@@ -1025,6 +1025,13 @@ private actor InstantRuntimeMutationDeliveryPump {
     return true
   }
 
+  /// Takes every queued window. A pass calls this under the operation gate, before it claims, and sends them first: a
+  /// pass that was already waiting for the gate when a write's save claimed it must not send a newer write before it.
+  func takeClaimedAtSave() -> [InstantAutomaticOutboxTransportSelection] {
+    defer { claimedAtSave.removeAll() }
+    return claimedAtSave
+  }
+
   func resume() {
     isSuspended = false
   }
@@ -11003,6 +11010,10 @@ public final class InstantRuntime: Sendable {
     }
     do {
       try Task.checkCancellation()
+      // #653: windows claimed at save before this pass's claim, in save order, then its own.
+      for earlier in outstanding.claimedAtSaveBefore {
+        _ = try await deliverAutomaticOutboxSelection(earlier)
+      }
       let deliveryNeedsContinuation = try await deliverAutomaticOutboxSelection(outstanding)
       if retryNeedsBackoff {
         return .retryAfterFailure
@@ -15587,6 +15598,9 @@ public final class InstantRuntime: Sendable {
       writes: []
     )
     do {
+      // #653: windows writes' saves claimed before this pass took the gate go out before anything it claims now.
+      recordActorHop(.deliveryPump)
+      let claimedAtSave = await mutationDeliveryPump.takeClaimedAtSave()
       recordActorHop(.persistence)
       let window = try await persistence.claimAutomaticOutboxDeliveryWindow(
         InstantAutomaticOutboxClaimRequest(
@@ -15626,7 +15640,8 @@ public final class InstantRuntime: Sendable {
         claimedMutationIDs: Set(window.mutations.map(\.id)),
         reclaimedMutationIDs: window.reclaimedMutationIDs,
         nextClaimDeadlineMilliseconds: window.nextClaimDeadlineMilliseconds,
-        shouldContinueImmediately: window.shouldContinueImmediately
+        shouldContinueImmediately: window.shouldContinueImmediately,
+        claimedAtSaveBefore: claimedAtSave
       )
     } catch {
       await leaveOperationGate()

@@ -250,6 +250,8 @@ struct InstantAutomaticOutboxTransportSelection: Sendable {
   var reclaimedMutationIDs: Set<String>
   var nextClaimDeadlineMilliseconds: Int64?
   var shouldContinueImmediately: Bool
+  /// Windows writes' own saves claimed before this one's claim took the operation gate (#653), sent first, in order.
+  var claimedAtSaveBefore: [InstantAutomaticOutboxTransportSelection] = []
 }
 
 struct InstantPersistenceRevisions: Equatable, Sendable {
