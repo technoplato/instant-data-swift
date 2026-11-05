@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-05: restated for #1500's unload in place: the batches unload the closed results, and the memory they release
+//   is a phase of its own (#1129).
 // - 2026-11-05: a prune batch names each phase it holds its gates for and times it; a batch that held them 1 s or more
 //   logs one notice with each phase's milliseconds (#1129).
 
@@ -74,10 +76,16 @@ struct InstantPruneBatchPhaseTests {
     var timings: [InstantPruneBatchTiming]
     var notices: [[String: String]]
     var pruneGatePhases: [String?]
-    var removedResultCount: Int
+    var pruned: InstantLiveQueryResultPruningResult
   }
 
-  /// The 24 closed results `InstantPruneGateHoldTests` seeds, pruned in batches of 1,000 facts.
+  /// The phases a prune batch can name.
+  static let phaseNames: Set<String> = [
+    "find released row", "active keys", "choose", "residency", "apply", "retract", "release memory", "unload",
+  ]
+
+  /// The 24 closed results `InstantPruneGateHoldTests` seeds, all loaded, with its open query, which shows none of their
+  /// todos, pruned in batches of 1,000 facts. Since #1500 a batch unloads closed results where they are.
   static func prune(appID: String, slowBatchMilliseconds: Int) async throws -> Outcome {
     let url = try InstantPruneGateHoldTests.temporaryCacheURL()
     try await InstantPruneGateHoldTests.seed(at: url)
@@ -93,11 +101,13 @@ struct InstantPruneBatchPhaseTests {
     )
     configuration.autoConnectLiveTransport = false
     configuration.liveQueryResultPruneBatchTripleCount = 1_000
+    // #1107: every seeded result stays loaded at the launch, as in `InstantPruneGateHoldTests`.
+    configuration.preloadedLiveQueryResultCount = .max
     configuration.liveQueryResultPruneSlowBatchMilliseconds = slowBatchMilliseconds
     configuration.onLiveQueryResultPruneBatchTimedForTesting = { timings.record($0) }
     configuration.operationGateTimeline = releases.record
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-    let observation = await runtime.observeQueryLease(TodoExample.query)
+    let observation = await runtime.observeQueryLease(InstantPruneGateHoldTests.openQuery)
     notices.start()
     let pruned: InstantLiveQueryResultPruningResult
     do {
@@ -116,22 +126,24 @@ struct InstantPruneBatchPhaseTests {
       timings: timings.all,
       notices: notices.all,
       pruneGatePhases: releases.phases(of: "pruneLiveQueryResults(policy:now:)"),
-      removedResultCount: pruned.removedQueryKeys.count
+      pruned: pruned
     )
   }
 
-  /// A batch that removes results holds its gates for these phases, in this order: it looks for a released row to check
-  /// first, reads the active queries, chooses its results, reads the hot store's facts of their entities, applies the
-  /// removal in SQLite, retracts the facts it dropped from the hot store, and unloads the removed results.
+  /// A batch that unloads closed results holds its gates for these phases, in this order: it looks for a released row to
+  /// check first, reads the active queries, chooses its results, reads the hot store's facts of their entities, marks
+  /// the results unloaded in SQLite, releases from memory the entities no loaded result owns (#1500), and unloads the
+  /// results' live state. A batch that removes facts retracts them from the hot store after `apply`.
   @Test
   func aPruneBatchTimesEachPhaseItHoldsTheGatesFor() async throws {
     let outcome = try await Self.prune(appID: "prune-batch-phases", slowBatchMilliseconds: .max)
 
-    expectNoDifference(outcome.removedResultCount, InstantPruneGateHoldTests.resultCount)
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.count, InstantPruneGateHoldTests.resultCount)
+    expectNoDifference(outcome.pruned.removedQueryKeys, [])
     let first = try #require(outcome.timings.first, "#1129: no prune batch reported its phases")
     expectNoDifference(
       first.phases.map(\.name),
-      ["find released row", "active keys", "choose", "residency", "apply", "retract", "unload"]
+      ["find released row", "active keys", "choose", "residency", "apply", "release memory", "unload"]
     )
     #expect(outcome.timings.count > 1, "24 results of about 450 facts take several batches of 1,000")
     for timing in outcome.timings {
@@ -146,9 +158,8 @@ struct InstantPruneBatchPhaseTests {
     let outcome = try await Self.prune(appID: "prune-batch-gate-phase", slowBatchMilliseconds: .max)
 
     #expect(!outcome.pruneGatePhases.isEmpty)
-    let known: Set<String> = ["find released row", "active keys", "choose", "residency", "apply", "retract", "unload"]
     expectNoDifference(
-      outcome.pruneGatePhases.filter { $0 == nil || !known.contains($0!) },
+      outcome.pruneGatePhases.filter { $0 == nil || !Self.phaseNames.contains($0!) },
       [],
       "#1129: a prune batch left the operation gate without naming its phase"
     )
@@ -166,7 +177,7 @@ struct InstantPruneBatchPhaseTests {
     #expect(notice["heldMilliseconds"] != nil)
     #expect(notice["slowestPhase"] != nil)
     expectNoDifference(notice["kind"], "results")
-    #expect(Int(notice["removedResultCount"] ?? "") ?? 0 > 0)
+    #expect(Int(notice["unloadedResultCount"] ?? "") ?? 0 > 0)
   }
 
   /// A batch under the threshold logs nothing at notice: a device prunes on its write cadence.
