@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-04: a launch keeps the newest `preloadedLiveQueryResultCount` (10) stored results loaded, as upstream
+//   preloads ten; the rest reload from disk when their query subscribes (#1107, #1149).
 // - 2026-11-04: the acknowledgement-deadline wake keeps one sleeping task that re-checks the deadline when it wakes; each
 //   send started one and each acknowledgement cancelled it (#1142).
 // - 2026-11-04: a write saved while delivery could send it at once is claimed by its own save and queued on the pump in
@@ -2145,12 +2147,14 @@ public final class InstantRuntime: Sendable {
         // (#403); they were three awaits. With application migrations, each keeps its own await and its notice below.
         let queryCachePruningPolicy = configuration.queryCachePruningPolicy
         let bootstrapNow = configuration.now()
+        let preloadedLiveQueryResultCount = configuration.preloadedLiveQueryResultCount
         let retainedMutationRecovery = configuration.retainedMutationsWithoutPreparationReceipt
         configuration.actorHopRecorder?.record(.persistence)
         let opened = try await persistence.run { persistence in
           let pruningResult = try persistence.bootstrap(
             queryCachePruningPolicy: queryCachePruningPolicy,
-            now: bootstrapNow
+            now: bootstrapNow,
+            preloadedLiveQueryResultCount: preloadedLiveQueryResultCount
           )
           // A retained mutation with no preparation receipt is moved aside before the blocker is derived, so it no
           // longer refuses every connection while the writes behind it wait (#696).
@@ -2172,7 +2176,8 @@ public final class InstantRuntime: Sendable {
         configuration.actorHopRecorder?.record(.persistence)
         bootstrapPruningResult = try await persistence.bootstrap(
           queryCachePruningPolicy: configuration.queryCachePruningPolicy,
-          now: configuration.now()
+          now: configuration.now(),
+          preloadedLiveQueryResultCount: configuration.preloadedLiveQueryResultCount
         )
         for migration in configuration.localPersistenceMigrations {
           configuration.actorHopRecorder?.record(.persistence)

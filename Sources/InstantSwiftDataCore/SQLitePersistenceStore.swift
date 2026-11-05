@@ -123,6 +123,8 @@
 //   `instant_unloaded_live_query_results`; its rows and facts stay on disk until the policy collects it, its reopening
 //   clears the mark and reads them back, and only loaded results own facts for retractions, releases and the launch
 //   (#1500). An older build's copy reloads as before.
+// - 2026-11-04: a launch keeps the newest stored results loaded and unloads the rest where they are, as upstream
+//   preloads ten (`preloadEntryCount`); each reloads from disk when its query subscribes (#1107, #1149).
 // - 2026-11-04: eviction reads only the file records it is given, and the storage snapshot counts copies in SQL, not by
 //   decoding every record (#1104).
 // - 2026-11-04: a file record is read from its columns and SQLite's json_extract, not decoded with JSONDecoder (#1105).
@@ -3322,12 +3324,18 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// - Parameter preloadedLiveQueryResultCount: How many stored live-query results stay loaded, the newest first; the
+  ///   rest are unloaded where they are before the launch loads its state (#1107, #1149). `Int.max` keeps every one.
   package func bootstrap(
     queryCachePruningPolicy: InstantQueryCachePruningPolicy,
-    now: InstantTimestamp
+    now: InstantTimestamp,
+    preloadedLiveQueryResultCount: Int = .max
   ) throws -> InstantQueryCachePruningResult? {
     try bootstrap()
     try finishInterruptedLiveQueryResultRelease()
+    if preloadedLiveQueryResultCount < .max {
+      try unloadLiveQueryResultsPastTheNewest(preloadedLiveQueryResultCount, now: now)
+    }
     try reconcileDeclaredRelationStorageIfNeeded()
     do {
       return try pruneQueryCache(policy: queryCachePruningPolicy, now: now)
@@ -3850,6 +3858,46 @@ public actor SQLitePersistenceStore {
       guard try !liveQueryResultsHaveUnloadedColumn() else { return }
       try execute("ALTER TABLE instant_live_query_results ADD COLUMN unloaded_at_ms INTEGER")
     }
+  }
+
+  /// Unloads where it is every stored result past the newest `count`, at a launch and before its state loads (#1107,
+  /// #1149). Upstream `PersistedObject` preloads the `preloadEntryCount` most recently updated query results (10 for
+  /// `querySubs`) and loads any other when its query subscribes; here a query that subscribes again reloads its result
+  /// from disk before it registers (#1131, #1500). A launch loaded every result's entities: 46 results, 1,915 entities
+  /// and 48,202 facts on a phone's store (2026-11-04), where the newest ten hold 677 entities and 31,070 facts. One
+  /// statement; a result being released over later batches (#1129) is left to them.
+  private func unloadLiveQueryResultsPastTheNewest(_ count: Int, now: InstantTimestamp) throws {
+    var unloadedCount = 0
+    try withSQLiteBusyRetry {
+      try transaction {
+        try execute(
+          """
+          UPDATE instant_live_query_results SET unloaded_at_ms = ?
+          WHERE unloaded_at_ms IS NULL AND \(Self.notReleasedLiveQueryResultSQL)
+            AND query_id NOT IN (
+              SELECT query_id FROM instant_live_query_results
+              WHERE unloaded_at_ms IS NULL AND \(Self.notReleasedLiveQueryResultSQL)
+              ORDER BY updated_at_ms DESC, query_key
+              LIMIT ?
+            )
+          """,
+          [.int(now.milliseconds), .int(Int64(Swift.max(count, 0)))]
+        )
+        unloadedCount = Int(sqlite3_changes(connection.raw))
+        if unloadedCount > 0 {
+          _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+        }
+      }
+    }
+    guard unloadedCount > 0 else { return }
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "live-query-results.launch-unloaded",
+      message: "#1107 Unloaded the stored results past the newest at launch; each reloads when its query subscribes.",
+      metadata: ["unloaded": "\(unloadedCount)", "preloaded": "\(count)"]
+    )
   }
 
   /// Whether the results table has #1500's `unloaded_at_ms` column.
