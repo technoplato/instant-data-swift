@@ -3,6 +3,10 @@
 //   every change a publication judges and again for the splice (#1495).
 // - 2026-11-04: a verified observer splices the rows a publication's changes reach, and places an entity entering a head
 //   window among the window's rows, instead of materializing its page from the whole store (#1513).
+// - 2026-11-04: an observer keeps what its plan depends on, worked out when it registers, instead of every judgment and
+//   splice walking the plan and building each include's plan again (#1513).
+// - 2026-11-04: a change outside the rows a page's server page info bounds, before and after, does not refresh the page:
+//   each new line of a recording refreshed every frozen page of its transcript (#1513).
 
 import Darwin
 import Foundation
@@ -374,6 +378,9 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var unchangedObserverCount = 0
   /// Sets of every entity id an observer's result shows, at any depth, collected to judge or splice a change (#1495).
   package var allEntityIDsBuildCount = 0
+  /// Observer plans walked, includes and all, for the namespaces and fields they depend on, to judge or splice a change:
+  /// none since each observer keeps what its plan depends on from when it registered (#1513).
+  package var planWalkCount = 0
 
   mutating func add(_ other: Self) {
     skippedObserverCount += other.skippedObserverCount
@@ -382,6 +389,7 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
     materializedSnapshotCount += other.materializedSnapshotCount
     unchangedObserverCount += other.unchangedObserverCount
     allEntityIDsBuildCount += other.allEntityIDsBuildCount
+    planWalkCount += other.planWalkCount
   }
 }
 
@@ -502,7 +510,13 @@ struct InstantStorePublicationSummary {
 }
 
 private struct StoreObserver: Sendable {
-  var plan: InstantQueryPlan
+  let plan: InstantQueryPlan
+  /// What `plan` depends on, worked out when the observer registered (#1513): every judgment and splice of a change
+  /// walked the plan and built each include's plan again, 93 of the observer refreshes' 725 ms in a 90 s trace of the
+  /// phone transcribing speech (build 251). ``InstantQueryPlan/dependentNamespaces``.
+  let dependentNamespaces: Set<String>?
+  /// ``InstantQueryPlan/hasOnlyNamespaceLocalDependencies``, worked out when the observer registered (#1513).
+  let hasOnlyNamespaceLocalDependencies: Bool
   var remotePageInfo: InstantQueryRemotePageInfo?
   var liveQueryKey: String?
   var lastValues: [InstantEntitySnapshot]
@@ -2359,11 +2373,11 @@ public actor InstantStore {
     observerEpoch: Int
   ) -> ObserverRefreshDecision {
     guard let changedNamespaces else { return .refresh }
-    if let observerNamespaces = observer.plan.dependentNamespaces {
+    if let observerNamespaces = observer.dependentNamespaces {
       if observerNamespaces.isDisjoint(with: changedNamespaces) {
         return .skip
       }
-    } else if observer.plan.hasOnlyNamespaceLocalDependencies {
+    } else if observer.hasOnlyNamespaceLocalDependencies {
       guard changedNamespaces.contains(observer.plan.namespace) else { return .skip }
     } else {
       return .refresh
@@ -2374,7 +2388,7 @@ public actor InstantStore {
     if !shownEntityIDs.isDisjoint(with: changedEntityIDs) {
       return .refresh
     }
-    if observer.plan.hasOnlyNamespaceLocalDependencies,
+    if observer.hasOnlyNamespaceLocalDependencies,
       let baseline,
       observer.verifiedEpoch == observerEpoch
     {
@@ -2386,7 +2400,9 @@ public actor InstantStore {
           attributes: baseline.attributes
         )
         let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
-        if before != after {
+        if before != after,
+          !staysOutsideRemotePageRows(entityID, before, after, observer: observer, attributes: attributes, baseline: baseline)
+        {
           return .refresh
         }
       }
@@ -2398,7 +2414,7 @@ public actor InstantStore {
     // so a link to or from a shown entity is either side's), and with the same place in the root set before and after,
     // cannot change the page: a recordings list's other pages skip a heartbeat, a line or an attachment of a recording
     // they do not show.
-    if !observer.plan.hasOnlyNamespaceLocalDependencies,
+    if !observer.hasOnlyNamespaceLocalDependencies,
       let baseline,
       observer.verifiedEpoch == observerEpoch
     {
@@ -2416,7 +2432,9 @@ public actor InstantStore {
           attributes: baseline.attributes
         )
         let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
-        if before != after {
+        if before != after,
+          !staysOutsideRemotePageRows(entityID, before, after, observer: observer, attributes: attributes, baseline: baseline)
+        {
           return .refresh
         }
       }
@@ -2425,7 +2443,7 @@ public actor InstantStore {
     if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true) {
       return .refresh
     }
-    if observer.plan.hasOnlyNamespaceLocalDependencies {
+    if observer.hasOnlyNamespaceLocalDependencies {
       for entityID in changedEntityIDs {
         if indexes.entityMatches(entityID, plan: observer.plan, attributes: attributes) {
           return .refresh
@@ -2434,6 +2452,33 @@ public actor InstantStore {
       return .skipUnverified
     }
     return .refresh
+  }
+
+  /// Whether a changed entity whose place in `observer`'s result set moved lies outside the rows its page can show, both
+  /// before the change and after it, while the server's page info bounds those rows (#1513). Such a change cannot
+  /// change the page: an infinite query's frozen pages skip each new line of the recording past their cursors.
+  private static func staysOutsideRemotePageRows(
+    _ entityID: String,
+    _ before: InstantResultSetMembership,
+    _ after: InstantResultSetMembership,
+    observer: StoreObserver,
+    attributes: AttributeStore,
+    baseline: StorePublicationBaseline
+  ) -> Bool {
+    TripleIndexes.isOutsideRemotePageRows(
+      entityID,
+      membership: before,
+      plan: observer.plan,
+      remotePageInfo: observer.remotePageInfo,
+      attributes: baseline.attributes
+    )
+      && TripleIndexes.isOutsideRemotePageRows(
+        entityID,
+        membership: after,
+        plan: observer.plan,
+        remotePageInfo: observer.remotePageInfo,
+        attributes: attributes
+      )
   }
 
   private static func splicedEmission(
@@ -2515,7 +2560,7 @@ public actor InstantStore {
   ) -> InstantQueryEmission? {
     let plan = observer.plan
     // Past the comparison limit one materialization costs less than judging each change (#654).
-    guard changedEntityIDs.count <= resultSetComparisonLimit, plan.dependentNamespaces != nil else { return nil }
+    guard changedEntityIDs.count <= resultSetComparisonLimit, observer.dependentNamespaces != nil else { return nil }
     let rowsFollowRemotePageInfo = TripleIndexes.pageRowsDependOnRemotePageInfo(plan)
     var remotePageInfo: InstantQueryPageInfo?
     if pageInfoChanged {
@@ -3431,6 +3476,8 @@ public actor InstantStore {
     let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)
     observers[id] = StoreObserver(
       plan: plan,
+      dependentNamespaces: plan.dependentNamespaces,
+      hasOnlyNamespaceLocalDependencies: plan.hasOnlyNamespaceLocalDependencies,
       remotePageInfo: remotePageInfo,
       liveQueryKey: liveQueryKey,
       lastValues: initialEmission.values,

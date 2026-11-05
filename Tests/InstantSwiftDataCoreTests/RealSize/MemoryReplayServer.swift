@@ -23,6 +23,7 @@ import Foundation
 // - 2026-10-24: #1075: the server, its connection and the apply waiter; answers from the account by default, one
 //   `refresh-ok` can carry several queries' results, as the server's does for every query a transaction touched, a link
 //   attribute goes out with its cardinality and reverse identity, and transaction ids are integers, as Instant's are.
+// - 2026-11-05: a frame's decode is metered as `frameDecode`, as the production transport meters it (#1109).
 
 actor MemoryReplayServer {
   /// The account's answer to an `add-query`: join rows (`RealSizeEntity.joinRow()`).
@@ -75,7 +76,13 @@ actor MemoryReplayServer {
           let bytes = (try? JSONEncoder().encode(message).count) ?? 0
           await self.received(message, bytes: bytes, from: connection)
         },
-        receive: { try InstantLiveMessage.decoded(fromFrame: try await connection.next()) },
+        receive: {
+          let frame = try await connection.next()
+          // Metered as the production transport meters its decode (`decodedFrame`), so an exercise's per-operation
+          // split names the frame's decode beside its apply (#1109).
+          let energy = InstantEnergyMeter.begin(.frameDecode); defer { energy.end() }
+          return try InstantLiveMessage.decoded(fromFrame: frame)
+        },
         close: { connection.abort() },
         abort: { connection.abort() }
       )
