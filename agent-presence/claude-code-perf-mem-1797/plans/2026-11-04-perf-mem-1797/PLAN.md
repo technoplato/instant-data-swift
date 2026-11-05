@@ -160,3 +160,21 @@ phone's ledger files before and after, and `StorageIOExercises/liveWritesOnThePh
   each query that subscribes again reloads its own result from disk (upstream `querySubs.waitForKeyToLoad`). Red test
   waiting: `~/Sync/audit/perf-mem-1797/pending/InstantLaunchResidencyTests.swift`. Tests that read memory right after a
   launch (InstantLocalReadTests, InstantNonResidentWriteTests' relaunched store) will need a subscription first.
+
+## Amendment 4 (2026-11-04 22:55 EST): a launch preloads the newest ten results, as upstream does (#1107, #1149)
+
+- Amendment 3 planned to unload every stored result at a launch. Upstream does not: `PersistedObject` preloads the
+  `preloadEntryCount` most recently updated entries (`Reactor.js` passes 10 for `querySubs`; `PersistedObject.ts`
+  `_preloadEntries` sorts by `updatedAt`) and loads any other when its query subscribes (`waitForKeyToLoad`). So, at
+  the runtime's bootstrap, before the store's state loads, every stored result past the newest
+  `InstantRuntimeConfiguration.preloadedLiveQueryResultCount` (10) by `updated_at_ms` is unloaded where it is (one
+  `UPDATE` of `unloaded_at_ms`, #1500); the launch then loads only the loaded results' entities and the outbox's. A
+  query that subscribes again reloads its result from disk before it registers (#1131, #1500), offline included.
+- Measured on a read-only copy of the phone's store (2026-11-04 21:20, the consuming app's build 253): a launch holds
+  1,915 entities and 48,202 facts (46 loaded results); with the newest ten, 677 entities and 31,070 facts (-36%).
+  Tests with ten stored results or fewer see no change.
+- Touching: `SQLitePersistenceStore.swift` (the bootstrap's mark), `InstantRuntime.swift` (the configuration's count,
+  the two bootstrap calls), a new `InstantLaunchResidencyTests.swift`. Red, then green, in one mini job after this
+  lane's merge lands.
+- Next (design first, #1149): residency per entity and link attribute, for the 23,314 launch-resident link facts no
+  stored result owns (`recordings.segments` 12,139, `.attachments` 6,324, `.runtimeEvents` 3,787, `.sounds` 987).
