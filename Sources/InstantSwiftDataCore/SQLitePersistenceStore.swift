@@ -132,6 +132,8 @@
 //   load indexes its attributes once for every stored result, instead of each walking the whole schema (#1109).
 // - 2026-11-05: a refresh compares only the entities it changed with a stored result's rows: each result keeps its
 //   entities' fingerprints from its last save in memory, at the query-result revision its commit left (#1116).
+// - 2026-11-05: a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read, instead
+//   of reading each result whole and binding every entity id (#1149).
 
 import CryptoKit
 import Foundation
@@ -233,19 +235,23 @@ package struct InstantPersistenceCacheResidencyMetrics: Equatable, Sendable {
   package var storedFileRecordReadCount = 0
   /// Of those, the records decoded from their JSON with `JSONDecoder` (#1105).
   package var storedFileRecordJSONDecodeCount = 0
+  /// Stored live-query results read whole, header and every ownership row decoded into facts (#1149).
+  package var storedLiveQueryResultReadCount = 0
 
   package init(
     fullStoreSnapshotLoadCount: Int = 0,
     fullStateReconstructionCount: Int = 0,
     storeSnapshotReplacementCount: Int = 0,
     storedFileRecordReadCount: Int = 0,
-    storedFileRecordJSONDecodeCount: Int = 0
+    storedFileRecordJSONDecodeCount: Int = 0,
+    storedLiveQueryResultReadCount: Int = 0
   ) {
     self.fullStoreSnapshotLoadCount = fullStoreSnapshotLoadCount
     self.fullStateReconstructionCount = fullStateReconstructionCount
     self.storeSnapshotReplacementCount = storeSnapshotReplacementCount
     self.storedFileRecordReadCount = storedFileRecordReadCount
     self.storedFileRecordJSONDecodeCount = storedFileRecordJSONDecodeCount
+    self.storedLiveQueryResultReadCount = storedLiveQueryResultReadCount
   }
 }
 
@@ -12094,47 +12100,26 @@ public actor SQLitePersistenceStore {
     // mutations. IndexedDB has no second full graph. SQLite Data keeps the
     // corpus on disk and SQL-selects the visible page.
     // When live-query ownership rows exist, InstantStore bootstrap loads only
-    // those entity IDs plus pending outbox effect entities, after applying
-    // nested include limits from the query JSON (InstaQL `$limit` per parent).
+    // the entities loaded results own plus pending outbox effect entities.
     // Empty watermark query results (zero triple rows) keep the legacy full load.
-    let liveQueryTripleCount = try selectInt64(
-      "SELECT COUNT(*) FROM instant_live_query_triples"
-    )
-    if liveQueryTripleCount > 0 {
-      let retainedLiveQueryEntityIDs = try retainedLiveQueryEntityIDsWithoutTransaction(
-        attributes: attributes
+    // #1149: the entities come from the ownership rows, in this statement. A save keeps ownership of only the facts the
+    // query's nested include limits keep (InstaQL `$limit` per parent), so the launch's former pass, each loaded result
+    // read whole and its facts limited again, found the same entities, then bound each one as a parameter. `EXISTS`,
+    // not `COUNT(*)`: a count reads every ownership row, unloaded results' too (#1500).
+    if try selectInt64("SELECT EXISTS (SELECT 1 FROM instant_live_query_triples)") != 0 {
+      // #1500: the loaded results' rows only; an unloaded result's stay on disk, and a released one's are leaving.
+      whereClauses.append(
+        """
+        entity_id IN (
+          SELECT ownership.entity_id
+          FROM instant_live_query_results AS result
+          JOIN instant_live_query_triples AS ownership ON ownership.query_id = result.query_id
+          WHERE result.unloaded_at_ms IS NULL AND \(Self.notReleasedLiveQueryResultSQL)
+          UNION
+          SELECT entity_id FROM instant_outbox_effect_entities
+        )
+        """
       )
-      if retainedLiveQueryEntityIDs.isEmpty {
-        // #1500: the loaded results' rows only; an unloaded result's stay on disk.
-        whereClauses.append(
-          """
-          entity_id IN (
-            SELECT DISTINCT ownership.entity_id
-            FROM instant_live_query_triples AS ownership
-            JOIN instant_live_query_results AS result ON result.query_id = ownership.query_id
-            WHERE result.unloaded_at_ms IS NULL
-            UNION
-            SELECT entity_id FROM instant_outbox_effect_entities
-          )
-          """
-        )
-      } else {
-        let placeholders = Array(
-          repeating: "?",
-          count: retainedLiveQueryEntityIDs.count
-        ).joined(separator: ", ")
-        whereClauses.append(
-          """
-          (
-            entity_id IN (\(placeholders))
-            OR entity_id IN (SELECT entity_id FROM instant_outbox_effect_entities)
-          )
-          """
-        )
-        tripleBindings.append(
-          contentsOf: retainedLiveQueryEntityIDs.sorted().map(SQLiteBinding.text)
-        )
-      }
     }
     if !whereClauses.isEmpty {
       triplesSQL += " WHERE " + whereClauses.joined(separator: " AND ")
@@ -20491,29 +20476,6 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func retainedLiveQueryEntityIDsWithoutTransaction(
-    attributes: [InstantAttribute]
-  ) throws -> Set<String> {
-    let rows = try loadLiveQueryResultRowsWithoutTransaction()
-    // One index of the snapshot's attributes for every stored result, not one walk of them per result (#1109).
-    let schema = InstantLiveQueryNestedLimit.Schema(attributes)
-    var retained: Set<String> = []
-    // #1500: a result unloaded where it is keeps its facts on disk until its query subscribes again.
-    for row in rows where !row.isUnloaded {
-      guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
-        continue
-      }
-      retained.formUnion(
-        InstantLiveQueryNestedLimit.retainedEntityIDs(
-          queryKey: result.key,
-          triples: Array(result.triples),
-          schema: schema
-        )
-      )
-    }
-    return retained
-  }
-
   private func outboxRequiresConservativeLiveQueryPruningWithoutTransaction() throws -> Bool {
     try selectInt64(
       """
@@ -20533,6 +20495,7 @@ public actor SQLitePersistenceStore {
     key: String
   ) throws -> InstantPersistedLiveQueryResult? {
     guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return nil }
+    cacheResidencyMetrics.storedLiveQueryResultReadCount += 1
     var statement: OpaquePointer?
     try prepare(InstantStoredLiveQueryResultRows.factsSQL, statement: &statement)
     defer { finishStatement(statement) }
