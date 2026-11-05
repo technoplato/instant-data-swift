@@ -1,3 +1,6 @@
+## 2026-11-04 19:09:58 EST — scribe `5d7d280231a8ba7361e2c49712bbe47ef5c5fe4e`
+Tooling (#1776): build.sh orders queued builds by their issue's P level (P0 before P1 before P2 and lower; the agent's flag only breaks ties; low last), read through build_jobs.py class (a 5-s tracker timeout, a cache every waiter shares, the last level or the flag when it cannot answer, P2 with no issue), aged one class per 3 h from the real queue time; waiters queued before the install keep the old code and are held back by a blocker and a gate; BUILD_QUEUED_AT only for a resubmit; reaps from one listing; holders yield to a higher class (green 5d7d28023, fix 349eab915, merge 67561d79d).
+
 ## 2026-11-04 19:05:28 EST — scribe `0995399f1af21ef05e7cca795a79f216760461cd`
 Cut (#1674): Scribe 0.1 (252) from main after 003ca2598 (#1393 batches 2 and 3: the now-playing card that seeks Scribe Playback, Photos' own live, his UI asks); CURRENT_PROJECT_VERSION 251 to 252 and build 252's plain block and stories.
 
