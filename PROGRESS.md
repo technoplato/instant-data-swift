@@ -1,3 +1,25 @@
+## 2026-11-05 15:51:56 EST — perf-sync-2 (#1129): v1.9.75, a prune batch names and times its phases
+
+- **Why:** on 2026-11-04 a Mac's cadence prune held the server-apply gate 4.5-13.1 s per batch at 1,000 facts (the
+  consuming app's build 251), every live refresh waiting behind it; on 2026-11-05 (build 270, 1.9.73) an iPhone's batch
+  held the operation gate 10,888 ms and an interactive one-shot read waited 34,681 ms behind it. The reports named only
+  the prune, so the phase that stopped following the batch's size was unknown.
+- **Landed:** red `d7f704c1`, green `5a8da3a8` (each batch names its phase in both gates' reports and times it; a batch
+  held 1 s or more logs `live-query-results.prune-batch-slow` at notice with each phase's ms, the slowest and its
+  counts); red `8b6898ad`, green `fe1e8fdd` (the phase tests restated to #1500's unload in place; the memory release
+  after an unloading batch's apply is its own phase, "release memory"). Ledger `9258b04a`.
+- **Checked:** Mac mini jobs `1129-check`, `1129-rebase-check` (whole debug bundle: 1,735 tests, 4 not on the list:
+  the 2 phase tests restated in `8b6898ad`, the load-sensitive frame-decode ratio, and
+  `storeObservationsHonorRemotePageInfoWindows`, which fails 10 of 10 alone and follows #1513's `9fc6eff8`, reported
+  there) and `1129-release-memory` (reds fail as written; 90 tests in 16 suites pass). Not run together with v1.9.74's
+  media writer (a clean rebase).
+- **Released:** v1.9.75 (`docs/releases/v1.9.75.md`).
+- **Next (resume here):** pin 1.9.75 in Scribe (Package.swift, Packages/scribe-quota and Packages/swift-video-queue with
+  their Package.resolved, the installer's expected version and its tests, docs/swift-package-workflow.md and
+  docs/versioning.md, as Scribe `0d67ba2d0` did for 1.9.73); the next cut carries it. Then read the first
+  `live-query-results.prune-batch-slow` notices (`slowestPhase`, `phases`) in `~/Library/Logs/Scribe/diagnostics.jsonl`
+  and bound the phase that grows.
+
 ## 2026-11-05 14:27:59 EST — perf-audio-2 (#632): v1.9.74, a delivered stream that is continued goes on from its stored row
 
 - **Why:** a progressive media stream delivered to its end leaves the spool, so a writer for the same stream later
