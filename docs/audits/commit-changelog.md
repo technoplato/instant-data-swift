@@ -1,3 +1,9 @@
+## 2026-11-05 04:52:22 EST — instant-data-swift `7bac40a2433c935b8831733374c18e136231dc07`
+Release (#1796): v1.9.71 tagged on 7bac40a2 (ledger 50f2b61e), landed on main as da110d5d with the lane's a5b5174d (merged with main as 5f848b89, ledger e56d179e): a waiting refresh-ok loses the results a newer one restates, a one-shot read waits while the connection works (up to 30 s) and survives a socket's death, live.receive-summary measures the follower's lag, a registration names its query in the gate's phase. Mac mini 1796-check2: reds fail on their own sources, green 99 tests, bundle 1,691 tests and 0 failing; the writer-and-follower test's worst lag 40,313 -> 13,469 ms, newest line 29,502 -> 1,500 ms.
+
+## 2026-11-05 04:52:22 EST — instant-data-swift `da110d5d72d774469c67a91fb64f943fd058f8ba`
+Fix (#1796): landing da110d5d of agent/claude/perf-sync-1796: a tablet following a live recording showed it about six minutes late and failed its reads as "Network or live transport failed"; its applier took every frame in arrival order, superseded list refreshes included, and its one-shot reads failed at a fixed 5 s behind it.
+
 ## 2026-11-05 04:26:08 EST — scribe `7061c0e936b14e4a3c9929d5290a2e7050e84113`
 Plan (#632): 2026-11-04-perf-audio-1223 amendment 2: a delivered compressed copy that is continued goes on from its stored stream row (instant-data-swift's writer takes the row, release 1.9.71; the app passes it when its spool has none); plan-only landing before the app's red/green (agent/claude/perf-audio-632).
 
