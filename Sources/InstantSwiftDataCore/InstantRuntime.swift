@@ -5949,8 +5949,12 @@ public final class InstantRuntime: Sendable {
       // A prune whose batch had captured the open queries before this lease could unload the result after the read
       // above found none: the check under this hold catches it, as before #1131.
       if !reloaded {
+        operationGate.markHolderPhase("reload \(plan.namespace)")
         await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan, holdingOperationGate: true)
       }
+      // #1796: a stall or wait report names the query whose registration holds the gate. A tablet's launch logged one
+      // holding it 4,583 ms with 7 callers queued, its connect among them, and nothing said which query it was.
+      operationGate.markHolderPhase("answer \(plan.namespace)")
     }
     // #1493: the store yields into the stream the consumer reads, and a live query's server error writes into it too.
     let output = InstantObservationOutput(reportsServerErrors: liveRegistration != nil)
@@ -6198,8 +6202,11 @@ public final class InstantRuntime: Sendable {
       throw error
     }
     if seedsFromStoredResult, !reloaded {
+      operationGate.markHolderPhase("reload \(plan.namespace)")
       await reloadUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan, holdingOperationGate: true)
     }
+    // #1796: named as a standard query's registration is; a page's held the gate 2,852 ms on a tablet, unnamed.
+    operationGate.markHolderPhase("answer \(plan.namespace)")
     let existingPageInfo: InstantQueryPageInfo?
     do {
       existingPageInfo = try await instantLiveWithTimeout(
