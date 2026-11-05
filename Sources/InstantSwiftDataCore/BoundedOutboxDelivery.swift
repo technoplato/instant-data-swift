@@ -1,6 +1,7 @@
 // History:
 // - 2026-11-04: projectionMetadata hands back the projection it measured, so a claim that substitutes no required
 //   scalar records that value and its exact size instead of building and encoding it again (#1517).
+// - 2026-11-04: a window a write's save claimed names the session generation it was claimed for (#653).
 
 import Foundation
 import os
@@ -252,6 +253,9 @@ struct InstantAutomaticOutboxTransportSelection: Sendable {
   var shouldContinueImmediately: Bool
   /// Windows writes' own saves claimed before this one's claim took the operation gate (#653), sent first, in order.
   var claimedAtSaveBefore: [InstantAutomaticOutboxTransportSelection] = []
+  /// The live session generation a write's own save claimed this window for (#653): it is sent on that session or not
+  /// at all. Nil for a pass's window, which is claimed from the head of the outbox.
+  var claimedInSessionGeneration: Int? = nil
 }
 
 struct InstantPersistenceRevisions: Equatable, Sendable {

@@ -3,6 +3,8 @@
 //   send started one and each acknowledgement cancelled it (#1142).
 // - 2026-11-04: a write saved while delivery could send it at once is claimed by its own save and queued on the pump in
 //   save order, instead of a claim turn that read it back and fingerprinted it again: 3.06 ms a claim on the phone (#653).
+// - 2026-11-04: a window a write's save claimed goes out only on the session generation it was claimed for; after a
+//   reconnect it went out ahead of the older writes the disconnect put back (#653).
 // - 2026-11-02: a local write's outbox time is assigned under the operation gate, after the tail, on every path: the
 //   typed transact, `transact(operations:)` and Send Again passed a time read before the gate, so writes made in one
 //   millisecond tied and went out in id order; the typed path's facts carry the assigned time (#1648).
@@ -2849,14 +2851,14 @@ public final class InstantRuntime: Sendable {
       // as it records it; the claim turn read it back and fingerprinted it again (3.06 ms a claim on the phone).
       // A write with an explicit time is claimed too when it is the tail: the store checks that, and that nothing is ready
       // ahead of it, inside the save.
-      let claimRequest = supersededTail == nil ? await claimAtSaveRequest() : nil
+      let claimAtSave = supersededTail == nil ? await claimAtSaveRequest() : nil
       operationGate.markHolderPhase("save")
       let saved = try await saveLocalMutationReadingConnectionStatus(
         prepared: prepared,
         pendingMutation: pendingMutation,
         supersededTail: supersededTail,
         state: state,
-        claimingForDelivery: claimRequest
+        claimingForDelivery: claimAtSave?.claim
       )
       if saved.didSave {
         InstantEnergyMeter.record(.transaction)
@@ -2896,7 +2898,8 @@ public final class InstantRuntime: Sendable {
               claimedMutationIDs: Set(claim.mutations.map(\.id)),
               reclaimedMutationIDs: [],
               nextClaimDeadlineMilliseconds: claim.nextClaimDeadlineMilliseconds,
-              shouldContinueImmediately: false
+              shouldContinueImmediately: false,
+              claimedInSessionGeneration: claimAtSave?.sessionGeneration
             )
           )
         }
@@ -8322,8 +8325,9 @@ public final class InstantRuntime: Sendable {
 
   /// The claim a local write's save may make for it (#653): when the connection is open, the pump runs no pass, no
   /// server error pauses delivery or probes one write, and no explicit flush holds the lane, so the pump would claim and
-  /// send the write at once. The save claims it only if nothing waits ahead of it either.
-  private func claimAtSaveRequest() async -> InstantAutomaticOutboxClaimRequest? {
+  /// send the write at once. The save claims it only if nothing waits ahead of it either. The window goes out only on
+  /// the session generation it was claimed for.
+  private func claimAtSaveRequest() async -> InstantClaimAtSaveRequest? {
     guard configuration.liveTransport != nil, !mutationFlushGate.isHeldSnapshot else { return nil }
     recordActorHop(.deliveryPump)
     guard await mutationDeliveryPump.acceptsClaimsAtSave() else { return nil }
@@ -8332,12 +8336,16 @@ public final class InstantRuntime: Sendable {
       !(await mutationServerErrorBackoff.probesOneWrite)
     else { return nil }
     // The snapshot, not a hop onto the live session: this runs under the operation gate, and the session's actor may be
-    // busy with a frame. A session that closes after this read fails the send, which releases the claim as a pass's does.
-    guard liveSession.isOpenSnapshot else { return nil }
-    return InstantAutomaticOutboxClaimRequest(
-      claimantID: automaticDeliveryClaimantID,
-      claimToken: UUID().uuidString.lowercased(),
-      now: now
+    // busy with a frame. A session that closes after this read fails the send, which releases the claim as a pass's
+    // does; one replaced after it refuses the send (`InstantClaimedForEndedLiveSession`).
+    guard let sessionGeneration = liveSession.openGenerationSnapshot else { return nil }
+    return InstantClaimAtSaveRequest(
+      claim: InstantAutomaticOutboxClaimRequest(
+        claimantID: automaticDeliveryClaimantID,
+        claimToken: UUID().uuidString.lowercased(),
+        now: now
+      ),
+      sessionGeneration: sessionGeneration
     )
   }
 
@@ -11072,9 +11080,14 @@ public final class InstantRuntime: Sendable {
     }
     do {
       try Task.checkCancellation()
-      // #653: windows claimed at save before this pass's claim, in save order, then its own.
+      // #653: windows claimed at save before this pass's claim, in save order, then its own. One claimed for a session
+      // that has ended since is not sent; this pass claimed its writes again, behind the writes before them.
       for earlier in outstanding.claimedAtSaveBefore {
-        _ = try await deliverAutomaticOutboxSelection(earlier)
+        do {
+          _ = try await deliverAutomaticOutboxSelection(earlier)
+        } catch is InstantClaimedForEndedLiveSession {
+          continue
+        }
       }
       let deliveryNeedsContinuation = try await deliverAutomaticOutboxSelection(outstanding)
       if retryNeedsBackoff {
@@ -11183,6 +11196,38 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Frees the claim of a window a write's save claimed for a session that has ended (#653), under the operation gate,
+  /// as a disconnect frees every claim; one that is gone already is left as it is. A claim it cannot free expires at its
+  /// deadline, and the next pass claims its writes again.
+  private func releaseAutomaticOutboxClaimForEndedSession(
+    _ selection: InstantAutomaticOutboxTransportSelection
+  ) async {
+    guard let claimToken = selection.claimToken else { return }
+    do {
+      try await enterOperationGateUnlessCancelled(operation: "release a claim made for an ended session")
+    } catch {
+      return
+    }
+    do {
+      recordActorHop(.persistence)
+      let released = try await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      recordActorHop(.outbox)
+      for mutationID in released {
+        await outbox.remove(id: mutationID)
+      }
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.ended-session-claim-release-failed",
+        message: "Instant could not release a claim made for a session that has ended; it expires at its deadline.",
+        metadata: ["claimedMutationCount": String(selection.claimedMutationIDs.count)]
+      )
+    }
+    await leaveOperationGate()
+  }
+
   /// Sends a window a write's own save claimed (#653), as a pass sends the window it claims.
   private func deliverClaimedAtSave(
     _ selection: InstantAutomaticOutboxTransportSelection
@@ -11193,6 +11238,10 @@ public final class InstantRuntime: Sendable {
       return try await deliverAutomaticOutboxSelection(selection) ? .continueImmediately : .finished
     } catch is CancellationError {
       return .finished
+    } catch is InstantClaimedForEndedLiveSession {
+      // Its session ended after the save claimed it, and a newer one is open: a pass claims its writes again from the
+      // head of the outbox, behind the writes the disconnect put back.
+      return .continueImmediately
     } catch {
       // As a pass's send: the claims were released for the next pass; a receive-loop failure owns the reconnect.
       if Self.callerOwnsLiveSessionFailure(error), await liveSession.isOpen {
@@ -11225,8 +11274,14 @@ public final class InstantRuntime: Sendable {
     do {
       encodingFailures = try await liveSession.sendMutations(
         selection.mutations,
-        claimToken: selection.claimToken
+        claimToken: selection.claimToken,
+        claimedInGeneration: selection.claimedInSessionGeneration
       )
+    } catch is InstantClaimedForEndedLiveSession {
+      // #653: claimed at save for a session that has ended. Releasing every claim of this runtime would free the open
+      // session's; whatever ended the old one released this claim with its others, and this frees it if nothing did.
+      await releaseAutomaticOutboxClaimForEndedSession(selection)
+      throw InstantClaimedForEndedLiveSession()
     } catch {
       do {
         _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
@@ -18338,6 +18393,12 @@ private struct InstantLocalWriteReads: Sendable {
     /// Read only for an eligible newcomer while no server refresh prepares off the operation gate.
     var immediateTail: InstantOutboxImmediateTailRead?
   }
+}
+
+/// The claim a local write's save may make for delivery (#653), and the live session generation it is made for.
+private struct InstantClaimAtSaveRequest: Sendable {
+  var claim: InstantAutomaticOutboxClaimRequest
+  var sessionGeneration: Int
 }
 
 /// A local write's save and the connection status read after it, in one persistence turn (#403).
