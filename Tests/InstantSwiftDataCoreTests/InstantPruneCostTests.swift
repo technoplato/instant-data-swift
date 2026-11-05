@@ -94,6 +94,32 @@ struct InstantPruneCostTests {
     await fixture.close()
   }
 
+  /// A collection after an unload counts what it deletes from disk (#1500). The session prune unloads the 24 closed
+  /// results where they are and memory lets their entities go, so when the policy's limits collect them later every
+  /// fact the collection deletes is one memory no longer holds. Its count, and the store revision other connections
+  /// read to learn the store changed, follow the disk, not memory.
+  @Test
+  func aCollectionAfterAnUnloadCountsTheFactsItDeletesFromDisk() async throws {
+    let fixture = try await Fixture.bootstrapped(storeTodoCount: 1_000)
+    let unloaded = try await fixture.prune()
+    expectNoDifference(unloaded.pruned.unloadedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
+    #expect(unloaded.storeEntityIDs.isDisjoint(with: fixture.closedEntityIDs), "memory kept a closed result's entity")
+    let revisionBefore = try await fixture.runtime.persistence.loadState().storeRevision
+
+    let collected = try await fixture.prune(policy: InstantLiveQueryResultPruningPolicy(maxEntries: 1))
+
+    expectNoDifference(collected.pruned.removedQueryKeys.sorted(), fixture.inactiveKeys.sorted())
+    expectNoDifference(
+      collected.pruned.removedOrphanedTripleCount,
+      Self.inactiveResultCount * Self.todosPerInactiveResult * 3 + 3,
+      "the collection deleted these facts from disk"
+    )
+    expectNoDifference(collected.sqliteEntityIDs, fixture.keptEntityIDs)
+    let revisionAfter = try await fixture.runtime.persistence.loadState().storeRevision
+    #expect(revisionAfter > revisionBefore, "the store changed on disk and its revision did not move")
+    await fixture.close()
+  }
+
   /// The same 24 closed results, collected by the policy's limits (#1500): collection is the path that still deletes a
   /// result's row, its ownership rows and the entities only it held, by the whole-entity rule (#259), in bounded
   /// batches. It copies nothing the size of the store either, and keeps and drops what the prune did before #654.

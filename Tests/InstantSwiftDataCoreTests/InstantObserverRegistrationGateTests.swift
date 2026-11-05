@@ -5,6 +5,8 @@
 //                    a 150 ms socket and 1,718 ms to reload the `$files` list's 75,640 facts.
 // 2026-10-24  #1131  A closed result loads back in bounded holds: with its read out of the gate, the `$files` reload's
 //                    commit still held it about 1.3 s.
+// 2026-11-05  #1500  A prune unloads a closed result where it is; an older build's whole copy still reloads, and a
+//                    chunk of its reload writes nothing once a server answer replaced its row.
 
 import CustomDump
 import Foundation
@@ -157,6 +159,45 @@ struct InstantObserverRegistrationGateTests {
     )
 
     #expect(chunk == nil)
+  }
+
+  /// The same for the whole copy an older build's prune kept (#1006; a prune unloads where it is since #1500): its
+  /// reload moves its row back without the ownership rows and facts, which its chunks write, so once a server answer
+  /// replaced that row a chunk writes neither.
+  @Test
+  func aReloadChunkOfAnOlderBuildsCopyWritesNothingOnceAServerAnswerReplacedItsRow() async throws {
+    let url = try InstantStoredResultReloadTests.temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: url)
+    try await persistence.bootstrap()
+    try InstantStoredResultReloadTests.writeOlderBuildsUnloadedCopy(Self.closedResult(todos: 3, at: 1), at: url)
+    let read = try #require(try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed"))
+    #expect(!read.isInPlace)
+    let begun = try #require(try await persistence.beginUnloadedLiveQueryResultReload(read))
+    #expect(!begun.ownsItsFacts, "an older build's copy owns no rows until its chunks write them")
+
+    try await InstantStoredResultReloadTests.save([Self.closedResult(todos: 1, at: 5)], in: persistence)
+    let chunk = try await persistence.reloadUnloadedLiveQueryResultChunk(
+      key: "query-closed",
+      rowTripleCount: begun.rowTripleCount,
+      rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
+      entityTriples: Dictionary(grouping: begun.result.triples, by: \.entityID),
+      ownedFacts: begun.result.triples,
+      residentEntityIDs: [],
+      ownsItsFacts: begun.ownsItsFacts
+    )
+
+    #expect(chunk == nil)
+    let stored = try #require(
+      try await persistence.readConnection.storedLiveQueryResults(keys: ["query-closed"])["query-closed"]
+    )
+    expectNoDifference(Set(stored.result.triples.map(\.entityID)), ["todo-0"], "the server's answer stands")
+    #expect(
+      try InstantUnloadInPlaceTests.scalar(
+        url,
+        "SELECT COUNT(*) FROM instant_triples WHERE entity_id IN ('todo-1', 'todo-2')"
+      ) == 0,
+      "the entities the answer left out stay out"
+    )
   }
 }
 
