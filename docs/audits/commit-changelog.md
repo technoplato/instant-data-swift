@@ -1,3 +1,6 @@
+## 2026-11-05 07:12:14 EST — scribe `07f1223a650cc66cd37b5719fab7b02a4b8d729a`
+Cut (#1679): Scribe 0.1 (269) from main: select text in Notes and Expand Selection to Here (0b3e35ca4); CURRENT_PROJECT_VERSION 268 to 269 and build 269's plain block.
+
 ## 2026-11-05 07:08:38 EST — scribe `0b3e35ca4acfb56486fac5537f886216bb2a1ee3`
 Feature (#1679): select text in Notes with Lines' selection (its paragraph stays one attributed string, each line found by its UTF-16 range), and Expand Selection to Here, first in every line's and paragraph's menu while words are selected, grows the selection up or down to the pressed word; one decision for both reducers, logged; a selection belongs to its view.
 
