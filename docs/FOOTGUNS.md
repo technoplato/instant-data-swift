@@ -104,6 +104,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #296, #932 | always |
 | [F66](#f66) | Keep one stored form of a result: a copy beside its rows must be rewritten, deferred or repaired | #566, #1123, #1426, #1440 | always |
 | [F67](#f67) | Decide a write's place in the outbox under the operation gate, never before it | #1648, #1609 | always |
+| [F68](#f68) | Never apply a buffered refresh a newer buffered refresh restates, and never fail a read behind a busy applier | #1796, #1768, #1127, #998 | always |
 
 ## Read path
 
@@ -1271,6 +1272,60 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   strictly increasing times; the same-row supersession and a refused write's supersession follow that order).
 - Upstream: `Reactor.js` `pushOps` numbers each mutation `max(order) + 1` as it is made and sends in that order
   (`sortedMutationEntries`).
+
+<a id="f68"></a>
+#### F68. Never apply a buffered refresh a newer buffered refresh restates, and never fail a read behind a busy applier
+
+- Symptom: a device following a live recording on another device shows it minutes late, its one-shot reads fail as
+  "Network or live transport failed" while its socket is open, and its own outbox drains a few writes a minute. Every
+  server frame waits in one buffer for one applier, in arrival order, and a `refresh-ok` restates each of its queries'
+  whole results, so each new line waited behind every older restatement of the same list, and every acknowledgement
+  and one-shot answer waited behind them too. After a resume the socket can be dead for seconds while the connection
+  still reads as open: a read's `add-query` fails on it, and a read that gives up then drops its registration, so the
+  reconnect never sends it.
+- Measured cost: tablet, build 248 (library 1.9.66), 2026-11-04 (Mac diagnostics collector): 8,240-11,035 of its own
+  writes pending, 25-35 accepted a minute; one minute (17:09:42-17:10:42) received 29 `refresh-ok` of the recording
+  list (144 KB each) and 31 `transact-ok` and ran 22 server applies, serverApplyPlan 41% and serverApplyStage 30% of a
+  core, "Instant sync 75% of one core", 101% in all, heat serious, 2.5 W; the phone it followed held 0-3 pending. After
+  a relaunch the live recording's first transcript page took 47.4 s, and every one-shot read (`$files`,
+  progressiveMediaStreams, recordingAttachments) failed at the fixed 5 s acknowledgement wait; the playback screen showed
+  that error, and the user read it aloud. At the 17:33 resume (229 s suspended) the reader saw the socket die at once
+  (POSIX 53), no apply finished for 12 s, every send failed, and a one-shot read failed in 0 ms. Earlier the same
+  morning: 1,085 `$files` lookups timed out in 93 minutes (#1768). The lag itself was not logged; about six minutes was
+  the user's reading of the two screens.
+- Rule: a buffered frame whose every result a newer buffered frame restates is work for nothing; drop it, and drop
+  the restated results from a frame that has others. Never change a frame that carries `attrs` (the applier records
+  them as it takes the frame) or one whose results reflect a later transaction. A read waits for its answer while the
+  connection receives or applies frames ahead of it, and fails only after a stall (5 s with neither) or upstream's
+  30 s; a fixed wall-clock wait turns a busy follower into a failed one (F41). A read whose `add-query` meets a socket
+  that just died keeps its registration and waits: the next session's init sends it. Measure the lag a follower sees,
+  from the server's time on the newest fact to the end of its apply.
+- Issues: #1796, #1768, #1127, #998; library red `bd5d9017`, green `3f66c955` (the buffer, the wait); red `25923d45`,
+  green `1fd79eb8` (a read across a socket's death); red `882448d2`, green `75915233` (the lag); guard `076ed107` (a
+  writer and a follower); red `fac02655`, green `d7502832` (a registration names its query in the gate's phase); Scribe
+  forwards the summary (#1796, InstantDiagnosticsBridge).
+- Guard: `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` (always):
+  `aWaitingRefreshLosesTheResultsANewerRefreshRestates`, `aWaitingRefreshKeepsTheResultsNoNewerRefreshRestates`,
+  `aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne`,
+  `aFollowerBehindALongApplyAppliesTheNewestListOnceAndEveryAcknowledgement` (twelve list refreshes and three
+  acknowledgements behind a held frame: the acknowledgements, then the newest list, and the store every frame would
+  leave), `aOneShotReadQueuedBehindALongApplyIsAnswered` (an answer 6.5 s behind a held frame),
+  `aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect`,
+  `theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied`, `theReceiveSummaryReportsHowOldTheNewestWritesWere`;
+  the guards `aRefreshCarryingAttributesKeepsItsResults`, `aRefreshNeverLosesResultsToAnEarlierTransaction` and
+  `aOneShotReadOnASilentSocketFailsAfterTheStall`; end to end,
+  `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift`
+  `aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat` (a writer and a follower runtime over scripted
+  sockets, the tablet's minute replayed for two minutes on the test's clock: each line's lag at most 20 s, the last
+  at most 8 s). A device logs `live.receive-summary` once a minute (frames taken,
+  wait median, p95 and maximum from the reader to the applier, deepest buffer, the applier's busy share, frames and
+  results replaced, and the newest writes' age when applied at the median, p95 and maximum), a notice when a frame
+  waited a second or more or the newest writes arrived 10 s or more after the server stored them.
+- Upstream: the server combines queued refreshes (`server/src/instant/reactive/session.clj`, `combine [:refresh
+  :refresh]` returns the second event); `Reactor.js` replaces a query's stored result whole on each `refresh-ok`
+  (`querySubs[hash].result`) and applies each frame as it arrives, in memory; `queryOnce` waits 30 s
+  (`QUERY_ONCE_TIMEOUT`), and its `add-query` waits in `querySubs` for `_flushPendingMessages` on the next `init-ok`
+  when no socket can take it.
 
 ## Guards to add first
 
