@@ -1,3 +1,51 @@
+## 2026-11-05 15:56:59 EST — scribe `fe6fe7f2d091963ae7361259219f2cb6ac1db596` and `599c318fdf365305df54c6e988e753d57e2c6143`
+Fix (#1129): pin instant-data-swift 1.9.75 (tag on 2eba5915) in Scribe's three packages and their Package.resolved, the installer's expected version and its tests (141 pass), and two docs; landed by merge 599c318fd. A prune batch now names and times the phase it holds Instant's gates for, and a batch held 1 s or more logs live-query-results.prune-batch-slow; the next cut (272) carries it.
+
+## 2026-11-05 15:57:32 EST — scribe `555b81160e331e1b17038efd71f69d546eb113c3`
+Audit (#1647): asks audit, third run: 340 asks in Recordings 359-370 and his typed messages since 11-03 checked for an issue, his priority and an agent; at 15:46, 51 open P0s and 19 with work left and no agent; five priorities raised to his words, #1821-#1825 closed as duplicates, 13 asks filed, an ordered start list on #1647 for the commander (audits/2026-11-05-asks-audit-1647b.md).
+
+## 2026-11-05 15:54:06 EST — scribe `da68d2af79e388bf6f992b13e55465cbe969c6c1`
+Fix (#1851): the mirror takes the agent id tools/agent-run gives every agent (claude-code/NAME@account) as it is, at every scribe command that names its agent (toolbox, flag, reminder, reply, status, link, notify, settings, listener): one rule in agents.ts (a plain name as before, or words joined by slashes with an optional @account, at most 120 characters) replaces eight copies of the 1-40 letters check, and the decision CLI, faq and preplan stop rewriting the name. Found by the #1845 audit: every toolbox command an agent-run agent sent was refused. Red 9fce5c25b, green cfa2393bf, changelog 5c4f84e32.
+
+## 2026-11-05 15:53:10 EST — instant-data-swift `598067f9de84c203d1b6d5e1cb00e7a0fdda765d`
+Merge (#1129): main (a #1848 ledger line) into v1.9.75's release commit after main's push lost a race, so the commit the tag names is on main.
+
+## 2026-11-05 15:52:21 EST — instant-data-swift `2eba59159479cd3de67f03c8a92a1df8a5b93c7e`
+Release (#1129): v1.9.75, tag on this commit: each prune batch names and times its phases in both gates' reports, a batch held 1 s or more logs live-query-results.prune-batch-slow, and the memory release after an unload is its own phase; build 270's iPhone prune held the operation gate 10,888 ms with no phase named.
+
+## 2026-11-05 15:51:49 EST — scribe `2aa3c2595599ffb9392e06dd60e26e4fdc074550`
+Fix (#1848): a take continued at a launch numbers its lines after the saved ones (its row carries the live transcription's counts), and a local read's two-second bound returns at two seconds even when the read waits in the library's operation gate.
+
+## 2026-11-05 15:49:02 EST — instant-data-swift `fe1e8fddc402ea80e628a02d3f255c434900dbf6`
+Fix (#1129): a prune batch's memory release after an unload (#1500) is its own phase, release memory, so a slow batch's notice names it apart from the SQLite apply.
+
+## 2026-11-05 15:49:02 EST — instant-data-swift `8b6898adb92be34793d4f2169f1fbb433764b7cb`
+Test (#1129): the prune-phase tests restated to #1500's unload in place (24 results unloaded, none removed) and expecting a release-memory phase.
+
+## 2026-11-05 15:49:01 EST — instant-data-swift `5a8da3a8dcf788b9ca34929e9d35a92ee70ec0a5`
+Diagnostics (#1129): each prune batch names its phase in the server-apply and operation gates' reports and times it; a batch held 1 s or more logs live-query-results.prune-batch-slow with each phase's ms and its counts, to name what grew in a Mac's 4.5-13.1 s holds.
+
+## 2026-11-05 15:49:01 EST — instant-data-swift `d7f704c1375c1248846dbc916fa1a4b547ab5625`
+Test (#1129): a prune batch holds its gates without naming or timing its phases (4 of 5 fail on their own sources).
+
+## 2026-11-05 15:43:47 EST — scribe `c63d5a1e3d46f237c226fe56c7175c896e7b9ef9`
+Fix (#1827): a recognized song's now-playing card moves with the song until 15 s after its last match, then stands where the song was last heard until it leaves 40 s after (NowPlayingProgress.holdsAt); an item of Your Mac's catalogs, which predict no place, is placed from its newest match at the hearing's end, and past 16 hearings from the hearing before the last, so a film no longer runs at twice its speed (Recording 370's card read 1:36:21 for a film last heard at 1:34:02). Display only. Red 68c6c72cb, green 09a47a113 (mini: NowPlayingCardTests and RecordingNowPlayingTests pass), changelog 89d61b224; What's New build 272 (next) 9df3b1f11.
+
+## 2026-11-05 15:42:41 EST — scribe `e0f5cec24024d6e9fa6b32e622a49b6d56a99d2d`
+Fix (#645, #331, #583): one clock. The recording clock that stamps screenshots, photos, frames and events waits for the microphone's first buffer after Record, Resume, each capture restart and a continuation, then reads audio.wav's length there and runs from the first sample, so pictures sit beside the words timed on the audio; recording.clock.audio-began logs each start's correction. Changelog e4fc73519.
+
+## 2026-11-05 15:30:04 EST — scribe `aa770bc67a084dd8a8ae39866d90d41a9dfaea47`
+Fix (#632): a recording's compressed copy delivered to its end and then continued (Continue Recording) goes on where its stored stream row ends, through instant-data-swift 1.9.74's continuing: (pinned here), only on a device that holds the recording's audio; before, the copy started over at 0 s and the whole recording was encoded and stored again, each re-sent row refused by the rules. Red 6c18b1423, green 37782fff6, guard adb3ffe78/73779a5dc; gate 632-app-redgreen (red fails 2, red2 fails 1, green 20/20 RecordingAudioStreamTests); landed before the queued land check 632-pin-check, at Michael's "rip it up". FEATURES.md 24 and 1 kept. CHANGELOG 00b809472.
+
+## 2026-11-05 15:30:28 EST — scribe `bee056c24fbfc30447b1d25cdb065e06077259d6`
+Perf (#1006, #1381): a recording's lines this device holds and the pages that answered show at once under the playback's loading row until the whole transcript arrives; on iOS the launch line's scene activation is UIKit's.
+
+## 2026-11-05 14:28:45 EST — instant-data-swift `a7223eadeac0fc92a20e0aa16997d8c2de767f81`
+Release (#632): v1.9.74, tag on this commit (the landing of agent/claude/perf-audio-1223: red af95eb36, green 418ff841, comments b52f2870, test reads 1a2ed1b9, release record 82cd08ad; its CHANGELOG entries in eb6d4266): InstantProgressiveMediaWriter takes the stream's stored row (continuing:), so a progressive media stream delivered to its end and then continued stores only its new segments instead of starting over at index 0 (whole stream encoded and stored again, every re-sent row refused by the app's rules). Gate: Mac mini 632-lib-redgreen (3 new tests fail at red; 31 + 5 progressive media tests pass at green); the app's side in 632-app-redgreen against this branch in edit mode (red fails 3, green 20/20). One source-compatible API addition, no storage change; carries 1.9.73.
+
+## 2026-11-05 15:01:59 EST — scribe `5ae0405d4df59d07794238615fbb50e84ca91e31`
+Audit (#1845): every remote control driven on his iPhone (build 270, Recording 370): 22 of 22 screens open by scribe toolbox app.open, handled by the phone a median 1.42 s after the send (n=30); only Recognize Songs can be set remotely (#551); stuck coming back from a sheet (#1850), on the agent name (#1851) and on the rate limit (#1852); audits/2026-11-05-remote-controls-1845.md.
+
 ## 2026-11-05 14:28:39 EST — scribe `f9102d64820fba1fbd7f99ac3db92f23aee7da75`
 Perf (#507, #1422): the microphone's level reaches the root store once a capture (its first level, which #363's live playback waits for), and the 1 s clock tick reads the newest level from AudioCaptureClient.currentAudioLevel for the Live Activity and widgets. Build 253's ledger had the level running the root store 29.3 times a minute at 4.24 ms each for that one reader; the 2 s gate goes. Red f2c0dcd4b / green 4ea7b4243, tested on the mini by build.sh 507-1422-redgreen (red fails the two new tests, green passes nine suites). Also the recording-screen audit's sections 6-7 (the comb's rest replayed over Recording 366's audio: 96.1% / 93.3% of quiet time). Changelog 9568c6715.
 
