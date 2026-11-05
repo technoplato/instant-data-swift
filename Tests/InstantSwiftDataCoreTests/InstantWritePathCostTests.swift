@@ -13,6 +13,9 @@
 //                    and its acknowledgement cancelled it: one task and one timer a write.
 // 2026-11-04  #653   Red: a window a write's save claimed, still on the pump when its session ended, went out on the
 //                    next session ahead of the older write the disconnect put back.
+// 2026-11-04  #653   Red: every delivery claim read and decoded its writes' attributes from SQLite, one statement per
+//                    attribute: a quarter of the claim a write's save makes (job 1797-b's sample of the recording
+//                    exercise).
 
 import Foundation
 import Testing
@@ -109,6 +112,32 @@ struct InstantWritePathCostTests {
     #expect(fingerprints == 2, "2 writes were fingerprinted \(fingerprints) times; each save mints one")
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A delivery claim's visible-write filter finds its writes' attributes in the store's decoded copy, read again only
+  /// after an attribute changes, where each claim read and decoded them from SQLite one by one (#653).
+  @Test
+  func claimsReuseTheStoredAttributesForTheirVisibleWriteFilters() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "claim-attributes",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0
+    )
+    let persistence = fixture.runtime.persistence
+    _ = try await Self.writeOneInterimPerSegment(1, in: &fixture)
+    _ = try await fixture.claimWindow()
+    let before = await persistence.visibleWriteFilterAttributeReadCountForTesting()
+
+    var claimed = 0
+    for _ in 0..<3 {
+      _ = try await Self.writeOneInterimPerSegment(1, in: &fixture)
+      claimed += try await fixture.claimWindow().mutations.count
+    }
+    let reads = await persistence.visibleWriteFilterAttributeReadCountForTesting() - before
+
+    #expect(claimed == 3)
+    #expect(reads == 0, "3 claims after the first read attributes from SQLite \(reads) times")
     _ = try? await fixture.runtime.closeConnection()
   }
 

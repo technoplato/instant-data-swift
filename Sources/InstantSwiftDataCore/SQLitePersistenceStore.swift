@@ -1452,6 +1452,8 @@ public actor SQLitePersistenceStore {
   private var receiptInputsHashCount = 0
   /// How many local writes their own saves claimed for delivery (#653).
   private var claimedAtSaveCount = 0
+  /// How many times a delivery claim's visible-write filter read attributes from `instant_attributes` (#653).
+  private var visibleWriteFilterAttributeReads = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1586,6 +1588,11 @@ public actor SQLitePersistenceStore {
   /// How many local writes their own saves claimed for delivery so far (#653).
   package func claimedAtSaveCountForTesting() -> Int {
     claimedAtSaveCount
+  }
+
+  /// How many times a delivery claim's visible-write filter read attributes from SQLite so far (#653).
+  package func visibleWriteFilterAttributeReadCountForTesting() -> Int {
+    visibleWriteFilterAttributeReads
   }
 
   /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one computed encodes the mutation's
@@ -19309,6 +19316,7 @@ public actor SQLitePersistenceStore {
     var attributesByID: [String: InstantAttribute] = [:]
     attributesByID.reserveCapacity(attributeIDs.count)
     for attributeID in attributeIDs {
+      visibleWriteFilterAttributeReads += 1
       let attributes: [InstantAttribute] = try selectJSON(
         "SELECT json FROM instant_attributes WHERE id = ? LIMIT 1",
         [.text(attributeID)]
