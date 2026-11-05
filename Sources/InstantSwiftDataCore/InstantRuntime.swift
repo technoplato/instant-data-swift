@@ -1,4 +1,5 @@
 // History:
+// - 2026-11-04: eviction reads only the file records of the ids it is given (#1104).
 // - 2026-11-04: a prune that unloads a closed result marks it where it is and releases its entities from memory only,
 //   under the batch's gates, by the residency sweep's rule; its reopening reads its rows where they are (#1500).
 // - 2026-11-04: a live query's acknowledgement entries go when its last registration ends, and revisions come from one
@@ -13489,8 +13490,9 @@ public final class InstantRuntime: Sendable {
       )
     }
     _ = try await resolvedFileUserID(operation: "evict files")
+    // #1104: the records of these ids alone; reading every record to find them decoded 47,393 on a phone's store.
     let records = Dictionary(
-      try await persistence.loadStoredFiles(appID: configuration.appID).map { ($0.id, $0) },
+      try await persistence.loadStoredFiles(appID: configuration.appID, ids: Set(ids)).map { ($0.id, $0) },
       uniquingKeysWith: { _, newest in newest }
     )
     var outcomes: [String: InstantStoredFileEviction] = [:]

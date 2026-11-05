@@ -109,6 +109,8 @@
 //   `instant_unloaded_live_query_results`; its rows and facts stay on disk until the policy collects it, its reopening
 //   clears the mark and reads them back, and only loaded results own facts for retractions, releases and the launch
 //   (#1500). An older build's copy reloads as before.
+// - 2026-11-04: eviction reads only the file records it is given, and the storage snapshot counts copies in SQL, not by
+//   decoding every record (#1104).
 
 import Foundation
 import IssueReporting
@@ -13019,9 +13021,48 @@ public actor SQLitePersistenceStore {
     return locatedInFilesFolder(files)
   }
 
+  /// The records of `ids` alone, at most 500 ids a statement (#1104). Eviction is handed a few ids, and finding them
+  /// among every record decoded 47,393 records (19.1 MB of JSON) on a phone's store for 13 copies.
+  func loadStoredFiles(appID: String, ids: Set<String>) throws -> [InstantStoredFile] {
+    var files: [InstantStoredFile] = []
+    let sortedIDs = ids.sorted()
+    var start = sortedIDs.startIndex
+    while start < sortedIDs.endIndex {
+      let end = sortedIDs.index(start, offsetBy: 500, limitedBy: sortedIDs.endIndex) ?? sortedIDs.endIndex
+      let batch = sortedIDs[start..<end]
+      let rows: [InstantStoredFile] = try selectJSON(
+        """
+        SELECT json FROM instant_files
+        WHERE app_id = ? AND file_id IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))
+        """,
+        [.text(appID)] + batch.map(SQLiteBinding.text)
+      )
+      files.append(contentsOf: rows)
+      start = end
+    }
+    cacheResidencyMetrics.storedFileRecordReadCount += files.count
+    return locatedInFilesFolder(files)
+  }
+
   public func storageSnapshot(appID: String) throws -> InstantStorageSnapshot {
-    // #959: a record without a copy (an upload's, or an evicted one) takes no room here.
-    let files = try loadStoredFiles(appID: appID).filter(\.isDownloaded)
+    // #959: a record without a copy (an upload's, or an evicted one) takes no room here. #1104: the copies are counted
+    // and summed in SQL; decoding every record to count them read 47,393 on a phone's store for 13 copies.
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT COUNT(*), COALESCE(SUM(json_extract(json, '$.byteCount')), 0)
+      FROM instant_files
+      WHERE app_id = ? AND json_extract(json, '$.localPath') <> ''
+      """,
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind([.text(appID)], to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      throw persistenceError(operation: "read the storage snapshot", message: lastErrorMessage())
+    }
+    let downloadedFileCount = Int(sqlite3_column_int64(statement, 0))
+    let downloadedFileSize = sqlite3_column_int64(statement, 1)
     let streamCacheSize = try selectInt64(
       """
       SELECT COALESCE(SUM(byte_count), 0)
@@ -13033,8 +13074,8 @@ public actor SQLitePersistenceStore {
     return InstantStorageSnapshot(
       localCacheSize: localCacheFileSize(),
       streamCacheSize: streamCacheSize,
-      downloadedFileSize: files.reduce(0) { $0 + $1.byteCount },
-      downloadedFileCount: files.count,
+      downloadedFileSize: downloadedFileSize,
+      downloadedFileCount: downloadedFileCount,
       localCacheFile: try localCacheFile()
     )
   }
