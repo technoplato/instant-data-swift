@@ -1,3 +1,6 @@
+## 2026-11-05 05:21:27 EST — scribe `913d11e8b0978d3eecc21cb27ba2d605f3bd7d5c`
+Performance (#1423): the home screen's At work tile reads the agents' rows without their work (InstantAgentStatus.tileQuery: owners, order and limit of the board with ownerUserID, agentKey, name, state, heartbeatAtMs, stoppedAtMs), and the sheet reads each agent's work only while it shows. Before (build 251, home screen in front 30 min): agentStatuses/60 restated 152 times, 148.9 KB each, 45 MB an hour; 89% of the rows' values were workJSON. Gate atwork1423-green on the mini, 41 tests in 4 suites.
+
 ## 2026-11-05 05:20:05 EST — instant-data-swift `e5a96d824577c2a885ba63949e30f2d32485613f`
 Release (#1500, #1145, #1165, #1107, #1149, #541, #1104, #1105): v1.9.72 tagged on e5a96d82, from the landing d7dcf707: memory in proportion to what is on screen; docs/releases/v1.9.72.md. It carries 1.9.71 (#1796) and 1.9.70.
 
