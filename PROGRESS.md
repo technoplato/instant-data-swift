@@ -1,3 +1,16 @@
+## 2026-11-05 14:27:59 EST — perf-audio-2 (#632): v1.9.74, a delivered stream that is continued goes on from its stored row
+
+- **Why:** a progressive media stream delivered to its end leaves the spool, so a writer for the same stream later
+  (the consuming app's Continue Recording) found no record and started over at index 0: the whole recording encoded
+  and stored again, and the app's rules refused every re-sent row (a stored segment keeps every field, a stored
+  stream its `createdAtMs`).
+- **Landed:** `agent/claude/perf-audio-1223` (red `af95eb36`, green `418ff841`, comments `b52f2870`):
+  `InstantProgressiveMediaWriter(..., continuing:)` begins the spool from the stored row when the spool holds none.
+- **Checked:** Mac mini job `632-lib-redgreen` (275 s): three new tests fail at red, every `InstantProgressiveMedia`
+  suite passes at green (31 + 5 tests); the app's job `632-app-redgreen` ran its side against this branch in edit
+  mode (red fails, 20 of 20 pass at green).
+- **Next:** the app pins 1.9.74 and passes the stored row from `RecordingAudioStream.begin`; the next cut carries it.
+
 ## 2026-11-05 07:04:14 EST — perf-recv-1797 (#1109, #1513, #1116): v1.9.73, a server refresh costs what changed
 
 - **Why:** on the phone (the consuming app's build 253, 192.5 recording minutes, 1,596 refresh-ok frames) a frame's
