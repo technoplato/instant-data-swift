@@ -1,3 +1,6 @@
+## 2026-11-05 10:24:32 EST — scribe `2b48f8cee451826973f3c263dc88f8a2cf5c42ec`
+Fix (#1771, #1779): the device's voice learner hears new recordings' summaries after the app's root view is built again: the engine's summaries go through RequestMailbox (#1751), a stream per learner run, instead of one AsyncStream that ended with the first run; the runs open at once share one set of label readers, stopped by the last to end (a run's own readers outlived it). Red on main and green with both fixes in one job (1771-redgreen2: the second-run test 5-s timeout on main, 0.018 s now); changelog ea8bf803a. Found in code; not measured on a device.
+
 ## 2026-11-05 09:47:47 EST — scribe `258073f5e0ea9c253167cb7da14432d9845202c6`
 Test (#1662): the welcome's and the drawer's layout-harness pictures on iPhone and iPad (17 references), recorded from main as landed; run 2 passed against them, and the harness build compiled every welcome file for the iPhone simulator.
 
