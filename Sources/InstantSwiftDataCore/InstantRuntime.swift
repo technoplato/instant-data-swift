@@ -7041,7 +7041,15 @@ public final class InstantRuntime: Sendable {
       )
       await leaveOperationGate()
       if let owedSend {
-        try await liveSession.sendQueryRegistration(owedSend, clientEventID: configuration.makeID())
+        do {
+          try await liveSession.sendQueryRegistration(owedSend, clientEventID: configuration.makeID())
+        } catch is InstantReceiverOwnedLiveSessionSendFailure {
+          // #1796: the socket died before its receiver took the death. The registration stays recorded and the next
+          // session's init sends it with every registered query, as an observer's registration does and as upstream
+          // `Reactor.js` sends a queryOnce's add-query from `_flushPendingMessages` on the next `init-ok`; the wait
+          // below spans the reconnect. A tablet resuming from 229 s suspended failed a read this way in 0 ms while its
+          // connection still read as open.
+        }
       }
       try await ensureLiveConnectionIfNeeded()
 
