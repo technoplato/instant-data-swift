@@ -248,3 +248,30 @@ Red tests first: a relaunch holds a loaded result's owned attributes of an entit
 keeps its links on disk and leaves it whole in memory; a server apply to it keeps its disk-only facts; a local read
 with a lookup over it answers with its disk facts; reopening an unloaded result completes it. Measure: E07 (resident
 facts, allocations) and the store copy's launch count, then the phone's storeTriples after install.
+
+## Amendment 6 (2026-11-05 04:00 EST): what the landing gate found; how to land
+
+- Gate `1797-1500-land-green` (mini, 02:46-03:35): the whole bundle at M2 `f504ed51` had 22 new failures, at
+  `518b7418` 24. None lost data. 20 tests still expected #1500's copy; #1165 makes a fact adopted from another
+  runtime's write keep that write's own time (as upstream's `getCreatedAt` keeps a resident fact's time); a by-id file
+  lookup's prune now unloads in place; at `518b7418` one more prune test read a store's open from memory (#1107) and a
+  frame-decode timing ratio read 0.374 against 0.33 (load; passed at M2). The four reds failed as written. Release
+  numbers in the same job: the two-hour replay +15,102 -> +1,380 resident facts, heap +9.2 -> +2.7 MB an hour; E07's
+  launch 54,720 -> 9,728 facts, 24.9 -> 9.0 MB retained, 234 -> 59 ms.
+- Three source gaps the triage found, fixed with reds first on `agent/claude/perf-mem-1797-fixtests` (on 518b7418):
+  a session prune unloaded every closed result in one gate hold (#303's shape: red `708ded11`, green `74e65b56`, a
+  bounded batch unloads within its triple budget); the store's own prune never marked a closed result, and a collection
+  after an unload neither counted nor announced the facts it deleted from disk (red `cb0e8578`, green `6779994f`).
+  Expectation-only commits: `caf33f20` (#1500 prune tests: collection is the path that still deletes, so #654, #1129
+  and #1319 are tested there), `b6a80186` (#1165), `7982385d` (E07's bound: 5 MB plus 540 B a resident fact).
+- Known still to do in this landing: `InstantLiveQueryCompactOwnershipTests`' pinned digest (v1.9.10's
+  "e5f08f8f40ae0900 over 22178 answers") covers the answers after a prune, which #1500 changes in both stores alike; it
+  is re-pinned from the next bundle's output, with this reason.
+- To land: job `1797-1500-fixtests` (mini only, place 03:06, runs only on the trees `.runs-1797/READY` names) runs the
+  whole bundle; on its compare (new failures: the digest alone, or none), re-pin, then
+  `~/Sync/audit/perf-mem-1797/scripts/land.sh <tip>`, `WITH_1107=1 WITH_LAUNCH_READ=1 WITH_FIXTESTS=1
+  ledger-v1.9.71.sh`, the release record (`release-v1.9.71.md`: LANDED_SHA, FIXBUNDLE), tag v1.9.71, pin in Scribe
+  (`pin.sh`), cut, install; the phone's after needs his next recording (Scribe has not run on the iPhone since 00:00).
+- Next in this lane after the release: link residency (amendment 5; red `48f10a63` on `agent/claude/perf-mem-1797-links`,
+  not landed), then #1251/#1505's wrapper. #1151 measured transient (64 MB allocated, 5.4 KB retained a reconnect) and
+  #1111's refresh context is already reused; both rank below residency.
