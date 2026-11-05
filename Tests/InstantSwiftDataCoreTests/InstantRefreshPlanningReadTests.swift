@@ -8,12 +8,15 @@ import Testing
 //   the retractions and once for the save, each pass encoding every restated value and reading every row. On the phone
 //   the two passes were serverApplyRetractions 15.0 and serverApplyPlan 15.3 CPU-s in 88 minutes of recording (build
 //   248's ledger).
+// - 2026-11-05: #1116: one comparison a refresh still read every stored row and encoded every restated value; a refresh
+//   now reads and encodes the facts of the entities it changed only.
 
 /// What a server refresh reads to compare a restated result with the one it stored (#1480, #1116).
 @Suite(.serialized)
 struct InstantRefreshPlanningReadTests {
-  /// A refresh that restates a stored 32-line page with one line changed reads the page's ownership rows once and
-  /// encodes its restated values once.
+  /// A refresh that restates a stored 32-line page with one line changed reads the ownership rows of that line only and
+  /// encodes that line's values only (#1116). Until #1480 it read every row and encoded every value twice, until #1116
+  /// once.
   @Test
   func aRefreshComparesARestatedResultWithItsStoredRowsOnce() async throws {
     let directory = FileManager.default.temporaryDirectory
@@ -37,19 +40,17 @@ struct InstantRefreshPlanningReadTests {
     let after = await runtime.persistence.liveQueryResultDiffCountsForTesting()
 
     #expect(changed.application.mutation.changedEntityIDs == [page.lineID(7)])
-    // Three facts a line: its id, its text and its index.
-    #expect(after.ownershipRowsRead - before.ownershipRowsRead == 96, "rows read: \(after.ownershipRowsRead - before.ownershipRowsRead)")
-    #expect(after.valuesEncoded - before.valuesEncoded == 96, "values encoded: \(after.valuesEncoded - before.valuesEncoded)")
+    // Three facts a line: its id, its text and its index; of the page's 96, the changed line's three.
+    #expect(after.ownershipRowsRead - before.ownershipRowsRead == 3, "rows read: \(after.ownershipRowsRead - before.ownershipRowsRead)")
+    #expect(after.valuesEncoded - before.valuesEncoded == 3, "values encoded: \(after.valuesEncoded - before.valuesEncoded)")
     let storedValue = try await runtime.persistence.liveQueryResult(key: page.queryKey())
     let stored = try #require(storedValue)
     #expect(stored.triples.count == 96)
     #expect(stored.triples.contains { $0.entityID == page.lineID(7) && $0.value == .string("line 7 edited") })
   }
 
-  /// F21 (#1109, #1116): a refresh costs its change, not its page. Restating a 256-line page with one line changed should
-  /// read and encode about what a 64-line page's restatement does. With one comparison a refresh it still reads every
-  /// stored row and encodes every restated value, so its cost follows the page: a known issue until each result's rows
-  /// are kept in memory (#1116).
+  /// F21 (#1109, #1116): a refresh costs its change, not its page. Restating a 256-line page with one line changed reads
+  /// and encodes about what a 64-line page's restatement does.
   @Test
   func aLargerPageWithOneLineChangedCostsAboutWhatASmallerOneDoes() async throws {
     var costs: [Int: (rows: Int, values: Int)] = [:]
@@ -73,10 +74,8 @@ struct InstantRefreshPlanningReadTests {
     }
     let small = try #require(costs[64])
     let large = try #require(costs[256])
-    withKnownIssue("#1116: a refresh still compares every restated fact with every stored row of its result") {
-      #expect(large.rows < small.rows * 2, "rows read: \(large.rows) at 256 lines, \(small.rows) at 64")
-      #expect(large.values < small.values * 2, "values encoded: \(large.values) at 256 lines, \(small.values) at 64")
-    }
+    #expect(large.rows < small.rows * 2, "rows read: \(large.rows) at 256 lines, \(small.rows) at 64")
+    #expect(large.values < small.values * 2, "values encoded: \(large.values) at 256 lines, \(small.values) at 64")
   }
 }
 
