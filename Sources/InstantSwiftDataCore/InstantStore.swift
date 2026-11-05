@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-31: an observer keeps the ids its result shows, collected once per result, instead of collecting them for
 //   every change a publication judges and again for the splice (#1495).
+// - 2026-11-04: a verified observer splices the rows a publication's changes reach, and places an entity entering a head
+//   window among the window's rows, instead of materializing its page from the whole store (#1513).
 
 import Darwin
 import Foundation
@@ -2153,6 +2155,23 @@ public actor InstantStore {
         } else {
           observer.verifiedEpoch = nil
         }
+      } else if storeChanged, changedNamespaces != nil, let baseline, observer.verifiedEpoch == observerEpoch,
+        let spliced = Self.rootSplicedEmission(
+          &observer,
+          metrics: &metrics,
+          changedEntityIDs: observedChangedEntityIDs,
+          pageInfoChanged: pageInfoChanged,
+          indexes: indexes,
+          attributes: attributes,
+          baseline: baseline,
+          sequence: sequence
+        )
+      {
+        // #1513: what the whole page would be, from the rows it changed alone, so it stays verified.
+        metrics.splicedObserverCount += 1
+        emission = spliced
+        emissionsByObservation[key] = emission
+        verifiedEmissionKeys.insert(key)
       } else {
         let page = indexes.materializePageWithMetrics(
           observer.plan,
@@ -2443,6 +2462,126 @@ public actor InstantStore {
       sequence: sequence,
       values: values,
       pageInfo: observer.lastPageInfo
+    )
+  }
+
+  /// The page a verified observer shows after a publication's changes, made from the rows they reach instead of from the
+  /// whole store (#1513); nil when that is not proven, and the page is materialized whole.
+  ///
+  /// A plan's page is its root namespace's ordered set, windowed, and for each shown root the included entities its links
+  /// reach (#1007); a verified result is that page as the store stood before the publication (#654). Its field paths are
+  /// its own namespaces' (``InstantQueryPlan/dependentNamespaces``), so a filter or an order reads only the entity it
+  /// judges, and a link's change marks both its ends. Then:
+  ///
+  /// - A changed entity that keeps its place in the root set (absent before and after, or a member with the same order
+  ///   value) moves no row in or out of the window. It can change only the roots whose trees show it, or show an entity
+  ///   it links to before or after the change; those roots' snapshots are made again, one each, and every other row
+  ///   stays as it was.
+  /// - An entity that enters the root set of a head window (a limit, with no offset or cursor), while no row the window
+  ///   shows leaves or moves and no member it does not show leaves: the new window is among its old rows and the entering
+  ///   ones, so the window's bounded selection runs over those alone. A full window gains a row, so its lookahead is
+  ///   among them too. A window that was not full held the whole set, so any of its rows may also leave or move.
+  ///
+  /// The server's page info bounds no row of such a plan (``TripleIndexes/pageRowsDependOnRemotePageInfo(_:)``), so a
+  /// publication that also brings new page info for it only replaces the page info the page reports.
+  ///
+  /// A final line on a recording phone is both: its recording's row in the list (a preview slot and a transcription
+  /// changed, in place) and the newest line of the transcript's windows (entering). Each re-materialized its page by
+  /// scanning every recording, or every line of the recording, for one row: 92% of a final's publication in
+  /// PublishFanOutExercises, p50 18.4 ms on an M4; on the phone 41.8 CPU-s of observer refreshes in 88 minutes of
+  /// recording (build 248's ledger).
+  private static func rootSplicedEmission(
+    _ observer: inout StoreObserver,
+    metrics: inout InstantStorePublishMetrics,
+    changedEntityIDs: Set<String>,
+    pageInfoChanged: Bool,
+    indexes: TripleIndexes,
+    attributes: AttributeStore,
+    baseline: StorePublicationBaseline,
+    sequence: Int64
+  ) -> InstantQueryEmission? {
+    let plan = observer.plan
+    // Past the comparison limit one materialization costs less than judging each change (#654).
+    guard changedEntityIDs.count <= resultSetComparisonLimit, plan.dependentNamespaces != nil else { return nil }
+    let rowsFollowRemotePageInfo = TripleIndexes.pageRowsDependOnRemotePageInfo(plan)
+    var remotePageInfo: InstantQueryPageInfo?
+    if pageInfoChanged {
+      // New page info replaces the reported one only where it bounds no row, and only once the server sent it.
+      guard !rowsFollowRemotePageInfo, case let .ready(pageInfo)? = observer.remotePageInfo else { return nil }
+      remotePageInfo = pageInfo
+    }
+    let roots = observer.lastValues
+    var rootIndexByID: [String: Int] = [:]
+    rootIndexByID.reserveCapacity(roots.count)
+    for (index, root) in roots.enumerated() {
+      guard rootIndexByID.updateValue(index, forKey: root.id) == nil else { return nil }
+    }
+    let shownEntityIDs = observer.shownEntityIDs(metrics: &metrics)
+    let isHeadWindow = plan.limit != nil && (plan.offset ?? 0) == 0 && plan.first == nil && plan.last == nil
+      && plan.after == nil && plan.before == nil
+    // A head window holding fewer rows than its limit shows its whole root set.
+    let showsWholeSet = isHeadWindow && roots.count < (plan.limit ?? 0)
+    // The shown entities the changes reach, at any depth; every root whose tree shows one is made again.
+    var reachedShownIDs: Set<String> = []
+    var enteringIDs: [String] = []
+    var windowChanged = false
+    for entityID in changedEntityIDs {
+      let before = baseline.indexes.resultSetMembership(entityID, plan: plan, attributes: baseline.attributes)
+      let after = indexes.resultSetMembership(entityID, plan: plan, attributes: attributes)
+      if before != after {
+        if case .member = after, rootIndexByID[entityID] == nil {
+          enteringIDs.append(entityID)
+        } else if showsWholeSet {
+          // A shown row that leaves or moves: the window held every member, so its rows are still among its candidates.
+          windowChanged = true
+        } else {
+          // A shown row that leaves or moves, or a member the window does not show that leaves, changes the window by
+          // rows it does not hold.
+          return nil
+        }
+        continue
+      }
+      if shownEntityIDs.contains(entityID) {
+        reachedShownIDs.insert(entityID)
+      } else {
+        reachedShownIDs.formUnion(
+          baseline.indexes.linkedEntityIDs(entityID, among: shownEntityIDs, attributes: baseline.attributes)
+        )
+        reachedShownIDs.formUnion(indexes.linkedEntityIDs(entityID, among: shownEntityIDs, attributes: attributes))
+      }
+    }
+
+    if windowChanged || !enteringIDs.isEmpty {
+      guard isHeadWindow,
+        let window = indexes.materializeBoundedPage(
+          plan,
+          amongCandidates: roots.map(\.id) + enteringIDs,
+          attributes: attributes,
+          remotePageInfo: observer.remotePageInfo
+        )
+      else { return nil }
+      metrics.materializedSnapshotCount += window.metrics.materializedSnapshotCount
+      return InstantQueryEmission(
+        queryID: plan.id,
+        sequence: sequence,
+        values: window.page.values,
+        pageInfo: window.page.pageInfo
+      )
+    }
+
+    var values = roots
+    if !reachedShownIDs.isEmpty {
+      for (index, root) in roots.enumerated() where root.contains(anyEntityID: reachedShownIDs) {
+        guard let snapshot = indexes.entitySnapshot(root.id, plan: plan, attributes: attributes) else { return nil }
+        values[index] = snapshot
+        metrics.materializedSnapshotCount += 1
+      }
+    }
+    return InstantQueryEmission(
+      queryID: plan.id,
+      sequence: sequence,
+      values: values,
+      pageInfo: remotePageInfo ?? observer.lastPageInfo
     )
   }
 

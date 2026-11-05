@@ -1,0 +1,1 @@
+claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-perf-sync-1796 #1796 #998 #1127 (release; the next free v1.9.x if a sibling lane tags first)

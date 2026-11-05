@@ -10,6 +10,127 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 10:06:53 p.m. EST — `995043755a97` release(#1513 #1480 #1109): v1.9.68: a final's publication splices the rows it reaches; a restated result is compared with its stored rows once
+
+- **Implementation commit:** `995043755a97f26d268100262c9ef91630579dbd`
+- **Change:** release(#1513 #1480 #1109): v1.9.68: a final's publication splices the rows it reaches; a restated result is compared with its stored rows once
+- **Details:**
+  - The release document for v1.9.68, tagged from main (0df9d697 plus its ledger) for Scribe's next build: #1513 (red a0dee714, greens f8b7c453 and 428411d9) splices the rows a final reaches; #1480 (red 322c3993, green ca9dd8d2) compares each restated result with its stored rows once; #1109 (4fff7e5c) skips the identity set when the nested limit kept every fact.
+  - No API or storage change; a final's publication p50 17.6-18.2 -> 15.6-16.0 ms on the Mac mini, materialized snapshots -43%; 192 -> 96 rows read for a restated 32-line page; the debug bundle fails only the three tests that fail on main since 1.9.64-1.9.67.
+- **Files:**
+  - `docs/releases/v1.9.68.md` — #1513 #1480 #1109 the release: what changed, what it measured, the checks, what did not run
+  - `PROGRESS.md` — #1513 the release checkpoint and what waits for the next job
+  - `docs/FOOTGUNS.md` — F10 and F21 record what landed and the ratio guard
+  - `agent-presence/_channels/2026-11-04-perf-recv-1797.md` — #1513 says what landed and which paths stay claimed
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:53 p.m. EST — `0459f173913a` test(#1116): F21's guard: a larger page with one line changed costs about what a smaller one does
+
+- **Implementation commit:** `0459f173913acd45b9ab7faabb43fb156fcfd9f6`
+- **Change:** test(#1116): F21's guard: a larger page with one line changed costs about what a smaller one does
+- **Details:**
+  - Restating a 256-line page with one line changed should read about the rows and encode about the values a 64-line page's does; with one comparison a refresh it is still about 4x, so the ratio is a known issue until #1116 keeps each result's rows in memory.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshPlanningReadTests.swift` — #1116 the F21 ratio guard, held as a known issue
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:50 p.m. EST — `b3435d8dc11e` test(#1513): the splice fixture's stored properties name their type
+
+- **Implementation commit:** `b3435d8dc11eaa5ed1a62a594ba3830f580bf316`
+- **Change:** test(#1513): the splice fixture's stored properties name their type
+- **Details:**
+  - Stored properties of the fixture name their type, as the package's style asks.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshSpliceTests.swift` — #1513 explicit types on stored properties
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:47 p.m. EST — `eecdc2d78b0d` test(#1480): the planning-read test reads the stored result before requiring it
+
+- **Implementation commit:** `eecdc2d78b0d0124a5a7e2e41de9df30a7b21687`
+- **Change:** test(#1480): the planning-read test reads the stored result before requiring it
+- **Details:**
+  - The test required the stored result before reading it.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshPlanningReadTests.swift` — #1480 read before require
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:45 p.m. EST — `fe0b7951f079` test(#1513): the random splice test picks a line only from a recording that has one
+
+- **Implementation commit:** `fe0b7951f0793f03154209a31fcff43620110e8e`
+- **Change:** test(#1513): the random splice test picks a line only from a recording that has one
+- **Details:**
+  - A recording the test starts has no lines; two of its writes picked one from an empty range.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRefreshSpliceTests.swift` — #1513 the random writer's line choice
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:42 p.m. EST — `428411d9a881` green(#1513): a head window that holds fewer rows than its limit splices a row that leaves or moves too
+
+- **Implementation commit:** `428411d9a881ee3b941f9e07414a0a8a6ed6dd86`
+- **Change:** green(#1513): a head window that holds fewer rows than its limit splices a row that leaves or moves too
+- **Details:**
+  - A window that is not full shows its whole root set, so its bounded selection over its rows and the entering ones is exact even when a shown row leaves or moves: the live-lines window on a final (the line's row deleted, the next one created).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1513 showsWholeSet in rootSplicedEmission
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:40 p.m. EST — `4fff7e5c110d` perf(#1109): a refresh whose nested limit keeps every fact removes nothing without hashing each fact twice
+
+- **Implementation commit:** `4fff7e5c110dab5c1e0703492baba75c86b120ee`
+- **Change:** perf(#1109): a refresh whose nested limit keeps every fact removes nothing without hashing each fact twice
+- **Details:**
+  - The translator built a set of every restated fact's identity, its value text included, to remove the facts the nested limit dropped; on most refreshes it drops none, which equal counts prove.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — #1109 skip the identity set when the limit kept every fact
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:38 p.m. EST — `ca9dd8d2c3ac` green(#1480): a server apply compares each restated result with its stored rows once
+
+- **Implementation commit:** `ca9dd8d2c3acb61bde3e596884b50b6d2e0a66ba`
+- **Change:** green(#1480): a server apply compares each restated result with its stored rows once
+- **Details:**
+  - The retractions and the save each compared a restated result with its stored ownership rows, encoding every restated value and reading every row (serverApplyRetractions 15.0 and serverApplyPlan 15.3 CPU-s in 88 min on build 248); the save now takes the retractions' comparison from the same read when its facts are the compared ones.
+  - A stored 32-line page restated with one line changed: 192 -> 96 ownership rows read and values encoded (InstantRefreshPlanningReadTests, red and green in one job).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1480 the planning reads keep each key's comparison; the result save reuses it
+  - `Sources/InstantSwiftDataCore/LiveQueryOwnershipDiff.swift` — #1480 the comparison knows the fact count it was made for
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
+## November 4th, 2026 at 10:03:35 p.m. EST — `f8b7c453e2de` green(#1513): a publication splices the rows a final line reaches instead of re-materializing the page
+
+- **Implementation commit:** `f8b7c453e2ded83a9d7f7886fc102b6a87777d2f`
+- **Change:** green(#1513): a publication splices the rows a final line reaches instead of re-materializing the page
+- **Details:**
+  - A final line on a recording phone is its recording's row in the list (changed in place) and the newest line of the transcript's head windows (entering); the store's splice declined both, so each re-materialized from every recording or every line of the recording (observer refreshes 41.8 CPU-s in 88 min on build 248).
+  - A verified observer now makes again only the roots a change reaches; an entity entering a head window is placed by the window's bounded selection over its rows and the entering ones. Mac mini, release, same job: a final's publication p50 17.6/18.2 ms -> 15.6/16.0 ms, materialized snapshots 320,850 -> 181,550; with interims linked into the open line, interim p50 2.90 -> 0.48 ms.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — #1513 rootSplicedEmission and its place in refreshObservers
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — #1513 materializeBoundedPage(_:amongCandidates:), linkedEntityIDs, pageRowsDependOnRemotePageInfo
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
 ## November 4th, 2026 at 5:25:08 p.m. EST — `49780127c9f2` release(#1756): v1.9.67: a restated unset field reduces on a cascading namespace
 
 - **Implementation commit:** `49780127c9f2af872a376ac7efad95589e629b12`
