@@ -1,3 +1,6 @@
+## 2026-11-05 15:57:32 EST — scribe `555b81160e331e1b17038efd71f69d546eb113c3`
+Audit (#1647): asks audit, third run: 340 asks in Recordings 359-370 and his typed messages since 11-03 checked for an issue, his priority and an agent; at 15:46, 51 open P0s and 19 with work left and no agent; five priorities raised to his words, #1821-#1825 closed as duplicates, 13 asks filed, an ordered start list on #1647 for the commander (audits/2026-11-05-asks-audit-1647b.md).
+
 ## 2026-11-05 15:54:06 EST — scribe `da68d2af79e388bf6f992b13e55465cbe969c6c1`
 Fix (#1851): the mirror takes the agent id tools/agent-run gives every agent (claude-code/NAME@account) as it is, at every scribe command that names its agent (toolbox, flag, reminder, reply, status, link, notify, settings, listener): one rule in agents.ts (a plain name as before, or words joined by slashes with an optional @account, at most 120 characters) replaces eight copies of the 1-40 letters check, and the decision CLI, faq and preplan stop rewriting the name. Found by the #1845 audit: every toolbox command an agent-run agent sent was refused. Red 9fce5c25b, green cfa2393bf, changelog 5c4f84e32.
 
