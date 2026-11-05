@@ -71,3 +71,23 @@ returns the second event); `Reactor.js` replaces a query's whole stored result o
 - perf-mem-1797 (#1165, #1145, #1500): no shared code.
 - perf-send-1797 (#653): the send path stays theirs.
 - Channel: agent-presence/_channels/2026-11-04-perf-sync-1796.md
+
+## Amendment 1 (2026-11-05 04:00 EST, claude-code/perf-sync-1796@pp)
+
+Scope the branch already holds, recorded here before it lands, and one measurement slice for #1129.
+
+- `Sources/InstantSwiftDataCore/InstantRuntime.swift`: a standard query's and an infinite query page's registration
+  name their query's namespace in the operation gate's phase (`reload <ns>`, `answer <ns>`; red fac02655, green
+  d7502832). Why: at a tablet's launch one registration held the gate 4,583 ms with its connect and 7 callers behind
+  it, unnamed (#1131, #1137). Phase marks only; the registration's work and order are unchanged.
+- `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift` (new: a writer and a follower runtime under
+  the tablet's measured load) and `InstantObserverRegistrationGateTests.swift` (one test and its helper).
+- `docs/releases/v1.9.71.md` (the release record; v1.9.68-v1.9.70 went to other lanes).
+- #1129 (measurement only): `pruneLiveQueryResults`, `pruneLiveQueryResultsBatch` and
+  `pruneReleasedLiveQueryResultChunk` name each phase in both gates' phases (choose, residency, apply, retract) and
+  time it; a batch that held the gates 1 s or more logs one notice with each phase's milliseconds and the batch's
+  counts. Why: on 2026-11-04 the Mac's prune held the server-apply gate 4.5-13.1 s per batch (refreshes waited behind
+  each) and the phone's held a recording's first write 1.25 s, with batches still capped at 1,000 facts, so a phase
+  that does not follow the batch size is unnamed. What a batch removes, and when, is unchanged. New test file
+  `Tests/InstantSwiftDataCoreTests/InstantPruneBatchPhaseTests.swift`. perf-mem-1797's later #1500 prune work keeps the
+  prune's decisions; this only times them (told on their channel).
