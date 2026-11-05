@@ -1,3 +1,6 @@
+## 2026-11-04 22:37:19 EST — scribe `178ad0b239f9cd3801ba1fb6a3004135e33e9aea`
+Fix (#1585, #1527): the Mac mirror's lines in progress and lines window ride an admin-token WebSocket, so a refresh no longer carries the 854 KB attribute catalog the admin stream sent with each (182 MB in 29 minutes with Recording 366 live); a probe every 10 s is their keepalive, and an unanswered one replaces the socket. Parity on production: identical rows.
+
 ## 2026-11-04 22:09:50 EST — scribe `73460479af02a0e8e8900cf3098289a76a96b92b`
 Cut (#1652): Scribe 0.1 (258) from main after landing B of #1652; the build number 257 to 258, build 258's plain block and four stories.
 
