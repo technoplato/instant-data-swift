@@ -1,3 +1,26 @@
+## 2026-11-04 21:20 EST — perf-send-1797 (#653): job B measured claim at save; two fixes after it; jobs C and D verify
+
+- **Job B** (`1797-b-claim-at-save`, mini, 20:27-20:58; outputs `~/Sync/audit/perf-send-1797/jobs/out-1797-b/`): release
+  recording exercise, 225 writes, base 037012ec vs head 94a77045 in one job: save + claim CPU per write 5,077 -> 4,429 us
+  (-13%; outboxClaim 2,409 us a write -> no claim turns), the write side 1,283.5 -> 1,152.0 ms (-10%), all library
+  energy ops 8,465 -> 8,269 ms. Reds for #653, #1142 and #1648 fail as they must. Two claim-at-save tests failed at
+  94a77045 (explicit-createdAt writes never claimed at save), fixed `2a3c78b1` by the previous run.
+- **Since** (unverified until job D/C): red `c208d640` / green `416ac3b1`: a window claimed at save goes out only on the
+  live session generation it was claimed for (after a reconnect it went out ahead of the older write the disconnect put
+  back; refused windows free only their own claim and ask for a pass). Red `3e937899` / green `7773cfa5`: claims read
+  attributes from a decoded copy kept while unchanged (the attribute JSON reads were 36 of the claim-at-save's 136
+  samples in job B's profile).
+- **Job D** (`1797-d-quick-compile`, laptop, P0): compiles HEAD, runs the delivery suites; out
+  `~/Sync/audit/perf-send-1797/jobs/out-1797-d/`, stdout `jobs/1797-d.out`.
+- **Job C** (`1797-c-release-candidate`, mini, P0; worktree `~/Sync/worktrees/perf-send-1797-measure` pinned at
+  `7773cfa5` with `gate-1797-c.sh`; stdout `jobs/1797-c.out`): the whole bundle against `Tests/known-failing.txt`, both
+  reds, the delivery suites twice more, unlisted failures re-run at v1.9.67, and the release A/B v1.9.67 (49780127) vs
+  7773cfa5.
+- **Next (resume here):** if job D shows a compile error or a failing suite, fix it on the branch and re-pin the measure
+  worktree before job C starts. When job C is green: rebase on origin/main, push to main, release the first free
+  v1.9.N above 1.9.67 (perf-sync-1796 and perf-recv-1797 also want 1.9.68: first to tag takes it), pin in Scribe (the
+  maps file's checklist; Scribe's pin commit ba22b2e2c is the model), cut and install, ledger after an hour.
+
 ## 2026-11-04 20:35 EST — perf-send-1797 (#653): job A measured; four fixes after it; job B verifies before any release
 
 - **Job A** (`1797-a-gate1648-1517`, mini, 19:49-20:18; outputs `~/Sync/audit/perf-send-1797/jobs/out-1797-a/`): release
