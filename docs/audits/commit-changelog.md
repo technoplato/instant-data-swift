@@ -1,3 +1,6 @@
+## 2026-11-05 15:01:59 EST — scribe `5ae0405d4df59d07794238615fbb50e84ca91e31`
+Audit (#1845): every remote control driven on his iPhone (build 270, Recording 370): 22 of 22 screens open by scribe toolbox app.open, handled by the phone a median 1.42 s after the send (n=30); only Recognize Songs can be set remotely (#551); stuck coming back from a sheet (#1850), on the agent name (#1851) and on the rate limit (#1852); audits/2026-11-05-remote-controls-1845.md.
+
 ## 2026-11-05 14:28:39 EST — scribe `f9102d64820fba1fbd7f99ac3db92f23aee7da75`
 Perf (#507, #1422): the microphone's level reaches the root store once a capture (its first level, which #363's live playback waits for), and the 1 s clock tick reads the newest level from AudioCaptureClient.currentAudioLevel for the Live Activity and widgets. Build 253's ledger had the level running the root store 29.3 times a minute at 4.24 ms each for that one reader; the 2 s gate goes. Red f2c0dcd4b / green 4ea7b4243, tested on the mini by build.sh 507-1422-redgreen (red fails the two new tests, green passes nine suites). Also the recording-screen audit's sections 6-7 (the comb's rest replayed over Recording 366's audio: 96.1% / 93.3% of quiet time). Changelog 9568c6715.
 
