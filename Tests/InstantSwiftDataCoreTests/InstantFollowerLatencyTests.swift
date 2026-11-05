@@ -3,6 +3,8 @@
 //                    server frame in arrival order at about 1.5 s each, superseded refreshes included, and showed the
 //                    recording about six minutes late; its one-shot reads failed at a fixed 5 s while its socket was
 //                    open and frames were applying.
+// 2026-11-04  #1796  A one-shot read whose add-query met a socket that had just died; how old the newest server
+//                    write is when the buffer applies it, which nothing measured on the tablet.
 
 import CustomDump
 import Foundation
@@ -102,6 +104,56 @@ struct InstantFollowerLatencyTests {
     await append.value
     expectNoDifference(await appended.values, [true])
     expectNoDifference(taken, ["refresh-ok 102 page(1)", "refresh-ok 103 list(2)"])
+  }
+
+  /// The buffer measures how old the newest server write is when its frame finishes applying (#1796): a `refresh-ok`
+  /// carrying a fact newer than every fact applied before counts, from the fact's server time (the fourth element of
+  /// its triple, child nodes included) to the end of its apply. An answer to `add-query` restates what the server
+  /// already holds, so it only moves the mark, and an older fact does not count. The tablet behind #1796 showed a live
+  /// recording about six minutes late, and nothing it logged measured that.
+  @Test
+  func theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() async throws {
+    let frames = InstantLiveReceivedFrames(capacity: 16, wallClockMilliseconds: { 1_700_000_010_000 })
+    for frame in [
+      FollowerFrame.answer(.list, factTime: 1_700_000_005_000),
+      FollowerFrame.timedRefresh(transaction: 101, .page, factTime: 1_700_000_004_000),
+      FollowerFrame.transactOK("write-1", transaction: 102),
+      FollowerFrame.timedRefresh(transaction: 103, .list, factTime: 1_700_000_008_000),
+      FollowerFrame.nestedRefresh(transaction: 104, .page, childFactTime: 1_700_000_009_500),
+    ] {
+      #expect(await frames.append(frame))
+      // Taking the next frame ends the apply of the one before.
+      _ = try await frames.next()
+    }
+    frames.finish(throwing: FollowerBufferEnded())
+    await #expect(throws: FollowerBufferEnded.self) { try await frames.next() }
+
+    expectNoDifference(
+      frames.factLagsForTesting,
+      [2_000, 500],
+      "#1796: the refreshes at 103 and 104 brought the newest writes, 2.0 s and 0.5 s after the server stored them"
+    )
+  }
+
+  /// The receive summary reports how old the newest writes were at the median, at p95 and at most (#1796).
+  @Test
+  func theReceiveSummaryReportsHowOldTheNewestWritesWere() throws {
+    let start = ContinuousClock.now
+    var meter = InstantLiveReceiveMeter(windowStart: start)
+    meter.recordTake(waited: .milliseconds(3), buffered: 0)
+    for lag in [400, 100, 300, 200, 5_000] {
+      meter.recordFactLag(milliseconds: lag)
+    }
+    let window = meter.summary(at: start + .seconds(61), buffered: 0)
+    let summary = try #require(window)
+
+    expectNoDifference(
+      [
+        summary.factLagFrames, summary.factLagMedianMilliseconds, summary.factLagP95Milliseconds,
+        summary.factLagMaxMilliseconds,
+      ],
+      [5, 300, 5_000, 5_000]
+    )
   }
 
   // MARK: - A follower
@@ -373,6 +425,62 @@ private enum FollowerFrame {
     InstantLiveMessage(op: "transact-ok", clientEventID: write, fields: ["tx-id": .number(Double(transaction))])
   }
 
+  /// A `refresh-ok` restating `query` with one todo whose facts the server stored at `factTime`.
+  static func timedRefresh(transaction: Int, _ query: FollowerQuery, factTime: Int64) -> InstantLiveMessage {
+    timedRefresh(transaction: transaction, query, nodes: [timedNode(id: "todo-\(transaction)", factTime: factTime)])
+  }
+
+  /// A `refresh-ok` whose newest fact is in a child node, as a parent row's included rows are.
+  static func nestedRefresh(transaction: Int, _ query: FollowerQuery, childFactTime: Int64) -> InstantLiveMessage {
+    let child = timedNode(id: "todo-child-\(transaction)", factTime: childFactTime)
+    return timedRefresh(
+      transaction: transaction,
+      query,
+      nodes: [timedNode(id: "todo-parent-\(transaction)", factTime: childFactTime - 60_000, children: [child])]
+    )
+  }
+
+  /// The answer to an `add-query` for `query`: one todo whose facts the server stored at `factTime`.
+  static func answer(_ query: FollowerQuery, factTime: Int64) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "add-query-ok",
+      clientEventID: nil,
+      fields: [
+        "q": query.json,
+        "processed-tx-id": .number(100),
+        "result": .array([timedNode(id: "todo-answer", factTime: factTime)]),
+      ]
+    )
+  }
+
+  private static func timedRefresh(
+    transaction: Int,
+    _ query: FollowerQuery,
+    nodes: [InstantLiveJSONValue]
+  ) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "refresh-ok",
+      clientEventID: nil,
+      fields: [
+        "processed-tx-id": .number(Double(transaction)),
+        "computations": .array([.object(["instaql-query": query.json, "instaql-result": .array(nodes)])]),
+      ]
+    )
+  }
+
+  private static func timedNode(
+    id: String,
+    factTime: Int64,
+    children: [InstantLiveJSONValue] = []
+  ) -> InstantLiveJSONValue {
+    .object([
+      "data": .object([
+        "datalog-result": .object(["join-rows": .array([todoRow(id: id, text: id, createdAt: factTime)])])
+      ]),
+      "child-nodes": .array(children),
+    ])
+  }
+
   /// Takes every frame the buffer holds, a waiting reader's frame included, and describes each.
   static func takeBuffered(from frames: InstantLiveReceivedFrames) async throws -> [String] {
     var taken: [String] = []
@@ -619,6 +727,8 @@ private actor FollowerRecorder<Value: Sendable> {
 private struct FollowerWaitTimedOut: Error, CustomStringConvertible {
   var description: String
 }
+
+private struct FollowerBufferEnded: Error {}
 
 // MARK: - Helpers
 

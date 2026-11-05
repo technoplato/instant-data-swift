@@ -101,11 +101,21 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
   private var meter: InstantLiveReceiveMeter
   /// When the applier took its last frame; the next `next()` call ends that frame's apply.
   private var lastTakenAt: ContinuousClock.Instant?
+  /// This device's wall clock in milliseconds since 1970, the scale of the server's fact times (#1796).
+  private let wallClockMilliseconds: @Sendable () -> Int64
 
-  init(capacity: Int) {
+  init(
+    capacity: Int,
+    wallClockMilliseconds: @escaping @Sendable () -> Int64 = { InstantLiveReceivedFrames.systemMilliseconds() }
+  ) {
     precondition(capacity > 0, "A live receive buffer needs room for at least one frame.")
     self.capacity = capacity
+    self.wallClockMilliseconds = wallClockMilliseconds
     meter = InstantLiveReceiveMeter(windowStart: ContinuousClock.now)
+  }
+
+  static func systemMilliseconds() -> Int64 {
+    Int64((Date().timeIntervalSince1970 * 1_000).rounded())
   }
 
   var bufferedCountForTesting: Int {
@@ -118,6 +128,11 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
 
   var applierIsWaitingForTesting: Bool {
     lock.withLock { waitingApplier != nil }
+  }
+
+  /// The lags this minute's meter recorded, in order (#1796).
+  var factLagsForTesting: [Int] {
+    lock.withLock { meter.factLagsMillisecondsForTesting }
   }
 
   /// How many frames the reader has received and the applier has taken, and how many waiting `refresh-ok` frames and
@@ -422,6 +437,11 @@ struct InstantLiveReceiveMeter: Sendable {
   private var applying: Duration = .zero
   private var replacedFrames = 0
   private var replacedResults = 0
+  /// How old the newest server write was when its frame finished applying, for each frame that carried one newer than
+  /// any applied before (#1796); kept like the waits.
+  private var factLagsMilliseconds: [Int] = []
+  private var longestFactLag = 0
+  private var factLagFrames = 0
 
   init(windowStart: ContinuousClock.Instant) {
     self.windowStart = windowStart
@@ -453,6 +473,10 @@ struct InstantLiveReceiveMeter: Sendable {
     replacedFrames += 1
   }
 
+  mutating func recordFactLag(milliseconds: Int) {}
+
+  var factLagsMillisecondsForTesting: [Int] { factLagsMilliseconds }
+
   /// The window's summary once a minute has passed, and a new window; nil before that, or when no frame was taken.
   mutating func summary(at now: ContinuousClock.Instant, buffered: Int) -> InstantLiveReceiveSummary? {
     let elapsed = now - windowStart
@@ -460,6 +484,7 @@ struct InstantLiveReceiveMeter: Sendable {
     defer { self = InstantLiveReceiveMeter(windowStart: now) }
     guard takenFrames > 0 else { return nil }
     let sorted = waitsMilliseconds.sorted()
+    let lags = factLagsMilliseconds.sorted()
     return InstantLiveReceiveSummary(
       windowMilliseconds: Self.milliseconds(elapsed),
       takenFrames: takenFrames,
@@ -471,7 +496,11 @@ struct InstantLiveReceiveMeter: Sendable {
       applyMaxMilliseconds: Self.milliseconds(longestApply),
       applyingMilliseconds: Self.milliseconds(applying),
       replacedFrames: replacedFrames,
-      replacedResults: replacedResults
+      replacedResults: replacedResults,
+      factLagFrames: factLagFrames,
+      factLagMedianMilliseconds: lags.isEmpty ? 0 : lags[lags.count / 2],
+      factLagP95Milliseconds: lags.isEmpty ? 0 : lags[min(lags.count - 1, lags.count * 95 / 100)],
+      factLagMaxMilliseconds: longestFactLag
     )
   }
 
@@ -494,6 +523,12 @@ struct InstantLiveReceiveSummary: Sendable, Equatable {
   var applyingMilliseconds: Int
   var replacedFrames: Int
   var replacedResults: Int
+  /// How old the newest server writes were when their frames finished applying: the lag a device following another
+  /// one sees, plus any difference between this device's clock and the server's (#1796).
+  var factLagFrames: Int
+  var factLagMedianMilliseconds: Int
+  var factLagP95Milliseconds: Int
+  var factLagMaxMilliseconds: Int
 
   /// The share of the window the applier spent applying frames, in percent.
   var applyingPercent: Int {
