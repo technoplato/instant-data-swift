@@ -1586,6 +1586,9 @@ private actor InstantLiveQueryAcknowledgementState {
     revisions[key, default: 0]
   }
 
+  /// How many keys the state remembers (#541).
+  var keyCount: Int { Set(revisions.keys).union(outcomes.keys).count }
+
   func record(key: String) {
     revisions[key, default: 0] += 1
     outcomes[key] = (revisions[key, default: 0], .acknowledged)
@@ -8484,6 +8487,11 @@ public final class InstantRuntime: Sendable {
   /// Observers see the server's rows a moment before the answer is recorded, so a test that reacts to the rows waits
   /// for this before it expects a local answer.
   @concurrent
+  /// How many live-query keys the acknowledgement state remembers (#541).
+  package func liveQueryAcknowledgementKeyCountForTesting() async -> Int {
+    await liveQueryAcknowledgements.keyCount
+  }
+
   package func isAnsweredOnCurrentSocketForTesting(_ plan: InstantQueryPlan) async throws -> Bool {
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: InstantLiveQueryEncoder.encode(plan))
     return await liveSession.isAnsweredOnCurrentSocket(key: registrationKey)
