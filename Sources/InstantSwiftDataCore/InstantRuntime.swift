@@ -550,6 +550,11 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// entities no stored result owns, no outbox row touches and no observer shows leave memory, as a relaunch leaves them,
   /// and stay on disk. `Int.max` never sweeps.
   var residencySweepWriteInterval = 64
+  /// How many stored live-query results a launch keeps loaded, the newest by when the server last stated them (#1107,
+  /// #1149). Upstream `PersistedObject` preloads the `preloadEntryCount` (10) most recently updated query results and
+  /// loads any other when its query subscribes; the rest are unloaded where they are (#1500) and reload from disk when
+  /// their query subscribes again. `Int.max` keeps every stored result loaded.
+  var preloadedLiveQueryResultCount = 10
   /// How many result triples one prune batch removes or checks before it releases the operation gate (#303, item 6). The
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
   /// waited; `nil` prunes everything at once. 1,000 since #1129: a batch also holds the server-apply gate, so a refresh
