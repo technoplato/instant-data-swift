@@ -123,6 +123,9 @@
 //   `instant_unloaded_live_query_results`; its rows and facts stay on disk until the policy collects it, its reopening
 //   clears the mark and reads them back, and only loaded results own facts for retractions, releases and the launch
 //   (#1500). An older build's copy reloads as before.
+// - 2026-11-04: eviction reads only the file records it is given, and the storage snapshot counts copies in SQL, not by
+//   decoding every record (#1104).
+// - 2026-11-04: a file record is read from its columns and SQLite's json_extract, not decoded with JSONDecoder (#1105).
 
 import CryptoKit
 import Foundation
@@ -220,15 +223,23 @@ package struct InstantPersistenceCacheResidencyMetrics: Equatable, Sendable {
   package var fullStoreSnapshotLoadCount = 0
   package var fullStateReconstructionCount = 0
   package var storeSnapshotReplacementCount = 0
+  /// File records read and decoded from `instant_files` (#1104).
+  package var storedFileRecordReadCount = 0
+  /// Of those, the records decoded from their JSON with `JSONDecoder` (#1105).
+  package var storedFileRecordJSONDecodeCount = 0
 
   package init(
     fullStoreSnapshotLoadCount: Int = 0,
     fullStateReconstructionCount: Int = 0,
-    storeSnapshotReplacementCount: Int = 0
+    storeSnapshotReplacementCount: Int = 0,
+    storedFileRecordReadCount: Int = 0,
+    storedFileRecordJSONDecodeCount: Int = 0
   ) {
     self.fullStoreSnapshotLoadCount = fullStoreSnapshotLoadCount
     self.fullStateReconstructionCount = fullStateReconstructionCount
     self.storeSnapshotReplacementCount = storeSnapshotReplacementCount
+    self.storedFileRecordReadCount = storedFileRecordReadCount
+    self.storedFileRecordJSONDecodeCount = storedFileRecordJSONDecodeCount
   }
 }
 
@@ -13144,6 +13155,113 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadStoredFiles(appID: String) throws -> [InstantStoredFile] {
+    locatedInFilesFolder(
+      try storedFileRecords(where: "app_id = ?", [.text(appID)], then: "ORDER BY created_at_ms, file_id")
+    )
+  }
+
+  /// The records of `ids` alone, at most 500 ids a statement (#1104). Eviction is handed a few ids, and finding them
+  /// among every record decoded 47,393 records (19.1 MB of JSON) on a phone's store for 13 copies.
+  func loadStoredFiles(appID: String, ids: Set<String>) throws -> [InstantStoredFile] {
+    var files: [InstantStoredFile] = []
+    let sortedIDs = ids.sorted()
+    var start = sortedIDs.startIndex
+    while start < sortedIDs.endIndex {
+      let end = sortedIDs.index(start, offsetBy: 500, limitedBy: sortedIDs.endIndex) ?? sortedIDs.endIndex
+      let batch = sortedIDs[start..<end]
+      files.append(
+        contentsOf: try storedFileRecords(
+          where: "app_id = ? AND file_id IN (\(Array(repeating: "?", count: batch.count).joined(separator: ", ")))",
+          [.text(appID)] + batch.map(SQLiteBinding.text)
+        )
+      )
+      start = end
+    }
+    return locatedInFilesFolder(files)
+  }
+
+  /// The records of `instant_files` that `condition` selects, each read from its columns, with the fields only its JSON
+  /// holds read by SQLite (#1105).
+  ///
+  /// The consuming app reads this device's whole list after each launch: on a phone's store (2026-10-30) 47,393 records
+  /// and 19.1 MB of JSON, each copied twice and decoded with `JSONDecoder` (about 25 allocations and 5 us a record in
+  /// #1072's measure). `writeStoredFileRecord(_:)` is the table's one writer and writes its columns from the record it
+  /// encodes, so the id, app, name and times are the columns; the size, copy, owner, content type and URL are
+  /// `json_extract`'s. A record whose JSON holds a field in another form than the encoder writes is decoded as before.
+  private func storedFileRecords(
+    where condition: String,
+    _ bindings: [SQLiteBinding],
+    then clauses: String = ""
+  ) throws -> [InstantStoredFile] {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT file_id, app_id, name, created_at_ms, updated_at_ms,
+        json_extract(json, '$.byteCount'), json_type(json, '$.byteCount'),
+        json_extract(json, '$.localPath'), json_type(json, '$.localPath'),
+        json_extract(json, '$.ownerUserID'), json_type(json, '$.ownerUserID'),
+        json_extract(json, '$.contentType'), json_type(json, '$.contentType'),
+        json_extract(json, '$.remoteURL'), json_type(json, '$.remoteURL'),
+        json
+      FROM instant_files
+      WHERE \(condition)
+      \(clauses)
+      """,
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    func text(_ column: Int32) -> String? {
+      sqlite3_column_text(statement, column).map { String(cString: $0) }
+    }
+    // A field absent or null is nil, as the decoder reads an optional; a field in any other form than the encoder
+    // writes (the outer nil) sends the record to the decoder.
+    func optionalText(_ value: Int32, _ type: Int32) -> String?? {
+      guard let type = text(type), type != "null" else { return .some(nil) }
+      return type == "text" ? .some(text(value) ?? "") : nil
+    }
+    var files: [InstantStoredFile] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { break }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(operation: "read file records", message: lastErrorMessage())
+      }
+      if let id = text(0), let appID = text(1), let name = text(2),
+        text(6) == "integer", text(8) == "text", text(10) == "text",
+        let contentType = optionalText(11, 12), let remoteURLText = optionalText(13, 14)
+      {
+        let remoteURL = remoteURLText.flatMap { URL(string: $0) }
+        if remoteURLText == nil || remoteURL != nil {
+          files.append(
+            InstantStoredFile(
+              id: id,
+              appID: appID,
+              name: name,
+              contentType: contentType,
+              byteCount: sqlite3_column_int64(statement, 5),
+              localPath: text(7) ?? "",
+              ownerUserID: text(9) ?? "",
+              createdAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 3)),
+              updatedAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 4)),
+              remoteURL: remoteURL
+            )
+          )
+          continue
+        }
+      }
+      guard let json = text(15), let data = json.data(using: .utf8) else {
+        throw persistenceError(operation: "decode row", message: "SQLite returned a file record without JSON.")
+      }
+      files.append(try decoder.decode(InstantStoredFile.self, from: data))
+      cacheResidencyMetrics.storedFileRecordJSONDecodeCount += 1
+    }
+    cacheResidencyMetrics.storedFileRecordReadCount += files.count
+    return files
+  }
+
+  /// Every record of `appID` decoded from its JSON with `JSONDecoder`, as the readers decoded them before #1105.
+  package func storedFileRecordsDecodedFromJSONForTesting(appID: String) throws -> [InstantStoredFile] {
     let files: [InstantStoredFile] = try selectJSON(
       """
       SELECT json FROM instant_files
@@ -13156,8 +13274,24 @@ public actor SQLitePersistenceStore {
   }
 
   public func storageSnapshot(appID: String) throws -> InstantStorageSnapshot {
-    // #959: a record without a copy (an upload's, or an evicted one) takes no room here.
-    let files = try loadStoredFiles(appID: appID).filter(\.isDownloaded)
+    // #959: a record without a copy (an upload's, or an evicted one) takes no room here. #1104: the copies are counted
+    // and summed in SQL; decoding every record to count them read 47,393 on a phone's store for 13 copies.
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT COUNT(*), COALESCE(SUM(json_extract(json, '$.byteCount')), 0)
+      FROM instant_files
+      WHERE app_id = ? AND json_extract(json, '$.localPath') <> ''
+      """,
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind([.text(appID)], to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      throw persistenceError(operation: "read the storage snapshot", message: lastErrorMessage())
+    }
+    let downloadedFileCount = Int(sqlite3_column_int64(statement, 0))
+    let downloadedFileSize = sqlite3_column_int64(statement, 1)
     let streamCacheSize = try selectInt64(
       """
       SELECT COALESCE(SUM(byte_count), 0)
@@ -13169,8 +13303,8 @@ public actor SQLitePersistenceStore {
     return InstantStorageSnapshot(
       localCacheSize: localCacheFileSize(),
       streamCacheSize: streamCacheSize,
-      downloadedFileSize: files.reduce(0) { $0 + $1.byteCount },
-      downloadedFileCount: files.count,
+      downloadedFileSize: downloadedFileSize,
+      downloadedFileCount: downloadedFileCount,
       localCacheFile: try localCacheFile()
     )
   }
@@ -13218,15 +13352,9 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {
-    let rows: [InstantStoredFile] = try selectJSON(
-      """
-      SELECT json FROM instant_files
-      WHERE app_id = ? AND file_id = ?
-      LIMIT 1
-      """,
-      [.text(appID), .text(fileID)]
-    )
-    return locatedInFilesFolder(rows).first
+    locatedInFilesFolder(
+      try storedFileRecords(where: "app_id = ? AND file_id = ?", [.text(appID), .text(fileID)], then: "LIMIT 1")
+    ).first
   }
 
   /// Each record's copy where it is now: in this store's files folder (#1227).
