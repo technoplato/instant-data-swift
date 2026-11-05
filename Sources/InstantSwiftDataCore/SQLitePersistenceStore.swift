@@ -108,6 +108,8 @@
 //   acknowledgement, where each hashed the whole transaction and rollback to find it (#1523).
 // - 2026-11-04: a local save can claim its own write for delivery in the same transaction when the claim the pump would
 //   run next would take exactly it (#653).
+// - 2026-11-04: a delivery claim's visible-write filter reads its writes' attributes from a decoded copy kept while they
+//   are unchanged, where each claim decoded them from JSON one statement at a time (#653).
 
 import CryptoKit
 import Foundation
@@ -1454,6 +1456,9 @@ public actor SQLitePersistenceStore {
   private var claimedAtSaveCount = 0
   /// How many times a delivery claim's visible-write filter read attributes from `instant_attributes` (#653).
   private var visibleWriteFilterAttributeReads = 0
+  /// Every stored attribute by id, for the delivery claims' visible-write filters (#653), kept while neither this
+  /// connection nor another process has written `instant_attributes`, as `liveResultAttributes` is (#303).
+  private var deliveryAttributesByID: (revision: Int64, generation: Int, byID: [String: InstantAttribute])?
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -19309,19 +19314,35 @@ public actor SQLitePersistenceStore {
     try selectInt64(Self.automaticDeliveryCandidateExistsSQL, Self.automaticDeliveryCandidateExistsBindings) != 0
   }
 
+  /// Every stored attribute by id, read again only after `instant_attributes` changed here or the attribute revision
+  /// another process bumps moved (#653). A miss reuses the live-result saves' copy when it is current (#303).
+  private func deliveryAttributesByIDWithoutTransaction() throws -> [String: InstantAttribute] {
+    let revision = try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+    if let cached = deliveryAttributesByID, cached.revision == revision, cached.generation == attributeWriteGeneration {
+      return cached.byID
+    }
+    let attributes: [InstantAttribute]
+    if let shared = liveResultAttributes, shared.revision == revision, shared.generation == attributeWriteGeneration {
+      attributes = shared.attributes
+    } else {
+      visibleWriteFilterAttributeReads += 1
+      attributes = try selectJSON("SELECT json FROM instant_attributes ORDER BY id", [])
+    }
+    let byID = Dictionary(attributes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    deliveryAttributesByID = (revision, attributeWriteGeneration, byID)
+    return byID
+  }
+
   private func loadVisibleWriteFilterWithoutTransaction(
     for writeKeys: Set<InstantVisibleWriteKey>
   ) throws -> InstantVisibleWriteFilter {
     let attributeIDs = Set(writeKeys.map(\.attributeID)).sorted()
+    // #653: from the decoded copy; each claim read and decoded these from JSON, one statement per attribute.
+    let storedAttributes = try deliveryAttributesByIDWithoutTransaction()
     var attributesByID: [String: InstantAttribute] = [:]
     attributesByID.reserveCapacity(attributeIDs.count)
     for attributeID in attributeIDs {
-      visibleWriteFilterAttributeReads += 1
-      let attributes: [InstantAttribute] = try selectJSON(
-        "SELECT json FROM instant_attributes WHERE id = ? LIMIT 1",
-        [.text(attributeID)]
-      )
-      if let attribute = attributes.first {
+      if let attribute = storedAttributes[attributeID] {
         attributesByID[attributeID] = attribute
       }
     }
