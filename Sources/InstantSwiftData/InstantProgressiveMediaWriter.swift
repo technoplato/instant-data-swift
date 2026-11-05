@@ -10,6 +10,9 @@
 // - 2026-10-23: a row write that fails is tried again after the backoff, like an upload (#1012): a store that does not
 //   know the namespaces until its first `init-ok` refused the rows, and delivery ended there for good.
 // - 2026-10-27: after the stream's first write, its row's writes carry only what changes (`.streamProgress`, #1253).
+// - 2026-11-05: a stored stream with no spool record continues where its row ends (#632). Started over at index 0, a
+//   continued stream stored every segment again, and an app's rules may refuse every one of those rows (a stored
+//   stream's createdAtMs and a stored segment's fields never change) while its count falls back to 1 on every device.
 
 import Dependencies
 import Foundation
@@ -111,7 +114,22 @@ public actor InstantProgressiveMediaWriter {
   @Dependency(\.continuousClock) private var clock
   @Dependency(\.date.now) private var now
 
-  /// A writer for `stream`, resuming what the spool already holds for it.
+  /// A writer for `stream`, resuming what the spool already holds for it; with no spool record, continuing the stream
+  /// `stored` describes, when it is this stream's stored row and has segments.
+  ///
+  /// A stream delivered to its end leaves the spool, so continuing it later (a recording resumed after it stopped) finds
+  /// no record. Started over, it would store every segment again under rows the store's rules may refuse: a stored
+  /// stream's `createdAtMs` and a stored segment's fields never change. From `stored` instead, the next segment takes
+  /// index `segmentCount` at `durationSeconds`, the initialization segment is not stored again, stamps go on from
+  /// `updatedAtMs`, and ``stream`` takes the stored format, which the rules keep too:
+  ///
+  /// ```swift
+  /// let stored = try await reader.refresh().stream
+  /// let writer = try InstantProgressiveMediaWriter(
+  ///   stream: stream, ownerUserID: user.id, spool: spool, storage: .live(client), continuing: stored
+  /// )
+  /// try await writer.append(segment, durationSeconds: 6)  // index stored.segmentCount
+  /// ```
   public init(
     stream: InstantProgressiveMediaStream,
     ownerUserID: String,
@@ -119,11 +137,45 @@ public actor InstantProgressiveMediaWriter {
     storage: Storage,
     continuing stored: InstantProgressiveMediaStreamRow? = nil
   ) throws {
+    var record = try spool.record(of: stream)
+    var stream = stream
+    if record == nil, let stored, let continued = Self.continuation(of: stored, stream: stream, ownerUserID: ownerUserID) {
+      try spool.begin(continuing: continued)
+      record = continued
+      stream = continued.stream
+    }
     self.stream = stream
     self.ownerUserID = ownerUserID
     self.spool = spool
     self.storage = storage
-    self.record = try spool.record(of: stream)
+    self.record = record
+  }
+
+  /// The spool record that carries a stored stream on from where its row ends (#632); nil for another stream's row or
+  /// one with no segments, which says nothing about where this stream ends.
+  private static func continuation(
+    of stored: InstantProgressiveMediaStreamRow,
+    stream: InstantProgressiveMediaStream,
+    ownerUserID: String
+  ) -> InstantProgressiveMediaSpool.Record? {
+    guard stored.id == stream.id, stored.segmentCount > 0 else { return nil }
+    let format = InstantProgressiveMediaFormat(
+      codecs: stored.codecs,
+      sampleRate: stored.sampleRate,
+      channelCount: stored.channelCount,
+      bitRate: stored.bitRate,
+      segmentSeconds: stored.segmentSeconds
+    )
+    return InstantProgressiveMediaSpool.Record(
+      stream: InstantProgressiveMediaStream(id: stream.id, pathPrefix: stream.pathPrefix, format: format),
+      ownerUserID: ownerUserID,
+      createdAtMs: stored.createdAtMs,
+      nextIndex: stored.segmentCount,
+      appendedSeconds: stored.durationSeconds,
+      initializationStored: true,
+      finished: false,
+      updatedAtMs: stored.updatedAtMs
+    )
   }
 
   /// A writer for every stream the spool holds, each with the owner it was started for, to deliver what a previous
