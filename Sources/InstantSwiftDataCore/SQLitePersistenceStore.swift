@@ -103,6 +103,8 @@
 //   reads as before (#1463, #1510).
 // - 2026-11-04: a server apply compares each restated result with its stored rows once: the save takes the retractions'
 //   comparison, made in the same read, instead of encoding every restated value and reading every row again (#1480).
+// - 2026-11-04: saves and reloads bound nested includes with the stored attributes indexed once per load, and a snapshot
+//   load indexes its attributes once for every stored result, instead of each walking the whole schema (#1109).
 
 import Foundation
 import IssueReporting
@@ -1459,7 +1461,11 @@ public actor SQLitePersistenceStore {
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
-  /// How many times a live-result save, reload or prune walked the whole schema to bound results' nested includes.
+  /// `liveResultAttributes` indexed for the nested-limit pass, kept while they are unchanged (#1109): every save and
+  /// reload walked every attribute (2,283 on the phone) to find the few a result uses, about half the pass's cost.
+  private var liveResultNestedLimitSchema: (revision: Int64, generation: Int, schema: InstantLiveQueryNestedLimit.Schema)?
+  /// How many times live-result saves and reloads walked the stored attributes to bound results' nested includes: once
+  /// per index built (#1109).
   private var liveResultSchemaPasses = 0
   /// Releases SQLite's memory when the system warns of memory pressure (#653).
   private let memoryPressureMonitor: SQLiteMemoryPressureMonitor
@@ -1610,7 +1616,7 @@ public actor SQLitePersistenceStore {
     liveResultAttributeLoads
   }
 
-  /// How many times live-result saves, reloads and prunes walked the whole schema to bound nested includes (#1109).
+  /// How many times live-result saves and reloads walked the stored attributes to bound nested includes (#1109).
   package func liveResultSchemaPassCountForTesting() -> Int {
     liveResultSchemaPasses
   }
@@ -14628,11 +14634,10 @@ public actor SQLitePersistenceStore {
       )
       // A save keeps ownership of only the facts the query's nested limits keep; the unloaded row was written from such
       // a save, so with the schema it was written under they keep every fact, and its JSON is this result's.
-      liveResultSchemaPasses += 1
       let limited = InstantLiveQueryNestedLimit.limitedTriples(
         queryKey: key,
         triples: Array(result.triples),
-        attributes: try attributesForLiveResultSaveWithoutTransaction()
+        schema: try nestedLimitSchemaForLiveResultSaveWithoutTransaction()
       )
       var unownedFacts: Set<InstantLiveTripleIdentity> = []
       if limited.count != result.triples.count {
@@ -19566,17 +19571,18 @@ public actor SQLitePersistenceStore {
     attributes: [InstantAttribute]
   ) throws -> Set<String> {
     let rows = try loadLiveQueryResultRowsWithoutTransaction()
+    // One index of the snapshot's attributes for every stored result, not one walk of them per result (#1109).
+    let schema = InstantLiveQueryNestedLimit.Schema(attributes)
     var retained: Set<String> = []
     for row in rows {
       guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
         continue
       }
-      liveResultSchemaPasses += 1
       retained.formUnion(
         InstantLiveQueryNestedLimit.retainedEntityIDs(
           queryKey: result.key,
           triples: Array(result.triples),
-          attributes: attributes
+          schema: schema
         )
       )
     }
@@ -20542,6 +20548,22 @@ public actor SQLitePersistenceStore {
     return attributes
   }
 
+  /// ``attributesForLiveResultSaveWithoutTransaction()`` indexed for the nested-limit pass, once per load of them (#1109).
+  private func nestedLimitSchemaForLiveResultSaveWithoutTransaction() throws -> InstantLiveQueryNestedLimit.Schema {
+    let attributes = try attributesForLiveResultSaveWithoutTransaction()
+    guard let loaded = liveResultAttributes else { return InstantLiveQueryNestedLimit.Schema(attributes) }
+    if let cached = liveResultNestedLimitSchema,
+      cached.revision == loaded.revision,
+      cached.generation == loaded.generation
+    {
+      return cached.schema
+    }
+    let schema = InstantLiveQueryNestedLimit.Schema(attributes)
+    liveResultSchemaPasses += 1
+    liveResultNestedLimitSchema = (loaded.revision, loaded.generation, schema)
+    return schema
+  }
+
   private func saveLiveQueryResultWithoutTransaction(_ result: InstantPersistedLiveQueryResult) throws {
     let prepared = try preparedLiveQueryResultSaveWithoutTransaction(result, previousFacts: nil)
     try applyLiveQueryResultSaveWithoutTransaction(prepared.save)
@@ -20594,14 +20616,13 @@ public actor SQLitePersistenceStore {
     storedDiff: LiveQueryOwnershipDiff? = nil
   ) throws -> (save: InstantPreparedLiveQueryResultSave, storedFacts: [InstantTriple]) {
     let attributeIDs = Set(result.triples.map(\.attributeID))
-    let attributes = try attributesForLiveResultSaveWithoutTransaction()
+    let schema = try nestedLimitSchemaForLiveResultSaveWithoutTransaction()
     var result = result
     let restatedCount = result.triples.count
-    liveResultSchemaPasses += 1
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
       queryKey: result.key,
       triples: Array(result.triples),
-      attributes: attributes
+      schema: schema
     )
     // #1480: the retractions compared these facts with the stored rows already, in this read. The translation limited
     // them with these attributes, so the limit here keeps every one, and the facts are the comparison's: its rows that
