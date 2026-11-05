@@ -1,3 +1,12 @@
+## 2026-11-05 12:42:24 EST — scribe `1ee34a07357f` and `98ee7dce38ad`
+Fix (#1837): listener-rotate reads Claude Code's own limit turns in the listener's transcript; two within 15 minutes start a move to the account with room (never one in ~/Scribe/listener/never-move-to, seeded with pp) or end the dead session so its Monitors stop, recorded on #1598, with one notice sent only when no recording is live; at 5% weekly (not 0%) the listener is asked once to hand itself off. Also the scribe-agents skill, ADR 0129 part 2 and READMEs.
+
+## 2026-11-05 12:42:24 EST — scribe `aa0370d13e44`
+Feature (#1835): scribe-hooks, a Claude Code mod installed for every login, acting only in Scribe's repos: a raw git commit or push is denied with the way through (scribe commit / scribe push, tools/scribe-commit: the pickup record first, then git with Issue, Session and Turn trailers); failed builds and tests, kills, out-of-memory and a saturated Mac become findings; a turn that committed without a next step is held once (2 extra requests, measured); PreCompact and SessionStart carry the pickup record across a new context.
+
+## 2026-11-05 12:42:24 EST — scribe `39c3545962ed`
+Feature (#1835, #1836): ADR 0129, the pickup record in issues wip --step written by tools/pickup-record, tools/pickup-list ranking unfinished work cheapest to finish first, the commit-msg gate with a tracker outbox and the --commit cross-link (instant-data-swift and foldkit run it as git config hooks from ~/Scribe/tools/git-hooks), agent-run --session-id / --pause / --resume from the record, and agent-progress-check's pickup, transcript and account checks.
+
 ## 2026-11-05 11:28:42 EST — scribe `f531a6944e0ba3250ad93e7ec018e41e8bded943`
 Fix (#1276): a take continued after a relaunch rejoins its live room instead of writing a second key the server's set-once rule refuses: the launch's list shows the projection's row (no liveRoomKey) and the take continues before the first page (#1381), so its first beat minted one (build 269, Recording 370, refused at 07:39:08). openRecordingToContinue takes the store row's key, else the key the device session's live capture now keeps. Never derived from the recording id; permission-gated joins wait for the Instant fork (#1805, #1834).
 
