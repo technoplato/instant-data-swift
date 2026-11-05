@@ -155,6 +155,52 @@ struct InstantStoredFileEvictionTests {
     #expect(snapshotReads == 0, "The storage snapshot read \(snapshotReads) records.")
   }
 
+  /// #1105: the consuming app reads this device's whole list of file records after each launch (47,393 on a phone's
+  /// store, 19.1 MB of JSON), and every record went through `JSONDecoder`. A record is read from its columns, and the
+  /// fields only its JSON holds are read by SQLite: the same record the decoder made.
+  @Test("This device's file records are read without decoding their JSON, and read as the decoder read them")
+  func fileRecordsAreReadFromTheirColumns() async throws {
+    let fixture = try await EvictionFixture(payload: payload, connects: false)
+    defer { fixture.remove() }
+    // A copy this device holds, and records of each shape an upload keeps.
+    _ = try await fixture.runtime.storedFileContents(id: "held", name: "scribe/r/generation-1/audio.wav")
+    let uploads = [
+      InstantStoredFile(
+        id: "plain", appID: "app-1", name: "a.wav", byteCount: 1, localPath: "", ownerUserID: "user-1",
+        createdAt: InstantTimestamp(milliseconds: 1), updatedAt: InstantTimestamp(milliseconds: 2)
+      ),
+      InstantStoredFile(
+        id: "typed", appID: "app-1", name: "b.png", contentType: "image/png", byteCount: 2_000_000_000_000,
+        localPath: "", ownerUserID: "user-1", createdAt: InstantTimestamp(milliseconds: 3),
+        updatedAt: InstantTimestamp(milliseconds: 4), remoteURL: URL(string: "https://files.example.test/b.png?x=1&y=2")
+      ),
+      InstantStoredFile(
+        id: "quoted \"id\"", appID: "app-1", name: "c \"d\" ü/e.wav", contentType: "", byteCount: 0, localPath: "",
+        ownerUserID: "", createdAt: InstantTimestamp(milliseconds: -5), updatedAt: InstantTimestamp(milliseconds: 6)
+      ),
+    ]
+    for file in uploads {
+      _ = try await fixture.runtime.persistence.saveUploadedFileRecord(file)
+    }
+    let decoded = try await fixture.runtime.persistence.storedFileRecordsDecodedFromJSONForTesting(appID: "app-1")
+    #expect(decoded.count == 4)
+
+    await fixture.runtime.persistence.resetCacheResidencyMetricsForTesting()
+    let records = try await fixture.runtime.localStoredFiles()
+    let byID = try await fixture.runtime.persistence.loadStoredFile(appID: "app-1", fileID: "typed")
+    let byIDs = try await fixture.runtime.persistence.loadStoredFiles(appID: "app-1", ids: ["held", "quoted \"id\""])
+    let metrics = await fixture.runtime.persistence.cacheResidencyMetricsForTesting()
+
+    #expect(records == decoded)
+    #expect(byID == decoded.first { $0.id == "typed" })
+    #expect(byIDs.sorted { $0.id < $1.id } == decoded.filter { ["held", "quoted \"id\""].contains($0.id) }.sorted { $0.id < $1.id })
+    #expect(metrics.storedFileRecordReadCount == 7)
+    #expect(
+      metrics.storedFileRecordJSONDecodeCount == 0,
+      "\(metrics.storedFileRecordJSONDecodeCount) of \(metrics.storedFileRecordReadCount) records went through JSONDecoder."
+    )
+  }
+
   @Test("A client without storage keeps every copy: each is the only one")
   func clientWithoutStorageKeepsEveryCopy() async throws {
     let directory = FileManager.default.temporaryDirectory

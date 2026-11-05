@@ -209,17 +209,21 @@ package struct InstantPersistenceCacheResidencyMetrics: Equatable, Sendable {
   package var storeSnapshotReplacementCount = 0
   /// File records read and decoded from `instant_files` (#1104).
   package var storedFileRecordReadCount = 0
+  /// Of those, the records decoded from their JSON with `JSONDecoder` (#1105).
+  package var storedFileRecordJSONDecodeCount = 0
 
   package init(
     fullStoreSnapshotLoadCount: Int = 0,
     fullStateReconstructionCount: Int = 0,
     storeSnapshotReplacementCount: Int = 0,
-    storedFileRecordReadCount: Int = 0
+    storedFileRecordReadCount: Int = 0,
+    storedFileRecordJSONDecodeCount: Int = 0
   ) {
     self.fullStoreSnapshotLoadCount = fullStoreSnapshotLoadCount
     self.fullStateReconstructionCount = fullStateReconstructionCount
     self.storeSnapshotReplacementCount = storeSnapshotReplacementCount
     self.storedFileRecordReadCount = storedFileRecordReadCount
+    self.storedFileRecordJSONDecodeCount = storedFileRecordJSONDecodeCount
   }
 }
 
@@ -13018,6 +13022,7 @@ public actor SQLitePersistenceStore {
       [.text(appID)]
     )
     cacheResidencyMetrics.storedFileRecordReadCount += files.count
+    cacheResidencyMetrics.storedFileRecordJSONDecodeCount += files.count
     return locatedInFilesFolder(files)
   }
 
@@ -13041,6 +13046,20 @@ public actor SQLitePersistenceStore {
       start = end
     }
     cacheResidencyMetrics.storedFileRecordReadCount += files.count
+    cacheResidencyMetrics.storedFileRecordJSONDecodeCount += files.count
+    return locatedInFilesFolder(files)
+  }
+
+  /// Every record of `appID` decoded from its JSON with `JSONDecoder`, as the readers decoded them before #1105.
+  package func storedFileRecordsDecodedFromJSONForTesting(appID: String) throws -> [InstantStoredFile] {
+    let files: [InstantStoredFile] = try selectJSON(
+      """
+      SELECT json FROM instant_files
+      WHERE app_id = ?
+      ORDER BY created_at_ms, file_id
+      """,
+      [.text(appID)]
+    )
     return locatedInFilesFolder(files)
   }
 
@@ -13132,6 +13151,7 @@ public actor SQLitePersistenceStore {
       [.text(appID), .text(fileID)]
     )
     cacheResidencyMetrics.storedFileRecordReadCount += rows.count
+    cacheResidencyMetrics.storedFileRecordJSONDecodeCount += rows.count
     return locatedInFilesFolder(rows).first
   }
 
