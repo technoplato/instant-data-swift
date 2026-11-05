@@ -1,3 +1,6 @@
+## 2026-11-05 15:56:59 EST — scribe `fe6fe7f2d091963ae7361259219f2cb6ac1db596` and `599c318fdf365305df54c6e988e753d57e2c6143`
+Fix (#1129): pin instant-data-swift 1.9.75 (tag on 2eba5915) in Scribe's three packages and their Package.resolved, the installer's expected version and its tests (141 pass), and two docs; landed by merge 599c318fd. A prune batch now names and times the phase it holds Instant's gates for, and a batch held 1 s or more logs live-query-results.prune-batch-slow; the next cut (272) carries it.
+
 ## 2026-11-05 15:57:32 EST — scribe `555b81160e331e1b17038efd71f69d546eb113c3`
 Audit (#1647): asks audit, third run: 340 asks in Recordings 359-370 and his typed messages since 11-03 checked for an issue, his priority and an agent; at 15:46, 51 open P0s and 19 with work left and no agent; five priorities raised to his words, #1821-#1825 closed as duplicates, 13 asks filed, an ordered start list on #1647 for the commander (audits/2026-11-05-asks-audit-1647b.md).
 
