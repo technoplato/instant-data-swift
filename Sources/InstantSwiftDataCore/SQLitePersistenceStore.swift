@@ -229,19 +229,23 @@ package struct InstantPersistenceCacheResidencyMetrics: Equatable, Sendable {
   package var storedFileRecordReadCount = 0
   /// Of those, the records decoded from their JSON with `JSONDecoder` (#1105).
   package var storedFileRecordJSONDecodeCount = 0
+  /// Stored live-query results read whole, header and every ownership row decoded into facts (#1149).
+  package var storedLiveQueryResultReadCount = 0
 
   package init(
     fullStoreSnapshotLoadCount: Int = 0,
     fullStateReconstructionCount: Int = 0,
     storeSnapshotReplacementCount: Int = 0,
     storedFileRecordReadCount: Int = 0,
-    storedFileRecordJSONDecodeCount: Int = 0
+    storedFileRecordJSONDecodeCount: Int = 0,
+    storedLiveQueryResultReadCount: Int = 0
   ) {
     self.fullStoreSnapshotLoadCount = fullStoreSnapshotLoadCount
     self.fullStateReconstructionCount = fullStateReconstructionCount
     self.storeSnapshotReplacementCount = storeSnapshotReplacementCount
     self.storedFileRecordReadCount = storedFileRecordReadCount
     self.storedFileRecordJSONDecodeCount = storedFileRecordJSONDecodeCount
+    self.storedLiveQueryResultReadCount = storedLiveQueryResultReadCount
   }
 }
 
@@ -20428,6 +20432,7 @@ public actor SQLitePersistenceStore {
     key: String
   ) throws -> InstantPersistedLiveQueryResult? {
     guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return nil }
+    cacheResidencyMetrics.storedLiveQueryResultReadCount += 1
     var statement: OpaquePointer?
     try prepare(InstantStoredLiveQueryResultRows.factsSQL, statement: &statement)
     defer { finishStatement(statement) }
