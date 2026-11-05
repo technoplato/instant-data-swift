@@ -29,7 +29,7 @@ struct InstantWritePathCostTests {
       serverSegmentCount: 2,
       pendingSegmentCount: 0
     )
-    _ = try await fixture.writeSegments(3)
+    _ = try await Self.writeOneInterimPerSegment(3, in: &fixture)
     let before = await fixture.runtime.persistence.claimEncodeCountsForTesting()
 
     let window = try await fixture.claimWindow()
@@ -54,7 +54,7 @@ struct InstantWritePathCostTests {
       serverSegmentCount: 2,
       pendingSegmentCount: 0
     )
-    _ = try await fixture.writeSegments(1)
+    _ = try await Self.writeOneInterimPerSegment(1, in: &fixture)
 
     let window = try await fixture.claimWindow()
     #expect(window.mutations.count == 1)
@@ -88,7 +88,7 @@ struct InstantWritePathCostTests {
     let persistence = fixture.runtime.persistence
     let hashesBefore = await persistence.receiptInputsHashCountForTesting()
     let fingerprintsBefore = await persistence.optimisticEffectFingerprintCountForTesting()
-    _ = try await fixture.writeSegments(2)
+    _ = try await Self.writeOneInterimPerSegment(2, in: &fixture)
 
     let window = try await fixture.claimWindow()
     for mutation in window.mutations {
@@ -226,5 +226,20 @@ struct InstantWritePathCostTests {
     let sent = await session.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
     #expect(sent == (0..<writes).map { "tx-burst-\($0)" }, "every write is sent once, in order: \(sent)")
     _ = try? await runtime.closeConnection()
+  }
+
+  /// Saves each of `count` segments' first interim write alone: one outbox row per segment, none superseding another
+  /// and none narrowing another's projection, as `FastDrainFixture.writeSegments` (six writes a segment) would.
+  static func writeOneInterimPerSegment(_ count: Int, in fixture: inout FastDrainFixture) async throws -> [String] {
+    var ids: [String] = []
+    for _ in 0..<count {
+      let write = fixture.script.nextSegmentWrites()[0]
+      _ = try await fixture.runtime.transact(
+        write,
+        createdAt: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds)
+      )
+      ids.append(write.id)
+    }
+    return ids
   }
 }
