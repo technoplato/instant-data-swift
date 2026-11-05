@@ -11,8 +11,9 @@
 //   know the namespaces until its first `init-ok` refused the rows, and delivery ended there for good.
 // - 2026-10-27: after the stream's first write, its row's writes carry only what changes (`.streamProgress`, #1253).
 // - 2026-11-05: a stored stream with no spool record continues where its row ends (#632). Started over at index 0, a
-//   continued stream stored every segment again, and an app's rules may refuse every one of those rows (a stored
-//   stream's createdAtMs and a stored segment's fields never change) while its count falls back to 1 on every device.
+//   continued stream encoded and stored every segment again, and an app's rules may refuse each of those rows with
+//   the transaction around it (a stored stream's createdAtMs and a stored segment's fields never change): one
+//   rejection a segment, and files stored over the old ones that their rows no longer describe when they differ.
 
 import Dependencies
 import Foundation

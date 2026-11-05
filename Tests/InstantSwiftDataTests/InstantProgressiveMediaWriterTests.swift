@@ -390,9 +390,9 @@ struct InstantProgressiveMediaWriterTests {
   }
 
   /// #632: a stream this device delivered and finished is continued (its recording resumed after it stopped). With no
-  /// spool record the writer started over at index 0: it stored every segment again, the store's rules refused the
-  /// rows (a stored stream keeps its createdAtMs, a stored segment every field), and the stream's count fell back to 1
-  /// on every device while it re-sent. From the stored row, the next segment takes its count and duration, the
+  /// spool record the writer started over at index 0: it encoded and stored every segment again, and the store's rules
+  /// refused each of those rows with its transaction (a stored stream keeps its createdAtMs, a stored segment every
+  /// field), one rejection a segment. From the stored row, the next segment takes its count and duration, the
   /// initialization segment is not stored again, and the row keeps its createdAtMs and a stamp that never moves back.
   @Test func aDeliveredStreamContinuesWhereItsStoredRowEnds() async throws {
     let storage = StorageDouble(network: .open)
