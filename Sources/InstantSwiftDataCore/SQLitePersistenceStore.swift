@@ -134,6 +134,11 @@
 //   entities' fingerprints from its last save in memory, at the query-result revision its commit left (#1116).
 // - 2026-11-05: a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read, instead
 //   of reading each result whole and binding every entity id (#1149).
+// - 2026-11-05: a bounded prune batch unloads closed results within its triple budget, as it collects them, so a write
+//   waits for one batch's release from memory, not every closed result's (#1500, #303).
+// - 2026-11-05: the store's own prune marks closed results as the runtime's does and judges the entities its snapshot
+//   lacks from SQLite; a collection counts, and moves the store revision for, every fact it deletes from disk, those
+//   memory had already let go included (#1500).
 
 import CryptoKit
 import Foundation
@@ -373,13 +378,14 @@ public struct InstantLiveQueryResultPruningPolicy: Hashable, Codable, Sendable {
 }
 
 public struct InstantLiveQueryResultPruningResult: Hashable, Codable, Sendable {
-  /// The results that left the stored results: deleted, or unloaded and kept (``unloadedQueryKeys``).
+  /// The results the policy collected: their rows, ownership rows and the facts no other result owns left the store.
   public var removedQueryKeys: [String]
   public var remainingQueryKeys: [String]
   public var removedOrphanedTripleCount: Int
   public var remainingEntryCount: Int
   public var remainingTripleCount: Int
-  /// The removed results of closed queries kept for their next subscription (#1006), a subset of ``removedQueryKeys``.
+  /// The closed queries' results unloaded where they are for their next subscription (#1006, #1500): marked, with
+  /// their rows and facts kept on disk; not in ``removedQueryKeys``.
   public var unloadedQueryKeys: [String]
 
   public init(
@@ -455,11 +461,12 @@ struct InstantLiveQueryResultPruningApplication: Sendable {
 struct InstantLiveQueryResultPruneBatch: Sendable {
   /// The results the batch removes, in the policy's order.
   var removedQueryKeys: [String]
-  /// Whether the policy removes more results than this batch holds (#303, item 6).
+  /// Whether the policy removes, or the prune unloads, more results than this batch holds (#303, item 6; #1500).
   var hasMoreToRemove: Bool
   /// The facts the removed results hold, and the ones an earlier batch carried.
   var releasedIdentities: Set<InstantLiveTripleIdentity>
-  /// Of ``removedQueryKeys``, the closed queries' results kept for their next subscription (#1006).
+  /// The closed queries' results the batch unloads where they are, kept for their next subscription (#1006, #1500);
+  /// none of them is in ``removedQueryKeys``.
   fileprivate var unloadingQueryKeys: Set<String>
   /// Of ``removedQueryKeys``, those whose result could not be read: their rows stay, as before #654.
   fileprivate var unreadableQueryKeys: Set<String>
@@ -14176,7 +14183,8 @@ public actor SQLitePersistenceStore {
         carriedReleasedIdentities: carriedReleasedIdentities,
         revisions: revisions
       )
-      guard !batch.removedQueryKeys.isEmpty else {
+      // #1500: a batch that only unloads closed results marks them, as the runtime's batches do.
+      guard !batch.removedQueryKeys.isEmpty || batch.unloadsResults else {
         try collectUnloadedLiveQueryResultsWithoutTransaction(
           policy: policy,
           now: now,
@@ -14185,14 +14193,16 @@ public actor SQLitePersistenceStore {
         return InstantLiveQueryResultPruningApplication(result: batch.resultRemovingNothing, state: currentState)
       }
       let releasedEntityIDs = batch.releasedEntityIDs
+      let residentFacts = currentState.snapshot.store.triples.filter { releasedEntityIDs.contains($0.entityID) }
+      var residency = InstantPruneResidency(released: batch.releasedIdentities, residentFacts: residentFacts)
+      // #1500: the loaded snapshot lacks the facts only results unloaded where they are own; the rule reads those
+      // entities from SQLite, as the runtime's prune does for the entities its memory lacks.
+      residency.residentEntityIDs = Set(residentFacts.lazy.map(\.entityID))
       let applied = try applyLiveQueryResultPruneBatchWithoutTransaction(
         batch,
         policy: policy,
         now: now,
-        residency: InstantPruneResidency(
-          released: batch.releasedIdentities,
-          residentFacts: currentState.snapshot.store.triples.filter { releasedEntityIDs.contains($0.entityID) }
-        )
+        residency: residency
       )
       var snapshot = currentState.snapshot
       let removedEntityIDs = applied.removedEntityIDs
@@ -14434,6 +14444,28 @@ public actor SQLitePersistenceStore {
       rows.append(contentsOf: deferredRows)
     }
 
+    // #1500, #303 item 6: a bounded batch unloads closed results within the same budget, oldest first, so a local write
+    // waits for one batch's release from memory, not every closed result's (24 closed detail queries held the gate
+    // 5.8-13.2 s in one hold). Unloading writes one row's mark, but memory releases each unloaded result's entities
+    // under the batch's gates. The rest wait for the next batch, which selects them again; a row a later batch collects
+    // is not marked first.
+    var deferredUnloading = false
+    if let maximumRemovedTripleCount, !unloadingKeys.isEmpty {
+      let deferredKeys = Set(deferredRows.map(\.queryKey))
+      var batchTripleCount = removedRows.reduce(0) { $0 + $1.tripleCount }
+      var unloading: Set<String> = []
+      for row in rows where unloadingKeys.contains(row.queryKey) && !deferredKeys.contains(row.queryKey) {
+        let isFirst = removedRows.isEmpty && unloading.isEmpty
+        if !isFirst, batchTripleCount + row.tripleCount > maximumRemovedTripleCount {
+          deferredUnloading = true
+          continue
+        }
+        unloading.insert(row.queryKey)
+        batchTripleCount += row.tripleCount
+      }
+      unloadingKeys = unloading
+    }
+
     var releasedIdentities = carriedReleasedIdentities
     var unreadableQueryKeys: Set<String> = []
     // #1129: a result a session prune collects that is larger than the budget is released over later batches, which
@@ -14462,7 +14494,7 @@ public actor SQLitePersistenceStore {
     }
     return InstantLiveQueryResultPruneBatch(
       removedQueryKeys: removedRows.map(\.queryKey),
-      hasMoreToRemove: !deferredRows.isEmpty,
+      hasMoreToRemove: !deferredRows.isEmpty || deferredUnloading,
       releasedIdentities: releasedIdentities,
       unloadingQueryKeys: unloadingKeys,
       unreadableQueryKeys: unreadableQueryKeys,
@@ -14521,11 +14553,9 @@ public actor SQLitePersistenceStore {
       loadedRows: batch.remainingRows
     )
 
-    let (removedFacts, retainedReleasedIdentities) = try releaseLiveQueryResultFactsWithoutTransaction(
-      batch.releasedIdentities,
-      residency: residency
-    )
-    let storeRevision = removedFacts.isEmpty
+    let (removedFacts, removedFromDiskCount, retainedReleasedIdentities) =
+      try releaseLiveQueryResultFactsWithoutTransaction(batch.releasedIdentities, residency: residency)
+    let storeRevision = removedFromDiskCount == 0
       ? batch.revisions.store
       : try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
     let queryResultRevision = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
@@ -14538,7 +14568,7 @@ public actor SQLitePersistenceStore {
       result: InstantLiveQueryResultPruningResult(
         removedQueryKeys: batch.removedQueryKeys,
         remainingQueryKeys: remainingLoadedRows.map(\.queryKey),
-        removedOrphanedTripleCount: removedFacts.count,
+        removedOrphanedTripleCount: removedFromDiskCount,
         remainingEntryCount: remainingLoadedRows.count,
         remainingTripleCount: remainingLoadedRows.reduce(0) { $0 + $1.tripleCount },
         unloadedQueryKeys: unloadedKeys
@@ -14564,7 +14594,9 @@ public actor SQLitePersistenceStore {
   private func releaseLiveQueryResultFactsWithoutTransaction(
     _ releasedIdentities: Set<InstantLiveTripleIdentity>,
     residency memoryResidency: InstantPruneResidency
-  ) throws -> (removedFacts: [InstantTriple], retainedReleasedIdentities: Set<InstantLiveTripleIdentity>) {
+  ) throws -> (
+    removedFacts: [InstantTriple], removedFromDiskCount: Int, retainedReleasedIdentities: Set<InstantLiveTripleIdentity>
+  ) {
     // #1500: the entities memory does not hold (a collected result unloaded where it is kept its facts on disk only)
     // are judged by the same rule from what SQLite holds of them; memory's picture stands for the rest.
     var residency = memoryResidency
@@ -14616,10 +14648,11 @@ public actor SQLitePersistenceStore {
     for entityID in removedEntityIDs.sorted() {
       try execute("DELETE FROM instant_triples WHERE entity_id = ?", [.text(entityID)])
     }
-    // Memory retracts only what it holds (#1500).
+    // Memory retracts only what it holds (#1500); the count and the store's revision follow what left the disk, so a
+    // collection of results whose entities memory had already let go still counts and announces its deletions.
     let memoryRemovedFacts = diskOnlyEntityIDs.isEmpty
       ? removedFacts : removedFacts.filter { !diskOnlyEntityIDs.contains($0.entityID) }
-    return (memoryRemovedFacts, retainedReleasedIdentities)
+    return (memoryRemovedFacts, removedFacts.count, retainedReleasedIdentities)
   }
 
   /// Every fact SQLite keeps of `entityIDs`, deferred values included, 500 entities to a statement (#1500).
@@ -14858,10 +14891,8 @@ public actor SQLitePersistenceStore {
       // #1319: the chunk's rows name its facts, read back from their text; the hot store said which of them it holds.
       // Matching every fact of the chunk's entities against the rows read all of a recording's links to find its title.
       let releasedIdentities = carriedReleasedIdentities.union(chunk.releasedIdentities)
-      let (removedFacts, retainedReleasedIdentities) = try releaseLiveQueryResultFactsWithoutTransaction(
-        releasedIdentities,
-        residency: residency
-      )
+      let (removedFacts, removedFromDiskCount, retainedReleasedIdentities) =
+        try releaseLiveQueryResultFactsWithoutTransaction(releasedIdentities, residency: residency)
       let rowsLeft = try selectScalar(
         "SELECT 1 FROM instant_live_query_triples WHERE query_id = ? LIMIT 1",
         [.int(chunk.queryID)]
@@ -14869,7 +14900,7 @@ public actor SQLitePersistenceStore {
       if !rowsLeft {
         try execute("DELETE FROM instant_live_query_results WHERE query_id = ?", [.int(chunk.queryID)])
       }
-      let storeRevision = removedFacts.isEmpty
+      let storeRevision = removedFromDiskCount == 0
         ? revisions.store
         : try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       // Every writer of ownership rows moves the query-result revision, which a server apply's retry checks before it
@@ -14879,7 +14910,7 @@ public actor SQLitePersistenceStore {
         result: InstantLiveQueryResultPruningResult(
           removedQueryKeys: [],
           remainingQueryKeys: [],
-          removedOrphanedTripleCount: removedFacts.count,
+          removedOrphanedTripleCount: removedFromDiskCount,
           remainingEntryCount: 0,
           remainingTripleCount: 0
         ),
@@ -15061,18 +15092,18 @@ public actor SQLitePersistenceStore {
           released.insert(InstantLiveTripleIdentity(fact))
         }
       }
-      let (removedFacts, _) = try releaseLiveQueryResultFactsWithoutTransaction(
+      let (_, removedFromDiskCount, _) = try releaseLiveQueryResultFactsWithoutTransaction(
         released,
         residency: InstantPruneResidency(released: released, residentFacts: residentFacts)
       )
-      if !removedFacts.isEmpty {
+      if removedFromDiskCount > 0 {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       }
       if !releasedRowIDs.isEmpty {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       }
       try clearPendingLiveQueryResultReleaseWithoutTransaction(keys)
-      removedFactCount = removedFacts.count
+      removedFactCount = removedFromDiskCount
     }
     InstantDiagnostics.shared.record(
       .notice,

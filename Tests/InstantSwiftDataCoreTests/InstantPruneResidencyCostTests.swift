@@ -1,6 +1,9 @@
 // History:
 // - 2026-10-28: a prune batch reads the hot store's facts only of entities it can drop, and checks a kept entity again
 //   only when a later batch releases another of its facts (#1319).
+// - 2026-11-05: the whole-entity rule runs on the results the policy collects, so the batch's read is measured there; a
+//   closed result is unloaded where it is and drops nothing (#1500). Every seeded result stays loaded at the launch
+//   (#1107).
 
 import CustomDump
 import Foundation
@@ -117,13 +120,18 @@ struct InstantPruneResidencyCostTests {
     )
     configuration.autoConnectLiveTransport = false
     configuration.liveQueryResultPruneBatchTripleCount = 1_000
+    // #1107: every seeded result stays loaded at the launch, so the hot store holds what the batches read; a launch
+    // keeps only the newest ten.
+    configuration.preloadedLiveQueryResultCount = .max
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     // One live query is open, so every seeded result is closed.
     let observation = await runtime.observeQueryLease(TodoExample.query)
     await runtime.store.resetFactsMaterializedForPruneForTesting()
 
+    // #1500: a closed result is unloaded where it is and drops nothing; the whole-entity rule, and the facts it reads,
+    // apply to the results the policy collects. This policy keeps no stored result but an open query's.
     let pruned = try await runtime.pruneLiveQueryResults(
-      policy: configuration.liveQueryResultPruningPolicy,
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
       now: configuration.now()
     )
 

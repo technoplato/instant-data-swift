@@ -400,10 +400,14 @@ struct MemoryExercises {
     // #1149 and #1146: the launch decoded each resident fact's computed json with JSONDecoder, so every fact kept its
     // own copies of its entity's and attribute's ids: 3,244,353 allocations and 561.3 B retained a fact on the Mac mini.
     // The bounds tighten with each step, toward #1149's 150 MB allocated and #1146's 400 B a fact.
-    #expect(launch.allocations < 2_600_000, "E07 allocated \(launch.allocations) times to launch.")
+    // #1107, #1149 (2026-11-05): a launch loads the newest ten stored results' entities, found in their ownership rows,
+    // not every stored result's (Mac mini, release: 54,720 -> 9,728 resident facts, 634,027 -> 163,454 allocations,
+    // 24.9 -> 9.0 MB retained, 234 -> 59 ms). So few facts leave the runtime's fixed cost (the schema's attribute tables)
+    // most of what a launch retains, 947 B a fact over 9,728: the bound is a fixed 5 MB plus 540 B a resident fact.
+    #expect(launch.allocations < 1_000_000, "E07 allocated \(launch.allocations) times to launch.")
     #expect(
-      launch.netLiveBytes < 540 * triples,
-      "E07 retained \(launch.netLiveBytes / max(1, triples)) B a resident fact."
+      launch.netLiveBytes < 5 * 1_024 * 1_024 + 540 * triples,
+      "E07 retained \(launch.netLiveBytes / 1_024) KB to launch, \(launch.netLiveBytes / max(1, triples)) B a resident fact."
     )
     await session.close()
   }
