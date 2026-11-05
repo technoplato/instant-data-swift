@@ -1,3 +1,9 @@
+## 2026-11-05 03:11:22 EST — scribe `70f1d35d5bcd57fdc15ed23f6fb26b2b33d01e4d`
+Tool (#1781): scripts/perf/metrics.py --trend charts each query shape's receive CPU per build (refresh-cost.py's estimate by bytes; the recordings list 6.3-28.9 CPU-s an hour on builds 246-253) and reads net.instant.firstAnswers, the time to each query's first answer with its triples, once the phone's ledger carries it; derived on the Mac, nothing new per refresh on the phone; changelog 85bb8846e.
+
+## 2026-11-05 03:02:03 EST — instant-data-swift `90eba2ee456b7c0d01c4ea94ea56742d755c75b5`
+Plan (#1781): 2026-11-05-perf-metrics-1781, the URLSession socket times each add-query to the add-query-ok or add-query-exists that echoes its client-event-id, by shape, with the answer's triples, once per subscription; claims and channel (red ec0f3c52, green c8ba0995 on agent/claude/perf-metrics-1781, proof queued on the mini).
+
 ## 2026-11-05 02:39:45 EST — scribe `3dff2d02bfa6a828c68ecf88c1cff3e43f4311e9`
 Feature (#1777): the voice-print backfill hears a recording whose storage keeps only its compressed copy from the copy (Apple's decoder, the segments a span needs; red/green on the mini, 9/9), not deployed until storage keeps only the copy (#1798); the audit's measured result: the Mac's WAVs 71.93 GB to 0.12 GB (about 68 GB net), every kept WAV with its reason; findings #1800, #1808, #1813; changelog 6f4868fd5.
 
