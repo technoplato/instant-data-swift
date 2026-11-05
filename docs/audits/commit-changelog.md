@@ -1,3 +1,6 @@
+## 2026-11-04 23:19:47 EST — scribe `b4925e799fae650bd6d184e5181f93660d0a792a`
+Fix (#1585): with the account's owners known, the Mac mirror's per-recording query rides the WebSocket too and reads speakers by owner (production parity on five recordings), so its once-a-minute restatement no longer carries the 854 KB attribute catalog.
+
 ## 2026-11-04 23:14:16 EST — instant-data-swift `10f89d53ecc0f4bedd0f8d432451e880c3c74ac3`
 Release (#653, #1517, #1523, #1142, #1648): v1.9.69 tagged on 10f89d53 (ledger 0840aa82), from main merge d3ed3c50 of the lane's job-C-verified 7773cfa5 with v1.9.68: a live write is claimed by its own save (no claim turn; its window goes out only on its session), one projected encode and wire fingerprint less per claim, receipts found by stored bytes, one deadline wake, same-millisecond writes keep their order. Mac mini, release, same job vs v1.9.67: save + claim 5,523.4 -> 4,208.3 us a write (-23.8%), write side -18.8%; the acknowledgement +43% from #1523's key, fixed on the lane branch (6ff60ee9) for the next release.
 
