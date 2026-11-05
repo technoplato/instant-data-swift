@@ -15,10 +15,16 @@
   `base-af35bc58-*`, `head-1ef4aa2f-*`): the suites at HEAD, the creation-order suites x3, three reds, and the write
   path in release at `af35bc58` and HEAD (b-tree frames per step, pages and CPU per step on a 7,000-line store, the
   recording exercise's energy lines and a 60 s sample). Its stdout: `~/Sync/audit/perf-send-1797/jobs/1797-a.out`.
-- **Next:** read the job; if green, rebase on origin/main, push to main, release the first free v1.9.N (`git fetch
-  --tags`), pin it in Scribe (both Package.resolved), cut and install a build; then #653 item 4 (the acknowledgement's
-  pages: its outbox revision bump and the watermark index's two leaves), #1142 (park the pump; a lazy deadline wake),
-  #1320 (checkpoint from a wal hook on a utility connection), the send's double encode (InstantLiveMessage.transact).
+- **Also on the branch, unverified (not compiled yet):** #653 claim at save: red `096246e4`, green `9691ee4d`, ordering
+  fix `cdca7eb3` (a pass drains the claimed-at-save queue under the gate and sends it first), burst-order test
+  `30a344aa`. The phone's claim cost 3.06 ms a write (more than the save's 2.79 ms); the save now claims a write the
+  pump would claim next as is. Verification: job B, `~/Sync/audit/perf-send-1797/jobs/gate-1797-b.sh` (suites, red at
+  096246e4, release A/B 037012ec vs head), queued once job A starts (the measure worktree repinned to the branch head).
+- **Next:** read job A; if green, land #1648 + #1517 + #1523 on main (rebase first), release the first free v1.9.N
+  (`git fetch --tags`; v1.9.65 was never tagged), pin it in Scribe (8 files: see the maps file), cut and install; then
+  job B's verdict on claim at save (release it only green); then #653 item 4 (the acknowledgement's pages), #1142 (park
+  the pump; a lazy deadline wake; an event-driven waitForAllPendingMutations), #1320 (checkpoint from a wal hook).
+  The send's double encode is not worth it: frameEncode is 0.09 ms a frame on the phone.
 
 ## 2026-11-04 17:35 EST — b1104-1756 (#1756): v1.9.67, a restated unset field reduces on a cascading namespace
 
