@@ -14870,7 +14870,7 @@ public actor SQLitePersistenceStore {
     var expected: (store: Int64, attributes: Int64, outbox: Int64, queryResults: Int64) = (0, 0, 0, 0)
     let start: InstantUnloadedLiveQueryResultReloadStart? = try transaction {
       let key = read.result.key
-      if read.isInPlace || (try unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key)) == nil {
+      if try read.isInPlace || unloadedLiveQueryResultRowIdentityWithoutTransaction(key: key) == nil {
         // #1500: unloaded where it is: its mark goes, and its ownership rows and facts are already where they belong.
         guard let current = try inPlaceUnloadedLiveQueryResultWithoutTransaction(key: key) else { return nil }
         expected = (
