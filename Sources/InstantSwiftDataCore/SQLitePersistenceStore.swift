@@ -108,6 +108,8 @@
 //   acknowledgement, where each hashed the whole transaction and rollback to find it (#1523).
 // - 2026-11-04: a local save can claim its own write for delivery in the same transaction when the claim the pump would
 //   run next would take exactly it (#653).
+// - 2026-11-04: the store, outbox and query-result revision counters live in memory and their rows reserve a block of
+//   revisions, so a write transaction no longer rewrites a page of instant_sync_metadata to bump them (#1254).
 // - 2026-11-04: a delivery claim's visible-write filter reads its writes' attributes from a decoded copy kept while they
 //   are unchanged, where each claim decoded them from JSON one statement at a time (#653).
 
@@ -1456,6 +1458,10 @@ public actor SQLitePersistenceStore {
   private var claimedAtSaveCount = 0
   /// How many times a delivery claim's visible-write filter read attributes from `instant_attributes` (#653).
   private var visibleWriteFilterAttributeReads = 0
+  /// The store, outbox and query-result revisions in memory (#1254). Each bump rewrote a 4 KB page of
+  /// `instant_sync_metadata` for an 8-byte counter, in nearly every write transaction (138 pages a minute on the phone,
+  /// builds 248-249). Their rows now hold a reserved ceiling: revisions up to it are handed out without a write.
+  private var revisionCounters = SQLiteRevisionCounters()
   /// Every stored attribute by id, for the delivery claims' visible-write filters (#653), kept while neither this
   /// connection nor another process has written `instant_attributes`, as `liveResultAttributes` is (#303).
   private var deliveryAttributesByID: (revision: Int64, generation: Int, byID: [String: InstantAttribute])?
@@ -15049,10 +15055,7 @@ public actor SQLitePersistenceStore {
   }
 
   public func deleteMetadataValue(key: String) throws {
-    try execute(
-      "DELETE FROM instant_sync_metadata WHERE key = ?",
-      [.text(key)]
-    )
+    try deleteMetadataValueWithoutTransaction(key: key)
   }
 
   public func saveSnapshot(_ snapshot: InstantPersistenceSnapshot) throws {
@@ -16606,10 +16609,13 @@ public actor SQLitePersistenceStore {
         sqlite: counters.sqlite.subtracting(countersBefore.sqlite)
       )
     }
+    // #1254: a rollback puts the revision counters back with the rows they guard.
+    let revisionCountersBefore = revisionCounters
     try execute("BEGIN IMMEDIATE TRANSACTION")
     activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
     do {
       let value = try body()
+      try reserveHandedOutRevisionsWithoutTransaction()
       try execute("COMMIT")
       let issueBatch = activeOutboxQuarantineIssueBatch
       activeOutboxQuarantineIssueBatch = nil
@@ -16617,6 +16623,7 @@ public actor SQLitePersistenceStore {
       return value
     } catch {
       try? execute("ROLLBACK")
+      revisionCounters = revisionCountersBefore
       activeOutboxQuarantineIssueBatch = nil
       // Marker helpers participate in the same transaction but live on the actor. A rollback must
       // discard their speculative cache so the next writer reloads the durable marker instead of
@@ -21172,6 +21179,7 @@ public actor SQLitePersistenceStore {
         .int(updatedAt.milliseconds),
       ]
     )
+    countedRevisionRowWritten(key)
   }
 
   private func deleteMetadataValueWithoutTransaction(key: String) throws {
@@ -21179,9 +21187,48 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_sync_metadata WHERE key = ?",
       [.text(key)]
     )
+    countedRevisionRowWritten(key)
   }
 
+  /// A revision. The store, outbox and query-result revisions come from memory (#1254), checked first against commits
+  /// other connections made; the attribute revision, which changes with the schema only, is its stored row.
   private func loadMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
+    guard Self.countedRevisionKeys.contains(key) else {
+      return try storedMetadataRevisionWithoutTransaction(key)
+    }
+    try noteOtherConnectionsCommitsWithoutTransaction()
+    if let current = revisionCounters.current[key] {
+      return current
+    }
+    let stored = try storedMetadataRevisionWithoutTransaction(key)
+    revisionCounters.current[key] = stored
+    revisionCounters.reserved[key] = stored
+    return stored
+  }
+
+  /// The next revision. A counted one writes its row only to reserve the next block (#1254): about one page write per
+  /// ``revisionReservationBlock`` bumps, where every bump wrote one.
+  private func bumpMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
+    let revision = try loadMetadataRevisionWithoutTransaction(key) + 1
+    guard Self.countedRevisionKeys.contains(key) else {
+      try execute(
+        Self.upsertMetadataSQL,
+        [
+          .text(key),
+          .text(String(revision)),
+          .int(Self.nowMilliseconds()),
+        ]
+      )
+      return revision
+    }
+    revisionCounters.current[key] = revision
+    if revision > revisionCounters.reserved[key, default: 0] {
+      try reserveRevisionsWithoutTransaction(key, through: revision + Self.revisionReservationBlock - 1)
+    }
+    return revision
+  }
+
+  private func storedMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
     let value: String? = try selectScalar(
       "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
       [.text(key)]
@@ -21189,17 +21236,48 @@ public actor SQLitePersistenceStore {
     return value.flatMap(Int64.init) ?? 0
   }
 
-  private func bumpMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
-    let revision = try loadMetadataRevisionWithoutTransaction(key) + 1
+  /// Writes `ceiling` to `key`'s row (#1254): a store opened later starts there, above every revision handed out under
+  /// it, so a revision a row keeps (a query answer's `store_revision`, #1498) never names two states.
+  private func reserveRevisionsWithoutTransaction(_ key: String, through ceiling: Int64) throws {
     try execute(
       Self.upsertMetadataSQL,
       [
         .text(key),
-        .text(String(revision)),
+        .text(String(ceiling)),
         .int(Self.nowMilliseconds()),
       ]
     )
-    return revision
+    revisionCounters.reserved[key] = ceiling
+  }
+
+  /// Before a commit (#1254): every counted revision handed out is under its row's reservation, so the commit cannot
+  /// keep one a later store would hand out again. Only a counter moved by another connection's commit is past it.
+  private func reserveHandedOutRevisionsWithoutTransaction() throws {
+    for (key, current) in revisionCounters.current where current > revisionCounters.reserved[key, default: 0] {
+      try reserveRevisionsWithoutTransaction(key, through: current + Self.revisionReservationBlock - 1)
+    }
+  }
+
+  /// When another connection committed since this one last looked (`PRAGMA data_version` changed), what the revisions
+  /// guard may have changed and their rows may hold newer values (#1254). Every counter then moves past both its own
+  /// value and its row's, so a plan prepared before that commit is refused, as when the rows were the counters.
+  private func noteOtherConnectionsCommitsWithoutTransaction() throws {
+    let version = try selectInt64("PRAGMA data_version")
+    defer { revisionCounters.dataVersion = version }
+    guard let seen = revisionCounters.dataVersion, seen != version, !revisionCounters.current.isEmpty else { return }
+    for key in Self.countedRevisionKeys {
+      let stored = try storedMetadataRevisionWithoutTransaction(key)
+      revisionCounters.current[key] = max(revisionCounters.current[key] ?? stored, stored) + 1
+      revisionCounters.reserved[key] = stored
+    }
+  }
+
+  /// A write of a counted revision's row other than a reservation (#1254): the counter moves past it, and the next
+  /// commit reserves again.
+  private func countedRevisionRowWritten(_ key: String) {
+    guard Self.countedRevisionKeys.contains(key), let current = revisionCounters.current[key] else { return }
+    revisionCounters.current[key] = current + 1
+    revisionCounters.reserved[key] = 0
   }
 
   private func nextStreamChunkIndexWithoutTransaction(appID: String, streamID: String) throws
@@ -21738,6 +21816,10 @@ public actor SQLitePersistenceStore {
   private static let attributeRevisionKey = "attribute_revision"
   private static let outboxRevisionKey = "outbox_revision"
   private static let queryResultRevisionKey = "query_result_revision"
+  /// The revisions nearly every write transaction bumps, counted in memory (#1254).
+  private static let countedRevisionKeys: Set<String> = [storeRevisionKey, outboxRevisionKey, queryResultRevisionKey]
+  /// How many revisions one write of a counted row reserves (#1254).
+  private static let revisionReservationBlock: Int64 = 1_024
   private static let declaredRelationStorageReconciliationMarkerKey =
     "instant.internal.declared-relation-storage-reconciliation.v1"
 }
@@ -21748,6 +21830,17 @@ private enum SQLiteBinding: Sendable {
   /// A compressed outbox body (#1463).
   case blob(Data)
   case null
+}
+
+/// A store's counted revisions (#1254): what it handed out, what the rows reserve, and when it last looked for other
+/// connections' commits.
+private struct SQLiteRevisionCounters {
+  /// The revision handed out last, by key.
+  var current: [String: Int64] = [:]
+  /// The ceiling the key's row holds: revisions up to it are handed out without a write.
+  var reserved: [String: Int64] = [:]
+  /// `PRAGMA data_version` at the last look; it changes when another connection commits.
+  var dataVersion: Int64?
 }
 
 extension SQLiteBinding {
