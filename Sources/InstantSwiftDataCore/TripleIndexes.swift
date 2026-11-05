@@ -19,6 +19,8 @@ import os
 //   publication splices the rows a final line reaches instead of scanning every recording or line again (#1513).
 // - 2026-11-04: the schema's cascading links are kept with its lookup indexes, so a server apply finds them without
 //   sorting every attribute (#1109).
+// - 2026-11-04: `isOutsideRemotePageRows` says when a row lies outside what a page bounded by the server's page info
+//   can show, so a publication skips an infinite query's frozen pages for a line past their cursors (#1513).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -4470,6 +4472,51 @@ private struct PreparedInclude {
     plan.offset.map { $0 > 0 } ?? false
       || plan.after != nil
       || plan.before != nil
+  }
+
+  /// Whether a row with `membership` in `plan`'s result set lies outside every row its page can show while the server's
+  /// page info bounds them (#1513), so it can change neither the page's rows nor its page info.
+  ///
+  /// A page whose rows follow the server's page info shows only the rows between its start and end cursors, compared as
+  /// ``paginate(_:plan:effectiveOrder:attributes:remotePageInfo:)`` and the bounded selection compare them, and reports
+  /// the server's page info; while that page info is awaited, or names no first row, it shows none. An infinite query's
+  /// frozen page is such a page (upstream `freezeForward`: a cursor each side, no limit), and each new line of the
+  /// recording entered its result set: every frozen page was materialized again for a line none of them could show.
+  /// False when the page's rows do not follow the server's page info, or when the order reads a date, whose indexed
+  /// value is normalized.
+  static func isOutsideRemotePageRows(
+    _ entityID: String,
+    membership: InstantResultSetMembership,
+    plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard pageRowsDependOnRemotePageInfo(plan), let remotePageInfo else { return false }
+    guard case let .ready(pageInfo) = remotePageInfo, let startCursor = pageInfo.startCursor else { return true }
+    guard case let .member(orderValue) = membership else { return true }
+    let order = effectiveOrder(plan.order)
+    if !order.isServerCreatedAt,
+      attributes.attribute(namespace: plan.namespace, name: order.field)?.valueType == .date
+    {
+      return false
+    }
+    let row = QuerySnapshot(
+      snapshot: InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: [:]),
+      serverCreatedAt: nil,
+      sortValue: orderValue
+    )
+    if compare(row, to: startCursor, order: order, namespace: plan.namespace, attributes: attributes)
+      == .orderedAscending
+    {
+      return true
+    }
+    if let endCursor = pageInfo.endCursor,
+      compare(row, to: endCursor, order: order, namespace: plan.namespace, attributes: attributes)
+        == .orderedDescending
+    {
+      return true
+    }
+    return false
   }
 
   private func isValidPagination(_ plan: InstantQueryPlan) -> Bool {

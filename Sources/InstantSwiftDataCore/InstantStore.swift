@@ -5,6 +5,8 @@
 //   window among the window's rows, instead of materializing its page from the whole store (#1513).
 // - 2026-11-04: an observer keeps what its plan depends on, worked out when it registers, instead of every judgment and
 //   splice walking the plan and building each include's plan again (#1513).
+// - 2026-11-04: a change outside the rows a page's server page info bounds, before and after, does not refresh the page:
+//   each new line of a recording refreshed every frozen page of its transcript (#1513).
 
 import Darwin
 import Foundation
@@ -2385,7 +2387,9 @@ public actor InstantStore {
           attributes: baseline.attributes
         )
         let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
-        if before != after {
+        if before != after,
+          !staysOutsideRemotePageRows(entityID, before, after, observer: observer, attributes: attributes, baseline: baseline)
+        {
           return .refresh
         }
       }
@@ -2415,7 +2419,9 @@ public actor InstantStore {
           attributes: baseline.attributes
         )
         let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
-        if before != after {
+        if before != after,
+          !staysOutsideRemotePageRows(entityID, before, after, observer: observer, attributes: attributes, baseline: baseline)
+        {
           return .refresh
         }
       }
@@ -2433,6 +2439,33 @@ public actor InstantStore {
       return .skipUnverified
     }
     return .refresh
+  }
+
+  /// Whether a changed entity whose place in `observer`'s result set moved lies outside the rows its page can show, both
+  /// before the change and after it, while the server's page info bounds those rows (#1513). Such a change cannot
+  /// change the page: an infinite query's frozen pages skip each new line of the recording past their cursors.
+  private static func staysOutsideRemotePageRows(
+    _ entityID: String,
+    _ before: InstantResultSetMembership,
+    _ after: InstantResultSetMembership,
+    observer: StoreObserver,
+    attributes: AttributeStore,
+    baseline: StorePublicationBaseline
+  ) -> Bool {
+    TripleIndexes.isOutsideRemotePageRows(
+      entityID,
+      membership: before,
+      plan: observer.plan,
+      remotePageInfo: observer.remotePageInfo,
+      attributes: baseline.attributes
+    )
+      && TripleIndexes.isOutsideRemotePageRows(
+        entityID,
+        membership: after,
+        plan: observer.plan,
+        remotePageInfo: observer.remotePageInfo,
+        attributes: attributes
+      )
   }
 
   private static func splicedEmission(
