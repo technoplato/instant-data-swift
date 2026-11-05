@@ -67,15 +67,18 @@ extension InstantStoreTests {
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.operationCount),
       [21, 21]
     )
+    // #1648 (94a77045): a step its own write's later step overwrites is not restamped to win, so the seed, whose upserts
+    // set each todo's isCompleted and whose completions set it again, is prepared once; it was prepared a second time,
+    // restamped, on one more store turn.
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8, 8]
+      [7, 7]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopBreakdown),
       [
-        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 3],
-        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 3],
+        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 2],
+        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 2],
       ]
     )
     expectNoDifference(
