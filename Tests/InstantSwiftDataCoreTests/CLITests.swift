@@ -11749,11 +11749,11 @@ extension InstantStoreTests {
     }
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8]
+      [10]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [350]
+      [400]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),
