@@ -8276,8 +8276,9 @@ public final class InstantRuntime: Sendable {
     guard await mutationServerErrorBackoff.pauseDeadline(now: now.milliseconds) == nil,
       !(await mutationServerErrorBackoff.probesOneWrite)
     else { return nil }
-    recordActorHop(.liveSession)
-    guard await liveSession.isOpen else { return nil }
+    // The snapshot, not a hop onto the live session: this runs under the operation gate, and the session's actor may be
+    // busy with a frame. A session that closes after this read fails the send, which releases the claim as a pass's does.
+    guard liveSession.isOpenSnapshot else { return nil }
     return InstantAutomaticOutboxClaimRequest(
       claimantID: automaticDeliveryClaimantID,
       claimToken: UUID().uuidString.lowercased(),
