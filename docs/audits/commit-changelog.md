@@ -1,3 +1,6 @@
+## 2026-11-05 00:01:12 EST — scribe `41837b10bf7fe4730a2b49e95716bac5f7656821`
+Build tooling (#1806): the installer stops a build when it stops printing, never for how long it has run. Its fixed 1,800 s per-build timeout killed 254's and 257's iOS builds and 257's Mac build on 2026-11-04 while they compiled at a 5-min load of 240-420 on a 10-core Mac, so the iPhone got nothing three times. xcodebuild and the Mac install script now stream through run_bounded_by_silence and stop only after 1,800 s with no output, naming the last line; --timeout is an optional total cap; a variant that does not build names the devices that get nothing at once. Build 259's longest quiet stretch at load 326 was 245 s. Changelog 7e95c2931.
+
 ## 2026-11-04 23:29:03 EST — scribe `a91a2dd449de59ec95219e26230713f42155aa1b`
 Fix (#1730): the voice-memo import (scripts/media-transcription/recording_ingest.py, deployed to the mini with a backup) sends the whole WAV on its own thread while 8 threads (was 4) send the compressed copy's files, each once, one failure stopping the rest, and logs every step after the words with its seconds: batch 1 spent 39% of its runs on the WAV alone and 44% in a stretch its step log had no event in. What a recording holds is unchanged; tests 40/40.
 
