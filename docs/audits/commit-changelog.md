@@ -1,3 +1,6 @@
+## 2026-11-05 15:43:47 EST — scribe `c63d5a1e3d46f237c226fe56c7175c896e7b9ef9`
+Fix (#1827): a recognized song's now-playing card moves with the song until 15 s after its last match, then stands where the song was last heard until it leaves 40 s after (NowPlayingProgress.holdsAt); an item of Your Mac's catalogs, which predict no place, is placed from its newest match at the hearing's end, and past 16 hearings from the hearing before the last, so a film no longer runs at twice its speed (Recording 370's card read 1:36:21 for a film last heard at 1:34:02). Display only. Red 68c6c72cb, green 09a47a113 (mini: NowPlayingCardTests and RecordingNowPlayingTests pass), changelog 89d61b224; What's New build 272 (next) 9df3b1f11.
+
 ## 2026-11-05 15:42:41 EST — scribe `e0f5cec24024d6e9fa6b32e622a49b6d56a99d2d`
 Fix (#645, #331, #583): one clock. The recording clock that stamps screenshots, photos, frames and events waits for the microphone's first buffer after Record, Resume, each capture restart and a continuation, then reads audio.wav's length there and runs from the first sample, so pictures sit beside the words timed on the audio; recording.clock.audio-began logs each start's correction. Changelog e4fc73519.
 
