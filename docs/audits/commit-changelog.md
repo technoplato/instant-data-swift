@@ -1,3 +1,6 @@
+## 2026-11-05 15:51:49 EST — scribe `2aa3c2595599ffb9392e06dd60e26e4fdc074550`
+Fix (#1848): a take continued at a launch numbers its lines after the saved ones (its row carries the live transcription's counts), and a local read's two-second bound returns at two seconds even when the read waits in the library's operation gate.
+
 ## 2026-11-05 15:49:02 EST — instant-data-swift `fe1e8fddc402ea80e628a02d3f255c434900dbf6`
 Fix (#1129): a prune batch's memory release after an unload (#1500) is its own phase, release memory, so a slow batch's notice names it apart from the SQLite apply.
 
