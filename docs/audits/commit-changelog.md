@@ -1,3 +1,6 @@
+## 2026-11-05 15:54:06 EST — scribe `da68d2af79e388bf6f992b13e55465cbe969c6c1`
+Fix (#1851): the mirror takes the agent id tools/agent-run gives every agent (claude-code/NAME@account) as it is, at every scribe command that names its agent (toolbox, flag, reminder, reply, status, link, notify, settings, listener): one rule in agents.ts (a plain name as before, or words joined by slashes with an optional @account, at most 120 characters) replaces eight copies of the 1-40 letters check, and the decision CLI, faq and preplan stop rewriting the name. Found by the #1845 audit: every toolbox command an agent-run agent sent was refused. Red 9fce5c25b, green cfa2393bf, changelog 5c4f84e32.
+
 ## 2026-11-05 15:53:10 EST — instant-data-swift `598067f9de84c203d1b6d5e1cb00e7a0fdda765d`
 Merge (#1129): main (a #1848 ledger line) into v1.9.75's release commit after main's push lost a race, so the commit the tag names is on main.
 
