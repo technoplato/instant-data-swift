@@ -276,7 +276,11 @@ struct CompactOwnershipAnswers: Equatable {
 
   /// The digest of the answers the library gave before this change (v1.9.10 with the read-only test hooks, on the
   /// layout it wrote), for ``CompactOwnershipFixture/seeded(name:)`` and its changes.
-  static let digestBeforeTheChange = "e5f08f8f40ae0900 over 22178 answers"
+  ///
+  /// Re-pinned 2026-11-05 (#1500): the prune in ``CompactOwnershipFixture/applyTheSameChanges(to:)`` unloads the first
+  /// page where it is, so its 600 ownership rows stay on disk and still answer (22,178 -> 22,778 answers; v1.9.10's
+  /// digest was "e5f08f8f40ae0900 over 22178 answers"). Both layouts give the same answers, as before.
+  static let digestBeforeTheChange = "7b4abdccc1163c64 over 22778 answers"
 
   var digest: String {
     var hash: UInt64 = 0xcbf2_9ce4_8422_2325
