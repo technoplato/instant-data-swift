@@ -130,6 +130,8 @@
 // - 2026-11-04: a file record is read from its columns and SQLite's json_extract, not decoded with JSONDecoder (#1105).
 // - 2026-11-05: a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read, instead
 //   of reading each result whole and binding every entity id (#1149).
+// - 2026-11-05: a bounded prune batch unloads closed results within its triple budget, as it collects them, so a write
+//   waits for one batch's release from memory, not every closed result's (#1500, #303).
 
 import CryptoKit
 import Foundation
@@ -451,7 +453,7 @@ struct InstantLiveQueryResultPruningApplication: Sendable {
 struct InstantLiveQueryResultPruneBatch: Sendable {
   /// The results the batch removes, in the policy's order.
   var removedQueryKeys: [String]
-  /// Whether the policy removes more results than this batch holds (#303, item 6).
+  /// Whether the policy removes, or the prune unloads, more results than this batch holds (#303, item 6; #1500).
   var hasMoreToRemove: Bool
   /// The facts the removed results hold, and the ones an earlier batch carried.
   var releasedIdentities: Set<InstantLiveTripleIdentity>
@@ -14331,6 +14333,28 @@ public actor SQLitePersistenceStore {
       rows.append(contentsOf: deferredRows)
     }
 
+    // #1500, #303 item 6: a bounded batch unloads closed results within the same budget, oldest first, so a local write
+    // waits for one batch's release from memory, not every closed result's (24 closed detail queries held the gate
+    // 5.8-13.2 s in one hold). Unloading writes one row's mark, but memory releases each unloaded result's entities
+    // under the batch's gates. The rest wait for the next batch, which selects them again; a row a later batch collects
+    // is not marked first.
+    var deferredUnloading = false
+    if let maximumRemovedTripleCount, !unloadingKeys.isEmpty {
+      let deferredKeys = Set(deferredRows.map(\.queryKey))
+      var batchTripleCount = removedRows.reduce(0) { $0 + $1.tripleCount }
+      var unloading: Set<String> = []
+      for row in rows where unloadingKeys.contains(row.queryKey) && !deferredKeys.contains(row.queryKey) {
+        let isFirst = removedRows.isEmpty && unloading.isEmpty
+        if !isFirst, batchTripleCount + row.tripleCount > maximumRemovedTripleCount {
+          deferredUnloading = true
+          continue
+        }
+        unloading.insert(row.queryKey)
+        batchTripleCount += row.tripleCount
+      }
+      unloadingKeys = unloading
+    }
+
     var releasedIdentities = carriedReleasedIdentities
     var unreadableQueryKeys: Set<String> = []
     // #1129: a result a session prune collects that is larger than the budget is released over later batches, which
@@ -14359,7 +14383,7 @@ public actor SQLitePersistenceStore {
     }
     return InstantLiveQueryResultPruneBatch(
       removedQueryKeys: removedRows.map(\.queryKey),
-      hasMoreToRemove: !deferredRows.isEmpty,
+      hasMoreToRemove: !deferredRows.isEmpty || deferredUnloading,
       releasedIdentities: releasedIdentities,
       unloadingQueryKeys: unloadingKeys,
       unreadableQueryKeys: unreadableQueryKeys,
