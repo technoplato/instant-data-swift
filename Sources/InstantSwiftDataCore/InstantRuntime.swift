@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-04: a live query's acknowledgement entries go when its last registration ends, and revisions come from one
+//   counter, so a key forgotten and answered again still moves past any revision read before (#541).
 // - 2026-11-04: a residency sweep releases from memory, every 64 local writes or result-carrying frames, the entities no
 //   stored result owns, no outbox row touches and no observer shows; they stay on disk, as a relaunch leaves them
 //   (#1145). On a phone recording the store grew about 13,000 facts an hour until the next relaunch.
@@ -1581,6 +1583,8 @@ private actor InstantLiveQueryAcknowledgementState {
   private var revisions: [String: Int] = [:]
   private var outcomes: [String: (revision: Int, outcome: Outcome)] = [:]
   private var waiters: [String: [UUID: AsyncThrowingStream<Void, Error>.Continuation]] = [:]
+  /// One counter for every key (#541): a key forgotten and answered again still moves past a revision read before.
+  private var lastRevision = 0
 
   func revision(for key: String) -> Int {
     revisions[key, default: 0]
@@ -1589,9 +1593,20 @@ private actor InstantLiveQueryAcknowledgementState {
   /// How many keys the state remembers (#541).
   var keyCount: Int { Set(revisions.keys).union(outcomes.keys).count }
 
+  /// Forgets `key` once its last registration ended (#541), unless a one-shot read still waits on it. The state kept an
+  /// entry for every key a session ever registered; an answer that lands after the query ended is dropped before it is
+  /// recorded (`endedOneShotQueries`, the live session's own check), so nothing reads the entry again.
+  func forget(key: String) {
+    guard waiters[key]?.isEmpty ?? true else { return }
+    waiters[key] = nil
+    revisions[key] = nil
+    outcomes[key] = nil
+  }
+
   func record(key: String) {
-    revisions[key, default: 0] += 1
-    outcomes[key] = (revisions[key, default: 0], .acknowledged)
+    lastRevision += 1
+    revisions[key] = lastRevision
+    outcomes[key] = (lastRevision, .acknowledged)
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.yield(())
@@ -1600,8 +1615,9 @@ private actor InstantLiveQueryAcknowledgementState {
   }
 
   func reject(key: String, error: InstantError) {
-    revisions[key, default: 0] += 1
-    outcomes[key] = (revisions[key, default: 0], .rejected(error))
+    lastRevision += 1
+    revisions[key] = lastRevision
+    outcomes[key] = (lastRevision, .rejected(error))
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.finish(throwing: error)
@@ -6108,10 +6124,13 @@ public final class InstantRuntime: Sendable {
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
       do {
-        _ = try await self.liveSession.unregisterQuery(
+        if try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
-        )
+        ) {
+          // #541: its last registration ended.
+          await self.liveQueryAcknowledgements.forget(key: registrationKey)
+        }
         InstantDiagnostics.shared.record(
           .debug,
           subsystem: "instant-swift-data-core",
@@ -6305,10 +6324,13 @@ public final class InstantRuntime: Sendable {
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
       do {
-        _ = try await self.liveSession.unregisterQuery(
+        if try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
-        )
+        ) {
+          // #541: its last registration ended.
+          await self.liveQueryAcknowledgements.forget(key: registrationKey)
+        }
       } catch {
         self.recordLiveOperationFailure(
           error,
@@ -6887,7 +6909,11 @@ public final class InstantRuntime: Sendable {
           key: registrationKey,
           clientEventID: configuration.makeID()
         )
-        if ended == true { await endedOneShotQueries.insert(registrationKey) }
+        if ended == true {
+          await endedOneShotQueries.insert(registrationKey)
+          // #541: its last registration ended.
+          await liveQueryAcknowledgements.forget(key: registrationKey)
+        }
       }
     )
     let emission: InstantQueryEmission
