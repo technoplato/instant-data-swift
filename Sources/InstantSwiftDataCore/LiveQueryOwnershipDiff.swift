@@ -11,6 +11,8 @@ import Foundation
 // - 2026-11-05: `LiveQueryEntityFingerprints`, each entity's facts folded into one fingerprint, so a refresh compares only
 //   the entities it changed with the rows SQLite holds; a diff of those entities reports the whole result's distinct
 //   facts (#1116).
+// - 2026-11-05: the fold takes a value as exactly as the store keeps its text, strings as their bytes and numbers as their
+//   bits: `Hashable` took a composed and a decomposed "é", and 0 and -0, as equal, and a refresh kept their old text (#1116).
 
 /// One fact a stored live-query result owns, as its ownership row names it: the value as the store keeps its text.
 struct LiveQueryOwnershipIdentity: Hashable, Sendable {
@@ -161,14 +163,14 @@ struct LiveQueryOwnershipDiff {
   }
 
   /// Each part's length, then its bytes: "ab" + "c" and "a" + "bc" differ.
-  private static func combine(_ part: UnsafeBufferPointer<UInt8>, into first: inout Hasher, _ second: inout Hasher) {
+  fileprivate static func combine(_ part: UnsafeBufferPointer<UInt8>, into first: inout Hasher, _ second: inout Hasher) {
     first.combine(part.count)
     first.combine(bytes: UnsafeRawBufferPointer(part))
     second.combine(part.count)
     second.combine(bytes: UnsafeRawBufferPointer(part))
   }
 
-  private static func withUTF8<Result>(_ string: String, _ body: (UnsafeBufferPointer<UInt8>) -> Result) -> Result {
+  fileprivate static func withUTF8<Result>(_ string: String, _ body: (UnsafeBufferPointer<UInt8>) -> Result) -> Result {
     if let result = string.utf8.withContiguousStorageIfAvailable(body) { return result }
     return Array(string.utf8).withUnsafeBufferPointer(body)
   }
@@ -184,8 +186,10 @@ struct LiveQueryOwnershipDiff {
 ///
 /// A fact's fingerprint is two independently seeded 64-bit hashes of its entity id, attribute id and value, as the diff
 /// fingerprints a row; an entity's fold is the wrapping sum of its distinct facts' fingerprints and their count, so it
-/// does not depend on their order. Values are hashed as `InstantValue`s, not as the text the store keeps: two values
-/// that keep the same text but differ as values read as a change, which the row comparison then settles.
+/// does not depend on their order. A value goes in as exactly as the store keeps its text, not through `Hashable`, which
+/// takes a composed and a decomposed "é", and 0 and -0, as equal while the store keeps different text for them and SQLite
+/// compares it byte for byte. Two values that go in alike keep the same text; two that keep the same text but go in
+/// differently read as a change, which the row comparison then settles.
 struct LiveQueryEntityFingerprints: Sendable {
   /// One entity's distinct facts, summed.
   struct Fold: Equatable, Sendable {
@@ -227,12 +231,9 @@ struct LiveQueryEntityFingerprints: Sendable {
       var second = Hasher()
       // A different start, so the two hashes are independent.
       second.combine(0x9E37_79B9_7F4A_7C15 as UInt64)
-      first.combine(triple.entityID)
-      second.combine(triple.entityID)
-      first.combine(triple.attributeID)
-      second.combine(triple.attributeID)
-      first.combine(triple.value)
-      second.combine(triple.value)
+      Self.combine(triple.entityID, into: &first, &second)
+      Self.combine(triple.attributeID, into: &first, &second)
+      Self.combine(triple.value, into: &first, &second)
       let fact = Fact(first: first.finalize(), second: second.finalize())
       guard seen.insert(fact).inserted else { continue }
       if triple.entityID != currentEntityID {
@@ -256,5 +257,103 @@ struct LiveQueryEntityFingerprints: Sendable {
       changed.insert(entityID)
     }
     return changed
+  }
+
+  /// A string as its UTF-8 bytes, as the row diff takes a row's parts.
+  private static func combine(_ string: String, into first: inout Hasher, _ second: inout Hasher) {
+    LiveQueryOwnershipDiff.withUTF8(string) { LiveQueryOwnershipDiff.combine($0, into: &first, &second) }
+  }
+
+  /// A tag, a count or a number's bits, whose `Hashable` is exact.
+  private static func combine(exactly part: some FixedWidthInteger, into first: inout Hasher, _ second: inout Hasher) {
+    first.combine(part)
+    second.combine(part)
+  }
+
+  /// A value as exactly as the store keeps its text: each case behind its own tag, strings as their bytes, numbers and
+  /// dates as their bits.
+  private static func combine(_ value: InstantValue, into first: inout Hasher, _ second: inout Hasher) {
+    switch value {
+    case .null:
+      combine(exactly: 0 as UInt8, into: &first, &second)
+    case let .string(string):
+      combine(exactly: 1 as UInt8, into: &first, &second)
+      combine(string, into: &first, &second)
+    case let .number(number):
+      combine(exactly: 2 as UInt8, into: &first, &second)
+      combine(exactly: number.bitPattern, into: &first, &second)
+    case let .bool(bool):
+      combine(exactly: 3 as UInt8, into: &first, &second)
+      combine(exactly: bool ? 1 as UInt8 : 0, into: &first, &second)
+    case let .date(date):
+      combine(exactly: 4 as UInt8, into: &first, &second)
+      combine(exactly: date.timeIntervalSinceReferenceDate.bitPattern, into: &first, &second)
+    case let .json(json):
+      combine(exactly: 5 as UInt8, into: &first, &second)
+      combine(json, into: &first, &second)
+    case let .ref(entityID):
+      combine(exactly: 6 as UInt8, into: &first, &second)
+      combine(entityID, into: &first, &second)
+    case let .lookupRef(lookup):
+      combine(exactly: 7 as UInt8, into: &first, &second)
+      combine(lookup.attributeID, into: &first, &second)
+      combine(lookup.value, into: &first, &second)
+    }
+  }
+
+  private static func combine(_ value: InstantLookupValue, into first: inout Hasher, _ second: inout Hasher) {
+    switch value {
+    case .null:
+      combine(exactly: 0 as UInt8, into: &first, &second)
+    case let .string(string):
+      combine(exactly: 1 as UInt8, into: &first, &second)
+      combine(string, into: &first, &second)
+    case let .number(number):
+      combine(exactly: 2 as UInt8, into: &first, &second)
+      combine(exactly: number.bitPattern, into: &first, &second)
+    case let .bool(bool):
+      combine(exactly: 3 as UInt8, into: &first, &second)
+      combine(exactly: bool ? 1 as UInt8 : 0, into: &first, &second)
+    case let .date(date):
+      combine(exactly: 4 as UInt8, into: &first, &second)
+      combine(exactly: date.timeIntervalSinceReferenceDate.bitPattern, into: &first, &second)
+    case let .json(json):
+      combine(exactly: 5 as UInt8, into: &first, &second)
+      combine(json, into: &first, &second)
+    case let .ref(entityID):
+      combine(exactly: 6 as UInt8, into: &first, &second)
+      combine(entityID, into: &first, &second)
+    }
+  }
+
+  /// A JSON value as exactly as the store keeps its text: an object's members in the order of their keys' bytes, since
+  /// the text is sorted by key and two equal dictionaries can list their members in different orders.
+  private static func combine(_ json: JSONValue, into first: inout Hasher, _ second: inout Hasher) {
+    switch json {
+    case .null:
+      combine(exactly: 0 as UInt8, into: &first, &second)
+    case let .bool(bool):
+      combine(exactly: 1 as UInt8, into: &first, &second)
+      combine(exactly: bool ? 1 as UInt8 : 0, into: &first, &second)
+    case let .number(number):
+      combine(exactly: 2 as UInt8, into: &first, &second)
+      combine(exactly: number.bitPattern, into: &first, &second)
+    case let .string(string):
+      combine(exactly: 3 as UInt8, into: &first, &second)
+      combine(string, into: &first, &second)
+    case let .array(elements):
+      combine(exactly: 4 as UInt8, into: &first, &second)
+      combine(exactly: elements.count, into: &first, &second)
+      for element in elements {
+        combine(element, into: &first, &second)
+      }
+    case let .object(members):
+      combine(exactly: 5 as UInt8, into: &first, &second)
+      combine(exactly: members.count, into: &first, &second)
+      for (key, member) in members.sorted(by: { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }) {
+        combine(key, into: &first, &second)
+        combine(member, into: &first, &second)
+      }
+    }
   }
 }
