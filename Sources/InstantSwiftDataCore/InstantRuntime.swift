@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-04: the acknowledgement-deadline wake keeps one sleeping task that re-checks the deadline when it wakes; each
+//   send started one and each acknowledgement cancelled it (#1142).
 // - 2026-11-04: a write saved while delivery could send it at once is claimed by its own save and queued on the pump in
 //   save order, instead of a claim turn that read it back and fingerprinted it again: 3.06 ms a claim on the phone (#653).
 // - 2026-11-02: a local write's outbox time is assigned under the operation gate, after the tail, on every path: the
@@ -1384,7 +1386,10 @@ private actor InstantRuntimeAcknowledgementDeferral {
 
 private actor InstantRuntimeMutationDeadlineWake {
   private var task: Task<Void, Never>?
+  /// The earliest deadline asked for since the last request without one: when a pass must run.
   private var deadlineMilliseconds: Int64?
+  /// When the task wakes next. It may be earlier than `deadlineMilliseconds`: it then sleeps on (#1142).
+  private var sleepingUntilMilliseconds: Int64?
   private var generation = 0
   /// Tasks this wake started (#1142), for the tests that count a write's tasks.
   private var startedTaskCount = 0
@@ -1393,6 +1398,13 @@ private actor InstantRuntimeMutationDeadlineWake {
     startedTaskCount
   }
 
+  /// Asks for a pass at `deadlineMilliseconds`, or for none with `nil`.
+  ///
+  /// #1142: a request without a deadline (an acknowledgement that left no claim waiting) no longer cancels the sleeping
+  /// task, and a later deadline keeps it: the task wakes at its time, sleeps on to the deadline that still stands, or
+  /// ends when none does. Each send started a task sleeping about 6 s and each acknowledgement cancelled it, one task
+  /// and one timer a write; a recording's writes now share one about every 6 s. A pass still runs at the earliest
+  /// deadline asked for since the last request without one, as before.
   func request(
     deadlineMilliseconds: Int64?,
     now: @escaping @Sendable () -> InstantTimestamp,
@@ -1400,42 +1412,70 @@ private actor InstantRuntimeMutationDeadlineWake {
     wake: @escaping @Sendable () async -> Void
   ) {
     guard let deadlineMilliseconds else {
-      generation += 1
       self.deadlineMilliseconds = nil
-      task?.cancel()
-      task = nil
       return
     }
-    if let scheduled = self.deadlineMilliseconds,
-      scheduled <= deadlineMilliseconds,
-      task != nil
-    {
+    self.deadlineMilliseconds = min(self.deadlineMilliseconds ?? deadlineMilliseconds, deadlineMilliseconds)
+    if task != nil, let sleepingUntil = sleepingUntilMilliseconds, sleepingUntil <= deadlineMilliseconds {
       return
     }
     generation += 1
     let generation = generation
-    self.deadlineMilliseconds = deadlineMilliseconds
+    sleepingUntilMilliseconds = deadlineMilliseconds
     task?.cancel()
     startedTaskCount += 1
     task = Task { [weak self] in
-      do {
-        let remaining = max(0, deadlineMilliseconds - now().milliseconds)
-        try await sleep(UInt64(remaining))
-        try Task.checkCancellation()
-      } catch {
-        _ = await self?.finish(generation: generation)
-        return
+      var until = deadlineMilliseconds
+      while true {
+        do {
+          try await sleep(UInt64(max(0, until - now().milliseconds)))
+          try Task.checkCancellation()
+        } catch {
+          await self?.end(generation: generation)
+          return
+        }
+        guard let self else { return }
+        switch await self.next(generation: generation, now: now().milliseconds, sleptUntil: until) {
+        case .stop:
+          return
+        case .fire:
+          await wake()
+          return
+        case let .sleep(nextUntil):
+          until = nextUntil
+        }
       }
-      guard await self?.finish(generation: generation) == true else { return }
-      await wake()
     }
   }
 
-  private func finish(generation: Int) -> Bool {
-    guard generation == self.generation else { return false }
-    task = nil
+  private enum Next {
+    case stop
+    case fire
+    case sleep(Int64)
+  }
+
+  /// What the task does when it wakes at `now`, after sleeping for `sleptUntil`: nothing when no deadline stands,
+  /// sleep on to a deadline later than the one it slept for, or run a pass. A sleep that ended before its time (a test's
+  /// clock) runs the pass, as before, so the task never spins.
+  private func next(generation: Int, now: Int64, sleptUntil: Int64) -> Next {
+    guard generation == self.generation else { return .stop }
+    guard let deadline = deadlineMilliseconds else {
+      end(generation: generation)
+      return .stop
+    }
+    if deadline > now, deadline > sleptUntil {
+      sleepingUntilMilliseconds = deadline
+      return .sleep(deadline)
+    }
+    end(generation: generation)
     deadlineMilliseconds = nil
-    return true
+    return .fire
+  }
+
+  private func end(generation: Int) {
+    guard generation == self.generation else { return }
+    task = nil
+    sleepingUntilMilliseconds = nil
   }
 }
 
