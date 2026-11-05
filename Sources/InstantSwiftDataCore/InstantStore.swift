@@ -368,6 +368,8 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var unchangedObserverCount = 0
   /// Sets of every entity id an observer's result shows, at any depth, collected to judge or splice a change (#1495).
   package var allEntityIDsBuildCount = 0
+  /// Observer plans walked, includes and all, for the namespaces and fields they depend on, to judge or splice a change.
+  package var planWalkCount = 0
 
   mutating func add(_ other: Self) {
     skippedObserverCount += other.skippedObserverCount
@@ -376,6 +378,7 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
     materializedSnapshotCount += other.materializedSnapshotCount
     unchangedObserverCount += other.unchangedObserverCount
     allEntityIDsBuildCount += other.allEntityIDsBuildCount
+    planWalkCount += other.planWalkCount
   }
 }
 
@@ -2346,6 +2349,7 @@ public actor InstantStore {
     observerEpoch: Int
   ) -> ObserverRefreshDecision {
     guard let changedNamespaces else { return .refresh }
+    metrics.planWalkCount += 1
     if let observerNamespaces = observer.plan.dependentNamespaces {
       if observerNamespaces.isDisjoint(with: changedNamespaces) {
         return .skip
@@ -2502,7 +2506,9 @@ public actor InstantStore {
   ) -> InstantQueryEmission? {
     let plan = observer.plan
     // Past the comparison limit one materialization costs less than judging each change (#654).
-    guard changedEntityIDs.count <= resultSetComparisonLimit, plan.dependentNamespaces != nil else { return nil }
+    guard changedEntityIDs.count <= resultSetComparisonLimit else { return nil }
+    metrics.planWalkCount += 1
+    guard plan.dependentNamespaces != nil else { return nil }
     let rowsFollowRemotePageInfo = TripleIndexes.pageRowsDependOnRemotePageInfo(plan)
     var remotePageInfo: InstantQueryPageInfo?
     if pageInfoChanged {

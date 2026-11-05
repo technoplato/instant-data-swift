@@ -1,5 +1,6 @@
 // History:
 // - 2026-10-31: an observer that a publication leaves unchanged collects no set of the ids it shows (#1495).
+// - 2026-11-04: a publication walks no observer's plan for what it depends on (#1513).
 
 import CustomDump
 import Foundation
@@ -152,6 +153,35 @@ struct InstantPageRefreshEnergyTests {
       heartbeat.allEntityIDsBuildCount == 0,
       "#1495: \(heartbeat.allEntityIDsBuildCount) sets were collected for results already collected"
     )
+    try await Self.expectEveryObserverIsCurrent(in: store, "after the heartbeat")
+  }
+
+  /// A publication judges and splices each observer with what its plan depends on worked out once, when the observer
+  /// registered (#1513). Each judgment walked the plan and every include's plan, building each include's plan again: on
+  /// the phone that walk was 93 of the observer refreshes' 725 ms in a 90 s trace of speech (build 251).
+  @Test
+  func aPublicationWalksNoObserversPlan() async throws {
+    let store = try await InstantIncludePlanSkipTests.seededStore()
+    let readings = await InstantIncludePlanSkipTests.observe(InstantIncludePlanSkipTests.pages(), in: store)
+    defer { readings.forEach { $0.cancel() } }
+
+    // An attachment no page can reach: each page judges it and keeps its result.
+    try await InstantIncludePlanSkipTests.commit(
+      InstantIncludePlanSkipTests.orphanAttachment("loose-1", updatedAtMs: 9_000, at: 500),
+      to: store
+    )
+    let skipped = await store.lastPublishMetrics
+    // A heartbeat of a recording the second page shows: the second page splices it, the others keep their results.
+    try await InstantIncludePlanSkipTests.commit(
+      InstantIncludePlanSkipTests.heartbeat(recording: 4, seconds: 60, at: 501),
+      to: store
+    )
+    let heartbeat = await store.lastPublishMetrics
+
+    #expect(skipped.skippedObserverCount == 3)
+    #expect(skipped.planWalkCount == 0, "the publication walked observers' plans \(skipped.planWalkCount) times")
+    #expect(heartbeat.splicedObserverCount + heartbeat.rematerializedObserverCount == 1)
+    #expect(heartbeat.planWalkCount == 0, "the publication walked observers' plans \(heartbeat.planWalkCount) times")
     try await Self.expectEveryObserverIsCurrent(in: store, "after the heartbeat")
   }
 
