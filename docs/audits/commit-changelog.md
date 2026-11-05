@@ -1,3 +1,6 @@
+## 2026-11-05 11:09:25 EST — scribe `041904fa6cd7aee2f247da448ff35f9236aa8d25`
+Fix (#1833): the listener and the 5-minute sweep read his screenshots and copies: the sweep puts non-frame images (with the phone's description once analysed) and clipboard copies between his open lines by time, the listener watch prints each copy, screen-broadcast frames stay out unless he points at the screen, and the scribe-listener skill lists every input each reads. Installed into the Mac mirror (two CLI files, no restart).
+
 ## 2026-11-05 11:06:33 EST — scribe `543c9aec1c48713379b23564c39975c3b9248623`
 Fix (#1826): the Mac mirror's replaced Instant socket opens a new client: @instantdb/core's init() caches clients under a key its shutdown() never deletes when neither URI is named, so on 2026-11-05 1,253 replacements got back the shut client, opened no socket and replayed cached results while no line arrived for 2 h; now both URIs are named, a shut client handed back gives the process up, any socket message counts as alive, failures back off with full jitter, and 6 failures or 120 s unproven while Instant answers HTTP exits 75 for launchd.
 
