@@ -178,3 +178,52 @@ phone's ledger files before and after, and `StorageIOExercises/liveWritesOnThePh
   lane's merge lands.
 - Next (design first, #1149): residency per entity and link attribute, for the 23,314 launch-resident link facts no
   stored result owns (`recordings.segments` 12,139, `.attachments` 6,324, `.runtimeEvents` 3,787, `.sounds` 987).
+
+## Amendment 5 (2026-11-05 01:50 EST): the launch read by SQL (#1149, built); link residency designed, not built
+
+- Built: red `44fc0c03`, green `518b7418` (on top of #1107's `83446b22`): a launch read each loaded stored result whole
+  (header and every ownership row decoded into facts), ran the query's nested limits over them again and bound every
+  entity id it found. A save keeps ownership of only the facts the nested limits keep, so the facts' read now selects the
+  entities with one subquery over the loaded, unreleased results' ownership rows and the outbox's; the check for any
+  ownership row is `EXISTS`, not a `COUNT(*)` over every row (unloaded results' too, since #1500). It rides the gate
+  `1797-1500-land-green` (bundle at `518b7418`; E07 at M2 before, at `518b7418` after).
+- Measured, not built: #1251/#1505's wrapper on the same store copy (2026-11-04 21:20, build 253): `instant_triples`
+  value text 20.30 MB, 13.63 MB in a compact tagged form (-33%); ownership rows 1.09 -> 0.64 MB. About 7 MB of a 251 MB
+  file plus its index copies, against a migration that rewrites two primary keys, and 14 readers that decode the fact
+  table's generated `json` (which embeds `value_json`) with the synthesized Codable. Ranked below residency.
+- Measured, corrects amendment 1: Apple's SQLite (macOS 3.51.0, memory status on) builds an ephemeral table for
+  `IN (?,?)` with page-sized allocations (largest 4,104 B, peak 22 KB a step), not a 20-page bulk allocation, so
+  ephemeral tables are unlikely to be the 960 large-cache traps a second; S05's sites decide (#1512).
+
+### Link residency (#1149, next; design)
+
+Why: with the newest ten results loaded, a launch holds 31,070 facts on the phone's store copy, and 19,686 of them are
+recordings' cardinality-many links no loaded result owns (`recordings.segments` 10,075, `.attachments` 6,140,
+`.runtimeEvents` 2,687, `.sounds` 784): memory holds an entity whole (#1165) and the recordings list owns each
+recording's id, start and title. Holding only what loaded results own would take the launch to about 11,400 facts
+(-63%), about 10 MB of heap at E07's 540 B a fact, for the whole session (the list keeps its recordings). Upstream holds
+less still: `Reactor.js` builds one store per query result from that result's triples (`createStore(attrs,
+result.triples)`), so an entity is never more than what a result selected.
+
+Design (the shape of deferred values, generalized to an entity's facts):
+1. Launch: load the facts of each (entity, attribute) a loaded result owns any fact of, and the outbox's entities whole;
+   every loaded entity outside the outbox is marked partial in the store (`InstantStore.partialEntityIDs`), a
+   conservative mark that costs one primary-key range read at its first write.
+2. Writes: `entityIDsForPreparing` names, beside the entities memory holds no fact of, the partial ones; the write's
+   persistence turn reads them whole (`loadFactsBesideMemory`, #1165), they join the prepared indexes whole and the mark
+   goes. A server apply does the same for a partial entity it changes (`hydrateDeferredValuesForServerApply`'s turn).
+   So no save ever diffs a partial picture against the rows on disk (the #1165 data loss).
+   Refinement to weigh first: a whole read of a recording at its first write brings its 10,000 links back for the
+   session, and the current recording is written every few seconds. Instead a write to a partial entity can take the
+   per-fact scope `InstantStore.usesWholeEntityScope` already gives entities of more than 32 facts (scoped to the
+   attributes and link values it touches), reading only those (entity, attribute) pairs from disk first, so its
+   before-image (the rollback of a refused write) holds the disk's values and its save diffs only what it touched.
+3. Reads: a local read's disk merge (`mergingEntitiesOnDisk`, #1006) reads partial entities from disk with the
+   disk-only ones; a reopened result (#1500's reload) completes the partial entities it owns.
+4. Release: the residency sweep (#1145) and the prune release a partial entity whole, as any entity, and drop its mark.
+5. Not changed: lookups resolve against memory (the consuming app writes none); a delete's cascade reaches resident
+   children only (as before #1165).
+Red tests first: a relaunch holds a loaded result's owned attributes of an entity, not its unowned links; a write to it
+keeps its links on disk and leaves it whole in memory; a server apply to it keeps its disk-only facts; a local read
+with a lookup over it answers with its disk facts; reopening an unloaded result completes it. Measure: E07 (resident
+facts, allocations) and the store copy's launch count, then the phone's storeTriples after install.
