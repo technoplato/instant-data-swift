@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 5:20:05 a.m. EST — `e5a96d824577` release(#1500): v1.9.72: memory in proportion to what is on screen
+
+- **Implementation commit:** `e5a96d824577c2a885ba63949e30f2d32485613f`
+- **Change:** release(#1500): v1.9.72: memory in proportion to what is on screen
+- **Details:**
+  - The release document and PROGRESS for v1.9.72, tagged from main (merges cfd74320 and f504ed51 plus their ledger) for Scribe's next build: #1500 a closed query's result unloaded where it is, #1165 a write reads what memory lacks first, #1145 the residency sweep, #541 a closed query's acknowledgement entries go, #1104 and #1105 file records read where they are kept. It carries 1.9.71 (#1796) and 1.9.70.
+- **Files:**
+  - `docs/releases/v1.9.72.md` — #1500 #1165 #1145 #541 #1104 #1105 #1107 #1149 the release: what changed, the checks, what did not run
+  - `PROGRESS.md` — #1500 the release checkpoint and what comes next
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-mem-1797@pp); no SpecStory capture
+
 ## November 5th, 2026 at 5:19:31 a.m. EST — `d7dcf707a501` test(#1500): the compact ownership answers' digest, re-pinned: an unloaded page keeps its ownership rows
 
 - **Implementation commit:** `d7dcf707a501bd6edac050033037df37728d961d`
