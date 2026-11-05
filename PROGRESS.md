@@ -1,3 +1,76 @@
+## 2026-11-05 07:04:14 EST — perf-recv-1797 (#1109, #1513, #1116): v1.9.73, a server refresh costs what changed
+
+- **Why:** on the phone (the consuming app's build 253, 192.5 recording minutes, 1,596 refresh-ok frames) a frame's
+  retractions took 6.39 ms and its saves' planning 5.88 ms, both comparing every restated fact with every stored row;
+  in the build-251 speech trace the nested-limit pass's schema walk was 1.1% of the app's CPU and each new transcript
+  line re-materialized every frozen page of the recording.
+- **Landed:** `9d76a581` (#1109: the schema indexed once `0ff1bd60`, cascade sources `c3693f35`, socket UTF-8 `053e7ecb`,
+  the save takes the translation's limit `2ce76178`; #1513: plan dependencies `5ccfb473`, frozen pages `9fc6eff8`,
+  filtered ordered pages `88b3c633`; #1116: entity fingerprints `b95e87f9`, the exact fold `949064a2`; tests `2c0b7d7e`
+  `736c86d5` `9d17ce5a` `f4e1367e`).
+- **Checked:** Mac mini jobs `1797-recv-merge-check` and `1109-recv-testfix` (22 tests in 3 suites passed, debug, 07:03): reds fail on their own
+  sources; E03 64-line refresh 5.89 -> 5.22 ms (retractions 1.23 -> 0.79, planning 0.40 -> 0.10), 256 lines 21.9 -> 18.9
+  ms; the echo 3.95 -> 3.64 ms CPU a write; a final's publication on the frozen history 118 -> 1.3 ms (job
+  `1797-recv-schema-ab`); the seeded differential keeps rows, results and facts equal to the full comparison's; the
+  debug bundle's new failures were restated tests and the load-sensitive frame-decode ratio (passes alone).
+- **Next:** Scribe pins 1.9.73 and cuts a build; after an hour of recording, refresh-cost.py's serverApplyRetractions,
+  serverApplyPlan, refreshTranslate and observerRefresh per refresh frame against builds 248 and 253.
+
+## 2026-11-05 05:19 EST — perf-mem-1797 (#1500, #1165, #1145, #541, #1104, #1105, #1107, #1149): v1.9.72, memory in proportion to what is on screen
+
+- **Why:** on the phone (2026-11-04, the consuming app's builds 246-253) the store's resident facts grew 9,000-24,000
+  an hour while recording and each relaunch started again near 45,000 with every stored result's entities loaded
+  (48,202 facts on the 21:20 store copy); closing a query copied its whole result into
+  `instant_unloaded_live_query_results` and wrote it back at the reopening (the four unload writers: 149.2 MB an hour on
+  builds 247-249, 413.8 MB an hour on build 253); a write to an entity kept on disk but not in memory erased its other
+  facts; each answered live query left its acknowledgement key behind; eviction and the storage snapshot decoded every
+  file record (47,393 on the 2026-10-30 store).
+- **Landed:** merges `cfd74320` (#1165 red `53e30f9f` green `68045937`, test `f46d1e0e`; #1145 red `213a7563` greens
+  `ef358515` `221512b9`; #541 red `31d0e156` green `820d412a`; #1500 red `f87d77b6` greens `623a8a8b` `93e79459`
+  `bbf40f04`; #1512's S05 `e7027553` `b3c844ce`) and `f504ed51` (#1104 red `277a9203` green `69ceae52`; #1105 red
+  `dfe16998` green `79a90b8b`); #1107 (plan `68ec5712`, red `9da1fbf5`, green `83446b22`); #1149's launch read (red
+  `44fc0c03`, green `518b7418`); the landing gate's fixes (red `708ded11` green `74e65b56`: a bounded batch unloads within
+  its budget; tests `caf33f20` `b6a80186` `7982385d`; red `cb0e8578` green `6779994f`: the store's own prune marks closed
+  results, a collection counts its disk deletions); plan amendments 5 and 6. Landing merge `d7dcf707`.
+- **Checked:** gate `1797-1500-land-green` (Mac mini): the four reds fail as written; the two-hour replay +15,102 ->
+  +1,380 resident facts and +9.2 -> +2.7 MB of heap an hour (release, same job); E07's launch 54,720 -> 9,728 facts,
+  24.9 -> 9.0 MB retained, 234 -> 59 ms. Its bundle found 22 stale tests and three source gaps (fixed above). Job `1797-1500-fixtests` (Mac mini, 2026-11-05 05:01-05:14, the whole bundle at `6779994f`): 1,700 tests, 3 failing, 2 new: `InstantLiveQueryCompactOwnershipTests`' pinned digest, re-pinned from that run in `d7dcf707` (an unloaded page keeps its ownership rows: 22,178 -> 22,778 answers), and `InstantLiveFrameDecodeTests`' timing ratio, 0.366 against a 0.33 ceiling (0.374 at `518b7418`, 0.323 at `f504ed51`, 0.325 on the sync lane's tree): it times a pure frame-decode loop no commit here touches, read as load (inference) until an alone-run A/B after the landing says otherwise. The merge of main with v1.9.71 (`6ed41621`) conflicted in two history headers only and lands without another whole-bundle run; main's new suites run on the landed tree next.
+- **Released:** v1.9.72 (`docs/releases/v1.9.72.md`). Scribe pins it next.
+- **Next (resume here):** the phone's storeTriples, mallocInUse and footprint over an hour of recording against builds
+  248-253 (`python3 -I ~/Sync/audit/perf-mem-1797/scripts/mem_trend.py --since 'YYYY-MM-DD HH:MM'`; Scribe had not run
+  on the iPhone since 2026-11-05 00:00, so it waits for his next recording) and the four unload writers
+  (`ledger_writers.py`) against 149.2-413.8 MB an hour; one line on #1797. Then #1149's link residency
+  (`agent/claude/perf-mem-1797-links`: plan amendment 5, red `48f10a63`, sized -48% launch facts on the store copy);
+  #1251/#1505's wrapper (-33% value text, measured).
+
+## 2026-11-05 04:51:25 EST — perf-sync-1796 (#1796): v1.9.71, a follower applies each list's newest result and its reads survive a busy applier and a dying socket
+
+- **Why:** on 2026-11-04 the tablet followed the phone's live recording about six minutes late (the user's reading at
+  17:33). It held 8,240-11,035 of its own writes, spent about 1.5 s on each server frame and received 29 `refresh-ok`
+  of the recording list and 31 `transact-ok` a minute, applied in arrival order; every one-shot read failed at a fixed
+  5 s ("Network or live transport failed", on the playback screen), and at a resume a read sent on a dead socket failed
+  in 0 ms and was never sent again. Nothing measured the lag.
+- **Landed:** the lane's `a5b5174d` (rebuilt 2026-11-05 on main `3d0dfdfa` after the first check found the tests had
+  never compiled), merged with main as `5f848b89`, ledger `e56d179e`: red `bd5d9017`, green `3f66c955` (waiting
+  refreshes lose what a newer one restates; a one-shot read waits while the connection moves, up to 30 s); red
+  `25923d45`, green `1fd79eb8` (a read whose `add-query` met a dead socket waits for the reconnect); red `882448d2`,
+  green `75915233` (`live.receive-summary` reports how old the newest server writes were when applied); guard
+  `076ed107` + `a5b5174d` (a writer and a follower runtime under the tablet's measured load); red `fac02655`, green
+  `d7502832` (an observer's registration names its query in the gate's phase).
+- **Checked:** Mac mini job `1796-check2` (04:20-04:49): each red fails on its assertions on its own sources; green 99
+  tests in 11 suites pass; the whole bundle 1,691 tests, 0 failing, no new failures against `Tests/known-failing.txt`.
+  The two-client test (57 lines, the tablet's minute replayed for 2 min): before median 29,503 ms, p95 39,175 ms,
+  worst 40,313 ms, newest 29,502 ms; after 3,382 ms, 9,434 ms, 13,469 ms, newest 1,500 ms.
+- **Measured on devices before:** iPad build 253 (1.9.67), launch 21:40:41: 26 one-shot reads failed at the fixed 5 s
+  in 50 s; the connect waited 5,459 ms for the operation gate behind an observer registration that held it 4,917 ms;
+  the transcript of a 3,428-line live recording took 72.3 s to show from the server (the iPhone, with no backlog, 12.1
+  s). Phone write -> server -> Mac mirror for live Recording 367: p50 918 ms, p95 2,152 ms, max 3,345 ms.
+- **Released:** v1.9.71 (docs/releases/v1.9.71.md). Scribe pins it exactly next.
+- **Next:** install on the iPhone and the iPad; an hour of `live.receive-summary` from the iPad following a live
+  recording (`.runs-1796/lag-report.py --device iPad --build <N>` in the lane's worktree), written on #1796 and #1797;
+  the registration's named phase at the next launch stall (#1131, #1137); the prune's phase timing (#1129, branch
+  `agent/claude/perf-sync-1129`, check `1129-check`).
+
 ## 2026-11-05 01:00 EST — perf-send-1797 (#1517, #1523): job F green; the lane waits for the memory lane, then lands
 
 - **Lane head `ddcb77e5`** = main (v1.9.70) + #1517's claim at save measured by the save's own body encode (red

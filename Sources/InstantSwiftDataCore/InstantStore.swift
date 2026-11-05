@@ -3,6 +3,10 @@
 //   every change a publication judges and again for the splice (#1495).
 // - 2026-11-04: a verified observer splices the rows a publication's changes reach, and places an entity entering a head
 //   window among the window's rows, instead of materializing its page from the whole store (#1513).
+// - 2026-11-04: an observer keeps what its plan depends on, worked out when it registers, instead of every judgment and
+//   splice walking the plan and building each include's plan again (#1513).
+// - 2026-11-04: a change outside the rows a page's server page info bounds, before and after, does not refresh the page:
+//   each new line of a recording refreshed every frozen page of its transcript (#1513).
 
 import Darwin
 import Foundation
@@ -21,6 +25,12 @@ import Foundation
 //   whole-entity rule can drop (#1319).
 // - 2026-10-31: an observer yields into its observation's output, the stream its consumer reads, which a runtime
 //   observation hands the store; the runtime forwarded every emission through two tasks of its own (#1493).
+// - 2026-11-04: a write prepares against the whole of each entity it touches: the facts SQLite keeps of an entity memory
+//   lacks are loaded into the prepared indexes first and stay (#1165).
+// - 2026-11-04: `releaseEntitiesNoObserverShows`, the residency sweep's release: entities no observer shows leave memory
+//   without marking every observer's result unverified, as a prune's retraction does (#1145).
+// - 2026-11-04: a prune's residency names the released facts' entities memory holds at all, so the rule reads the rest
+//   from SQLite (#1500).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -368,6 +378,9 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var unchangedObserverCount = 0
   /// Sets of every entity id an observer's result shows, at any depth, collected to judge or splice a change (#1495).
   package var allEntityIDsBuildCount = 0
+  /// Observer plans walked, includes and all, for the namespaces and fields they depend on, to judge or splice a change:
+  /// none since each observer keeps what its plan depends on from when it registered (#1513).
+  package var planWalkCount = 0
 
   mutating func add(_ other: Self) {
     skippedObserverCount += other.skippedObserverCount
@@ -376,6 +389,7 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
     materializedSnapshotCount += other.materializedSnapshotCount
     unchangedObserverCount += other.unchangedObserverCount
     allEntityIDsBuildCount += other.allEntityIDsBuildCount
+    planWalkCount += other.planWalkCount
   }
 }
 
@@ -496,7 +510,13 @@ struct InstantStorePublicationSummary {
 }
 
 private struct StoreObserver: Sendable {
-  var plan: InstantQueryPlan
+  let plan: InstantQueryPlan
+  /// What `plan` depends on, worked out when the observer registered (#1513): every judgment and splice of a change
+  /// walked the plan and built each include's plan again, 93 of the observer refreshes' 725 ms in a 90 s trace of the
+  /// phone transcribing speech (build 251). ``InstantQueryPlan/dependentNamespaces``.
+  let dependentNamespaces: Set<String>?
+  /// ``InstantQueryPlan/hasOnlyNamespaceLocalDependencies``, worked out when the observer registered (#1513).
+  let hasOnlyNamespaceLocalDependencies: Bool
   var remotePageInfo: InstantQueryRemotePageInfo?
   var liveQueryKey: String?
   var lastValues: [InstantEntitySnapshot]
@@ -1033,12 +1053,17 @@ public actor InstantStore {
     )
   }
 
+  /// Prepares `transaction` against the store with what it reads beside memory first (#1165): `deferredTriples`, the
+  /// deferred values it can touch, leave memory again when the result is installed; `keptOnDisk`, every fact SQLite
+  /// keeps of each entity it names that the store holds no fact of, stay, so the entity is never held in part.
   func prepareCurrent(
     _ transaction: InstantStoreTransaction,
-    hydratingDeferredValues deferredTriples: [InstantTriple]
+    hydratingDeferredValues deferredTriples: [InstantTriple],
+    loadingFactsKeptOnDisk keptOnDisk: [InstantTriple] = []
   ) throws -> PreparedStoreMutation {
     var indexes = indexes
     indexes.hydrateDeferredValues(deferredTriples, attributes: attributes)
+    indexes.loadFactsKeptOnDisk(keptOnDisk, attributes: attributes)
     return try prepare(
       transaction,
       attributes: attributes,
@@ -1183,7 +1208,8 @@ public actor InstantStore {
     peelingOverlays rollbacks: [InstantStoreTransaction],
     thenApplying serverTransaction: InstantStoreTransaction,
     mergingAttributes attributesToMerge: [InstantAttribute] = [],
-    hydratingDeferredValues deferredTriples: [InstantTriple]
+    hydratingDeferredValues deferredTriples: [InstantTriple],
+    loadingFactsKeptOnDisk keptOnDisk: [InstantTriple] = []
   ) throws -> PreparedStoreMutation {
     var attributes = self.attributes
     var indexes = self.indexes
@@ -1191,6 +1217,7 @@ public actor InstantStore {
     // many-to-one schema transition can discard sibling facts that belong to the authoritative
     // base. Upstream likewise rebuilds the server store first, then reapplies optimistic writes.
     indexes.hydrateDeferredValues(deferredTriples, attributes: attributes)
+    indexes.loadFactsKeptOnDisk(keptOnDisk, attributes: attributes)
     for rollback in rollbacks {
       _ = try prepareMutating(
         rollback,
@@ -2346,11 +2373,11 @@ public actor InstantStore {
     observerEpoch: Int
   ) -> ObserverRefreshDecision {
     guard let changedNamespaces else { return .refresh }
-    if let observerNamespaces = observer.plan.dependentNamespaces {
+    if let observerNamespaces = observer.dependentNamespaces {
       if observerNamespaces.isDisjoint(with: changedNamespaces) {
         return .skip
       }
-    } else if observer.plan.hasOnlyNamespaceLocalDependencies {
+    } else if observer.hasOnlyNamespaceLocalDependencies {
       guard changedNamespaces.contains(observer.plan.namespace) else { return .skip }
     } else {
       return .refresh
@@ -2361,7 +2388,7 @@ public actor InstantStore {
     if !shownEntityIDs.isDisjoint(with: changedEntityIDs) {
       return .refresh
     }
-    if observer.plan.hasOnlyNamespaceLocalDependencies,
+    if observer.hasOnlyNamespaceLocalDependencies,
       let baseline,
       observer.verifiedEpoch == observerEpoch
     {
@@ -2373,7 +2400,9 @@ public actor InstantStore {
           attributes: baseline.attributes
         )
         let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
-        if before != after {
+        if before != after,
+          !staysOutsideRemotePageRows(entityID, before, after, observer: observer, attributes: attributes, baseline: baseline)
+        {
           return .refresh
         }
       }
@@ -2385,7 +2414,7 @@ public actor InstantStore {
     // so a link to or from a shown entity is either side's), and with the same place in the root set before and after,
     // cannot change the page: a recordings list's other pages skip a heartbeat, a line or an attachment of a recording
     // they do not show.
-    if !observer.plan.hasOnlyNamespaceLocalDependencies,
+    if !observer.hasOnlyNamespaceLocalDependencies,
       let baseline,
       observer.verifiedEpoch == observerEpoch
     {
@@ -2403,7 +2432,9 @@ public actor InstantStore {
           attributes: baseline.attributes
         )
         let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
-        if before != after {
+        if before != after,
+          !staysOutsideRemotePageRows(entityID, before, after, observer: observer, attributes: attributes, baseline: baseline)
+        {
           return .refresh
         }
       }
@@ -2412,7 +2443,7 @@ public actor InstantStore {
     if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true) {
       return .refresh
     }
-    if observer.plan.hasOnlyNamespaceLocalDependencies {
+    if observer.hasOnlyNamespaceLocalDependencies {
       for entityID in changedEntityIDs {
         if indexes.entityMatches(entityID, plan: observer.plan, attributes: attributes) {
           return .refresh
@@ -2421,6 +2452,33 @@ public actor InstantStore {
       return .skipUnverified
     }
     return .refresh
+  }
+
+  /// Whether a changed entity whose place in `observer`'s result set moved lies outside the rows its page can show, both
+  /// before the change and after it, while the server's page info bounds those rows (#1513). Such a change cannot
+  /// change the page: an infinite query's frozen pages skip each new line of the recording past their cursors.
+  private static func staysOutsideRemotePageRows(
+    _ entityID: String,
+    _ before: InstantResultSetMembership,
+    _ after: InstantResultSetMembership,
+    observer: StoreObserver,
+    attributes: AttributeStore,
+    baseline: StorePublicationBaseline
+  ) -> Bool {
+    TripleIndexes.isOutsideRemotePageRows(
+      entityID,
+      membership: before,
+      plan: observer.plan,
+      remotePageInfo: observer.remotePageInfo,
+      attributes: baseline.attributes
+    )
+      && TripleIndexes.isOutsideRemotePageRows(
+        entityID,
+        membership: after,
+        plan: observer.plan,
+        remotePageInfo: observer.remotePageInfo,
+        attributes: attributes
+      )
   }
 
   private static func splicedEmission(
@@ -2502,7 +2560,7 @@ public actor InstantStore {
   ) -> InstantQueryEmission? {
     let plan = observer.plan
     // Past the comparison limit one materialization costs less than judging each change (#654).
-    guard changedEntityIDs.count <= resultSetComparisonLimit, plan.dependentNamespaces != nil else { return nil }
+    guard changedEntityIDs.count <= resultSetComparisonLimit, observer.dependentNamespaces != nil else { return nil }
     let rowsFollowRemotePageInfo = TripleIndexes.pageRowsDependOnRemotePageInfo(plan)
     var remotePageInfo: InstantQueryPageInfo?
     if pageInfoChanged {
@@ -3418,6 +3476,8 @@ public actor InstantStore {
     let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)
     observers[id] = StoreObserver(
       plan: plan,
+      dependentNamespaces: plan.dependentNamespaces,
+      hasOnlyNamespaceLocalDependencies: plan.hasOnlyNamespaceLocalDependencies,
       remotePageInfo: remotePageInfo,
       liveQueryKey: liveQueryKey,
       lastValues: initialEmission.values,
@@ -3503,6 +3563,25 @@ public actor InstantStore {
     entityIDs.filter { indexes.containsEntity($0, namespace: nil, attributes: attributes) }
   }
 
+  /// The entities among `entityIDs` that the store holds no fact of (#1165): a write that names one reads what SQLite
+  /// keeps of it before it prepares.
+  func entityIDsWithoutFacts(among entityIDs: Set<String>) -> Set<String> {
+    entityIDs.filter { !indexes.containsEntity($0, namespace: nil, attributes: attributes) }
+  }
+
+  /// What a write reads beside memory before it prepares, found in one turn (#1165): of `namedEntityIDs`, the entities
+  /// the store holds no fact of; and the entities `transactions` change once their lookups resolve against the store.
+  func entityIDsForPreparing(
+    named namedEntityIDs: Set<String>,
+    resolving transactions: [InstantStoreTransaction]
+  ) throws -> (withoutFacts: Set<String>, resolved: Set<String>) {
+    var resolved: Set<String> = []
+    for transaction in transactions {
+      resolved.formUnion(try resolvedMutationEntityIDs(in: transaction))
+    }
+    return (entityIDsWithoutFacts(among: namedEntityIDs), resolved)
+  }
+
   /// The facts the store holds of `entityIDs` (#1006): a local read evaluates its plan over them together with what
   /// this device keeps on disk, and a live-query prune decides from them what it drops (#654).
   func facts(of entityIDs: Set<String>) -> [InstantTriple] {
@@ -3524,6 +3603,12 @@ public actor InstantStore {
       heldByEntity[identity.entityID, default: []].append(identity)
     }
     var residency = InstantPruneResidency()
+    // #1500: which of the released facts' entities memory holds at all; the prune reads the others from SQLite.
+    var resident: Set<String> = []
+    for entityID in Set(released.lazy.map(\.entityID)) where indexes.factCount(entityID: entityID) > 0 {
+      resident.insert(entityID)
+    }
+    residency.residentEntityIDs = resident
     for (entityID, held) in heldByEntity {
       let count = indexes.factCount(entityID: entityID)
       residency.factCounts[entityID] = count
@@ -3565,6 +3650,40 @@ public actor InstantStore {
     }
     indexes.finishInternCachesAfterWrite(invalidating: changedEntityIDs, attributes: attributes)
     sequence += 1
+  }
+
+  /// Releases from memory every fact of each of `candidates` that no observer shows (#1145): their rows stay on disk,
+  /// where a local read finds them and a write reads them before it prepares (#1165), as after a relaunch. Returns how
+  /// many entities and facts left memory, and the candidates kept because an observer's last result, or the last one it
+  /// was handed, shows them.
+  ///
+  /// Unlike a prune's retraction (``retractFactsReleasedByPrune(_:)``) it leaves every observer's result verified: no
+  /// observer shows a released entity, so no result changes, and the next change need not refresh them all.
+  func releaseEntitiesNoObserverShows(
+    _ candidates: Set<String>
+  ) -> (entityCount: Int, factCount: Int, shown: Set<String>) {
+    guard !candidates.isEmpty else { return (0, 0, []) }
+    publishPendingChanges()
+    var shown: Set<String> = []
+    var metrics = InstantStorePublishMetrics()
+    for id in Array(observers.keys) {
+      guard var observer = observers[id] else { continue }
+      shown.formUnion(observer.shownEntityIDs(metrics: &metrics).intersection(candidates))
+      if !observer.lastHandedValues.sharesStorage(with: observer.lastValues) {
+        shown.formUnion(observer.lastHandedValues.allEntityIDs().intersection(candidates))
+      }
+      observers[id] = observer
+    }
+    let released = facts(of: candidates.subtracting(shown))
+    guard !released.isEmpty else { return (0, 0, shown) }
+    indexes.discardInternedQueryResultsBeforeWrite()
+    var changedEntityIDs: Set<String> = []
+    for triple in released {
+      indexes.apply(.retract(triple), attributes: attributes, into: &changedEntityIDs)
+    }
+    indexes.finishInternCachesAfterWrite(invalidating: changedEntityIDs, attributes: attributes)
+    sequence += 1
+    return (changedEntityIDs.count, released.count, shown)
   }
 
   func activeQueryCacheKeys() -> Set<String> {

@@ -5,6 +5,9 @@ import Foundation
 //   maps, and every attribute lookup reads the triples' own attributes or searches the schema once per include, never a
 //   map of the whole schema: run twice per refresh (the translator, then the persisted result), the pass built maps of
 //   every attribute (2,283 on the phone) and every row, about 6.5 MB of a 64-line refresh with nothing to drop (#1147).
+// - 2026-11-04: the translator and the store pass a schema indexed once per attribute revision: the per-call lookup still
+//   walked every attribute, hashing its id and copying it, 258 of the pass's 374 ms in a 90 s trace of the phone
+//   transcribing speech (build 251, 1.1% of the app's CPU). The query key is parsed once a call, not twice (#1109).
 
 /// Apply InstaQL nested include limits before authoritative and persisted apply.
 ///
@@ -20,15 +23,20 @@ import Foundation
 enum InstantLiveQueryNestedLimit {
   /// `triples` without the rows the query's nested limits leave out, and without links to rows it left out. Returns
   /// `triples` itself when it keeps every one, as most refreshes do.
+  ///
+  /// For one call: the triples' own attributes are found in one pass over `attributes`. Code that bounds every refresh
+  /// passes a ``Schema`` indexed once instead (#1109).
   static func limitedTriples(
     queryKey: String,
     triples: [InstantTriple],
     attributes: [InstantAttribute]
   ) -> [InstantTriple] {
-    let lookup = AttributeLookup(attributes, for: triples)
-    let retained = retainedWithoutNestedIncludes(queryKey: queryKey, triples: triples, attributes: attributes, lookup: lookup)
-      ?? generalRetainedEntityIDs(queryKey: queryKey, triples: triples, attributes: attributes, lookup: lookup)
-    return kept(triples, retained: retained, lookup: lookup)
+    limitedTriples(queryKey: queryKey, triples: triples, source: AttributeSource(attributes, for: triples))
+  }
+
+  /// ``limitedTriples(queryKey:triples:attributes:)`` with the attributes of `schema`, looked up in its indexes.
+  static func limitedTriples(queryKey: String, triples: [InstantTriple], schema: Schema) -> [InstantTriple] {
+    limitedTriples(queryKey: queryKey, triples: triples, source: AttributeSource(schema))
   }
 
   static func retainedEntityIDs(
@@ -36,9 +44,12 @@ enum InstantLiveQueryNestedLimit {
     triples: [InstantTriple],
     attributes: [InstantAttribute]
   ) -> Set<String> {
-    let lookup = AttributeLookup(attributes, for: triples)
-    return retainedWithoutNestedIncludes(queryKey: queryKey, triples: triples, attributes: attributes, lookup: lookup)
-      ?? generalRetainedEntityIDs(queryKey: queryKey, triples: triples, attributes: attributes, lookup: lookup)
+    retainedEntityIDs(queryKey: queryKey, triples: triples, source: AttributeSource(attributes, for: triples))
+  }
+
+  /// ``retainedEntityIDs(queryKey:triples:attributes:)`` with the attributes of `schema`, looked up in its indexes.
+  static func retainedEntityIDs(queryKey: String, triples: [InstantTriple], schema: Schema) -> Set<String> {
+    retainedEntityIDs(queryKey: queryKey, triples: triples, source: AttributeSource(schema))
   }
 
   /// The general pass alone, without the shortcut for queries with no nested include: what the shortcut must equal.
@@ -47,9 +58,9 @@ enum InstantLiveQueryNestedLimit {
     triples: [InstantTriple],
     attributes: [InstantAttribute]
   ) -> [InstantTriple] {
-    let lookup = AttributeLookup(attributes, for: triples)
-    let retained = generalRetainedEntityIDs(queryKey: queryKey, triples: triples, attributes: attributes, lookup: lookup)
-    return kept(triples, retained: retained, lookup: lookup)
+    let source = AttributeSource(attributes, for: triples)
+    let retained = generalRetainedEntityIDsForTesting(queryKey: queryKey, triples: triples, attributes: attributes)
+    return kept(triples, retained: retained, lookup: source)
   }
 
   /// The general pass's retained rows, without the shortcut.
@@ -58,9 +69,9 @@ enum InstantLiveQueryNestedLimit {
     triples: [InstantTriple],
     attributes: [InstantAttribute]
   ) -> Set<String> {
-    generalRetainedEntityIDs(
-      queryKey: queryKey, triples: triples, attributes: attributes, lookup: AttributeLookup(attributes, for: triples)
-    )
+    let source = AttributeSource(attributes, for: triples)
+    guard let object = parseJSONObject(queryKey), !source.isEmpty else { return entityIDs(of: triples) }
+    return generalRetainedEntityIDs(object: object, triples: triples, source: source)
   }
 
   static func namespace(in attributeID: String) -> String? {
@@ -69,16 +80,33 @@ enum InstantLiveQueryNestedLimit {
     return namespace.isEmpty ? nil : namespace
   }
 
+  private static func limitedTriples(
+    queryKey: String,
+    triples: [InstantTriple],
+    source: AttributeSource
+  ) -> [InstantTriple] {
+    kept(triples, retained: retainedEntityIDs(queryKey: queryKey, triples: triples, source: source), lookup: source)
+  }
+
+  /// Every row when the key is not a query or there is no schema; otherwise the shortcut's rows, or the general pass's.
+  private static func retainedEntityIDs(
+    queryKey: String,
+    triples: [InstantTriple],
+    source: AttributeSource
+  ) -> Set<String> {
+    guard let object = parseJSONObject(queryKey), !source.isEmpty else { return entityIDs(of: triples) }
+    return retainedWithoutNestedIncludes(object: object, triples: triples, source: source)
+      ?? generalRetainedEntityIDs(object: object, triples: triples, source: source)
+  }
+
   /// The retained rows of a query whose nodes include nothing, when no node holds more rows than its limit: every row
   /// of the query's namespaces, as the general pass retains them, without its per-row maps or its sort. `nil` when the
   /// query includes something or a node's rows outgrow its limit (the server limits top-level rows, so rarely).
   private static func retainedWithoutNestedIncludes(
-    queryKey: String,
+    object: [String: Any],
     triples: [InstantTriple],
-    attributes: [InstantAttribute],
-    lookup: AttributeLookup
+    source: AttributeSource
   ) -> Set<String>? {
-    guard let object = parseJSONObject(queryKey), !attributes.isEmpty else { return entityIDs(of: triples) }
     var limits: [String: Int?] = [:]
     for (namespace, value) in object {
       guard let node = value as? [String: Any] else { continue }
@@ -91,7 +119,7 @@ enum InstantLiveQueryNestedLimit {
     for triple in triples {
       all.insert(triple.entityID)
       guard
-        let namespace = lookup[triple.attributeID]?.namespace ?? namespace(in: triple.attributeID),
+        let namespace = source[triple.attributeID]?.namespace ?? namespace(in: triple.attributeID),
         limits.index(forKey: namespace) != nil
       else { continue }
       byNamespace[namespace, default: []].insert(triple.entityID)
@@ -106,16 +134,11 @@ enum InstantLiveQueryNestedLimit {
   }
 
   private static func generalRetainedEntityIDs(
-    queryKey: String,
+    object: [String: Any],
     triples: [InstantTriple],
-    attributes: [InstantAttribute],
-    lookup: AttributeLookup
+    source: AttributeSource
   ) -> Set<String> {
-    let allIDs = entityIDs(of: triples)
-    guard let object = parseJSONObject(queryKey), !attributes.isEmpty else {
-      return allIDs
-    }
-    let context = Context(triples: triples, attributes: attributes, lookup: lookup)
+    let context = Context(triples: triples, source: source)
     var retained: Set<String> = []
     for (namespace, value) in object {
       guard let node = value as? [String: Any] else { continue }
@@ -128,11 +151,11 @@ enum InstantLiveQueryNestedLimit {
         )
       )
     }
-    return retained.isEmpty ? allIDs : retained
+    return retained.isEmpty ? entityIDs(of: triples) : retained
   }
 
   /// The triples of retained rows, without many-cardinality links to rows not retained.
-  private static func kept(_ triples: [InstantTriple], retained: Set<String>, lookup: AttributeLookup) -> [InstantTriple] {
+  private static func kept(_ triples: [InstantTriple], retained: Set<String>, lookup: AttributeSource) -> [InstantTriple] {
     func keeps(_ triple: InstantTriple) -> Bool {
       guard retained.contains(triple.entityID) else { return false }
       guard let attribute = lookup[triple.attributeID],
@@ -160,39 +183,145 @@ enum InstantLiveQueryNestedLimit {
   }
 }
 
-/// The attributes of one set of triples, by id: built from the triples' own attribute ids in one pass over the schema,
-/// so a page of sixteen attributes costs sixteen entries whatever the schema's size (#1147).
-private struct AttributeLookup {
-  private var attributesByID: [String: InstantAttribute] = [:]
+extension InstantLiveQueryNestedLimit {
+  /// A schema indexed for the pass, built once and kept while the schema is unchanged (#1109): the translator's attribute
+  /// context holds one, and the store one for its stored attributes.
+  ///
+  /// Each index holds the first attribute of its key, as the searches it replaces found the first.
+  struct Schema: Sendable {
+    let attributes: [InstantAttribute]
+    private let indexByID: [String: Int]
+    private let indexByReverseIdentity: [String: Int]
+    private let indexByName: [Name: Int]
+    private let refIndexByName: [Name: Int]
+
+    private struct Name: Hashable {
+      var namespace: String
+      var name: String
+    }
+
+    init(_ attributes: [InstantAttribute]) {
+      self.attributes = attributes
+      var indexByID: [String: Int] = [:]
+      var indexByReverseIdentity: [String: Int] = [:]
+      var indexByName: [Name: Int] = [:]
+      var refIndexByName: [Name: Int] = [:]
+      indexByID.reserveCapacity(attributes.count)
+      indexByName.reserveCapacity(attributes.count)
+      // Last to first, so each key ends at its first attribute.
+      for index in attributes.indices.reversed() {
+        let attribute = attributes[index]
+        indexByID[attribute.id] = index
+        let name = Name(namespace: attribute.namespace, name: attribute.name)
+        indexByName[name] = index
+        if attribute.valueType == .ref {
+          refIndexByName[name] = index
+        }
+        if let reverseIdentity = attribute.reverseIdentity {
+          indexByReverseIdentity[reverseIdentity] = index
+        }
+      }
+      self.indexByID = indexByID
+      self.indexByReverseIdentity = indexByReverseIdentity
+      self.indexByName = indexByName
+      self.refIndexByName = refIndexByName
+    }
+
+    func attribute(id: String) -> InstantAttribute? {
+      indexByID[id].map { attributes[$0] }
+    }
+
+    func attribute(reverseIdentity: String) -> InstantAttribute? {
+      indexByReverseIdentity[reverseIdentity].map { attributes[$0] }
+    }
+
+    func attribute(namespace: String, name: String) -> InstantAttribute? {
+      indexByName[Name(namespace: namespace, name: name)].map { attributes[$0] }
+    }
+
+    func refAttribute(namespace: String, name: String) -> InstantAttribute? {
+      refIndexByName[Name(namespace: namespace, name: name)].map { attributes[$0] }
+    }
+  }
+}
+
+/// Where one pass finds attributes: a ``InstantLiveQueryNestedLimit/Schema`` indexed once (#1109), or for a single call
+/// the triples' own attributes found in one pass over the schema and the schema searched for each include, so a page of
+/// sixteen attributes costs sixteen entries whatever the schema's size (#1147).
+private struct AttributeSource {
+  private enum Storage {
+    case indexed(InstantLiveQueryNestedLimit.Schema)
+    case searched(attributes: [InstantAttribute], byID: [String: InstantAttribute])
+  }
+
+  private let storage: Storage
+
+  init(_ schema: InstantLiveQueryNestedLimit.Schema) {
+    storage = .indexed(schema)
+  }
 
   init(_ attributes: [InstantAttribute], for triples: [InstantTriple]) {
     var wanted: Set<String> = []
     for triple in triples { wanted.insert(triple.attributeID) }
-    attributesByID.reserveCapacity(wanted.count)
-    for attribute in attributes where wanted.contains(attribute.id) && attributesByID[attribute.id] == nil {
-      attributesByID[attribute.id] = attribute
+    var byID: [String: InstantAttribute] = [:]
+    byID.reserveCapacity(wanted.count)
+    for attribute in attributes where wanted.contains(attribute.id) && byID[attribute.id] == nil {
+      byID[attribute.id] = attribute
+    }
+    storage = .searched(attributes: attributes, byID: byID)
+  }
+
+  var isEmpty: Bool {
+    switch storage {
+    case let .indexed(schema): schema.attributes.isEmpty
+    case let .searched(attributes, _): attributes.isEmpty
     }
   }
 
-  subscript(id: String) -> InstantAttribute? { attributesByID[id] }
+  /// The first attribute with `id`, for an id of the triples the source was made for.
+  subscript(id: String) -> InstantAttribute? {
+    switch storage {
+    case let .indexed(schema): schema.attribute(id: id)
+    case let .searched(_, byID): byID[id]
+    }
+  }
+
+  func attribute(reverseIdentity: String) -> InstantAttribute? {
+    switch storage {
+    case let .indexed(schema): schema.attribute(reverseIdentity: reverseIdentity)
+    case let .searched(attributes, _): attributes.first { $0.reverseIdentity == reverseIdentity }
+    }
+  }
+
+  func attribute(namespace: String, name: String) -> InstantAttribute? {
+    switch storage {
+    case let .indexed(schema): schema.attribute(namespace: namespace, name: name)
+    case let .searched(attributes, _): attributes.first { $0.namespace == namespace && $0.name == name }
+    }
+  }
+
+  func refAttribute(namespace: String, name: String) -> InstantAttribute? {
+    switch storage {
+    case let .indexed(schema): schema.refAttribute(namespace: namespace, name: name)
+    case let .searched(attributes, _):
+      attributes.first { $0.namespace == namespace && $0.name == name && $0.valueType == .ref }
+    }
+  }
 }
 
 private struct Context {
   var triplesByEntity: [String: [InstantTriple]]
   var entityIDsByNamespace: [String: Set<String>]
-  /// The schema as given, searched only for a query's includes and order fields: a few searches a pass instead of a map
-  /// of every attribute (#1147).
-  private let attributes: [InstantAttribute]
-  private let lookup: AttributeLookup
+  /// The schema, read for the triples' attributes and for a query's includes and order fields (#1147, #1109).
+  private let source: AttributeSource
 
-  init(triples: [InstantTriple], attributes: [InstantAttribute], lookup: AttributeLookup) {
-    self.attributes = attributes
-    self.lookup = lookup
+  init(triples: [InstantTriple], source: AttributeSource) {
+    self.source = source
     var triplesByEntity: [String: [InstantTriple]] = [:]
     var entityIDsByNamespace: [String: Set<String>] = [:]
     for triple in triples {
       triplesByEntity[triple.entityID, default: []].append(triple)
-      let namespace = lookup[triple.attributeID]?.namespace
+      let namespace = source[triple.attributeID]?.namespace
         ?? InstantLiveQueryNestedLimit.namespace(in: triple.attributeID)
       if let namespace {
         entityIDsByNamespace[namespace, default: []].insert(triple.entityID)
@@ -249,11 +378,8 @@ private struct Context {
     parentNamespace: String,
     includeName: String
   ) -> (childNamespace: String, reverseLink: InstantAttribute?, parentLink: InstantAttribute?)? {
-    let identity = "\(parentNamespace)/\(includeName)"
-    let reverseLink = attributes.first { $0.reverseIdentity == identity }
-    let parentLink = attributes.first {
-      $0.namespace == parentNamespace && $0.name == includeName && $0.valueType == .ref
-    }
+    let reverseLink = source.attribute(reverseIdentity: "\(parentNamespace)/\(includeName)")
+    let parentLink = source.refAttribute(namespace: parentNamespace, name: includeName)
     let childNamespace = reverseLink?.namespace ?? parentLink?.linkNamespace
     guard let childNamespace else { return nil }
     return (childNamespace, reverseLink, parentLink)
@@ -336,7 +462,7 @@ private struct Context {
 
   /// The first attribute the schema declares with `namespace` and `name`, as the general pass's map kept the first.
   func attribute(namespace: String, name: String) -> InstantAttribute? {
-    attributes.first { $0.namespace == namespace && $0.name == name }
+    source.attribute(namespace: namespace, name: name)
   }
 }
 

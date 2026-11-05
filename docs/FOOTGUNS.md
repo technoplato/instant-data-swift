@@ -57,7 +57,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F18](#f18) | Pay for the schema once per attribute revision, not per observe or read | #1111, #1147, #1150 | release only |
 | [F19](#f19) | Register an observer without holding the store across its send and its reload | #1074, #1131, #1134 | always |
 | [F20](#f20) | Hydrate deferred values for what changed, not for every row of every emission | #044, #1006, #1110, #1133 | partial |
-| [F21](#f21) | Make a page refresh cost its change on the client too | #654, #1109, #1116, #1147 | partial |
+| [F21](#f21) | Make a page refresh cost its change on the client too | #654, #1109, #1116, #1147 | partial (the comparison fixed in 1.9.73; decode and translate still follow the page) |
 | [F22](#f22) | End a screen's live queries when it leaves the screen or the app leaves the foreground | #394, #655, #1100, #1102 | partial |
 | [F23](#f23) | Load what stored results own at launch, and let go of what no result owns | #044, #654, #1107, #1145 | partial |
 | [F24](#f24) | Never copy a collection the size of its parent on a per-write path | #044, #654, #1152, #1153 | always |
@@ -104,6 +104,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #296, #932 | always |
 | [F66](#f66) | Keep one stored form of a result: a copy beside its rows must be rewritten, deferred or repaired | #566, #1123, #1426, #1440 | always |
 | [F67](#f67) | Decide a write's place in the outbox under the operation gate, never before it | #1648, #1609 | always |
+| [F68](#f68) | Never apply a buffered refresh a newer buffered refresh restates, and never fail a read behind a busy applier | #1796, #1768, #1127, #998 | always |
 
 ## Read path
 
@@ -590,7 +591,8 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   followed the page size (on top of the bytes in the first entry).
 - Measured cost: E03, 64-line refresh with one line changed: 23,947 allocations / 22.8 MB before, 6,171 / 6.6 MB after
   five steps; frame decode 111 -> 36.5 allocations a line; a whole file-list answer 548,414 -> 160,779 allocations.
-  Echo: 257 KB read from the database and 6.83 ms CPU per write for 9 changed facts on a 256-line page (#1116, open).
+  Echo: 257 KB read from the database and 6.83 ms CPU per write for 9 changed facts on a 256-line page (#1116); 1.9.73's
+  merge check: 3.95 -> 3.64 ms a write at 20 lines, and a 32-line page with one line changed reads 3 rows, not 96.
   Device: with 1.9.8, `observerRefresh` 20% of a core while recording.
 - Rule: diff the frame against the result already held in memory, write ownership rows and hydrate only what changed,
   and decode frames as a stream into compact triples.
@@ -599,13 +601,16 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   192 -> 96 rows read and values encoded for a 32-line page with one line changed), 4fff7e5c (#1109: no identity set
   when the nested limit kept every fact), f8b7c453 and 428411d9 (#1513: the publication splices, see F10). E03 at
   64 lines after them: 6,485 allocations / 5.5 MB a refresh (6,522 / 5.8 MB before, same job).
+  1.9.73: b95e87f9 and 949064a2 (#1116: each stored result keeps its entities' fingerprints from its last save, so a
+  refresh compares only the entities it changed with the rows SQLite holds), 2ce76178 (#1109: the save takes what the
+  translation limited); E03 at 64 lines 5.89 -> 5.22 ms a refresh, retractions 1.23 -> 0.79 ms, planning 0.40 -> 0.10 ms.
 - Guard: `RefreshCostTests/decodingARefreshFrameCostsLittlePerLine` (always); `Tests/InstantSwiftDataCoreTests/LiveQueryOwnershipDiffTests.swift`
   (always); E03's budget in `RealSize/MemoryExercises.swift` (exercise-only, `INSTANT_MEMORY_EXERCISES=1`);
   `RealSizeBudgetTests` rule `server-apply.refresh-128` (release-only);
   `InstantRefreshPlanningReadTests/aRefreshComparesARestatedResultWithItsStoredRowsOnce` (always) and the ratio guard
   proposed here, `aLargerPageWithOneLineChangedCostsAboutWhatASmallerOneDoes` (always: a 256-line page's rows read and
-  values encoded within twice a 64-line page's, about 4x today, a known issue until #1116 keeps each result's rows in
-  memory).
+  values encoded within twice a 64-line page's; it holds since 1.9.73) and the seeded differential
+  `comparingTheChangedEntitiesLeavesWhatTheFullComparisonLeaves` (always).
 - Upstream: `reactive/session.clj:467-534` (the server restates; the client chooses how much work a restatement costs).
 
 <a id="f22"></a>
@@ -1271,6 +1276,60 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   strictly increasing times; the same-row supersession and a refused write's supersession follow that order).
 - Upstream: `Reactor.js` `pushOps` numbers each mutation `max(order) + 1` as it is made and sends in that order
   (`sortedMutationEntries`).
+
+<a id="f68"></a>
+#### F68. Never apply a buffered refresh a newer buffered refresh restates, and never fail a read behind a busy applier
+
+- Symptom: a device following a live recording on another device shows it minutes late, its one-shot reads fail as
+  "Network or live transport failed" while its socket is open, and its own outbox drains a few writes a minute. Every
+  server frame waits in one buffer for one applier, in arrival order, and a `refresh-ok` restates each of its queries'
+  whole results, so each new line waited behind every older restatement of the same list, and every acknowledgement
+  and one-shot answer waited behind them too. After a resume the socket can be dead for seconds while the connection
+  still reads as open: a read's `add-query` fails on it, and a read that gives up then drops its registration, so the
+  reconnect never sends it.
+- Measured cost: tablet, build 248 (library 1.9.66), 2026-11-04 (Mac diagnostics collector): 8,240-11,035 of its own
+  writes pending, 25-35 accepted a minute; one minute (17:09:42-17:10:42) received 29 `refresh-ok` of the recording
+  list (144 KB each) and 31 `transact-ok` and ran 22 server applies, serverApplyPlan 41% and serverApplyStage 30% of a
+  core, "Instant sync 75% of one core", 101% in all, heat serious, 2.5 W; the phone it followed held 0-3 pending. After
+  a relaunch the live recording's first transcript page took 47.4 s, and every one-shot read (`$files`,
+  progressiveMediaStreams, recordingAttachments) failed at the fixed 5 s acknowledgement wait; the playback screen showed
+  that error, and the user read it aloud. At the 17:33 resume (229 s suspended) the reader saw the socket die at once
+  (POSIX 53), no apply finished for 12 s, every send failed, and a one-shot read failed in 0 ms. Earlier the same
+  morning: 1,085 `$files` lookups timed out in 93 minutes (#1768). The lag itself was not logged; about six minutes was
+  the user's reading of the two screens.
+- Rule: a buffered frame whose every result a newer buffered frame restates is work for nothing; drop it, and drop
+  the restated results from a frame that has others. Never change a frame that carries `attrs` (the applier records
+  them as it takes the frame) or one whose results reflect a later transaction. A read waits for its answer while the
+  connection receives or applies frames ahead of it, and fails only after a stall (5 s with neither) or upstream's
+  30 s; a fixed wall-clock wait turns a busy follower into a failed one (F41). A read whose `add-query` meets a socket
+  that just died keeps its registration and waits: the next session's init sends it. Measure the lag a follower sees,
+  from the server's time on the newest fact to the end of its apply.
+- Issues: #1796, #1768, #1127, #998; library red `bd5d9017`, green `3f66c955` (the buffer, the wait); red `25923d45`,
+  green `1fd79eb8` (a read across a socket's death); red `882448d2`, green `75915233` (the lag); guard `076ed107` (a
+  writer and a follower); red `fac02655`, green `d7502832` (a registration names its query in the gate's phase); Scribe
+  forwards the summary (#1796, InstantDiagnosticsBridge).
+- Guard: `Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift` (always):
+  `aWaitingRefreshLosesTheResultsANewerRefreshRestates`, `aWaitingRefreshKeepsTheResultsNoNewerRefreshRestates`,
+  `aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne`,
+  `aFollowerBehindALongApplyAppliesTheNewestListOnceAndEveryAcknowledgement` (twelve list refreshes and three
+  acknowledgements behind a held frame: the acknowledgements, then the newest list, and the store every frame would
+  leave), `aOneShotReadQueuedBehindALongApplyIsAnswered` (an answer 6.5 s behind a held frame),
+  `aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect`,
+  `theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied`, `theReceiveSummaryReportsHowOldTheNewestWritesWere`;
+  the guards `aRefreshCarryingAttributesKeepsItsResults`, `aRefreshNeverLosesResultsToAnEarlierTransaction` and
+  `aOneShotReadOnASilentSocketFailsAfterTheStall`; end to end,
+  `Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift`
+  `aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat` (a writer and a follower runtime over scripted
+  sockets, the tablet's minute replayed for two minutes on the test's clock: each line's lag at most 20 s, the last
+  at most 8 s). A device logs `live.receive-summary` once a minute (frames taken,
+  wait median, p95 and maximum from the reader to the applier, deepest buffer, the applier's busy share, frames and
+  results replaced, and the newest writes' age when applied at the median, p95 and maximum), a notice when a frame
+  waited a second or more or the newest writes arrived 10 s or more after the server stored them.
+- Upstream: the server combines queued refreshes (`server/src/instant/reactive/session.clj`, `combine [:refresh
+  :refresh]` returns the second event); `Reactor.js` replaces a query's stored result whole on each `refresh-ok`
+  (`querySubs[hash].result`) and applies each frame as it arrives, in memory; `queryOnce` waits 30 s
+  (`QUERY_ONCE_TIMEOUT`), and its `add-query` waits in `querySubs` for `_flushPendingMessages` on the next `init-ok`
+  when no socket can take it.
 
 ## Guards to add first
 

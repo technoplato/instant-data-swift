@@ -53,11 +53,23 @@ struct InstantStoredFileLookupTests {
     expectNoDifference(file.localPath, destination.path)
     let downloadedURLs = await fixture.storage.downloadedURLs
     expectNoDifference(downloadedURLs, [wanted.url])
-    // The device holds that one file's facts, and the prune after the lookup drops only them.
+    // The device holds that one file's facts, and the prune after the lookup unloads only the lookup's result.
     let stored = try await fixture.runtime.queryLocally(LookupFixture.everyFile)
     expectNoDifference(stored.values.map(\.id), [wanted.id])
+    let lookupKey = try InstantLiveQueryEncoder.registrationKey(for: query)
     let pruned = try await fixture.runtime.pruneLiveQueryResults(policy: LookupFixture.pruningPolicy, now: fixture.now)
-    expectNoDifference(pruned.removedOrphanedTripleCount, LookupFixture.attributeCount)
+    expectNoDifference(pruned.unloadedQueryKeys, [lookupKey])
+    // #1500: where it is, so the prune deletes no fact: memory lets that one file's facts go, and the device keeps them
+    // on disk, no other file's beside them.
+    expectNoDifference(pruned.removedOrphanedTripleCount, 0)
+    let inMemory = try await fixture.runtime.queryLocally(LookupFixture.everyFile)
+    expectNoDifference(inMemory.values.map(\.id), [])
+    let storeURL = await fixture.runtime.persistence.fileURLForTesting()
+    let countFacts = "SELECT COUNT(*) FROM instant_triples WHERE entity_id"
+    let wantedFactsOnDisk = try InstantUnloadInPlaceTests.scalar(storeURL, "\(countFacts) = '\(wanted.id)'")
+    let fileFactsOnDisk = try InstantUnloadInPlaceTests.scalar(storeURL, "\(countFacts) LIKE 'file-%'")
+    expectNoDifference(wantedFactsOnDisk, Int64(LookupFixture.attributeCount))
+    expectNoDifference(fileFactsOnDisk, Int64(LookupFixture.attributeCount))
   }
 
   @Test("A read by id with no name asks storage for that file alone")

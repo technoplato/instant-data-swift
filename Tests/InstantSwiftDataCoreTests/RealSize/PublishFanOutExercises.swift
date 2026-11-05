@@ -2,6 +2,8 @@
 // - 2026-10-31: created (#1495): a publication's fan-out over the phone's observers while it records, timed, with its
 //   publish metrics. The recording contention exercise's lists have no includes, so it could not show what three
 //   50-row recordings lists with five includes each cost per publication (the #1482 audit's M3).
+// - 2026-11-04: INSTANT_PUBLISH_FANOUT_HISTORY=frozen observes the seven older transcript pages as an infinite query
+//   holds them, frozen between two cursors with the server's page info, instead of by offset (#1513).
 
 import Foundation
 import Testing
@@ -16,7 +18,9 @@ import Testing
 /// `liveLines` row, which links to nothing, and the final is a transcript line linked to the recording and put in its
 /// preview slot (A for an even index, B for an odd one), its live row deleted. INSTANT_PUBLISH_FANOUT_INTERIMS=segments
 /// writes each interim into the open transcript line instead, linked to the recording, as a stress of the lists'
-/// judgement. Set INSTANT_PUBLISH_FANOUT=1 to run it; INSTANT_PUBLISH_FANOUT_STEPS sets the measured writes (2,000).
+/// judgement. INSTANT_PUBLISH_FANOUT_HISTORY=frozen observes the seven older transcript pages as an infinite query's frozen
+/// pages (a cursor each side, no limit, the server's page info), the consuming app's shape, instead of by offset. Set
+/// INSTANT_PUBLISH_FANOUT=1 to run it; INSTANT_PUBLISH_FANOUT_STEPS sets the measured writes (2,000).
 @Suite(
   .serialized,
   .enabled(
@@ -28,7 +32,10 @@ struct PublishFanOutExercises {
   @Test func recordingPhone() async throws {
     let environment = ProcessInfo.processInfo.environment
     let steps = environment["INSTANT_PUBLISH_FANOUT_STEPS"].flatMap(Int.init) ?? 2_000
-    var fixture = PublishFanOutFixture(interimsAreLinked: environment["INSTANT_PUBLISH_FANOUT_INTERIMS"] == "segments")
+    var fixture = PublishFanOutFixture(
+      interimsAreLinked: environment["INSTANT_PUBLISH_FANOUT_INTERIMS"] == "segments",
+      historyIsFrozen: environment["INSTANT_PUBLISH_FANOUT_HISTORY"] == "frozen"
+    )
     let store = try await fixture.seededStore()
     let plans = fixture.observedPlans()
     var readings: [Task<Void, Never>] = []
@@ -36,12 +43,22 @@ struct PublishFanOutExercises {
       let stream = await store.observe(plan)
       readings.append(Task { for await _ in stream {} })
     }
+    let frozenPages = fixture.frozenHistoryPages()
+    for page in frozenPages {
+      let lease = await store.observeLiveQueryLease(
+        page.plan,
+        registrationKey: page.key,
+        remotePageInfo: .ready(page.pageInfo)
+      )
+      readings.append(Task { for await _ in lease.stream {} })
+    }
     defer { readings.forEach { $0.cancel() } }
     print(
       "PUBLISH fanout setup interims=\(fixture.interimsAreLinked ? "segments" : "liveLines") "
+        + "history=\(fixture.historyIsFrozen ? "frozen" : "offset") "
         + "recordings=\(PublishFanOutFixture.recordingCount) "
-        + "live_segments=\(PublishFanOutFixture.liveSegmentCount) observers=\(plans.count) lists=3 list_rows=50 "
-        + "includes=5 triples=\(await store.currentTripleCount())"
+        + "live_segments=\(PublishFanOutFixture.liveSegmentCount) observers=\(plans.count + frozenPages.count) lists=3 "
+        + "list_rows=50 includes=5 triples=\(await store.currentTripleCount())"
     )
 
     for _ in 0..<50 {
@@ -113,12 +130,15 @@ struct PublishFanOutFixture {
 
   /// Whether an interim rewrites the open transcript line, linked to the recording, instead of its live row.
   let interimsAreLinked: Bool
+  /// Whether the seven older transcript pages are an infinite query's frozen pages instead of offset pages.
+  let historyIsFrozen: Bool
   private var step = 0
   private var openSegment = liveSegmentCount
   private var openRevision = 0
 
-  init(interimsAreLinked: Bool = false) {
+  init(interimsAreLinked: Bool = false, historyIsFrozen: Bool = false) {
     self.interimsAreLinked = interimsAreLinked
+    self.historyIsFrozen = historyIsFrozen
   }
 
   static let attributes: [InstantAttribute] = {
@@ -185,7 +205,7 @@ struct PublishFanOutFixture {
   /// recordings: 48.
   func observedPlans() -> [InstantQueryPlan] {
     var plans = (0..<3).map { page in Self.listPlan(id: "fanout.list.\(page)", offset: page * 50, limit: 50) }
-    plans += (0..<8).map { page in
+    plans += (0..<(historyIsFrozen ? 1 : 8)).map { page in
       InstantQueryPlan(
         id: "fanout.transcript.\(page)",
         namespace: Self.segments,
@@ -215,6 +235,39 @@ struct PublishFanOutFixture {
       )
     }
     return plans
+  }
+
+  /// With `historyIsFrozen`, the seven older transcript pages as an infinite query freezes them (upstream
+  /// `freezeForward`): the lines after the newer page's last line up to and including the page's own last, newest first,
+  /// with no limit, observed as live queries with the server's page info (their first and last lines).
+  func frozenHistoryPages() -> [(plan: InstantQueryPlan, key: String, pageInfo: InstantQueryPageInfo)] {
+    guard historyIsFrozen else { return [] }
+    func cursor(_ index: Int, inclusive: Bool) -> InstantQueryCursor {
+      InstantQueryCursor(
+        entityID: Self.segmentID(Self.live, index),
+        sortValue: .number(Double(index)),
+        inclusive: inclusive
+      )
+    }
+    return (1..<8).map { page in
+      let newest = Self.liveSegmentCount - 1 - page * 64
+      let oldest = newest - 63
+      let plan = InstantQueryPlan(
+        id: "fanout.transcript.frozen.\(page)",
+        namespace: Self.segments,
+        filters: [.equals(field: "recordingID", value: .string(Self.recordingID(Self.live)))],
+        order: InstantQueryOrder("index", .descending),
+        after: cursor(newest + 1, inclusive: false),
+        before: cursor(oldest, inclusive: true)
+      )
+      let pageInfo = InstantQueryPageInfo(
+        startCursor: cursor(newest, inclusive: true),
+        endCursor: cursor(oldest, inclusive: true),
+        hasPreviousPage: true,
+        hasNextPage: page < 7
+      )
+      return (plan, "fanout.transcript.frozen.\(page).key", pageInfo)
+    }
   }
 
   static func listPlan(id: String, offset: Int?, limit: Int?) -> InstantQueryPlan {

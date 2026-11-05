@@ -97,7 +97,12 @@ struct InstantInactiveLiveQueryPruneMemoryTests {
 
     expectNoDifference(application.result.remainingQueryKeys, [activeKey])
     expectNoDifference(application.result.remainingEntryCount, 1)
-    expectNoDifference(application.result.removedQueryKeys.count, stalePageCount - 1)
+    // #1500: the stale pages are unloaded where they are, their rows marked and kept on disk, not removed.
+    expectNoDifference(
+      application.result.unloadedQueryKeys.sorted(),
+      (1..<stalePageCount).map { "query-stale-page-\($0)" }.sorted()
+    )
+    expectNoDifference(application.result.removedQueryKeys, [])
 
     let reloaded = try SQLitePersistenceStore(fileURL: cacheURL)
     try await reloaded.bootstrap()
