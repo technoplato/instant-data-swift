@@ -2,6 +2,7 @@
 // 2026-11-04  #1796  Created. A writer and a follower over one scripted server: the writer's lines reach a follower
 //                    that spends 1.5 s on each server frame while its own writes drain, within seconds, and the lag
 //                    stays flat. A tablet following a live recording that way showed it about six minutes late.
+// 2026-11-05  #1796  The lags are printed when the test passes too, for the release record.
 
 import CustomDump
 import Foundation
@@ -157,6 +158,8 @@ struct InstantWriterFollowerLatencyTests {
       }
 
       let lags = TwoClientLags(writtenAt: writtenAt, shownAt: shownAt)
+      // The distribution is the release's evidence whether the bounds hold or not; a passing #expect prints nothing.
+      print("#1796 two-client lags: \(lags)")
       #expect(lags.unshownLines.isEmpty, "#1796: lines the follower never showed: \(lags.unshownLines)")
       #expect(lags.worst <= 20_000, "#1796: a writer's line reached the follower late: \(lags)")
       #expect(lags.newest <= 8_000, "#1796: the follower's lag grew while the writer recorded: \(lags)")
