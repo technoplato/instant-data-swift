@@ -154,4 +154,39 @@ struct InstantWritePathCostTests {
     #expect(sent == (0..<writes).map { "tx-save-claim-\($0)" }, "every write is sent once, in order: \(sent)")
     _ = try? await runtime.closeConnection()
   }
+
+  /// Writes saved back to back on an open connection, some claimed by their saves and some by passes that waited for
+  /// the operation gate meanwhile, reach the socket once each in the order they were made (#653).
+  @Test
+  func writesSavedBackToBackReachTheSocketInTheOrderTheyWereMade() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let runtime = try await InstantObserverRegistrationGateTests.runtime(
+      "claim-at-save-burst",
+      transport: session.transport
+    ) { _ in }
+    _ = try await runtime.connect()
+    try await InstantConnectionStateTruthTests.waitUntil("the connection's first pass to finish") {
+      await runtime.automaticMutationPumpIsIdleForTesting()
+    }
+
+    let writes = 10
+    for index in 0..<writes {
+      try await InstantOfflineRuntimeFixture.createTodo("burst-\(index)", in: runtime)
+    }
+    try await InstantConnectionStateTruthTests.waitUntil("every write to reach the socket") {
+      await session.sentMessages().filter { $0.op == "transact" }.count >= writes
+    }
+    for index in 0..<writes {
+      await session.enqueue(
+        InstantLiveMessage(op: "transact-ok", clientEventID: "tx-burst-\(index)", fields: ["tx-id": .string("s-\(index)")])
+      )
+    }
+    try await InstantConnectionStateTruthTests.waitUntil("the server to accept every write") {
+      await runtime.pendingMutations().isEmpty
+    }
+
+    let sent = await session.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
+    #expect(sent == (0..<writes).map { "tx-burst-\($0)" }, "every write is sent once, in order: \(sent)")
+    _ = try? await runtime.closeConnection()
+  }
 }
