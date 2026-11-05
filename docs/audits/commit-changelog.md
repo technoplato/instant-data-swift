@@ -1,3 +1,6 @@
+## 2026-11-05 01:24:40 EST — scribe `8afa49fd679d4e6348d737231f56ec2f9c4e60ef`
+Feature (#1777): the phone's keeper counts a finished 48 kbps copy in storage that reaches the WAV's end (storage is to keep only the copy); the media scan leaves an audio row left to its copy alone, the detail projection shows its audio uploaded, and an Unnamed Voices clip plays from the stored copy when the row has no file; red/green on the mini (5 new tests, 64 pass); FEATURES item 24's keeper clause.
+
 ## 2026-11-05 01:13:51 EST — scribe `74f4f29da955b82e25fee2fa21acc79bcf447898`
 Fix (#1652): agent-run --steer refuses a claude run whose claude process reads no inbox (started before the hook, 2026-11-04 12:53, or between attempts), so a message from the phone never waits unread while its box says sent; installed into ~/Scribe/tools.
 
