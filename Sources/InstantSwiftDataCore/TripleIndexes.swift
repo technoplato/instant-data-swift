@@ -15,6 +15,15 @@ import os
 // - 2026-10-28: `holdsFact` and `factCount(entityID:)` answer a prune batch without materializing an entity (#1319).
 // - 2026-11-04: the newest transaction time is kept in time-ordered counts, not walked: the full-rebase server apply
 //   read it once per pending write it replayed, and iOS's CPU Monitor killed the app in that walk (#1748).
+// - 2026-11-04: a bounded page can be chosen from given candidates, and a change's links to shown entities listed, so a
+//   publication splices the rows a final line reaches instead of scanning every recording or line again (#1513).
+// - 2026-11-04: `loadFactsKeptOnDisk`, an entity's facts read from SQLite before a write prepares against it (#1165).
+// - 2026-11-04: the schema's cascading links are kept with its lookup indexes, so a server apply finds them without
+//   sorting every attribute (#1109).
+// - 2026-11-04: `isOutsideRemotePageRows` says when a row lies outside what a page bounded by the server's page info
+//   can show, so a publication skips an infinite query's frozen pages for a line past their cursors (#1513).
+// - 2026-11-04: a page with no limit, ordered by an indexed field, orders only its indexed filters' hits, not every
+//   row of its namespace (#1513).
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -25,6 +34,10 @@ struct AttributeStore: Hashable, Codable, Sendable {
   private var reverseAttributesByID: [String: InstantAttribute] = [:]
   private var namespaceSet: Set<String> = []
   private var namespacesWithManyCardinality: Set<String> = []
+  /// The links whose deletes cascade (`onDelete` or `onDeleteReverse` is `.cascade`), in id order, kept with the other
+  /// lookup indexes (#1109): a server apply with an empty slot to keep reads them, and sorted every attribute to find
+  /// them (37 ms in a 90 s trace of the phone transcribing speech, build 251).
+  private(set) var cascadingLinks: [InstantAttribute] = []
 
   private enum CodingKeys: String, CodingKey {
     case attributesByID
@@ -340,6 +353,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
     reverseAttributesByID = [:]
     namespaceSet = []
     namespacesWithManyCardinality = []
+    cascadingLinks = []
 
     for attribute in attributesByID.values.sorted(by: { $0.id < $1.id }) {
       namespaceSet.insert(attribute.namespace)
@@ -350,6 +364,9 @@ struct AttributeStore: Hashable, Codable, Sendable {
       attributesByNamespace[attribute.namespace, default: []].append(attribute)
       if let forwardIdentity = attribute.forwardIdentity {
         attributesByForwardIdentity[forwardIdentity] = attribute
+      }
+      if attribute.valueType == .ref, attribute.onDelete == .cascade || attribute.onDeleteReverse == .cascade {
+        cascadingLinks.append(attribute)
       }
       guard
         attribute.valueType == .ref,
@@ -1600,6 +1617,25 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
 
+  /// Inserts the facts this device keeps on disk of entities these indexes hold no fact of, read before a write
+  /// prepares against them (#1165). Unlike deferred values they stay when the result is installed: an entity a write
+  /// touches is held whole, never in part.
+  mutating func loadFactsKeptOnDisk(
+    _ triples: [InstantTriple],
+    attributes: AttributeStore
+  ) {
+    guard !triples.isEmpty else { return }
+    if triples.contains(where: {
+      derivedIndexAttributeShapes[$0.attributeID]
+        != attributes[$0.attributeID].map(DerivedIndexAttributeShape.init)
+    }) {
+      _ = rebuildDerivedIndexes(attributes: attributes)
+    }
+    for triple in triples {
+      insert(triple, attribute: attributes[triple.attributeID])
+    }
+  }
+
   @discardableResult
   mutating func reconcileDerivedIndexShapes(attributes: AttributeStore) -> Set<String> {
     let currentShapes = Self.derivedIndexAttributeShapes(for: attributes)
@@ -1954,6 +1990,39 @@ struct TripleIndexes: Codable, Sendable {
       }
     }
     return false
+  }
+
+  /// The entities among `entityIDs` that `entityID` holds a ref to, or that hold a ref to it (#1513): which shown
+  /// entities a change of `entityID` reaches through a link, probed from each link's smaller side as ``hasLink`` is.
+  func linkedEntityIDs(_ entityID: String, among entityIDs: Set<String>, attributes: AttributeStore) -> Set<String> {
+    guard !entityIDs.isEmpty else { return [] }
+    var linked: Set<String> = []
+    if let attributesByID = eav[entityID] {
+      for (attributeID, slot) in attributesByID where attributes[attributeID]?.valueType == .ref {
+        switch slot {
+        case let .one(value, _):
+          if case let .ref(target) = value, entityIDs.contains(target) { linked.insert(target) }
+        case let .many(map):
+          if map.count > entityIDs.count {
+            for id in entityIDs where map[.ref(id)] != nil { linked.insert(id) }
+          } else {
+            for value in map.keys {
+              if let target = value.refValue, entityIDs.contains(target) { linked.insert(target) }
+            }
+          }
+        }
+      }
+    }
+    if let byAttribute = vae[.ref(entityID)] {
+      for byEntity in byAttribute.values {
+        if byEntity.count > entityIDs.count {
+          for id in entityIDs where byEntity[id] != nil { linked.insert(id) }
+        } else {
+          for source in byEntity.keys where entityIDs.contains(source) { linked.insert(source) }
+        }
+      }
+    }
+    return linked
   }
 
   /// `lazy` matters here: the outbox is rescanned on every inbound server event, and this is asked
@@ -2358,6 +2427,38 @@ struct TripleIndexes: Codable, Sendable {
     return (page, metrics)
   }
 
+  /// `plan`'s page chosen from `candidateIDs` alone, with the bounded selection ``materializePageWithMetrics(_:attributes:remotePageInfo:)``
+  /// runs over every candidate the store holds (#1513); nil when `plan` has no finite bound that selection supports.
+  ///
+  /// The two pages are equal when every entity the whole selection would keep, its lookahead row included, is among
+  /// `candidateIDs`: a window's rows and an entity entering it, when nothing the window shows leaves it. The caller
+  /// proves that. The selection orders by value and then id, a total order, so the candidates' order does not matter.
+  func materializeBoundedPage(
+    _ plan: InstantQueryPlan,
+    amongCandidates candidateIDs: some Sequence<String>,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> (page: InstantQueryPage, metrics: QueryMaterializationMetrics)? {
+    guard Self.hasFiniteResultBound(plan), Self.supportsBoundedSelection(plan) else { return nil }
+    var metrics = QueryMaterializationMetrics()
+    // Unlike an index's set, these candidates are not known to be in the plan's namespace or to match its filters:
+    // each is materialized and checked, as a candidate the indexes do not cover is.
+    let page = materializeBoundedPage(
+      plan,
+      order: Self.effectiveOrder(plan.order),
+      candidateSource: BoundedCandidateSource(
+        baseEntityIDs: ShardedSet(candidateIDs),
+        additionalMemberships: [],
+        filtersFullyCoveredByIndex: false,
+        candidateNamespaceIsKnown: false
+      ),
+      attributes: attributes,
+      remotePageInfo: remotePageInfo,
+      metrics: &metrics
+    )
+    return (page, metrics)
+  }
+
   private mutating func materializeIndexedEqualsPrefix(
     _ plan: InstantQueryPlan,
     attributes: AttributeStore,
@@ -2667,7 +2768,8 @@ struct TripleIndexes: Codable, Sendable {
     if let snapshots = materializeOrderedSnapshots(
       plan,
       order: effectiveOrder,
-      attributes: attributes
+      attributes: attributes,
+      metrics: &metrics
     ) {
       let paged = paginate(
         snapshots,
@@ -3540,7 +3642,8 @@ struct TripleIndexes: Codable, Sendable {
   private func materializeOrderedSnapshots(
     _ plan: InstantQueryPlan,
     order: InstantQueryOrder,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
   ) -> [QuerySnapshot]? {
     guard
       !order.isServerCreatedAt,
@@ -3556,10 +3659,23 @@ struct TripleIndexes: Codable, Sendable {
       valuesByEntityID.count == namespaceMembers.count
     else { return nil }
 
+    // #1513: the rows the plan's indexed equality filters admit, when they are fewer than the namespace's. A recording's
+    // attachments, or a frozen page of its lines, ordered and materialized every attachment or line the device holds.
+    // Every row the filters match is among the hits, and each is still matched below.
+    let candidateSource = resolveBoundedCandidateSource(plan: plan, attributes: attributes)
     var ordered: [(entityID: String, value: InstantValue)] = []
-    ordered.reserveCapacity(valuesByEntityID.count)
-    for (entityID, value) in valuesByEntityID {
-      ordered.append((entityID, value))
+    if let hits = candidateSource.baseEntityIDs, hits.count < valuesByEntityID.count {
+      ordered.reserveCapacity(hits.count)
+      forEachEntityID(in: candidateSource) { entityID in
+        if let value = valuesByEntityID[entityID] {
+          ordered.append((entityID, value))
+        }
+      }
+    } else {
+      ordered.reserveCapacity(valuesByEntityID.count)
+      for (entityID, value) in valuesByEntityID {
+        ordered.append((entityID, value))
+      }
     }
     ordered.sort { lhs, rhs in
       Self.orderedValuePrecedes(
@@ -3573,6 +3689,7 @@ struct TripleIndexes: Codable, Sendable {
     var snapshots: [QuerySnapshot] = []
     snapshots.reserveCapacity(ordered.count)
     let fields = Self.shownFields(of: plan)
+    metrics.examinedCandidateCount += ordered.count
     for (entityID, sortValue) in ordered {
       guard
         let snapshot = snapshot(
@@ -3580,9 +3697,11 @@ struct TripleIndexes: Codable, Sendable {
           namespace: plan.namespace,
           attributes: attributes,
           fields: fields
-        ),
-        matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
+        )
       else { continue }
+      metrics.materializedSnapshotCount += 1
+      guard matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes) else { continue }
+      metrics.matchingCandidateCount += 1
       snapshots.append(
         QuerySnapshot(
           snapshot: snapshot,
@@ -4389,9 +4508,60 @@ private struct PreparedInclude {
   }
 
   private func requiresRemotePageInfo(_ plan: InstantQueryPlan) -> Bool {
+    Self.pageRowsDependOnRemotePageInfo(plan)
+  }
+
+  /// Whether the server's page info bounds which rows `plan`'s page shows (an offset or a cursor), rather than only
+  /// being the page info it reports (#1513).
+  static func pageRowsDependOnRemotePageInfo(_ plan: InstantQueryPlan) -> Bool {
     plan.offset.map { $0 > 0 } ?? false
       || plan.after != nil
       || plan.before != nil
+  }
+
+  /// Whether a row with `membership` in `plan`'s result set lies outside every row its page can show while the server's
+  /// page info bounds them (#1513), so it can change neither the page's rows nor its page info.
+  ///
+  /// A page whose rows follow the server's page info shows only the rows between its start and end cursors, compared as
+  /// ``paginate(_:plan:effectiveOrder:attributes:remotePageInfo:)`` and the bounded selection compare them, and reports
+  /// the server's page info; while that page info is awaited, or names no first row, it shows none. An infinite query's
+  /// frozen page is such a page (upstream `freezeForward`: a cursor each side, no limit), and each new line of the
+  /// recording entered its result set: every frozen page was materialized again for a line none of them could show.
+  /// False when the page's rows do not follow the server's page info, or when the order reads a date, whose indexed
+  /// value is normalized.
+  static func isOutsideRemotePageRows(
+    _ entityID: String,
+    membership: InstantResultSetMembership,
+    plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard pageRowsDependOnRemotePageInfo(plan), let remotePageInfo else { return false }
+    guard case let .ready(pageInfo) = remotePageInfo, let startCursor = pageInfo.startCursor else { return true }
+    guard case let .member(orderValue) = membership else { return true }
+    let order = effectiveOrder(plan.order)
+    if !order.isServerCreatedAt,
+      attributes.attribute(namespace: plan.namespace, name: order.field)?.valueType == .date
+    {
+      return false
+    }
+    let row = QuerySnapshot(
+      snapshot: InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: [:]),
+      serverCreatedAt: nil,
+      sortValue: orderValue
+    )
+    if compare(row, to: startCursor, order: order, namespace: plan.namespace, attributes: attributes)
+      == .orderedAscending
+    {
+      return true
+    }
+    if let endCursor = pageInfo.endCursor,
+      compare(row, to: endCursor, order: order, namespace: plan.namespace, attributes: attributes)
+        == .orderedDescending
+    {
+      return true
+    }
+    return false
   }
 
   private func isValidPagination(_ plan: InstantQueryPlan) -> Bool {

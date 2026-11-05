@@ -200,14 +200,18 @@ enum InstantLiveRefreshTranslator {
         let boundedInsertTriples = InstantLiveQueryNestedLimit.limitedTriples(
           queryKey: key,
           triples: insertTriples,
-          attributes: attributeContext.resolvedLocalAttributes
+          schema: attributeContext.nestedLimitSchema
         )
-        let retainedInsertIdentities = Set(
-          boundedInsertTriples.map(InstantLiveTripleIdentity.init)
-        )
-        computationOperations.removeAll { operation in
-          guard case let .insert(triple) = operation else { return false }
-          return !retainedInsertIdentities.contains(InstantLiveTripleIdentity(triple))
+        // #1109: the limit only drops facts, and keeps every one on most refreshes; only then is there nothing to remove.
+        // Removing nothing hashed every restated fact, its value's text included, twice a refresh.
+        if boundedInsertTriples.count != insertTriples.count {
+          let retainedInsertIdentities = Set(
+            boundedInsertTriples.map(InstantLiveTripleIdentity.init)
+          )
+          computationOperations.removeAll { operation in
+            guard case let .insert(triple) = operation else { return false }
+            return !retainedInsertIdentities.contains(InstantLiveTripleIdentity(triple))
+          }
         }
         queryKey = key
         queryResultReplacement = InstantLiveQueryResultReplacement(
@@ -772,9 +776,10 @@ struct InstantLiveRefreshAttributeContext: Sendable {
   private var localAttributeIDsByServerID: [String: String] = [:]
   private(set) var attributesToMerge: [InstantAttribute] = []
 
-  /// The local schema after this refresh's new attributes merge in, resolved once per refresh.
-  /// Resolving it per computation re-merged and re-sorted the whole schema for every query result.
-  let resolvedLocalAttributes: [InstantAttribute]
+  /// The local schema after this refresh's new attributes merge in, resolved once per refresh and indexed for the
+  /// nested-limit pass. Resolving it per computation re-merged and re-sorted the whole schema for every query result,
+  /// and the pass walked every attribute of it for every result until the context indexed it (#1109).
+  let nestedLimitSchema: InstantLiveQueryNestedLimit.Schema
 
   init(existingAttributes: [InstantAttribute], serverAttributes: [InstantAttribute]) {
     self.existing = AttributeStore(attributes: existingAttributes)
@@ -790,7 +795,7 @@ struct InstantLiveRefreshAttributeContext: Sendable {
     self.attributesToMerge = attributesToMerge
     var resolved = existing
     resolved.merge(attributesToMerge)
-    self.resolvedLocalAttributes = resolved.attributes
+    self.nestedLimitSchema = InstantLiveQueryNestedLimit.Schema(resolved.attributes)
   }
 
   func localAttributeID(forServerAttributeID attributeID: String) -> String {

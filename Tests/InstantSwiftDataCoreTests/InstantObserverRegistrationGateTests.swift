@@ -5,6 +5,10 @@
 //                    a 150 ms socket and 1,718 ms to reload the `$files` list's 75,640 facts.
 // 2026-10-24  #1131  A closed result loads back in bounded holds: with its read out of the gate, the `$files` reload's
 //                    commit still held it about 1.3 s.
+// 2026-11-04  #1796  A registration's hold names its query's namespace, so a stall report says whose it was: a
+//                    tablet's launch logged an observer registration holding the gate 4,583 ms with no name.
+// 2026-11-05  #1500  A prune unloads a closed result where it is; an older build's whole copy still reloads, and a
+//                    chunk of its reload writes nothing once a server answer replaced its row.
 
 import CustomDump
 import Foundation
@@ -158,6 +162,45 @@ struct InstantObserverRegistrationGateTests {
 
     #expect(chunk == nil)
   }
+
+  /// The same for the whole copy an older build's prune kept (#1006; a prune unloads where it is since #1500): its
+  /// reload moves its row back without the ownership rows and facts, which its chunks write, so once a server answer
+  /// replaced that row a chunk writes neither.
+  @Test
+  func aReloadChunkOfAnOlderBuildsCopyWritesNothingOnceAServerAnswerReplacedItsRow() async throws {
+    let url = try InstantStoredResultReloadTests.temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: url)
+    try await persistence.bootstrap()
+    try InstantStoredResultReloadTests.writeOlderBuildsUnloadedCopy(Self.closedResult(todos: 3, at: 1), at: url)
+    let read = try #require(try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed"))
+    #expect(!read.isInPlace)
+    let begun = try #require(try await persistence.beginUnloadedLiveQueryResultReload(read))
+    #expect(!begun.ownsItsFacts, "an older build's copy owns no rows until its chunks write them")
+
+    try await InstantStoredResultReloadTests.save([Self.closedResult(todos: 1, at: 5)], in: persistence)
+    let chunk = try await persistence.reloadUnloadedLiveQueryResultChunk(
+      key: "query-closed",
+      rowTripleCount: begun.rowTripleCount,
+      rowUpdatedAtMilliseconds: begun.rowUpdatedAtMilliseconds,
+      entityTriples: Dictionary(grouping: begun.result.triples, by: \.entityID),
+      ownedFacts: begun.result.triples,
+      residentEntityIDs: [],
+      ownsItsFacts: begun.ownsItsFacts
+    )
+
+    #expect(chunk == nil)
+    let stored = try #require(
+      try await persistence.readConnection.storedLiveQueryResults(keys: ["query-closed"])["query-closed"]
+    )
+    expectNoDifference(Set(stored.result.triples.map(\.entityID)), ["todo-0"], "the server's answer stands")
+    #expect(
+      try InstantUnloadInPlaceTests.scalar(
+        url,
+        "SELECT COUNT(*) FROM instant_triples WHERE entity_id IN ('todo-1', 'todo-2')"
+      ) == 0,
+      "the entities the answer left out stay out"
+    )
+  }
 }
 
 // MARK: - The wire's order
@@ -186,6 +229,43 @@ extension InstantObserverRegistrationGateTests {
     let ops = await session.sentMessages().map(\.op).filter { $0 != "init" }
     expectNoDifference(ops, ["add-query", "remove-query"])
     await live.close()
+  }
+}
+
+// MARK: - The holder names its query
+
+extension InstantObserverRegistrationGateTests {
+  /// A registration's hold names its query's namespace in the gate's phase, a standard query's and an infinite query
+  /// page's alike (#1796), so a stall or wait report says which query's registration held the gate. On 2026-11-04 a
+  /// tablet's launch logged "Instant's operation gate has been held by observe standard live query for 4583 ms. 7
+  /// caller(s) are queued behind it" and, a minute later, an infinite query page's registration holding it 2,852 ms,
+  /// both without a phase: the connect and 26 one-shot reads waited behind a query nothing named.
+  @Test
+  func aRegistrationsHoldNamesItsQuerysNamespace() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let phases = InstantGateReleasePhases()
+    let runtime = try await Self.runtime("observer-registration-phase", transport: session.transport) {
+      $0.operationGateTimeline = phases.record
+    }
+    _ = try await runtime.connect()
+
+    let list = await runtime.observeQueryLease(TodoExample.query)
+    let page = try await runtime.observeLiveInfiniteQueryChunk(InstantStoredResultReloadTests.keepAliveTodosQuery)
+
+    expectNoDifference(
+      phases.phases(of: "observe standard live query"),
+      ["answer todos"],
+      "#1796: the registration's hold did not name its query"
+    )
+    expectNoDifference(
+      phases.phases(of: "observe live infinite query chunk"),
+      ["answer todos"],
+      "#1796: the page's registration did not name its query"
+    )
+
+    await page.cancel()
+    await list.cancel()
+    _ = try await runtime.closeConnection()
   }
 }
 
@@ -500,5 +580,23 @@ final class InstantStalledLiveSend: Sendable {
 
   func release() {
     point.release()
+  }
+}
+
+/// The phase each holder named last when it left the operation gate, from the gate's timeline (#1796).
+final class InstantGateReleasePhases: @unchecked Sendable {
+  // SAFETY: `lock` guards `released`.
+  private let lock = NSLock()
+  private var released: [(operation: String, phase: String?)] = []
+
+  var record: @Sendable (AsyncSerialGate.TimelineEvent) -> Void {
+    { [weak self] event in
+      guard event.kind == .released, let self else { return }
+      self.lock.withLock { self.released.append((event.operation, event.phase)) }
+    }
+  }
+
+  func phases(of operation: String) -> [String?] {
+    lock.withLock { released.filter { $0.operation == operation }.map(\.phase) }
   }
 }

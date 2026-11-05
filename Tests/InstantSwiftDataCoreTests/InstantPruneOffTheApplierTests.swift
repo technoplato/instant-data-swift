@@ -9,6 +9,9 @@
 //                    `$files` batch's 397 ms).
 // 2026-10-25  #1129  A prune batch waits for a server apply in progress: one that committed between the apply's seed
 //                    and its plan made the refresh behind the cadence prune plan again, behind the next batch.
+// 2026-11-05  #1500  A closed result is unloaded where it is and drops nothing, so released rows, batched releases and
+//                    the read-ahead are tested on the results the policy collects. What opening the store keeps is read
+//                    from its file: a launch loads only the newest ten stored results (#1107).
 
 import CustomDump
 import Foundation
@@ -25,6 +28,11 @@ import Testing
 /// every server frame takes.
 @Suite(.serialized, .timeLimit(.minutes(2)))
 struct InstantPruneOffTheApplierTests {
+  /// A policy that keeps no stored result but an open query's (#1500). A session prune unloads a closed result where it
+  /// is and releases nothing from disk; a result the policy collects is the one whose rows and facts a prune releases,
+  /// over later batches when it is larger than one (#1129).
+  static let collectingPolicy = InstantLiveQueryResultPruningPolicy(maxEntries: 0)
+
   /// While the cadence prune a refresh triggered waits between two batches, that refresh has returned and the next
   /// refresh applies.
   @Test
@@ -64,6 +72,8 @@ struct InstantPruneOffTheApplierTests {
   /// about a batch of facts, and the end state is one prune's: every result goes, an entity split across two results
   /// goes once both do, and an entity with local data stays. A batch took at least one whole result, so the closed
   /// `$files` list's 75,640 facts were one 1.7 s hold in #1074's `prune` exercise.
+  ///
+  /// Since #1500 those are the results the policy collects: a closed result is unloaded where it is, its facts kept.
   @Test
   func aResultLargerThanABatchIsReleasedOverSeveralBatches() async throws {
     let url = try InstantPruneGateHoldTests.temporaryCacheURL()
@@ -79,14 +89,14 @@ struct InstantPruneOffTheApplierTests {
     configuration.autoConnectLiveTransport = false
     // Each seeded result holds about 450 facts.
     configuration.liveQueryResultPruneBatchTripleCount = 100
+    // #1107: every seeded result stays loaded at the launch, as the results of queries that closed in a session are; a
+    // launch keeps only the newest ten.
+    configuration.preloadedLiveQueryResultCount = .max
     configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in batches.record() }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let observation = await runtime.observeQueryLease(TodoExample.query)
 
-    let pruned = try await runtime.pruneLiveQueryResults(
-      policy: InstantStoredResultReloadTests.productionPolicy,
-      now: configuration.now()
-    )
+    let pruned = try await runtime.pruneLiveQueryResults(policy: Self.collectingPolicy, now: configuration.now())
     let survivors = Set(await runtime.store.snapshot().triples.map(\.entityID))
 
     #expect(
@@ -120,8 +130,9 @@ struct InstantPruneOffTheApplierTests {
       [InstantObserverRegistrationGateTests.closedResult(todos: 4, at: 2)],
       in: persistence
     )
+    // #1500: a batch decodes the results the policy collects; one it only unloads stays where it is, undecoded.
     let batch = try await persistence.liveQueryResultPruneBatch(
-      policy: InstantStoredResultReloadTests.productionPolicy,
+      policy: Self.collectingPolicy,
       now: InstantTimestamp(milliseconds: 3),
       preservingQueryKeys: ["query-open-elsewhere"],
       maximumRemovedTripleCount: nil,
@@ -139,6 +150,8 @@ struct InstantPruneOffTheApplierTests {
   /// A closed result larger than a batch keeps its ownership rows, on a released row out of its key's way, until the
   /// batches that check its facts delete them (#1129): the batch that unloaded it deleted every row at once by cascade,
   /// 149.72 ms of the `$files` batch's 397 ms in #1074's `prune` exercise, and a 96.28 ms commit for them.
+  ///
+  /// Since #1500 that is a result the policy collects: a closed result is unloaded where it is, its rows kept.
   @Test
   func aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem() async throws {
     let url = try InstantPruneGateHoldTests.temporaryCacheURL()
@@ -155,13 +168,16 @@ struct InstantPruneOffTheApplierTests {
     )
     configuration.autoConnectLiveTransport = false
     configuration.liveQueryResultPruneBatchTripleCount = 100
+    // #1107: every seeded result stays loaded at the launch, as the results of queries that closed in a session are; a
+    // launch keeps only the newest ten.
+    configuration.preloadedLiveQueryResultCount = .max
     configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in await pause.pauseOnce() }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let observation = await runtime.observeQueryLease(TodoExample.query)
     let now = configuration.now()
 
     let prune = Task {
-      try await runtime.pruneLiveQueryResults(policy: InstantStoredResultReloadTests.productionPolicy, now: now)
+      try await runtime.pruneLiveQueryResults(policy: Self.collectingPolicy, now: now)
     }
     try await pause.waitUntilEntered(within: .seconds(10))
     let rowsAfterFirstBatch = Self.ownershipRowCount(queryID: firstQueryID, at: url)
@@ -173,7 +189,7 @@ struct InstantPruneOffTheApplierTests {
     #expect(firstRows > 400, "the seed gave the first result \(firstRows) ownership rows")
     #expect(
       rowsAfterFirstBatch > 100,
-      "#1129: the batch that unloaded the result deleted its ownership rows at once: \(rowsAfterFirstBatch) left of \(firstRows)"
+      "#1129: the batch that collected it deleted its ownership rows at once: \(rowsAfterFirstBatch) left of \(firstRows)"
     )
     #expect(rowsAfterPrune == 0, "the prune left \(rowsAfterPrune) ownership rows of the released result")
     #expect(Self.releasedRowCount(at: url) == 0, "a released row outlived its release")
@@ -246,7 +262,7 @@ struct InstantPruneOffTheApplierTests {
     _ = try? await runtime.closeConnection()
   }
 
-  /// A released row a crash left is checked whole when the store opens again (#1129): the batch that unloaded a large
+  /// A released row a crash left is checked whole when the store opens again (#1129): the batch that collected a large
   /// result re-keyed its row with every ownership row it held, and opening the store drops the facts no stored result
   /// owns, as the batches the crash took would have.
   @Test
@@ -258,9 +274,10 @@ struct InstantPruneOffTheApplierTests {
     do {
       let persistence = try SQLitePersistenceStore(fileURL: url)
       try await persistence.bootstrap()
-      // The batch that unloads the oldest result, larger than the budget, and nothing after it.
+      // The batch that collects the oldest result, larger than the budget, and nothing after it. #1500: a closed result
+      // the policy keeps is unloaded where it is, with no released row.
       let batch = try await persistence.liveQueryResultPruneBatch(
-        policy: InstantStoredResultReloadTests.productionPolicy,
+        policy: Self.collectingPolicy,
         now: now,
         preservingQueryKeys: ["query-open-elsewhere"],
         maximumRemovedTripleCount: 100,
@@ -270,7 +287,7 @@ struct InstantPruneOffTheApplierTests {
       #expect(batch.decodedQueryKeys.isEmpty, "#1129: the batch decoded a result it releases over later batches")
       let application = try await persistence.applyLiveQueryResultPruneBatch(
         batch,
-        policy: InstantStoredResultReloadTests.productionPolicy,
+        policy: Self.collectingPolicy,
         now: now,
         residentFacts: []
       )
@@ -287,14 +304,16 @@ struct InstantPruneOffTheApplierTests {
         liveTransport: .local
       )
     )
-    let survivors = Set(await runtime.store.snapshot().triples.map(\.entityID))
+    // #1107: what the open kept is what the store holds; the launch loads into memory only the newest ten stored
+    // results' entities, and prune-todo-150's result is older.
+    let stored = InstantPruneCostTests.Fixture.sqliteEntityIDs(at: url)
     let releasedAfterOpen = try await runtime.persistence.releasedLiveQueryResultCountForTesting()
 
-    #expect(!survivors.contains("prune-todo-0"), "#1129: a fact the interrupted release left unchecked stayed")
-    #expect(!survivors.contains("prune-todo-149"), "#1129: a fact the interrupted release left unchecked stayed")
-    #expect(survivors.contains("prune-todo-150"), "a result still stored keeps its facts")
-    #expect(survivors.contains("prune-todo-1000000"), "the split entity stays while its other result does")
-    #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
+    #expect(!stored.contains("prune-todo-0"), "#1129: a fact the interrupted release left unchecked stayed")
+    #expect(!stored.contains("prune-todo-149"), "#1129: a fact the interrupted release left unchecked stayed")
+    #expect(stored.contains("prune-todo-150"), "a result still stored keeps its facts")
+    #expect(stored.contains("prune-todo-1000000"), "the split entity stays while its other result does")
+    #expect(stored.contains("prune-todo-2000000"), "the entity with local data stays")
     #expect(releasedAfterOpen == 0, "#1129: opening the store left \(releasedAfterOpen) released rows")
     #expect(Self.ownershipRowCount(queryID: firstQueryID, at: url) == 0)
 
@@ -340,13 +359,15 @@ struct InstantPruneOffTheApplierTests {
         liveTransport: .local
       )
     )
-    let survivors = Set(await runtime.store.snapshot().triples.map(\.entityID))
+    // #1107: what the open kept is what the store holds; the launch loads into memory only the newest ten stored
+    // results' entities, and prune-todo-150's result is older.
+    let stored = InstantPruneCostTests.Fixture.sqliteEntityIDs(at: url)
     let markedAfterOpen = try await runtime.persistence.pendingLiveQueryResultReleaseKeysForTesting()
 
-    #expect(!survivors.contains("prune-todo-0"), "#1129: a fact the marked release left unchecked stayed")
-    #expect(survivors.contains("prune-todo-150"), "a result still stored keeps its facts")
-    #expect(survivors.contains("prune-todo-1000000"), "the split entity stays while its other result does")
-    #expect(survivors.contains("prune-todo-2000000"), "the entity with local data stays")
+    #expect(!stored.contains("prune-todo-0"), "#1129: a fact the marked release left unchecked stayed")
+    #expect(stored.contains("prune-todo-150"), "a result still stored keeps its facts")
+    #expect(stored.contains("prune-todo-1000000"), "the split entity stays while its other result does")
+    #expect(stored.contains("prune-todo-2000000"), "the entity with local data stays")
     #expect(markedAfterOpen.isEmpty, "#1129: opening the store left the mark: \(markedAfterOpen)")
 
     _ = try? await runtime.closeConnection()

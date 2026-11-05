@@ -1,3 +1,223 @@
+## 2026-11-05 14:33 EST — perf-send-2 (#653, #1517, #1523): the save-encode lane merged with main at v1.9.74; job G checks it before it lands
+
+- **Lane head `63651c8d`** (branch `agent/claude/perf-send-1797`, pushed; worktree `~/Sync/worktrees/perf-send-1797`) =
+  main at v1.9.74 (`a7223ead`) + #1517's claim at save measured by the save's own encode (red `b3b819b4`, green
+  `26943d43`) + #1523's receipt-after-echo test (red store `9b792550`, test `a5c21032`, `e153cf39`). Two merges of main:
+  `e43be3a6` (v1.9.73; conflicts only in `SQLitePersistenceStore.swift`'s history block and this file, every line of
+  both sides kept) and `63651c8d` (v1.9.74, which changed only the progressive media writer).
+- **Job F's numbers stand for v1.9.70 only** (save + claim 4,058.9 -> 3,643.5 us a write, -10.2%). Main has since
+  changed the save beneath the lane (v1.9.71-v1.9.73), so the landing cites job G's A/B, not F's.
+- **Job G** (`653-g-land-check`, Mac mini only, queued 14:28; script `gate-1797-g.sh` at the lane root; stdout
+  `~/Sync/audit/perf-send-1797/jobs/653-g.out`): the whole debug bundle against `Tests/known-failing.txt`, then the
+  release A/B v1.9.73 (`49e090c7`) vs the lane head (`measure-write-path.sh`: the recording exercise's energy lines and
+  the b-tree frames). Job F proved both reds; G does not rerun them. At 14:30 the mini had one slot open (32 GB free, a
+  second needs 40), and G was third in its line.
+- **Next (resume here):** read G: `tail -60 ~/Sync/audit/perf-send-1797/jobs/653-g.out`; its outputs come back to the
+  lane root (`job-g-compare.txt`, `base-49e090c7-*`, `head-<sha>-*`). If the laptop went offline before G ran, requeue
+  it: `cd ~/Sync/worktrees/perf-send-1797 && BUILD_REMOTE=mini BUILD_START_IDLE_PCT=101
+  ~/Sync/tools/safe-heavy/build.sh 653-g-land-check bash gate-1797-g.sh`. Green (compare exit 0, the head's save +
+  claim below the base's): `git fetch`; if main moved, merge it into the lane (a change to the lane's three files
+  needs G again); land by pushing the lane head to main (never a rebase: the ledger cites the lane's SHAs); ledger
+  `python3 ~/Sync/audit/perf-send-1797/scripts/ledger_batch.py ~/Sync/worktrees/perf-send-1797 b3b819b4 26943d43
+  9b792550 a5c21032 e153cf39`, commit and push it; release the first free v1.9.N (v1.9.74 is #632's): a
+  `docs/releases/` record in v1.9.70's shape with G's table, this file, the channel line in
+  `agent-presence/_channels/2026-11-04-perf-send-1797.md`, `docs/audits/commit-changelog.md`, the tag. Then Scribe:
+  the pin in the ten pin files (Scribe `85db0434b` is the model), a cut and an install (skill scribe-builds); an hour
+  of recording on that build, then `device-lab.py ledger` and `ledger_disk.py` against `phone/before-1815-*.txt`, on
+  #653 with one line on #1797, and the before/after row in Scribe's `docs/PERFORMANCE.md` once it exists.
+- **After it:** #1254 on `agent/claude/perf-send-1797-next` (worktree `~/Sync/worktrees/perf-send-1797-next`, wip
+  `5b13033a`, not compiled): merge main first, then settle the rollback question in the 01:00 entry below.
+
+## 2026-11-05 14:27:59 EST — perf-audio-2 (#632): v1.9.74, a delivered stream that is continued goes on from its stored row
+
+- **Why:** a progressive media stream delivered to its end leaves the spool, so a writer for the same stream later
+  (the consuming app's Continue Recording) found no record and started over at index 0: the whole recording encoded
+  and stored again, and the app's rules refused every re-sent row (a stored segment keeps every field, a stored
+  stream its `createdAtMs`).
+- **Landed:** `agent/claude/perf-audio-1223` (red `af95eb36`, green `418ff841`, comments `b52f2870`):
+  `InstantProgressiveMediaWriter(..., continuing:)` begins the spool from the stored row when the spool holds none.
+- **Checked:** Mac mini job `632-lib-redgreen` (275 s): three new tests fail at red, every `InstantProgressiveMedia`
+  suite passes at green (31 + 5 tests); the app's job `632-app-redgreen` ran its side against this branch in edit
+  mode (red fails, 20 of 20 pass at green).
+- **Next:** the app pins 1.9.74 and passes the stored row from `RecordingAudioStream.begin`; the next cut carries it.
+
+## 2026-11-05 07:04:14 EST — perf-recv-1797 (#1109, #1513, #1116): v1.9.73, a server refresh costs what changed
+
+- **Why:** on the phone (the consuming app's build 253, 192.5 recording minutes, 1,596 refresh-ok frames) a frame's
+  retractions took 6.39 ms and its saves' planning 5.88 ms, both comparing every restated fact with every stored row;
+  in the build-251 speech trace the nested-limit pass's schema walk was 1.1% of the app's CPU and each new transcript
+  line re-materialized every frozen page of the recording.
+- **Landed:** `9d76a581` (#1109: the schema indexed once `0ff1bd60`, cascade sources `c3693f35`, socket UTF-8 `053e7ecb`,
+  the save takes the translation's limit `2ce76178`; #1513: plan dependencies `5ccfb473`, frozen pages `9fc6eff8`,
+  filtered ordered pages `88b3c633`; #1116: entity fingerprints `b95e87f9`, the exact fold `949064a2`; tests `2c0b7d7e`
+  `736c86d5` `9d17ce5a` `f4e1367e`).
+- **Checked:** Mac mini jobs `1797-recv-merge-check` and `1109-recv-testfix` (22 tests in 3 suites passed, debug, 07:03): reds fail on their own
+  sources; E03 64-line refresh 5.89 -> 5.22 ms (retractions 1.23 -> 0.79, planning 0.40 -> 0.10), 256 lines 21.9 -> 18.9
+  ms; the echo 3.95 -> 3.64 ms CPU a write; a final's publication on the frozen history 118 -> 1.3 ms (job
+  `1797-recv-schema-ab`); the seeded differential keeps rows, results and facts equal to the full comparison's; the
+  debug bundle's new failures were restated tests and the load-sensitive frame-decode ratio (passes alone).
+- **Next:** Scribe pins 1.9.73 and cuts a build; after an hour of recording, refresh-cost.py's serverApplyRetractions,
+  serverApplyPlan, refreshTranslate and observerRefresh per refresh frame against builds 248 and 253.
+
+## 2026-11-05 05:19 EST — perf-mem-1797 (#1500, #1165, #1145, #541, #1104, #1105, #1107, #1149): v1.9.72, memory in proportion to what is on screen
+
+- **Why:** on the phone (2026-11-04, the consuming app's builds 246-253) the store's resident facts grew 9,000-24,000
+  an hour while recording and each relaunch started again near 45,000 with every stored result's entities loaded
+  (48,202 facts on the 21:20 store copy); closing a query copied its whole result into
+  `instant_unloaded_live_query_results` and wrote it back at the reopening (the four unload writers: 149.2 MB an hour on
+  builds 247-249, 413.8 MB an hour on build 253); a write to an entity kept on disk but not in memory erased its other
+  facts; each answered live query left its acknowledgement key behind; eviction and the storage snapshot decoded every
+  file record (47,393 on the 2026-10-30 store).
+- **Landed:** merges `cfd74320` (#1165 red `53e30f9f` green `68045937`, test `f46d1e0e`; #1145 red `213a7563` greens
+  `ef358515` `221512b9`; #541 red `31d0e156` green `820d412a`; #1500 red `f87d77b6` greens `623a8a8b` `93e79459`
+  `bbf40f04`; #1512's S05 `e7027553` `b3c844ce`) and `f504ed51` (#1104 red `277a9203` green `69ceae52`; #1105 red
+  `dfe16998` green `79a90b8b`); #1107 (plan `68ec5712`, red `9da1fbf5`, green `83446b22`); #1149's launch read (red
+  `44fc0c03`, green `518b7418`); the landing gate's fixes (red `708ded11` green `74e65b56`: a bounded batch unloads within
+  its budget; tests `caf33f20` `b6a80186` `7982385d`; red `cb0e8578` green `6779994f`: the store's own prune marks closed
+  results, a collection counts its disk deletions); plan amendments 5 and 6. Landing merge `d7dcf707`.
+- **Checked:** gate `1797-1500-land-green` (Mac mini): the four reds fail as written; the two-hour replay +15,102 ->
+  +1,380 resident facts and +9.2 -> +2.7 MB of heap an hour (release, same job); E07's launch 54,720 -> 9,728 facts,
+  24.9 -> 9.0 MB retained, 234 -> 59 ms. Its bundle found 22 stale tests and three source gaps (fixed above). Job `1797-1500-fixtests` (Mac mini, 2026-11-05 05:01-05:14, the whole bundle at `6779994f`): 1,700 tests, 3 failing, 2 new: `InstantLiveQueryCompactOwnershipTests`' pinned digest, re-pinned from that run in `d7dcf707` (an unloaded page keeps its ownership rows: 22,178 -> 22,778 answers), and `InstantLiveFrameDecodeTests`' timing ratio, 0.366 against a 0.33 ceiling (0.374 at `518b7418`, 0.323 at `f504ed51`, 0.325 on the sync lane's tree): it times a pure frame-decode loop no commit here touches, read as load (inference) until an alone-run A/B after the landing says otherwise. The merge of main with v1.9.71 (`6ed41621`) conflicted in two history headers only and lands without another whole-bundle run; main's new suites run on the landed tree next.
+- **Released:** v1.9.72 (`docs/releases/v1.9.72.md`). Scribe pins it next.
+- **Next (resume here):** the phone's storeTriples, mallocInUse and footprint over an hour of recording against builds
+  248-253 (`python3 -I ~/Sync/audit/perf-mem-1797/scripts/mem_trend.py --since 'YYYY-MM-DD HH:MM'`; Scribe had not run
+  on the iPhone since 2026-11-05 00:00, so it waits for his next recording) and the four unload writers
+  (`ledger_writers.py`) against 149.2-413.8 MB an hour; one line on #1797. Then #1149's link residency
+  (`agent/claude/perf-mem-1797-links`: plan amendment 5, red `48f10a63`, sized -48% launch facts on the store copy);
+  #1251/#1505's wrapper (-33% value text, measured).
+
+## 2026-11-05 04:51:25 EST — perf-sync-1796 (#1796): v1.9.71, a follower applies each list's newest result and its reads survive a busy applier and a dying socket
+
+- **Why:** on 2026-11-04 the tablet followed the phone's live recording about six minutes late (the user's reading at
+  17:33). It held 8,240-11,035 of its own writes, spent about 1.5 s on each server frame and received 29 `refresh-ok`
+  of the recording list and 31 `transact-ok` a minute, applied in arrival order; every one-shot read failed at a fixed
+  5 s ("Network or live transport failed", on the playback screen), and at a resume a read sent on a dead socket failed
+  in 0 ms and was never sent again. Nothing measured the lag.
+- **Landed:** the lane's `a5b5174d` (rebuilt 2026-11-05 on main `3d0dfdfa` after the first check found the tests had
+  never compiled), merged with main as `5f848b89`, ledger `e56d179e`: red `bd5d9017`, green `3f66c955` (waiting
+  refreshes lose what a newer one restates; a one-shot read waits while the connection moves, up to 30 s); red
+  `25923d45`, green `1fd79eb8` (a read whose `add-query` met a dead socket waits for the reconnect); red `882448d2`,
+  green `75915233` (`live.receive-summary` reports how old the newest server writes were when applied); guard
+  `076ed107` + `a5b5174d` (a writer and a follower runtime under the tablet's measured load); red `fac02655`, green
+  `d7502832` (an observer's registration names its query in the gate's phase).
+- **Checked:** Mac mini job `1796-check2` (04:20-04:49): each red fails on its assertions on its own sources; green 99
+  tests in 11 suites pass; the whole bundle 1,691 tests, 0 failing, no new failures against `Tests/known-failing.txt`.
+  The two-client test (57 lines, the tablet's minute replayed for 2 min): before median 29,503 ms, p95 39,175 ms,
+  worst 40,313 ms, newest 29,502 ms; after 3,382 ms, 9,434 ms, 13,469 ms, newest 1,500 ms.
+- **Measured on devices before:** iPad build 253 (1.9.67), launch 21:40:41: 26 one-shot reads failed at the fixed 5 s
+  in 50 s; the connect waited 5,459 ms for the operation gate behind an observer registration that held it 4,917 ms;
+  the transcript of a 3,428-line live recording took 72.3 s to show from the server (the iPhone, with no backlog, 12.1
+  s). Phone write -> server -> Mac mirror for live Recording 367: p50 918 ms, p95 2,152 ms, max 3,345 ms.
+- **Released:** v1.9.71 (docs/releases/v1.9.71.md). Scribe pins it exactly next.
+- **Next:** install on the iPhone and the iPad; an hour of `live.receive-summary` from the iPad following a live
+  recording (`.runs-1796/lag-report.py --device iPad --build <N>` in the lane's worktree), written on #1796 and #1797;
+  the registration's named phase at the next launch stall (#1131, #1137); the prune's phase timing (#1129, branch
+  `agent/claude/perf-sync-1129`, check `1129-check`).
+
+## 2026-11-05 01:00 EST — perf-send-1797 (#1517, #1523): job F green; the lane waits for the memory lane, then lands
+
+- **Lane head `ddcb77e5`** = main (v1.9.70) + #1517's claim at save measured by the save's own body encode (red
+  `b3b819b4`, green `26943d43`) + #1523's reworked test (`e153cf39`; two pending edits replayed by the full rebase under
+  another device's change).
+- **Job F** (`1797-f-claim-measure`, mini, 00:21-00:56; `~/Sync/audit/perf-send-1797/jobs/out-1797-f/`): the whole
+  debug bundle (1,680 tests) fails only `InstantLiveFrameDecodeTests/aServerResultDecodesAtAFractionOfJSONDecodersCost`
+  (ratio 0.351 vs 0.33, failing on main since 1.9.64-1.9.67). Reds fail as they must: #1517 (`encodes == 0`), #1523 on
+  9b792550's store (the echo minted 4 for 2 changed receipts; the acknowledgements 2). Release A/B, same job, v1.9.70 vs
+  the lane head: save + claim 4,058.9 -> 3,643.5 us a write (-10.2%), write side -8.6%, all metered library ops -1.8%.
+- **Order (coordinator, 00:12):** the memory lane (perf-mem-1797, gate `1797-1500-land-green`) lands next; this lane
+  holds library landings until then.
+- **Next (resume here):** when the memory lane's release is on main: `git fetch`, merge origin/main into the lane (it
+  differs from main only by `BoundedOutboxDelivery.swift`, `SQLitePersistenceStore.swift`'s claim at save and
+  `InstantWritePathCostTests.swift`); if their change touched those files, rerun `InstantWritePathCostTests` and the
+  delivery suites on the mini before landing. Land with a merge (never rebase: the ledger cites SHAs), ledger
+  (`~/Sync/audit/perf-send-1797/scripts/ledger_batch.py` for b3b819b4, 26943d43, 9b792550, a5c21032, e153cf39), release
+  the first free v1.9.N (`docs/releases/`, PROGRESS, channel line), pin it in Scribe in the ten pin files without a cut
+  unless the coordinator says otherwise. Phone: builds 261-262 carry 1.9.69 (ack 628.7 us on the mini), the first cut
+  after the memory lane carries 1.9.70+; an hour of recording on it, then `device-lab.py ledger` and `ledger_disk.py`
+  against `phone/before-1815-*.txt`. Page roadmap: the maps file's 2026-11-04 23:40 section and #1434's reader audit.
+- **#1254 work in progress (the previous run, not in this lane branch):** worktree `~/Sync/worktrees/perf-send-1797-next`,
+  branch `agent/claude/perf-send-1797-next` (pushed), red `124b8085` (a live write's save, claim and acknowledgement
+  each rewrite a page of instant_sync_metadata), wip `5b13033a` (store, outbox and query-result revisions in memory,
+  rows reserving blocks of 1,024, PRAGMA data_version for other connections; not compiled, not green; tests that read
+  exact revisions across stores need updating). Based on `5dd96175`: merge main first. Question to settle before green:
+  it restores the counters on rollback, so a revision value can be handed out twice; check that nothing keeps a value
+  computed inside a rolled-back transaction under the rolled-back revision (the query cache's store_revision, #1498;
+  `cachedState`; the attribute copies), or advance instead of restoring.
+
+## 2026-11-05 00:15 EST — perf-send-1797 (#1523): v1.9.70, the acknowledgement's receipt found by stored bytes again
+
+- **Why:** 1.9.69 keyed kept receipts by stored bytes, but the server apply's body pages and staging looked them up by
+  the write's inputs: replayed writes were fingerprinted again and the acknowledgement cost ~190 us more a call.
+- **Landed:** `37790b67` (the lane's `6ff60ee9` on main), ledger `34458bef`, this release record. Its test (lane
+  `9b792550`, reworked `e153cf39`) waits for job F; #1517's claim-at-save measure (lane `b3b819b4`/`26943d43`) too.
+- **Measured** (job `1797-e-receipt-echo`, Mac mini, release, same job vs v1.9.67): acknowledgement 451.0 -> 457.9 us
+  (1.9.69: 628.7), save + claim -17.0%, write side -15.3%.
+- **Next:** the memory lane lands on top of this; job F (bundle + reds + A/B v1.9.69 vs the lane head) gates #1517 and
+  the #1523 test for the next free release; the phone measure on Scribe's first build with 1.9.69 or later.
+## 2026-11-05 00:05 EST — perf-send-1797 (#653, #1523, #1517): after v1.9.69: the ack fix measured, the next claim cut, job F
+
+- **v1.9.69** (tag on `10f89d53`, main `0554157e`) is job C's verified `7773cfa5` merged with v1.9.68. Scribe: pin
+  `85db0434b`, cut 260 `6123d4245`, landed `bc95e8bdd`. 260's install was stopped by #1803's agent (main's watchOS
+  -Osize setting crashed Swift; reverted in Scribe `482bcec57`); its next build from the fixed main carries the pin, so
+  260 is not re-cut. The phone measure waits for that build.
+- **Job E** (`1797-e-receipt-echo`, mini, 23:32-23:58; `~/Sync/audit/perf-send-1797/jobs/out-1797-e/`): the lane tree
+  (v1.9.68 merged + `6ff60ee9`) compiles; 207 tests in 20 suites pass, the seed pins and v1.9.68's suites included.
+  Release A/B v1.9.67 vs the lane head: acknowledgement 451.0 -> 457.9 us (v1.9.69 has 628.7), save + claim 4,946.1 ->
+  4,107.8 us (-17.0%), write side -15.3%. Its red did not compile (a checkout leaves files added since in place).
+- **On the lane branch, not released:** #1523 echo fix (red `9b792550`, green `6ff60ee9`, test `a5c21032` takes the
+  full rebase so the echo replays); #1517 claim at save measured by the save's own body encode (red `b3b819b4`, green
+  `26943d43`; 27 of the claim at save's 100 samples).
+- **Job F** (`1797-f-claim-measure`, mini, queued 23:35; stdout `jobs/1797-f.out`; script `gate-1797-f.sh` at the lane
+  root): the whole bundle at the lane head against `Tests/known-failing.txt`, the #1517 red at `b3b819b4`, the #1523 red
+  (9b792550's tree with files added since removed, HEAD's test file), release A/B v1.9.69 vs head.
+- **Next (resume here):** read job F. Green: merge origin/main into the lane, land on main, release the next free
+  v1.9.N (perf-sync-1796 and perf-mem-1797 may take one first), pin in Scribe as `85db0434b` did (10 files), cut, install.
+  If the #1523 test still fails its precondition (no replay), find a scenario whose echo replays pending writes (a frame
+  that changes a slot a pending write sets) or drop the echo counts and keep the acknowledgement count. Then the phone:
+  an hour after the build with 1.9.69 is on the iPhone, `ledger_disk.py` and the CPU split against
+  `phone/before-1815-*.txt`, on #653 and one line on #1797. Then the page roadmap in
+  `~/Sync/audit/perf-send-1797/maps/2026-11-04-write-path-maps.md` (2026-11-04 23:40 section): #1254 revisions in memory
+  (Hi/Lo, never reused), the ack's pages, #1464, the body in its row, #1434.
+
+## 2026-11-04 23:20 EST — perf-send-1797 (#653, #1517, #1523, #1142, #1648): v1.9.69, a live write is claimed by its own save
+
+- **Why:** on the phone (builds 248-249, its own write recorder) the claim cost 3.06 ms a write, more than the save's
+  2.79 ms; the save, claim and acknowledgement each found the write's receipt by hashing it; each send started a deadline
+  task; two writes in one millisecond went out in id order.
+- **Landed:** `d3ed3c50` merges the lane's verified head `7773cfa5` (job C) with `main` (v1.9.68); `cd8be798` updates
+  the todo seed's hop pins (8 -> 7: #1648's `94a77045` no longer restamps and re-prepares it); ledger `0840aa82`;
+  release record `docs/releases/v1.9.69.md`.
+- **Measured** (job `1797-c-release-candidate`, Mac mini, release, v1.9.67 vs `7773cfa5`, same job, 225 writes):
+  save + claim 5,523.4 -> 4,208.3 us a write (-23.8%), write side 1,344.5 -> 1,092.2 ms (-18.8%), every metered library
+  operation 8,503.5 -> 8,377.7 ms (-1.5%); the acknowledgement 439.7 -> 628.7 us (+43%, #1523's receipt key missed by
+  the server apply's body pages and staging; fixed on the lane branch, `9b792550`/`6ff60ee9`, not in this release).
+- **Checked:** the whole debug bundle at `7773cfa5` (1,673 tests): only the two seed pins failed (pass at v1.9.67;
+  updated); reds fail as they must; the delivery suites pass twice more. Not compiled as merged before the tag: the
+  consuming app's cut and job E compile it.
+- **Next (resume here):** Scribe pins 1.9.69 (the 10 files of Scribe's `0cc05789e`), cuts the build after 259 and
+  installs it; after an hour, the phone's ledger (`~/Sync/audit/perf-send-1797/scripts/ledger_disk.py`, the CPU split)
+  against `phone/before-1815-*.txt`, one line on #1797. Job `1797-e-receipt-echo` (mini) verifies the lane branch
+  `agent/claude/perf-send-1797` (the ack fix `6ff60ee9`, v1.9.68 merged, the pins) and an A/B against v1.9.67: green ->
+  release it as the next free number. Prepared, not applied: #1517's claim at save measured by the save's own body
+  encode (`/tmp/perf-send-1797-next/`, red test + green; 27 of the claim at save's 100 samples).
+
+## 2026-11-04 22:05:59 EST — perf-recv-1797 (#1513, #1480, #1109): v1.9.68, a final's publication splices; a restated result is compared once
+
+- **Why:** the phone's ledger (the consuming app's build 248, 88 min recording, 3,811 refresh-ok frames) spent 41.8
+  CPU-s refreshing observers, 15.3 planning result saves and 15.0 working out retractions. A final line
+  re-materialized the recordings list (every recording) and each transcript window (every line of the recording), and
+  each restated result was compared with its stored rows twice.
+- **Landed:** merge `0df9d697` (#1513 red `a0dee714`, greens `f8b7c453` `428411d9`; #1480 red `322c3993`, green
+  `ca9dd8d2`; #1109 `4fff7e5c`; tests `fe0b7951` `eecdc2d7` `b3435d8d`; #1116 guard `0459f173`).
+- **Checked:** Mac mini job `1797-recv-splice-ab2`: reds fail and greens pass as expected; a final's publication p50
+  17.6-18.2 -> 15.6-16.0 ms, materialized snapshots -43% (-79% with linked interims); 192 -> 96 rows read a restated
+  32-line page; the debug bundle (1,669 tests) fails only the three tests that fail on `main` since 1.9.64-1.9.67.
+- **Next:** Scribe pins 1.9.68 and cuts a build; after an hour on the phone, refresh-cost.py's observerRefresh,
+  serverApplyPlan and serverApplyRetractions per refresh frame against build 248. The lane branch's later commits
+  (#1109's schema index `0ff1bd60` and cascade sources `c3693f35`, #1513's kept plan dependencies `5ccfb473`,
+  #1109's one-pass socket UTF-8 `053e7ecb`) wait for Mac mini job `1797-recv-schema-ab`, then 1.9.69 or the next
+  free number.
+
 ## 2026-11-04 21:20 EST — perf-send-1797 (#653): job B measured claim at save; two fixes after it; jobs C and D verify
 
 - **Job B** (`1797-b-claim-at-save`, mini, 20:27-20:58; outputs `~/Sync/audit/perf-send-1797/jobs/out-1797-b/`): release

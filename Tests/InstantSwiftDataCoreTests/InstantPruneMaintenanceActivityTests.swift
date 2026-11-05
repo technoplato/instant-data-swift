@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-28: the live-query prune runs inside a maintenance activity and stops between batches when the system is
 //   about to suspend the process (#1319).
+// - 2026-11-05: the prune's work is the closed results it unloads where they are (#1500), and every seeded result stays
+//   loaded at the launch (#1107).
 
 import CustomDump
 import Foundation
@@ -71,6 +73,9 @@ struct InstantPruneMaintenanceActivityTests {
     )
     configuration.autoConnectLiveTransport = false
     configuration.liveQueryResultPruneBatchTripleCount = 1_000
+    // #1107: every seeded result stays loaded at the launch, as the results of queries that closed in a session are; a
+    // launch keeps only the newest ten.
+    configuration.preloadedLiveQueryResultCount = .max
     configuration.maintenanceActivity = activity.maintenanceActivity
     configuration.onLiveQueryResultPruneBatchFinishedForTesting = { _ in
       if batches.record() == expiringAfterBatch { activity.expireAll() }
@@ -102,7 +107,8 @@ struct InstantPruneMaintenanceActivityTests {
     let outcome = try await Self.prune(activity: Activity(), expiringAfterBatch: 1)
 
     expectNoDifference(outcome.batches, 1, "the system's notice came after the first batch")
-    #expect(outcome.pruned.removedQueryKeys.count < InstantPruneGateHoldTests.resultCount)
+    // #1500: the prune's work is the closed results it unloads; it removes none.
+    #expect(outcome.pruned.unloadedQueryKeys.count < InstantPruneGateHoldTests.resultCount)
     expectNoDifference(outcome.gateHolderAfter, nil)
     expectNoDifference(outcome.tokens.count, 1)
     #expect(outcome.allTokensEnded, "the prune ends its activity when it stops")
@@ -116,7 +122,7 @@ struct InstantPruneMaintenanceActivityTests {
     let outcome = try await Self.prune(activity: Activity(), expiringWhenTheFirstBatchHoldsTheGates: true)
 
     expectNoDifference(outcome.batches, 0)
-    expectNoDifference(outcome.pruned.removedQueryKeys.count, 0)
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.count, 0)
     expectNoDifference(outcome.gateHolderAfter, nil)
     expectNoDifference(outcome.serverApplyHolderAfter, nil)
     #expect(outcome.allTokensEnded)
@@ -127,7 +133,7 @@ struct InstantPruneMaintenanceActivityTests {
     let outcome = try await Self.prune(activity: Activity(startsExpired: true))
 
     expectNoDifference(outcome.batches, 0)
-    expectNoDifference(outcome.pruned.removedQueryKeys.count, 0)
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.count, 0)
     expectNoDifference(outcome.gateHolderAfter, nil)
     #expect(outcome.allTokensEnded)
   }
@@ -136,7 +142,9 @@ struct InstantPruneMaintenanceActivityTests {
   func aPruneThatFinishesInsideItsActivityEndsIt() async throws {
     let outcome = try await Self.prune(activity: Activity())
 
-    expectNoDifference(outcome.pruned.removedQueryKeys.count, InstantPruneGateHoldTests.resultCount)
+    // #1500: the prune unloads every closed result where it is, in bounded batches; the policy collects none.
+    expectNoDifference(outcome.pruned.unloadedQueryKeys.count, InstantPruneGateHoldTests.resultCount)
+    expectNoDifference(outcome.pruned.removedQueryKeys, [])
     expectNoDifference(outcome.tokens.count, 1)
     #expect(outcome.allTokensEnded)
   }

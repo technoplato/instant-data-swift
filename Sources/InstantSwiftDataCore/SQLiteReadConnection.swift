@@ -6,6 +6,7 @@
 // - 2026-10-27: the lookup's statement is `entityIDsSQL(lookupAttributeIDs:)`, which a guard plans (#1244).
 // - 2026-10-31: the prune's stored results are read from their header and ownership rows, as the writer reads them
 //   (`InstantStoredLiveQueryResultRows`); no result's write waits, so none is left out for it (#1426).
+// - 2026-11-04: a closed result unloaded where it is reads from its marked row and its ownership rows (#1500).
 
 import Foundation
 import SQLite3
@@ -200,7 +201,38 @@ actor SQLiteReadConnection {
         rowUpdatedAtMilliseconds: updatedAtMilliseconds
       )
     }
+    // #1500: a result unloaded where it is: its row is marked, and it reads as a stored result does, from its rows.
+    if read == nil, try isUnloadedInPlace(key: key) {
+      read = try storedLiveQueryResults(keys: [key])[key]
+      read?.isInPlace = true
+    }
     return read
+  }
+
+  /// Whether `key`'s stored result is marked unloaded (#1500).
+  private func isUnloadedInPlace(key: String) throws -> Bool {
+    var marked = false
+    try readTransaction { connection in
+      var statement: OpaquePointer?
+      guard
+        sqlite3_prepare_v2(
+          connection,
+          "SELECT 1 FROM instant_live_query_results WHERE query_key = ? AND unloaded_at_ms IS NOT NULL LIMIT 1",
+          -1,
+          &statement,
+          nil
+        ) == SQLITE_OK, let statement
+      else {
+        throw Self.failure(operation: "prepare a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      defer { sqlite3_finalize(statement) }
+      let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+      guard sqlite3_bind_text(statement, 1, key, -1, transient) == SQLITE_OK else {
+        throw Self.failure(operation: "bind a local read", message: Self.errorMessage(connection), path: nil)
+      }
+      marked = sqlite3_step(statement) == SQLITE_ROW
+    }
+    return marked
   }
 
   /// The stored results of `keys`, read from their rows, each with what names its row, for the prune's next batch

@@ -11747,13 +11747,15 @@ extension InstantStoreTests {
         [1]
       )
     }
+    // #1648 (94a77045): the seed is prepared once, not restamped and prepared again; #1165 adds a store turn and a
+    // persistence turn (BenchmarkTests says why).
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8]
+      [9]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [350]
+      [400]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),

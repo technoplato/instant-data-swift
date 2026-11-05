@@ -276,7 +276,11 @@ struct CompactOwnershipAnswers: Equatable {
 
   /// The digest of the answers the library gave before this change (v1.9.10 with the read-only test hooks, on the
   /// layout it wrote), for ``CompactOwnershipFixture/seeded(name:)`` and its changes.
-  static let digestBeforeTheChange = "e5f08f8f40ae0900 over 22178 answers"
+  ///
+  /// Re-pinned 2026-11-05 (#1500): the prune in ``CompactOwnershipFixture/applyTheSameChanges(to:)`` unloads the first
+  /// page where it is, so its 600 ownership rows stay on disk and still answer (22,178 -> 22,778 answers; v1.9.10's
+  /// digest was "e5f08f8f40ae0900 over 22178 answers"). Both layouts give the same answers, as before.
+  static let digestBeforeTheChange = "7b4abdccc1163c64 over 22778 answers"
 
   var digest: String {
     var hash: UInt64 = 0xcbf2_9ce4_8422_2325
@@ -806,10 +810,11 @@ struct OwnershipLayout: Equatable {
   var identityIndexColumns: [String]
 
   static let compact = Self(
-    // A result's page info has its own column since #1426, and its `json` is empty.
+    // A result's page info has its own column since #1426, and its `json` is empty. A closed query's result is marked
+    // unloaded where it is since #1500, a column added after the compaction (NULL is a loaded result).
     resultColumns: [
       "query_id INTEGER 0 1", "query_key TEXT 1 0", "triple_count INTEGER 1 0", "updated_at_ms INTEGER 1 0",
-      "json TEXT 1 0", "page_info_json TEXT 0 0",
+      "json TEXT 1 0", "page_info_json TEXT 0 0", "unloaded_at_ms INTEGER 0 0",
     ],
     ownershipColumns: ["query_id INTEGER 1 1", "entity_id TEXT 1 2", "attribute_id TEXT 1 3", "value_json TEXT 1 4"],
     ownershipIsWithoutRowID: true,

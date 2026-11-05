@@ -65,3 +65,10 @@ frame still peels and replays the whole queue, and while a backlog drains nearly
   apply reduction only.
 - #1510 (perf-writes-1510): SQLitePersistenceStore.swift's outbox body storage; this plan touches the reduction
   context's slot rule only. Channel: agent-presence/_channels/2026-11-04-retired-cascade-1756.md.
+
+## Outcome (2026-11-04 19:15 EST)
+
+Landed: merge `be720d8e` (red `831ee0bf`, green `dbc7d5d0`, guard `29a2837a`), released as v1.9.67 (`49780127`; checks
+after the tag `9f31906d`: the bundle on the Mac mini, 3 failures none in this change). Scribe pinned it (`ba22b2e2c`)
+and cut build 250 (`2e7aa7110`), installed 18:36-18:37 on the iPhone and the iPad (locked, so not launched) and the Mac.
+Open: the iPad's full rebases and drain on 250, read the next time Scribe runs there (#1756).

@@ -67,15 +67,20 @@ extension InstantStoreTests {
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.operationCount),
       [21, 21]
     )
+    // #1648 (94a77045): a step its own write's later step overwrites is not restamped to win, so the seed, whose upserts
+    // set each todo's isCompleted and whose completions set it again, is prepared once; it was prepared a second time,
+    // restamped, on one more store turn. #1165: a write asks the store which entities it names memory lacks, in the turn
+    // that resolves its lookups (one more store turn here, with no deferred values configured), and reads those from
+    // SQLite (one more persistence turn for a write that creates an entity; none for one that writes entities in memory).
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8, 8]
+      [9, 9]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopBreakdown),
       [
-        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 3],
-        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 3],
+        ["observers": 1, "operation-gate": 2, "persistence": 3, "store": 3],
+        ["observers": 1, "operation-gate": 2, "persistence": 3, "store": 3],
       ]
     )
     expectNoDifference(
@@ -103,13 +108,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [350, 350]
+      [400, 400]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopBreakdown),
       [
-        ["observers": 50, "operation-gate": 100, "persistence": 100, "store": 100],
-        ["observers": 50, "operation-gate": 100, "persistence": 100, "store": 100],
+        ["observers": 50, "operation-gate": 100, "persistence": 100, "store": 150],
+        ["observers": 50, "operation-gate": 100, "persistence": 100, "store": 150],
       ]
     )
     expectNoDifference(
@@ -130,7 +135,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.actorHopCount),
-      [7, 7]
+      [9, 9]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.memoryDeltaBytes),
@@ -162,13 +167,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopCount),
-      [28, 28]
+      [36, 36]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["observers": 4, "operation-gate": 8, "persistence": 8, "store": 8],
-        ["observers": 4, "operation-gate": 8, "persistence": 8, "store": 8],
+        ["observers": 4, "operation-gate": 8, "persistence": 12, "store": 12],
+        ["observers": 4, "operation-gate": 8, "persistence": 12, "store": 12],
       ]
     )
     expectNoDifference(
@@ -193,13 +198,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopCount),
-      [280, 280]
+      [360, 360]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["observers": 40, "operation-gate": 80, "persistence": 80, "store": 80],
-        ["observers": 40, "operation-gate": 80, "persistence": 80, "store": 80],
+        ["observers": 40, "operation-gate": 80, "persistence": 120, "store": 120],
+        ["observers": 40, "operation-gate": 80, "persistence": 120, "store": 120],
       ]
     )
     expectNoDifference(
@@ -224,13 +229,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopCount),
-      [1_372, 1_372]
+      [1_764, 1_764]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["observers": 196, "operation-gate": 392, "persistence": 392, "store": 392],
-        ["observers": 196, "operation-gate": 392, "persistence": 392, "store": 392],
+        ["observers": 196, "operation-gate": 392, "persistence": 588, "store": 588],
+        ["observers": 196, "operation-gate": 392, "persistence": 588, "store": 588],
       ]
     )
     expectNoDifference(

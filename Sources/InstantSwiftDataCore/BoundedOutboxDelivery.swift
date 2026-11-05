@@ -2,6 +2,8 @@
 // - 2026-11-04: projectionMetadata hands back the projection it measured, so a claim that substitutes no required
 //   scalar records that value and its exact size instead of building and encoding it again (#1517).
 // - 2026-11-04: a window a write's save claimed names the session generation it was claimed for (#653).
+// - 2026-11-04: a projection that keeps every operation as written is measured by the caller's encode of the write, as a
+//   save that claims its own write has it, instead of being encoded again (#1517).
 
 import Foundation
 import os
@@ -225,6 +227,9 @@ struct InstantOutboxProjectionMetadata: Sendable {
   /// The projection before any required-scalar substitution: with no ``requiredScalarKeys`` it is the projected body,
   /// and ``encodedBodyByteCount`` is its exact sorted-key size (#1517).
   var projectedMutation: PendingMutation
+  /// Whether ``encodedBodyByteCount`` was measured by encoding ``projectedMutation``; false when the caller's measure of
+  /// the write stood for it, because the projection kept every operation as written (#1517).
+  var encodedProjectedBody = true
 }
 
 /// What a store's delivery claims encoded for the writes they claimed (#1517), for the tests that pin it.
@@ -380,9 +385,14 @@ enum InstantBoundedOutboxDelivery {
   /// Computes the exact projected `PendingMutation` size without decoding the
   /// authoritative scalar. Filtering first accounts for removed optional
   /// writes; each required substitution then changes only one encoded value.
+  ///
+  /// `writeEncodedByteCount` is `candidate.mutation`'s own sorted-key size when the caller has it already (#1517), as a
+  /// local save does for the write it claims: a projection that keeps every operation as written is that write, so it
+  /// is not encoded again to be measured.
   static func projectionMetadata(
     for candidate: InstantOutboxProjectionCandidate,
-    visibleWriteFilter: InstantVisibleWriteFilter
+    visibleWriteFilter: InstantVisibleWriteFilter,
+    writeEncodedByteCount: Int? = nil
   ) throws -> InstantOutboxProjectionMetadata {
     let hydrations = visibleWriteFilter.requiredScalarHydrations(
       in: candidate.mutation.transaction.operations,
@@ -392,7 +402,12 @@ enum InstantBoundedOutboxDelivery {
       candidate,
       visibleWriteFilter: visibleWriteFilter
     )
-    var encodedBodyByteCount = try encodedProjectedBodyByteCount(baseMutation)
+    // The filter drops a write a newer visible one replaced and may put the newest visible value into a required one;
+    // when it did neither, the projection is the write as encoded.
+    let measuredByCaller = writeEncodedByteCount.flatMap { byteCount in
+      baseMutation.transaction.operations == candidate.mutation.transaction.operations ? byteCount : nil
+    }
+    var encodedBodyByteCount = try measuredByCaller ?? encodedProjectedBodyByteCount(baseMutation)
     let valueEncoder = JSONEncoder()
     valueEncoder.outputFormatting = [.sortedKeys]
     for hydration in hydrations {
@@ -406,7 +421,8 @@ enum InstantBoundedOutboxDelivery {
     return InstantOutboxProjectionMetadata(
       encodedBodyByteCount: encodedBodyByteCount,
       requiredScalarKeys: Set(hydrations.map(\.key)),
-      projectedMutation: baseMutation
+      projectedMutation: baseMutation,
+      encodedProjectedBody: measuredByCaller == nil
     )
   }
 

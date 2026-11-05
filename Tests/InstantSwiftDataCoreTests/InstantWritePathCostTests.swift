@@ -16,6 +16,11 @@
 // 2026-11-04  #653   Red: every delivery claim read and decoded its writes' attributes from SQLite, one statement per
 //                    attribute: a quarter of the claim a write's save makes (job 1797-b's sample of the recording
 //                    exercise).
+// 2026-11-04  #1523  Red: a server apply's body pages and staging looked a pending write's kept receipt up by its
+//                    inputs, which the save no longer keys it by, and fingerprinted it again; a body the echo changed
+//                    was then fingerprinted again at its acknowledgement (+200 us a call in jobs 1797-a and 1797-b).
+// 2026-11-04  #1517  Red: a write its own save claimed was encoded once more to measure its projected body, which is the
+//                    write itself, already encoded by the save (27 of the claim at save's 100 samples in job 1797-b).
 
 import Foundation
 import Testing
@@ -113,6 +118,145 @@ struct InstantWritePathCostTests {
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A server apply that replays pending writes finds each one's kept receipt fingerprint by the bytes its row stores,
+  /// and keeps the fingerprint of a body it changes with the bytes it stages, so it mints one only for a receipt it
+  /// changes and the acknowledgements after it mint none (#1523). Since 1ef4aa2f the save kept the fingerprint by its
+  /// stored bytes only, while the echo's body pages and staging looked it up by the write's inputs: in jobs 1797-a and
+  /// 1797-b the acknowledgement cost about 200 us more a call (411.7 -> 618.7 us), a full fingerprint in 14 of its 40
+  /// samples.
+  @Test
+  func aServerApplyAndTheAcknowledgementsAfterItFindTheReceiptByTheStoredBytes() async throws {
+    // The reduced apply patches pending writes' receipts without replaying them; the full rebase, which the recording
+    // exercise's store still takes for some frames, loads their body pages and stages each one again.
+    var fixture = try await FastDrainFixture.make(
+      suffix: "receipt-after-echo",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0,
+      reducesServerApply: false
+    )
+    let persistence = fixture.runtime.persistence
+    // Two pending edits of lines the server holds, then another device's change to one of those lines: the frame that
+    // restates them replays both edits on the new base. Neither edit sets the slot the other device changed.
+    let edited = [FastDrainSchema.segmentID(0), FastDrainSchema.segmentID(1)]
+    for (index, segment) in edited.enumerated() {
+      let time = InstantTimestamp(milliseconds: 1_790_900_000_000 + Int64(index))
+      let id = "receipt-after-echo-edit-\(index)"
+      _ = try await fixture.runtime.transact(
+        InstantStoreTransaction(
+          id: id,
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: segment,
+                attributeID: "transcriptionSegments/text",
+                value: .string("edited on this device \(index)"),
+                txID: id,
+                txTime: time
+              )
+            ),
+          ]
+        ),
+        createdAt: time
+      )
+    }
+    let window = try await fixture.claimWindow()
+    #expect(window.mutations.count == edited.count)
+    var receiptsBefore: [String: String] = [:]
+    for mutation in window.mutations {
+      receiptsBefore[mutation.id] = try await persistence.optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
+    }
+
+    let beforeEcho = await persistence.optimisticEffectFingerprintCountForTesting()
+    let transactionID = fixture.server.acceptForeignWrite(
+      entityID: edited[0],
+      attributeID: "transcriptionSegments/updatedAtMs",
+      value: .number(1_790_800_000_000)
+    )
+    let echo = try await fixture.refresh(
+      queries: fixture.server.queries(touching: Set(edited)),
+      processedTransactionID: transactionID
+    )
+    let echoMints = await persistence.optimisticEffectFingerprintCountForTesting() - beforeEcho
+    var changedReceipts = 0
+    for mutation in window.mutations {
+      let receipt = try await persistence.optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
+      if receipt != receiptsBefore[mutation.id] { changedReceipts += 1 }
+    }
+
+    let beforeAcknowledgements = await persistence.optimisticEffectFingerprintCountForTesting()
+    for mutation in window.mutations {
+      let accepted = fixture.server.accept(mutation.transaction.operations)
+      _ = try await fixture.runtime.acceptMutationIfPresent(
+        id: mutation.id,
+        serverTransactionID: accepted,
+        claimToken: window.token
+      )
+    }
+    let acknowledgementMints =
+      await persistence.optimisticEffectFingerprintCountForTesting() - beforeAcknowledgements
+
+    #expect(echo.isRebase, "the echo replayed \(echo.plannedBodyCount) pending writes; this test needs it to replay them")
+    #expect(
+      echoMints == changedReceipts,
+      "the echo fingerprinted writes \(echoMints) times and changed \(changedReceipts) of their receipts"
+    )
+    #expect(
+      acknowledgementMints == 0,
+      "\(window.mutations.count) acknowledgements after the echo fingerprinted writes \(acknowledgementMints) times"
+    )
+    let pending = try await fixture.pendingCount()
+    #expect(pending == 0)
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A write its own save claims is measured by the body its save encoded, not encoded again: with nothing after it and
+  /// every operation as it was written, its projection is the write itself, and a pending write's stored body is its
+  /// sorted-key encoding (#1517). In job 1797-b's sample of the recording exercise the measuring encode was 27 of the
+  /// claim at save's 100 samples.
+  @Test
+  func aWriteClaimedByItsSaveIsMeasuredByTheBodyItsSaveEncoded() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let runtime = try await InstantObserverRegistrationGateTests.runtime(
+      "claim-at-save-measured",
+      transport: session.transport
+    ) { _ in }
+    _ = try await runtime.connect()
+    try await InstantConnectionStateTruthTests.waitUntil("the connection's first pass to finish") {
+      await runtime.automaticMutationPumpIsIdleForTesting()
+    }
+    let persistence = runtime.persistence
+    let claimedBefore = await persistence.claimedAtSaveCountForTesting()
+    let encodesBefore = await persistence.claimEncodeCountsForTesting().projectedBodyEncodes
+
+    let writes = 3
+    for index in 0..<writes {
+      let id = "tx-measured-\(index)"
+      try await InstantOfflineRuntimeFixture.createTodo("measured-\(index)", in: runtime)
+      try await InstantConnectionStateTruthTests.waitUntil("write \(index) to reach the socket") {
+        await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == id }
+      }
+      // Still claimed: its row holds what the claim measured, which is the write's exact sorted-key size.
+      let pending = await runtime.pendingMutations()
+      let mutation = try #require(pending.first { $0.id == id })
+      let claimColumns = try await persistence.outboxClaimColumnsForTesting(id: id)
+      let columns = try #require(claimColumns)
+      let exact = try InstantBoundedOutboxDelivery.encodedProjectedBodyByteCount(mutation)
+      #expect(columns.projectedBodyByteCount == exact, "write \(index): measured \(String(describing: columns.projectedBodyByteCount)), exact \(exact)")
+      await session.enqueue(
+        InstantLiveMessage(op: "transact-ok", clientEventID: id, fields: ["tx-id": .string("measured-\(index)")])
+      )
+      try await InstantConnectionStateTruthTests.waitUntil("the server to accept write \(index)") {
+        await runtime.pendingMutations().isEmpty
+      }
+    }
+
+    let claimed = await persistence.claimedAtSaveCountForTesting() - claimedBefore
+    let encodes = await persistence.claimEncodeCountsForTesting().projectedBodyEncodes - encodesBefore
+    #expect(claimed == writes, "\(claimed) of \(writes) writes were claimed by their saves")
+    #expect(encodes == 0, "\(writes) writes claimed by their saves encoded their projected bodies \(encodes) times")
+    _ = try? await runtime.closeConnection()
   }
 
   /// A delivery claim's visible-write filter finds its writes' attributes in the store's decoded copy, read again only
