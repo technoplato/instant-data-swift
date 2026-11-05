@@ -10,3 +10,4 @@ claude-code/fix-storage-1076@ld 2026-10-24T23:03:45-0400 mower plan=2026-10-24-f
 claude-code/cellular-1231@strangelearning 2026-10-26T20:48:38-0400 grower plan=2026-10-26-cellular-1237 #1237 #1231
 claude-code/perf-send-1492@ld 2026-10-31T12:26:11-0400 mower plan=2026-10-31-perf-send-1492 #1496 (the socket writer beside instantLiveWithTimeout)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
+claude-code/perf-metrics-1799@pp 2026-11-05T03:01:54-0500 grower plan=2026-11-05-perf-metrics-1781 #1781
