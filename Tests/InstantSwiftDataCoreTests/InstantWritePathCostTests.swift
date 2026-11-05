@@ -19,6 +19,8 @@
 // 2026-11-04  #1523  Red: a server apply's body pages and staging looked a pending write's kept receipt up by its
 //                    inputs, which the save no longer keys it by, and fingerprinted it again; a body the echo changed
 //                    was then fingerprinted again at its acknowledgement (+200 us a call in jobs 1797-a and 1797-b).
+// 2026-11-04  #1517  Red: a write its own save claimed was encoded once more to measure its projected body, which is the
+//                    write itself, already encoded by the save (27 of the claim at save's 100 samples in job 1797-b).
 
 import Foundation
 import Testing
@@ -176,6 +178,54 @@ struct InstantWritePathCostTests {
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A write its own save claims is measured by the body its save encoded, not encoded again: with nothing after it and
+  /// every operation as it was written, its projection is the write itself, and a pending write's stored body is its
+  /// sorted-key encoding (#1517). In job 1797-b's sample of the recording exercise the measuring encode was 27 of the
+  /// claim at save's 100 samples.
+  @Test
+  func aWriteClaimedByItsSaveIsMeasuredByTheBodyItsSaveEncoded() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let runtime = try await InstantObserverRegistrationGateTests.runtime(
+      "claim-at-save-measured",
+      transport: session.transport
+    ) { _ in }
+    _ = try await runtime.connect()
+    try await InstantConnectionStateTruthTests.waitUntil("the connection's first pass to finish") {
+      await runtime.automaticMutationPumpIsIdleForTesting()
+    }
+    let persistence = runtime.persistence
+    let claimedBefore = await persistence.claimedAtSaveCountForTesting()
+    let encodesBefore = await persistence.claimEncodeCountsForTesting().projectedBodyEncodes
+
+    let writes = 3
+    for index in 0..<writes {
+      let id = "tx-measured-\(index)"
+      try await InstantOfflineRuntimeFixture.createTodo("measured-\(index)", in: runtime)
+      try await InstantConnectionStateTruthTests.waitUntil("write \(index) to reach the socket") {
+        await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == id }
+      }
+      // Still claimed: its row holds what the claim measured, which is the write's exact sorted-key size.
+      let pending = await runtime.pendingMutations()
+      let mutation = try #require(pending.first { $0.id == id })
+      let claimColumns = try await persistence.outboxClaimColumnsForTesting(id: id)
+      let columns = try #require(claimColumns)
+      let exact = try InstantBoundedOutboxDelivery.encodedProjectedBodyByteCount(mutation)
+      #expect(columns.projectedBodyByteCount == exact, "write \(index): measured \(String(describing: columns.projectedBodyByteCount)), exact \(exact)")
+      await session.enqueue(
+        InstantLiveMessage(op: "transact-ok", clientEventID: id, fields: ["tx-id": .string("measured-\(index)")])
+      )
+      try await InstantConnectionStateTruthTests.waitUntil("the server to accept write \(index)") {
+        await runtime.pendingMutations().isEmpty
+      }
+    }
+
+    let claimed = await persistence.claimedAtSaveCountForTesting() - claimedBefore
+    let encodes = await persistence.claimEncodeCountsForTesting().projectedBodyEncodes - encodesBefore
+    #expect(claimed == writes, "\(claimed) of \(writes) writes were claimed by their saves")
+    #expect(encodes == 0, "\(writes) writes claimed by their saves encoded their projected bodies \(encodes) times")
+    _ = try? await runtime.closeConnection()
   }
 
   /// A delivery claim's visible-write filter finds its writes' attributes in the store's decoded copy, read again only
