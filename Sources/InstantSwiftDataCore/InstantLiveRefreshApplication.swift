@@ -202,12 +202,16 @@ enum InstantLiveRefreshTranslator {
           triples: insertTriples,
           attributes: attributeContext.resolvedLocalAttributes
         )
-        let retainedInsertIdentities = Set(
-          boundedInsertTriples.map(InstantLiveTripleIdentity.init)
-        )
-        computationOperations.removeAll { operation in
-          guard case let .insert(triple) = operation else { return false }
-          return !retainedInsertIdentities.contains(InstantLiveTripleIdentity(triple))
+        // #1109: the limit only drops facts, and keeps every one on most refreshes; only then is there nothing to remove.
+        // Removing nothing hashed every restated fact, its value's text included, twice a refresh.
+        if boundedInsertTriples.count != insertTriples.count {
+          let retainedInsertIdentities = Set(
+            boundedInsertTriples.map(InstantLiveTripleIdentity.init)
+          )
+          computationOperations.removeAll { operation in
+            guard case let .insert(triple) = operation else { return false }
+            return !retainedInsertIdentities.contains(InstantLiveTripleIdentity(triple))
+          }
         }
         queryKey = key
         queryResultReplacement = InstantLiveQueryResultReplacement(
