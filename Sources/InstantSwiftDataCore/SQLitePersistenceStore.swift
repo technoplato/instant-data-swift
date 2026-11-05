@@ -130,6 +130,8 @@
 // - 2026-11-04: a file record is read from its columns and SQLite's json_extract, not decoded with JSONDecoder (#1105).
 // - 2026-11-04: saves and reloads bound nested includes with the stored attributes indexed once per load, and a snapshot
 //   load indexes its attributes once for every stored result, instead of each walking the whole schema (#1109).
+// - 2026-11-05: a refresh compares only the entities it changed with a stored result's rows: each result keeps its
+//   entities' fingerprints from its last save in memory, at the query-result revision its commit left (#1116).
 
 import CryptoKit
 import Foundation
@@ -1250,6 +1252,23 @@ struct InstantPreparedLiveQueryResultSave: Sendable {
   fileprivate var attributeIDs: Set<String>
   fileprivate var removedOwnership: [LiveQueryOwnershipIdentity]
   fileprivate var insertedOwnership: [LiveQueryOwnershipIdentity]
+  /// The entity fingerprints of the facts this save stores (#1116), which its commit keeps for the next refresh.
+  fileprivate var entityFingerprints: LiveQueryEntityFingerprints?
+}
+
+/// A stored result's entity fingerprints, and the query-result revision and header they describe (#1116).
+private struct StoredLiveQueryEntityFingerprints {
+  var queryResultRevision: Int64
+  var tripleCount: Int
+  var updatedAtMilliseconds: Int64
+  var fingerprints: LiveQueryEntityFingerprints
+
+  /// Whether these describe the rows of the stored result `header` names, read at `queryResultRevision`.
+  func describe(_ header: InstantStoredLiveQueryResultRows.Header, at queryResultRevision: Int64) -> Bool {
+    self.queryResultRevision == queryResultRevision
+      && tripleCount == header.tripleCount
+      && updatedAtMilliseconds == header.updatedAtMilliseconds
+  }
 }
 
 /// Times a commit's consecutive sections into an ``InstantServerApplyCommitTiming`` (#932).
@@ -1576,6 +1595,14 @@ public actor SQLitePersistenceStore {
   private var recordsOwnershipReleases = false
   private var ownershipReleasedEntityIDs: Set<String> = []
   private var liveQueryResultValueEncodeCount = 0
+  /// #1116: each stored live-query result's entity fingerprints, as its last save in this process left its rows, with
+  /// the query-result revision and header they describe. A refresh of a result whose fingerprints describe what it read
+  /// compares only the entities that changed with the rows SQLite holds. Every writer of ownership rows bumps that
+  /// revision in its transaction (a server apply's plan relies on it, #932), so fingerprints at another revision may
+  /// describe rows that changed since: only a server apply's own commit carries them to the revision it leaves.
+  private var liveQueryEntityFingerprintsByKey: [String: StoredLiveQueryEntityFingerprints] = [:]
+  /// Off in tests that hold a refresh's work against the full comparison (#1116).
+  private var usesLiveQueryEntityFingerprints = true
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
@@ -1796,6 +1823,13 @@ public actor SQLitePersistenceStore {
 
   package func serverApplyMetricsForTesting() -> InstantServerApplyMetrics {
     serverApplyMetrics
+  }
+
+  /// Turns off the entity fingerprints a refresh's comparison reads only the changed entities with (#1116), so a test
+  /// can hold its work against the full comparison.
+  package func setUsesLiveQueryEntityFingerprintsForTesting(_ uses: Bool) {
+    usesLiveQueryEntityFingerprints = uses
+    if !uses { liveQueryEntityFingerprintsByKey = [:] }
   }
 
   /// Every live-query ownership row read and every restated value encoded to compare a stored result with the one that
@@ -2061,6 +2095,41 @@ public actor SQLitePersistenceStore {
       storeRevision: thin.storeRevision,
       attributeRevision: thin.attributeRevision
     )
+  }
+
+  /// After a server apply's commit at `expectedQueryResultRevision` (#1116): the results it saved keep the fingerprints
+  /// of what they now store, and every other result's fingerprints that described its rows at that revision describe
+  /// them at the revision the commit left, since no other writer ran between. Fingerprints at any other revision are
+  /// dropped: a writer since may have changed their rows.
+  private func advanceLiveQueryEntityFingerprints(
+    expectedQueryResultRevision: Int64,
+    queryResultsChanged: Bool,
+    savedKeys: [String],
+    saves: [InstantPreparedLiveQueryResultSave]
+  ) {
+    guard queryResultsChanged else { return }
+    let resultingRevision = expectedQueryResultRevision + 1
+    var advanced: [String: StoredLiveQueryEntityFingerprints] = [:]
+    for (key, var stored) in liveQueryEntityFingerprintsByKey
+    where stored.queryResultRevision == expectedQueryResultRevision {
+      stored.queryResultRevision = resultingRevision
+      advanced[key] = stored
+    }
+    for key in savedKeys {
+      advanced[key] = nil
+    }
+    // In order: a key saved twice keeps the second save's.
+    for save in saves {
+      advanced[save.result.key] = save.entityFingerprints.map {
+        StoredLiveQueryEntityFingerprints(
+          queryResultRevision: resultingRevision,
+          tripleCount: save.result.triples.count,
+          updatedAtMilliseconds: save.result.updatedAt.milliseconds,
+          fingerprints: $0
+        )
+      }
+    }
+    liveQueryEntityFingerprintsByKey = advanced
   }
 
   private func advanceCachedRevisionDomains(
@@ -7430,6 +7499,12 @@ public actor SQLitePersistenceStore {
         outboxChanged: commit.didChangeOutbox,
         queryResultsChanged: commit.didChangeQueryResults
       )
+      advanceLiveQueryEntityFingerprints(
+        expectedQueryResultRevision: commit.expectedQueryResultRevision,
+        queryResultsChanged: commit.didChangeQueryResults,
+        savedKeys: queryResults.map(\.key),
+        saves: preparedQueryResults ?? []
+      )
     }
     clock.timing.resultJSONBytes = liveQueryResultJSONWriteStats.bytes - resultJSONBytesBefore
     clock.timing.insideMilliseconds = InstantServerApplyCommitTiming.milliseconds(from: startedAt, to: ContinuousClock.now)
@@ -12392,8 +12467,12 @@ public actor SQLitePersistenceStore {
     let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
     return try readTransaction {
       var storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
-      return try liveQueryReplacementRetractionsWithoutTransaction(for: replacements, keepingStoredDiffs: &storedDiffs)
-        .operations
+      return try liveQueryReplacementRetractionsWithoutTransaction(
+        for: replacements,
+        queryResultRevision: nil,
+        keepingStoredDiffs: &storedDiffs
+      )
+      .operations
     }
   }
 
@@ -12410,7 +12489,11 @@ public actor SQLitePersistenceStore {
         == expectedQueryResultRevision
       else { return nil }
       var storedDiffs: [String: LiveQueryOwnershipDiff] = [:]
-      return try liveQueryReplacementRetractionsWithoutTransaction(for: replacements, keepingStoredDiffs: &storedDiffs)
+      return try liveQueryReplacementRetractionsWithoutTransaction(
+        for: replacements,
+        queryResultRevision: expectedQueryResultRevision,
+        keepingStoredDiffs: &storedDiffs
+      )
     }
   }
 
@@ -12447,6 +12530,7 @@ public actor SQLitePersistenceStore {
         }
         retractions = try liveQueryReplacementRetractionsWithoutTransaction(
           for: replacements,
+          queryResultRevision: expectedQueryResultRevision,
           keepingStoredDiffs: &storedDiffs
         )
         reads.retractions = retractions
@@ -12475,10 +12559,14 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  /// - Parameter storedDiffs: Receives, for each key whose first replacement is compared with stored rows, that
-  ///   comparison, finished: a save of the same facts in the same read takes it instead of reading the rows again (#1480).
+  /// - Parameters:
+  ///   - queryResultRevision: The query-result revision this read checked, or nil when it checked none: a result's
+  ///     entity fingerprints at that revision let its comparison read only the entities that changed (#1116).
+  ///   - storedDiffs: Receives, for each key whose first replacement is compared with stored rows, that comparison,
+  ///     finished: a save of the same facts in the same read takes it instead of reading the rows again (#1480).
   private func liveQueryReplacementRetractionsWithoutTransaction(
     for replacements: [InstantLiveQueryResultReplacement],
+    queryResultRevision: Int64?,
     keepingStoredDiffs storedDiffs: inout [String: LiveQueryOwnershipDiff]
   ) throws -> InstantLiveQueryReplacementRetractions {
     let replacementKeys = Set(replacements.map(\.key))
@@ -12511,6 +12599,7 @@ public actor SQLitePersistenceStore {
         leaving = try storedLiveQueryFactsLeavingWithoutTransaction(
           key: replacement.key,
           next: replacement.triples,
+          queryResultRevision: queryResultRevision,
           keepingDiffIn: &storedDiffs
         )
       }
@@ -20481,15 +20570,42 @@ public actor SQLitePersistenceStore {
   /// fingerprint, as a save's ownership diff compares them, and only the rows that leave are decoded, each with the
   /// stamp the store holds for it, as ``liveQueryResultWithoutTransaction(key:)`` reads it. Until #1426 the retraction
   /// read the stored result whole: the newest kept in memory while its JSON waited, and otherwise its JSON, decoded.
+  ///
+  /// #1116: when the result's entity fingerprints describe its rows at `queryResultRevision`, only the entities whose
+  /// fingerprints changed are compared: their facts' values encoded and their rows read. The others hold the same facts
+  /// as their rows, so they leave and join nothing. On the phone the whole comparison was 6.39 ms of
+  /// serverApplyRetractions per refresh-ok (build 253, 1,596 frames), most of them a page with one line changed.
   private func storedLiveQueryFactsLeavingWithoutTransaction(
     key: String,
     next: [InstantTriple],
+    queryResultRevision: Int64?,
     keepingDiffIn storedDiffs: inout [String: LiveQueryOwnershipDiff]
   ) throws -> [(identity: InstantLiveTripleIdentity, triple: InstantTriple)] {
-    guard try liveQueryResultHeaderWithoutTransaction(key: key) != nil else { return [] }
-    liveQueryResultValueEncodeCount += next.count
-    var diff = try LiveQueryOwnershipDiff(next: next, encoder: encoder)
-    try liveQueryOwnershipRowsWithoutTransaction(queryKey: key, into: &diff)
+    guard let header = try liveQueryResultHeaderWithoutTransaction(key: key) else { return [] }
+    // Worked out only where a commit can keep them: a read that checked a revision, for the save it prepares.
+    let nextFingerprints = usesLiveQueryEntityFingerprints && queryResultRevision != nil
+      ? LiveQueryEntityFingerprints(next) : nil
+    var diff: LiveQueryOwnershipDiff
+    if let nextFingerprints, let queryResultRevision, let stored = liveQueryEntityFingerprintsByKey[key],
+      stored.describe(header, at: queryResultRevision)
+    {
+      let changed = stored.fingerprints.entitiesChanged(in: nextFingerprints)
+      let changedFacts = changed.isEmpty ? [] : next.filter { changed.contains($0.entityID) }
+      liveQueryResultValueEncodeCount += changedFacts.count
+      diff = try LiveQueryOwnershipDiff(
+        next: changedFacts,
+        encoder: encoder,
+        wholeResultDistinctFactCount: nextFingerprints.distinctFactCount
+      )
+      if !changed.isEmpty {
+        try liveQueryOwnershipRowsWithoutTransaction(queryKey: key, entityIDs: changed, into: &diff)
+      }
+    } else {
+      liveQueryResultValueEncodeCount += next.count
+      diff = try LiveQueryOwnershipDiff(next: next, encoder: encoder)
+      try liveQueryOwnershipRowsWithoutTransaction(queryKey: key, into: &diff)
+    }
+    diff.entityFingerprints = nextFingerprints
     try diff.finish()
     storedDiffs[key] = diff
     guard !diff.removed.isEmpty else { return [] }
@@ -21451,7 +21567,8 @@ public actor SQLitePersistenceStore {
       let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
         result,
         previousFacts: previousFacts,
-        storedDiff: previousFacts == nil ? storedDiffs[result.key] : nil
+        storedDiff: previousFacts == nil ? storedDiffs[result.key] : nil,
+        keepsEntityFingerprints: true
       )
       storedFactsByKey[result.key] = prepared.storedFacts
       saves.append(prepared.save)
@@ -21461,10 +21578,14 @@ public actor SQLitePersistenceStore {
 
   /// One result's save against the rows `previousFacts` own (an earlier save of the same key in this frame), or the
   /// stored rows when nil, and the facts it stores.
+  ///
+  /// - Parameter keepsEntityFingerprints: Whether the save carries the entity fingerprints of what it stores, for a
+  ///   commit that keeps them (#1116); a save made inside a commit does not.
   private func preparedLiveQueryResultSaveWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult,
     previousFacts knownPreviousFacts: [InstantTriple]?,
-    storedDiff: LiveQueryOwnershipDiff? = nil
+    storedDiff: LiveQueryOwnershipDiff? = nil,
+    keepsEntityFingerprints: Bool = false
   ) throws -> (save: InstantPreparedLiveQueryResultSave, storedFacts: [InstantTriple]) {
     let attributeIDs = Set(result.triples.map(\.attributeID))
     let schema = try nestedLimitSchemaForLiveResultSaveWithoutTransaction()
@@ -21486,7 +21607,8 @@ public actor SQLitePersistenceStore {
           result: result,
           attributeIDs: attributeIDs,
           removedOwnership: storedDiff.removed,
-          insertedOwnership: storedDiff.inserted
+          insertedOwnership: storedDiff.inserted,
+          entityFingerprints: storedDiff.entityFingerprints
         ),
         Array(result.triples)
       )
@@ -21504,7 +21626,10 @@ public actor SQLitePersistenceStore {
         result: result,
         attributeIDs: attributeIDs,
         removedOwnership: ownership.removed,
-        insertedOwnership: ownership.inserted
+        insertedOwnership: ownership.inserted,
+        // #1116: what this save stores, for the next refresh's comparison.
+        entityFingerprints: keepsEntityFingerprints && usesLiveQueryEntityFingerprints
+          ? LiveQueryEntityFingerprints(Array(result.triples)) : nil
       ),
       Array(result.triples)
     )
@@ -21605,22 +21730,44 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  /// Hands each ownership row of the stored result `queryKey` to `diff`, as its columns' bytes (#1147).
+  /// Hands each ownership row of the stored result `queryKey` to `diff`, as its columns' bytes (#1147), or, when
+  /// `entityIDs` is given, each row of those entities only, read through the table's key (#1116).
   private func liveQueryOwnershipRowsWithoutTransaction(
     queryKey: String,
+    entityIDs: Set<String>? = nil,
     into diff: inout LiveQueryOwnershipDiff
   ) throws {
-    var statement: OpaquePointer?
-    try prepare(
-      """
+    let select = """
       SELECT entity_id, attribute_id, value_json
       FROM instant_live_query_triples
       WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = ?)
-      """,
-      statement: &statement
-    )
+      """
+    guard let entityIDs else {
+      try liveQueryOwnershipRowsWithoutTransaction(select, [.text(queryKey)], into: &diff)
+      return
+    }
+    let ordered = entityIDs.sorted()
+    // Stay well under SQLite's bound-parameter limit.
+    for start in stride(from: 0, to: ordered.count, by: 400) {
+      let batch = ordered[start..<min(start + 400, ordered.count)]
+      try liveQueryOwnershipRowsWithoutTransaction(
+        select + " AND entity_id IN (" + Array(repeating: "?", count: batch.count).joined(separator: ", ") + ")",
+        [SQLiteBinding.text(queryKey)] + batch.map(SQLiteBinding.text),
+        into: &diff
+      )
+    }
+  }
+
+  /// Hands each ownership row `sql` selects (`entity_id, attribute_id, value_json`) to `diff`, as its columns' bytes.
+  private func liveQueryOwnershipRowsWithoutTransaction(
+    _ sql: String,
+    _ bindings: [SQLiteBinding],
+    into diff: inout LiveQueryOwnershipDiff
+  ) throws {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
     defer { finishStatement(statement) }
-    try bind([.text(queryKey)], to: statement)
+    try bind(bindings, to: statement)
     func column(_ index: Int32) -> UnsafeBufferPointer<UInt8>? {
       guard let text = sqlite3_column_text(statement, index) else { return nil }
       return UnsafeBufferPointer(start: text, count: Int(sqlite3_column_bytes(statement, index)))
