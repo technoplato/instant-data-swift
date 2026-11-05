@@ -1,3 +1,6 @@
+## 2026-11-05 08:33:12 EST — scribe `9b407749d9ac41e052896ef96765d5d30eac7865`
+Feature (#1662): a stranger's first minutes with Vakyume: the welcome before Recording Setup (the speech model's download at once with its progress, made by one person, the Mac tool, a spoken-feedback demo, five quests and a free month with no price), the drawer's Getting Started, Send Feedback and Share Vakyume with Friends, and the feedback door (feedback.pisspoursoftware.xyz behind Access, the intake that files each piece as untrusted data, the vakyume-feedback skill); green on the mini, every welcome file compiled for the iPhone simulator.
+
 ## 2026-11-05 07:15:45 EST — scribe `75ff7eb10846298abee8dfbb2a7a232f18096c4e`
 Fix (#1226, #1424): the energy ledger's GPU time is nil until the kernel's counter moves (1,507 of 1,507 rows read 0 on 2026-11-04 while MetricKit bills 1,598-3,669 GPU-seconds a day), and one minute's row is made at a time, so two calls at a scene change cannot write a 2^64 ns row; mini job 1226-ledger-redgreen: the old sources fail the three new tests, 70 tests pass; changelog 07eec9800.
 
