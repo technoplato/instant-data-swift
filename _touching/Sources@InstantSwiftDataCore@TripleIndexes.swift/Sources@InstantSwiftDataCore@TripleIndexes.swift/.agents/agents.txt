@@ -16,3 +16,4 @@ claude-code/gate-1319@al 2026-10-28T21:32:54-0400 mower plan=2026-10-28-gate-131
 claude-code/b1104-1748@halfjew22 2026-11-04T10:22:57-0500 mower plan=2026-11-04-newest-1748 #1748
 claude-code/perf-mem-1797@pp 2026-11-04T18:10:00-0500 mower plan=2026-11-04-perf-mem-1797 #1165 #1145 #1500
 claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 (read-only root membership and snapshot helpers the splice asks only)
+claude-code/perf-send-1797@pp 2026-11-04T20:24:22-0500 mower plan=2026-11-04-perf-send-1797 #1648 (a read-only stamp-of-transaction check only)

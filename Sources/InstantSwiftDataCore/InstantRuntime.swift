@@ -3148,12 +3148,16 @@ public final class InstantRuntime: Sendable {
         let attribute = prepared.attributes[triple.attributeID],
         attribute.cardinality == .one,
         attribute.valueType != .date,
-        case let .one(shown, _)? = Self.visibleSlot(
+        case let .one(shown, shownStamp)? = Self.visibleSlot(
           prepared.indexes,
           entityID: triple.entityID,
           attributeID: triple.attributeID
         ),
-        shown != triple.value
+        shown != triple.value,
+        // #1648: a later step of this same write shows, so the write is visible and nothing beat it. Restamping the
+        // earlier step made it win over the later one (a create, then an update by lookup, in one transaction). Every
+        // write is the outbox tail since #1648; before, a write that tied the tail's time could skip this pass.
+        !prepared.indexes.stamp(shownStamp, isOfTransaction: triple.txID)
       else { continue }
       lostSlots.insert(InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID))
     }
