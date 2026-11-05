@@ -1,3 +1,33 @@
+## 2026-11-05 14:33 EST — perf-send-2 (#653, #1517, #1523): the save-encode lane merged with main at v1.9.74; job G checks it before it lands
+
+- **Lane head `63651c8d`** (branch `agent/claude/perf-send-1797`, pushed; worktree `~/Sync/worktrees/perf-send-1797`) =
+  main at v1.9.74 (`a7223ead`) + #1517's claim at save measured by the save's own encode (red `b3b819b4`, green
+  `26943d43`) + #1523's receipt-after-echo test (red store `9b792550`, test `a5c21032`, `e153cf39`). Two merges of main:
+  `e43be3a6` (v1.9.73; conflicts only in `SQLitePersistenceStore.swift`'s history block and this file, every line of
+  both sides kept) and `63651c8d` (v1.9.74, which changed only the progressive media writer).
+- **Job F's numbers stand for v1.9.70 only** (save + claim 4,058.9 -> 3,643.5 us a write, -10.2%). Main has since
+  changed the save beneath the lane (v1.9.71-v1.9.73), so the landing cites job G's A/B, not F's.
+- **Job G** (`653-g-land-check`, Mac mini only, queued 14:28; script `gate-1797-g.sh` at the lane root; stdout
+  `~/Sync/audit/perf-send-1797/jobs/653-g.out`): the whole debug bundle against `Tests/known-failing.txt`, then the
+  release A/B v1.9.73 (`49e090c7`) vs the lane head (`measure-write-path.sh`: the recording exercise's energy lines and
+  the b-tree frames). Job F proved both reds; G does not rerun them. At 14:30 the mini had one slot open (32 GB free, a
+  second needs 40), and G was third in its line.
+- **Next (resume here):** read G: `tail -60 ~/Sync/audit/perf-send-1797/jobs/653-g.out`; its outputs come back to the
+  lane root (`job-g-compare.txt`, `base-49e090c7-*`, `head-<sha>-*`). If the laptop went offline before G ran, requeue
+  it: `cd ~/Sync/worktrees/perf-send-1797 && BUILD_REMOTE=mini BUILD_START_IDLE_PCT=101
+  ~/Sync/tools/safe-heavy/build.sh 653-g-land-check bash gate-1797-g.sh`. Green (compare exit 0, the head's save +
+  claim below the base's): `git fetch`; if main moved, merge it into the lane (a change to the lane's three files
+  needs G again); land by pushing the lane head to main (never a rebase: the ledger cites the lane's SHAs); ledger
+  `python3 ~/Sync/audit/perf-send-1797/scripts/ledger_batch.py ~/Sync/worktrees/perf-send-1797 b3b819b4 26943d43
+  9b792550 a5c21032 e153cf39`, commit and push it; release the first free v1.9.N (v1.9.74 is #632's): a
+  `docs/releases/` record in v1.9.70's shape with G's table, this file, the channel line in
+  `agent-presence/_channels/2026-11-04-perf-send-1797.md`, `docs/audits/commit-changelog.md`, the tag. Then Scribe:
+  the pin in the ten pin files (Scribe `85db0434b` is the model), a cut and an install (skill scribe-builds); an hour
+  of recording on that build, then `device-lab.py ledger` and `ledger_disk.py` against `phone/before-1815-*.txt`, on
+  #653 with one line on #1797, and the before/after row in Scribe's `docs/PERFORMANCE.md` once it exists.
+- **After it:** #1254 on `agent/claude/perf-send-1797-next` (worktree `~/Sync/worktrees/perf-send-1797-next`, wip
+  `5b13033a`, not compiled): merge main first, then settle the rollback question in the 01:00 entry below.
+
 ## 2026-11-05 14:27:59 EST — perf-audio-2 (#632): v1.9.74, a delivered stream that is continued goes on from its stored row
 
 - **Why:** a progressive media stream delivered to its end leaves the spool, so a writer for the same stream later
