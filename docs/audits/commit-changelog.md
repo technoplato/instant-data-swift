@@ -1,3 +1,6 @@
+## 2026-11-04 23:29:03 EST — scribe `a91a2dd449de59ec95219e26230713f42155aa1b`
+Fix (#1730): the voice-memo import (scripts/media-transcription/recording_ingest.py, deployed to the mini with a backup) sends the whole WAV on its own thread while 8 threads (was 4) send the compressed copy's files, each once, one failure stopping the rest, and logs every step after the words with its seconds: batch 1 spent 39% of its runs on the WAV alone and 44% in a stretch its step log had no event in. What a recording holds is unchanged; tests 40/40.
+
 ## 2026-11-04 23:19:47 EST — scribe `b4925e799fae650bd6d184e5181f93660d0a792a`
 Fix (#1585): with the account's owners known, the Mac mirror's per-recording query rides the WebSocket too and reads speakers by owner (production parity on five recordings), so its once-a-minute restatement no longer carries the 854 KB attribute catalog.
 
