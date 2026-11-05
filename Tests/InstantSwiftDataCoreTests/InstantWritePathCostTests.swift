@@ -137,32 +137,60 @@ struct InstantWritePathCostTests {
       reducesServerApply: false
     )
     let persistence = fixture.runtime.persistence
-    _ = try await Self.writeOneInterimPerSegment(3, in: &fixture)
+    // Two pending edits of lines the server holds, then another device's change to one of those lines: the frame that
+    // restates them replays both edits on the new base. Neither edit sets the slot the other device changed.
+    let edited = [FastDrainSchema.segmentID(0), FastDrainSchema.segmentID(1)]
+    for (index, segment) in edited.enumerated() {
+      let time = InstantTimestamp(milliseconds: 1_790_900_000_000 + Int64(index))
+      let id = "receipt-after-echo-edit-\(index)"
+      _ = try await fixture.runtime.transact(
+        InstantStoreTransaction(
+          id: id,
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: segment,
+                attributeID: "transcriptionSegments/text",
+                value: .string("edited on this device \(index)"),
+                txID: id,
+                txTime: time
+              )
+            ),
+          ]
+        ),
+        createdAt: time
+      )
+    }
     let window = try await fixture.claimWindow()
-    #expect(window.mutations.count == 3)
-    let first = try #require(window.mutations.first)
-    let later = Array(window.mutations.dropFirst())
+    #expect(window.mutations.count == edited.count)
     var receiptsBefore: [String: String] = [:]
-    for mutation in later {
+    for mutation in window.mutations {
       receiptsBefore[mutation.id] = try await persistence.optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
     }
 
-    // The server accepts the first write and echoes the queries it touched, under which the later two are pending.
     let beforeEcho = await persistence.optimisticEffectFingerprintCountForTesting()
-    let echo = try await fixture.acceptAndRefresh(first, claimToken: window.token)
+    let transactionID = fixture.server.acceptForeignWrite(
+      entityID: edited[0],
+      attributeID: "transcriptionSegments/updatedAtMs",
+      value: .number(1_790_800_000_000)
+    )
+    let echo = try await fixture.refresh(
+      queries: fixture.server.queries(touching: Set(edited)),
+      processedTransactionID: transactionID
+    )
     let echoMints = await persistence.optimisticEffectFingerprintCountForTesting() - beforeEcho
     var changedReceipts = 0
-    for mutation in later {
+    for mutation in window.mutations {
       let receipt = try await persistence.optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
       if receipt != receiptsBefore[mutation.id] { changedReceipts += 1 }
     }
 
     let beforeAcknowledgements = await persistence.optimisticEffectFingerprintCountForTesting()
-    for mutation in later {
-      let transactionID = fixture.server.accept(mutation.transaction.operations)
+    for mutation in window.mutations {
+      let accepted = fixture.server.accept(mutation.transaction.operations)
       _ = try await fixture.runtime.acceptMutationIfPresent(
         id: mutation.id,
-        serverTransactionID: transactionID,
+        serverTransactionID: accepted,
         claimToken: window.token
       )
     }
@@ -176,7 +204,7 @@ struct InstantWritePathCostTests {
     )
     #expect(
       acknowledgementMints == 0,
-      "\(later.count) acknowledgements after the echo fingerprinted writes \(acknowledgementMints) times"
+      "\(window.mutations.count) acknowledgements after the echo fingerprinted writes \(acknowledgementMints) times"
     )
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
