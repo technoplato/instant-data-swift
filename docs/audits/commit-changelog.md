@@ -1,3 +1,24 @@
+## 2026-11-05 05:19:34 EST — instant-data-swift `d7dcf707a501bd6edac050033037df37728d961d`
+Landing (#1500, #1165, #1145, #541, #1104, #1105, #1107, #1149): the memory lane's tree merged with main (with v1.9.71, #1796). Gate: the two-hour replay +15,102 -> +1,380 resident facts and +9.2 -> +2.7 MB of heap an hour (Mac mini, release, same job); Job `1797-1500-fixtests` (Mac mini, 2026-11-05 05:01-05:14, the whole bundle at `6779994f`): 1,700 tests, 3 failing, 2 new: `InstantLiveQueryCompactOwnershipTests`' pinned digest, re-pinned from that run in `d7dcf707` (an unloaded page keeps its ownership rows: 22,178 -> 22,778 answers), and `InstantLiveFrameDecodeTests`' timing ratio, 0.366 against a 0.33 ceiling (0.374 at `518b7418`, 0.323 at `f504ed51`, 0.325 on the sync lane's tree): it times a pure frame-decode loop no commit here touches, read as load (inference) until an alone-run A/B after the landing says otherwise. The merge of main with v1.9.71 (`6ed41621`) conflicted in two history headers only and lands without another whole-bundle run; main's new suites run on the landed tree next.
+
+## 2026-11-05 05:19:33 EST — instant-data-swift `6779994f96819085ac943768eceda55035d058d7`
+Fix (#1500): the store's own prune marks closed results as the runtime's does; a collection after an unload counts, and moves the store revision for, the facts it deletes from disk.
+
+## 2026-11-05 05:19:33 EST — instant-data-swift `74e65b5697f6b46b589447b559eb5c3fa7e8fcc7`
+Fix (#1500, #303): a bounded prune batch unloads closed results within its triple budget, so a write waits for one batch's release from memory, not every closed result's.
+
+## 2026-11-05 05:19:33 EST — instant-data-swift `518b741820e93af604b41515f9ef71016d94d7d6`
+Perf (#1149): a launch finds the entities it loads in the loaded results' ownership rows, in the facts' read, instead of reading each result whole and binding every entity id. E07 (Mac mini, release) with #1107: 54,720 -> 9,728 resident facts, 24.9 -> 9.0 MB retained, 234 -> 59 ms.
+
+## 2026-11-05 05:19:32 EST — instant-data-swift `83446b22895178fb48240d5774afb9cf4cc0c97d`
+Perf (#1107, #1149): a launch keeps the newest ten stored results loaded (upstream's preloadEntryCount) and unloads the rest where they are; each reloads from disk when its query subscribes.
+
+## 2026-11-05 05:19:32 EST — instant-data-swift `f504ed511371e9e392264c1dce0cd1496022dcfd`
+Merge (#1104, #1105): eviction reads only the file records it names, the storage snapshot counts copies in SQL, and a file record is read from its columns and json_extract instead of JSONDecoder.
+
+## 2026-11-05 05:19:31 EST — instant-data-swift `cfd74320e5cac5e195a1482dffcc33b4948b3257`
+Merge (#1165, #1145, #541, #1500): a write reads what memory lacks from SQLite first (#1165), a residency sweep releases from memory the rows no result owns, no write waits on and no observer shows (#1145), a closed live query's acknowledgement entries go (#541), and a closed query's result is unloaded where it is instead of copied whole into another table (#1500).
+
 ## 2026-11-05 04:52:42 EST — scribe `93a3aea0699741886ffd5986012003ff7c877f2a`
 Test (#1716, #1674): snapshot references for batch 1-3's pictures, drawn on the laptop: the now-playing card per device, the picture sizes with Small, and playback's pinned name.
 
