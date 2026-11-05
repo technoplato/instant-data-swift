@@ -1,3 +1,6 @@
+## 2026-11-05 02:02:28 EST — scribe `f238975c540b8eb4f2d7d5062511b7d9f19f40b9`
+Perf (#1083): the quick actions and recent recordings read only an older row's creation time before keeping it, and the body-cache test gives each of its two stores its own journal (follow-up to dc733eb20; tested alone in perf-root-1083-green2).
+
 ## 2026-11-05 01:24:40 EST — scribe `8afa49fd679d4e6348d737231f56ec2f9c4e60ef`
 Feature (#1777): the phone's keeper counts a finished 48 kbps copy in storage that reaches the WAV's end (storage is to keep only the copy); the media scan leaves an audio row left to its copy alone, the detail projection shows its audio uploaded, and an Unnamed Voices clip plays from the stored copy when the row has no file; red/green on the mini (5 new tests, 64 pass); FEATURES item 24's keeper clause.
 
