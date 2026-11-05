@@ -400,8 +400,8 @@ struct InstantProgressiveMediaWriterTests {
       stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage,
       continuing: storedRow(.finished, segmentCount: 3, durationSeconds: 16.5)
     )
-    expectNoDifference(await writer.nextIndex, 3)
-    expectNoDifference(await writer.appendedSeconds, 16.5)
+    #expect(await writer.nextIndex == 3)
+    #expect(await writer.appendedSeconds == 16.5)
     #expect(await !writer.isFinished)
 
     try await writer.start(initialization: Data(count: 612))
@@ -434,8 +434,8 @@ struct InstantProgressiveMediaWriterTests {
     try await writer.append(Data(count: 100), durationSeconds: 6)
 
     let relaunched = try #require(try InstantProgressiveMediaWriter.resumable(in: spool, storage: storage.storage).first)
-    expectNoDifference(await relaunched.nextIndex, 4)
-    expectNoDifference(await relaunched.appendedSeconds, 22.5)
+    #expect(await relaunched.nextIndex == 4)
+    #expect(await relaunched.appendedSeconds == 22.5)
     try await relaunched.finish()
     storage.openNetwork()
     try await relaunched.deliver()
@@ -457,8 +457,8 @@ struct InstantProgressiveMediaWriterTests {
       stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage,
       continuing: storedRow(.recording, segmentCount: 1, durationSeconds: 6)
     )
-    expectNoDifference(await resumed.nextIndex, 2)
-    expectNoDifference(await resumed.appendedSeconds, 12)
+    #expect(await resumed.nextIndex == 2)
+    #expect(await resumed.appendedSeconds == 12)
   }
 
   /// A row with no segments, or another stream's, says nothing about where this stream ends: it starts at index 0 with
@@ -472,7 +472,7 @@ struct InstantProgressiveMediaWriterTests {
       let writer = try InstantProgressiveMediaWriter(
         stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage, continuing: stored
       )
-      expectNoDifference(await writer.nextIndex, 0)
+      #expect(await writer.nextIndex == 0)
       try await writer.start(initialization: Data(count: 612))
       try await writer.finish()
       try await writer.deliver()
