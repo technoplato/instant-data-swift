@@ -1,3 +1,6 @@
+## 2026-11-04 22:06:53 EST — instant-data-swift `995043755a97f26d268100262c9ef91630579dbd`
+Release (#1513, #1480, #1109): v1.9.68 tagged on 99504375 (ledger bd929885), from main merge 0df9d697: #1513 a final's publication splices the rows it reaches (red a0dee714, greens f8b7c453 428411d9; a final's publication p50 17.6-18.2 -> 15.6-16.0 ms on the Mac mini, materialized snapshots -43%), #1480 a restated result compared with its stored rows once (red 322c3993, green ca9dd8d2; 192 -> 96 rows read for a 32-line page), #1109 no identity set when the nested limit kept every fact (4fff7e5c). No API or storage change. Debug bundle: 1,669 tests, only the three failing on main since 1.9.64-1.9.67.
+
 ## 2026-11-04 22:05:06 EST — scribe `a4f2cd2860d765651d79ed491b1388cdc32c2801`
 Tooling (#1776): build.sh's pass-over of an old waiter that leaves a free slot unused now counts only time it was watched (a look over 120 s after the last restarts the clock; live, a 5-min-old look passed over an old P0 waiter), and an old-code waiter's resubmit keeps its place from its own journal line (red e9ed47495).
 

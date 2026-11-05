@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 4th, 2026 at 10:06:53 p.m. EST — `995043755a97` release(#1513 #1480 #1109): v1.9.68: a final's publication splices the rows it reaches; a restated result is compared with its stored rows once
+
+- **Implementation commit:** `995043755a97f26d268100262c9ef91630579dbd`
+- **Change:** release(#1513 #1480 #1109): v1.9.68: a final's publication splices the rows it reaches; a restated result is compared with its stored rows once
+- **Details:**
+  - The release document for v1.9.68, tagged from main (0df9d697 plus its ledger) for Scribe's next build: #1513 (red a0dee714, greens f8b7c453 and 428411d9) splices the rows a final reaches; #1480 (red 322c3993, green ca9dd8d2) compares each restated result with its stored rows once; #1109 (4fff7e5c) skips the identity set when the nested limit kept every fact.
+  - No API or storage change; a final's publication p50 17.6-18.2 -> 15.6-16.0 ms on the Mac mini, materialized snapshots -43%; 192 -> 96 rows read for a restated 32-line page; the debug bundle fails only the three tests that fail on main since 1.9.64-1.9.67.
+- **Files:**
+  - `docs/releases/v1.9.68.md` — #1513 #1480 #1109 the release: what changed, what it measured, the checks, what did not run
+  - `PROGRESS.md` — #1513 the release checkpoint and what waits for the next job
+  - `docs/FOOTGUNS.md` — F10 and F21 record what landed and the ratio guard
+  - `agent-presence/_channels/2026-11-04-perf-recv-1797.md` — #1513 says what landed and which paths stay claimed
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-recv-1797@pp); no SpecStory capture
+
 ## November 4th, 2026 at 10:03:53 p.m. EST — `0459f173913a` test(#1116): F21's guard: a larger page with one line changed costs about what a smaller one does
 
 - **Implementation commit:** `0459f173913acd45b9ab7faabb43fb156fcfd9f6`
