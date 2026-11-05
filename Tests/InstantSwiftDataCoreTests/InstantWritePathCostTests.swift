@@ -16,6 +16,9 @@
 // 2026-11-04  #653   Red: every delivery claim read and decoded its writes' attributes from SQLite, one statement per
 //                    attribute: a quarter of the claim a write's save makes (job 1797-b's sample of the recording
 //                    exercise).
+// 2026-11-04  #1523  Red: a server apply's body pages and staging looked a pending write's kept receipt up by its
+//                    inputs, which the save no longer keys it by, and fingerprinted it again; a body the echo changed
+//                    was then fingerprinted again at its acknowledgement (+200 us a call in jobs 1797-a and 1797-b).
 
 import Foundation
 import Testing
@@ -110,6 +113,66 @@ struct InstantWritePathCostTests {
     #expect(window.mutations.count == 2)
     #expect(hashes == 0, "2 writes' saves, claims and acknowledgements hashed their inputs \(hashes) times")
     #expect(fingerprints == 2, "2 writes were fingerprinted \(fingerprints) times; each save mints one")
+    let pending = try await fixture.pendingCount()
+    #expect(pending == 0)
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// A server apply that replays pending writes finds each one's kept receipt fingerprint by the bytes its row stores,
+  /// and keeps the fingerprint of a body it changes with the bytes it stages, so it mints one only for a receipt it
+  /// changes and the acknowledgements after it mint none (#1523). Since 1ef4aa2f the save kept the fingerprint by its
+  /// stored bytes only, while the echo's body pages and staging looked it up by the write's inputs: in jobs 1797-a and
+  /// 1797-b the acknowledgement cost about 200 us more a call (411.7 -> 618.7 us), a full fingerprint in 14 of its 40
+  /// samples.
+  @Test
+  func aServerApplyAndTheAcknowledgementsAfterItFindTheReceiptByTheStoredBytes() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "receipt-after-echo",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0
+    )
+    let persistence = fixture.runtime.persistence
+    _ = try await Self.writeOneInterimPerSegment(3, in: &fixture)
+    let window = try await fixture.claimWindow()
+    #expect(window.mutations.count == 3)
+    let first = try #require(window.mutations.first)
+    let later = Array(window.mutations.dropFirst())
+    var receiptsBefore: [String: String] = [:]
+    for mutation in later {
+      receiptsBefore[mutation.id] = try await persistence.optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
+    }
+
+    // The server accepts the first write and echoes the queries it touched, under which the later two are pending.
+    let beforeEcho = await persistence.optimisticEffectFingerprintCountForTesting()
+    let echo = try await fixture.acceptAndRefresh(first, claimToken: window.token)
+    let echoMints = await persistence.optimisticEffectFingerprintCountForTesting() - beforeEcho
+    var changedReceipts = 0
+    for mutation in later {
+      let receipt = try await persistence.optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
+      if receipt != receiptsBefore[mutation.id] { changedReceipts += 1 }
+    }
+
+    let beforeAcknowledgements = await persistence.optimisticEffectFingerprintCountForTesting()
+    for mutation in later {
+      let transactionID = fixture.server.accept(mutation.transaction.operations)
+      _ = try await fixture.runtime.acceptMutationIfPresent(
+        id: mutation.id,
+        serverTransactionID: transactionID,
+        claimToken: window.token
+      )
+    }
+    let acknowledgementMints =
+      await persistence.optimisticEffectFingerprintCountForTesting() - beforeAcknowledgements
+
+    #expect(echo.isRebase, "the echo replayed \(echo.plannedBodyCount) pending writes; this test needs it to replay them")
+    #expect(
+      echoMints == changedReceipts,
+      "the echo fingerprinted writes \(echoMints) times and changed \(changedReceipts) of their receipts"
+    )
+    #expect(
+      acknowledgementMints == 0,
+      "\(later.count) acknowledgements after the echo fingerprinted writes \(acknowledgementMints) times"
+    )
     let pending = try await fixture.pendingCount()
     #expect(pending == 0)
     _ = try? await fixture.runtime.closeConnection()
