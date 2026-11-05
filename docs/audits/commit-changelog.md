@@ -1,3 +1,6 @@
+## 2026-11-05 01:13:51 EST — scribe `74f4f29da955b82e25fee2fa21acc79bcf447898`
+Fix (#1652): agent-run --steer refuses a claude run whose claude process reads no inbox (started before the hook, 2026-11-04 12:53, or between attempts), so a message from the phone never waits unread while its box says sent; installed into ~/Scribe/tools.
+
 ## 2026-11-05 00:15:11 EST — instant-data-swift `7b3ee47d359be606fc535ab4321158c806a032ff`
 Release (#1523): v1.9.70 tagged on 7b3ee47d (ledger 34458bef), from main 37790b67 (the lane's 6ff60ee9): the server apply's body pages and staging and the acknowledgement find a write's kept receipt by its stored bytes again; 1.9.69 looked them up by inputs it no longer kept. Mac mini job 1797-e, release, same job vs v1.9.67: acknowledgement 451.0 -> 457.9 us a call (1.9.69: 628.7), save + claim -17.0%.
 
