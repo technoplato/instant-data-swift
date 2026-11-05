@@ -1,3 +1,6 @@
+## 2026-11-04 21:20:41 EST — scribe `896de971e768950b223ac290f9dc496c3252ec4c`
+Cut (#1423): Scribe 0.1 (256) from main after the list's sealed summary (ADR 0128, #1423, #1195, #1506); CURRENT_PROJECT_VERSION to 256 and build 256's plain block and stories.
+
 ## 2026-11-04 21:18:33 EST — scribe `5c293a67a4551cc0fc67d368838ae9acd5b2a474`
 Performance (#1423, #1195, #1506): the recordings list follows no line being recorded. A final links no preview slot and the list's page includes no transcriptions and no newest image (ADR 0128); Stop seals the two slots and the new recordings.wordCount (schema pushed, 550 rows backfilled with backup); a live take's row reads its newest two lines and count from the take or from two small queries per recording another device records, while the list shows in front; the map reads its pins' pictures while it shows, and an image's write leaves updatedAtMs to the heartbeat; a recording's chapters follow a live window of the newest 8 plus one read, with the drawn fields. Before (build 248): the page restated 144.8 KB 1,552 times in 88 minutes (0.98 per final), chapters 869 KB a frame.
 
