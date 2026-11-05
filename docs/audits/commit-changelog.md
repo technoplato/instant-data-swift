@@ -1,3 +1,6 @@
+## 2026-11-05 11:06:33 EST — scribe `543c9aec1c48713379b23564c39975c3b9248623`
+Fix (#1826): the Mac mirror's replaced Instant socket opens a new client: @instantdb/core's init() caches clients under a key its shutdown() never deletes when neither URI is named, so on 2026-11-05 1,253 replacements got back the shut client, opened no socket and replayed cached results while no line arrived for 2 h; now both URIs are named, a shut client handed back gives the process up, any socket message counts as alive, failures back off with full jitter, and 6 failures or 120 s unproven while Instant answers HTTP exits 75 for launchd.
+
 ## 2026-11-05 10:24:32 EST — scribe `2b48f8cee451826973f3c263dc88f8a2cf5c42ec`
 Fix (#1771, #1779): the device's voice learner hears new recordings' summaries after the app's root view is built again: the engine's summaries go through RequestMailbox (#1751), a stream per learner run, instead of one AsyncStream that ended with the first run; the runs open at once share one set of label readers, stopped by the last to end (a run's own readers outlived it). Red on main and green with both fixes in one job (1771-redgreen2: the second-run test 5-s timeout on main, 0.018 s now); changelog ea8bf803a. Found in code; not measured on a device.
 
