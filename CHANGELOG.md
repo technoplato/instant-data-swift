@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 4:51:44 a.m. EST — `7bac40a2433c` release(#1796): v1.9.71: a follower applies each query's newest result next, its one-shot reads survive a busy applier and a dying socket, and it measures its lag
+
+- **Implementation commit:** `7bac40a2433c935b8831733374c18e136231dc07`
+- **Change:** release(#1796): v1.9.71: a follower applies each query newest result next, its one-shot reads survive a busy applier and a dying socket, and it measures its lag
+- **Details:**
+  - The release record docs/releases/v1.9.71.md, FOOTGUNS F68 and PROGRESS: Mac mini job 1796-check2, each red failing on its own sources, green 99 tests in 11 suites, the whole bundle 1,691 tests and 0 failing; the writer-and-follower test worst lag 40,313 -> 13,469 ms, newest 29,502 -> 1,500 ms.
+- **Files:**
+  - `docs/releases/v1.9.71.md` — #1796 the release record
+  - `docs/FOOTGUNS.md` — #1796 F68, a buffered refresh a newer one restates, and a read behind a busy applier
+  - `PROGRESS.md` — #1796 the release checkpoint and the next steps
+- **User context (verbatim):**
+  > So my transcript is about six. minutes behind
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-1796 on pp); no SpecStory capture
+
 ## November 5th, 2026 at 4:50:43 a.m. EST — `d75028325841` green(#1796): an observer's registration names its query's namespace in the gate's phase
 
 - **Implementation commit:** `d75028325841410cff76307b1093d883c9b93180`
