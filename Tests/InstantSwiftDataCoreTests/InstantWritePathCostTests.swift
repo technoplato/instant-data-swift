@@ -9,6 +9,8 @@
 // 2026-11-04  #653   Red: a write saved while the connection is open and nothing waits ahead of it still takes a claim
 //                    turn of the operation gate, which reads its body back and fingerprints it again (3.06 ms a claim on
 //                    the phone, builds 248-249, more than the save's 2.79 ms).
+// 2026-11-04  #1142  Red: every write's send started a task that slept until its acknowledgement deadline (about 6 s),
+//                    and its acknowledgement cancelled it: one task and one timer a write.
 
 import Foundation
 import Testing
@@ -152,6 +154,41 @@ struct InstantWritePathCostTests {
     #expect(claims == 0, "\(claims) claim turns for \(writes) writes saved with nothing ahead of them")
     let sent = await session.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
     #expect(sent == (0..<writes).map { "tx-save-claim-\($0)" }, "every write is sent once, in order: \(sent)")
+    _ = try? await runtime.closeConnection()
+  }
+
+  /// Writes sent and acknowledged one at a time, each within its acknowledgement deadline, share one deadline wake:
+  /// its task sleeps on and finds nothing to do, where each send started a task and each acknowledgement cancelled it
+  /// (#1142).
+  @Test
+  func acknowledgedWritesShareOneDeadlineWake() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let runtime = try await InstantObserverRegistrationGateTests.runtime(
+      "deadline-wake",
+      transport: session.transport
+    )
+    _ = try await runtime.connect()
+    try await InstantConnectionStateTruthTests.waitUntil("the connection's first pass to finish") {
+      await runtime.automaticMutationPumpIsIdleForTesting()
+    }
+    let before = await runtime.mutationDeadlineWakeTaskCountForTesting()
+
+    let writes = 6
+    for index in 0..<writes {
+      try await InstantOfflineRuntimeFixture.createTodo("wake-\(index)", in: runtime)
+      try await InstantConnectionStateTruthTests.waitUntil("write \(index) to reach the socket") {
+        await session.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-wake-\(index)" }
+      }
+      await session.enqueue(
+        InstantLiveMessage(op: "transact-ok", clientEventID: "tx-wake-\(index)", fields: ["tx-id": .string("w-\(index)")])
+      )
+      try await InstantConnectionStateTruthTests.waitUntil("the server to accept write \(index)") {
+        await runtime.pendingMutations().isEmpty
+      }
+    }
+
+    let tasks = await runtime.mutationDeadlineWakeTaskCountForTesting() - before
+    #expect(tasks <= 1, "\(tasks) deadline-wake tasks for \(writes) writes acknowledged within their deadlines")
     _ = try? await runtime.closeConnection()
   }
 

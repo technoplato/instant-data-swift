@@ -1386,6 +1386,12 @@ private actor InstantRuntimeMutationDeadlineWake {
   private var task: Task<Void, Never>?
   private var deadlineMilliseconds: Int64?
   private var generation = 0
+  /// Tasks this wake started (#1142), for the tests that count a write's tasks.
+  private var startedTaskCount = 0
+
+  func startedTaskCountForTesting() -> Int {
+    startedTaskCount
+  }
 
   func request(
     deadlineMilliseconds: Int64?,
@@ -1410,6 +1416,7 @@ private actor InstantRuntimeMutationDeadlineWake {
     let generation = generation
     self.deadlineMilliseconds = deadlineMilliseconds
     task?.cancel()
+    startedTaskCount += 1
     task = Task { [weak self] in
       do {
         let remaining = max(0, deadlineMilliseconds - now().milliseconds)
@@ -8356,6 +8363,12 @@ public final class InstantRuntime: Sendable {
   @concurrent
   package func automaticMutationPumpIsSuspendedForTesting() async -> Bool {
     await mutationDeliveryPump.isSuspendedForTesting()
+  }
+
+  /// Tasks the acknowledgement-deadline wake has started (#1142).
+  @concurrent
+  package func mutationDeadlineWakeTaskCountForTesting() async -> Int {
+    await mutationDeadlineWake.startedTaskCountForTesting()
   }
 
   /// Exposes only the opaque claimant identity needed to exercise exact-token
