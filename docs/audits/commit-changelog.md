@@ -1,3 +1,12 @@
+## 2026-11-04 22:57:56 EST — scribe `9ee8cce493e42f74420213fdfd13e8371ab4de4d`
+Tool (#1799, #1808): scripts/perf/metrics.py notes a recording whose stored audio is the WAV itself (a recording over twelve hours long kept its 4.43 GB WAV in Instant instead of its 263 MB compressed copy), with both sizes.
+
+## 2026-11-04 22:42:16 EST — scribe `62345216cb4a737fec8f2f25b2979cefdda2b416`
+Tool (#1799): a before/after scene splits speech by how much was said (quiet, light speech under 40 words a minute, talking): 251's speech minutes carried 132 words a minute and 253's 10, so the earlier like-for-like -22% was withdrawn; 248 -> 249 improved 20-36% in three matched scenes, 249 -> 250 did not move.
+
+## 2026-11-04 22:30:02 EST — scribe `7a1600f1dc6daa9772f9262b17db6ee5ddc28a69`
+Tool (#1799): metrics.py --compare and the build watcher lead with recording minutes matched by scene (in front or behind, the screen, speech) before any total, and fit Instant's refresh per final line (quoted only at r2 0.5 or more).
+
 ## 2026-11-04 23:00:13 EST — scribe `9306304bb32655f246486e91e5a79043ac613c17`
 Fix (#1585): the Mac mirror reads a recording's attachments once and follows them through a window of the newest written and an ids-only query on the WebSocket, instead of restating all of them at every change (idle Recording 364: 3.09 GB in 31 minutes from the iPad's image uploads).
 
