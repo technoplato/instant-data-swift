@@ -1,3 +1,9 @@
+## 2026-11-05 00:15:11 EST — instant-data-swift `7b3ee47d359be606fc535ab4321158c806a032ff`
+Release (#1523): v1.9.70 tagged on 7b3ee47d (ledger 34458bef), from main 37790b67 (the lane's 6ff60ee9): the server apply's body pages and staging and the acknowledgement find a write's kept receipt by its stored bytes again; 1.9.69 looked them up by inputs it no longer kept. Mac mini job 1797-e, release, same job vs v1.9.67: acknowledgement 451.0 -> 457.9 us a call (1.9.69: 628.7), save + claim -17.0%.
+
+## 2026-11-05 00:14:11 EST — instant-data-swift `37790b67ff25c70b7c8761147e475bbd712668aa`
+Fix (#1523): the server apply's body pages pass their row's stored bytes, the staging keys the receipt by the bytes it stages, the supersession tail's check uses its row's bytes, and a supersession's lifecycle record takes its save's fingerprint; replayed writes are no longer fingerprinted again, nor a changed body at its acknowledgement.
+
 ## 2026-11-05 00:02:35 EST — scribe `a2be17609817b62d43ca392bf25915581f6fdd95`
 Cut (#1083): Scribe 0.1 (262) from main after #1083's landing: CURRENT_PROJECT_VERSION 261 to 262, build 262's plain block and two stories (bb0e41534, landed as a2be17609).
 

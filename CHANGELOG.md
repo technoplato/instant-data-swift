@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 12:15:39 a.m. EST — `7b3ee47d359b` release(#1523): v1.9.70: the acknowledgement and the server apply find a write's receipt by its stored bytes again
+
+- **Implementation commit:** `7b3ee47d359be606fc535ab4321158c806a032ff`
+- **Change:** release(#1523): v1.9.70: the acknowledgement and the server apply find a write's receipt by its stored bytes again
+- **Details:**
+  - The release document for v1.9.70, tagged from main (37790b67, the lane's 6ff60ee9, plus its ledger 34458bef) at the coordinator's order before the memory lane's gate: the server apply's body pages and staging and the acknowledgement find a write's kept receipt by its stored bytes; 1.9.69 looked them up by inputs it no longer kept, and the acknowledgement cost ~190 us more a call.
+  - Mac mini job 1797-e, release, same job vs v1.9.67: acknowledgement 451.0 -> 457.9 us (1.9.69: 628.7), save + claim -17.0%, write side -15.3%. No API or storage change.
+- **Files:**
+  - `docs/releases/v1.9.70.md` — #1523 the release: what changed, what it measured, the checks, what did not run
+  - `PROGRESS.md` — #1523 the release checkpoint
+  - `agent-presence/_channels/2026-11-04-perf-send-1797.md` — #1523 what v1.9.70 holds and what waits for job F
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-send-1797@pp); no SpecStory capture
+
 ## November 5th, 2026 at 12:14:40 a.m. EST — `37790b67ff25` green(#1523): a server apply and the acknowledgements after it find a write's receipt by its stored bytes
 
 - **Implementation commit:** `37790b67ff25c70b7c8761147e475bbd712668aa`
