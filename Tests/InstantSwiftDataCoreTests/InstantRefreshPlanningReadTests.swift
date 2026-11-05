@@ -10,6 +10,8 @@ import Testing
 //   248's ledger).
 // - 2026-11-05: #1116: one comparison a refresh still read every stored row and encoded every restated value; a refresh
 //   now reads and encodes the facts of the entities it changed only.
+// - 2026-11-05: #1116: a value restated in other bytes that `Hashable` takes as equal (a composed and a decomposed "é",
+//   0 and -0) reads as a change, as the rows' text comparison reads it.
 
 /// What a server refresh reads to compare a restated result with the one it stored (#1480, #1116).
 @Suite(.serialized)
@@ -141,6 +143,54 @@ struct InstantRefreshPlanningReadTests {
       "rows read: \(fingerprintedReads.ownershipRowsRead) with fingerprints, \(fullReads.ownershipRowsRead) without"
     )
   }
+
+  /// #1116: a value restated in other bytes reads as a change even when `Hashable` takes it as equal. "é" as one scalar
+  /// and as "e" with a combining accent are equal Swift strings, and 0 and -0 equal numbers, but the store keeps each
+  /// value's text byte for byte (`InstantStoredJSON`) and SQLite compares it so; the full comparison replaces the rows.
+  /// The rows' bytes must stay the full comparison's.
+  @Test
+  func aValueRestatedInOtherBytesReadsAsAChange() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantRefreshFingerprintBytes-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    func runtime(_ name: String) async throws -> InstantRuntime {
+      try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "refresh-fingerprint-bytes-\(name)",
+          persistenceURL: directory.appendingPathComponent("\(name).sqlite"),
+          initialAttributes: FingerprintPage.attributes
+        )
+      )
+    }
+    let fingerprinted = try await runtime("fingerprinted")
+    let full = try await runtime("full")
+    await full.persistence.setUsesLiveQueryEntityFingerprintsForTesting(false)
+
+    let composed = "caf\u{E9}"
+    let decomposed = "cafe\u{301}"
+    #expect(composed == decomposed)
+    #expect(Array(composed.utf8) != Array(decomposed.utf8))
+    var page = FingerprintPage(name: "a", lines: 3)
+    page.edit(line: 0, text: composed)
+    page.edit(line: 1, index: 0)
+    var restatements = [page]
+    page.edit(line: 0, text: decomposed)
+    page.edit(line: 1, index: -0.0)
+    restatements.append(page)
+    for (offset, restated) in restatements.enumerated() {
+      let frame = FingerprintPage.refresh([restated], transactionID: String(offset + 1))
+      _ = try await fingerprinted.applyLiveRefresh(frame, receivedAt: .init(milliseconds: Int64(offset + 1)))
+      _ = try await full.applyLiveRefresh(frame, receivedAt: .init(milliseconds: Int64(offset + 1)))
+    }
+
+    // As bytes: Swift's == takes the two texts of "é" as equal, SQLite does not.
+    let key = try page.queryKey()
+    let rows = try await fingerprinted.persistence.liveQueryOwnershipForTesting(queryKey: key)
+      .map { $0.map { Array($0.utf8) } }
+    let expectedRows = try await full.persistence.liveQueryOwnershipForTesting(queryKey: key)
+      .map { $0.map { Array($0.utf8) } }
+    #expect(rows == expectedRows)
+  }
 }
 
 /// A page of lines whose text, membership and order change between refreshes, for #1116's comparison test.
@@ -157,13 +207,23 @@ struct FingerprintPage {
   let name: String
   var namespace: String { name == "a" ? Self.namespaces[0] : Self.namespaces[1] }
   /// Each line's id, text and order.
-  private(set) var lines: [(id: String, text: String, index: Int)]
+  private(set) var lines: [(id: String, text: String, index: Double)]
   private var nextLine: Int
 
   init(name: String, lines count: Int) {
     self.name = name
-    lines = (0..<count).map { ("fp-\(name)-\($0)", "line \($0)", $0) }
+    lines = (0..<count).map { ("fp-\(name)-\($0)", "line \($0)", Double($0)) }
     nextLine = count
+  }
+
+  /// Sets one line's text.
+  mutating func edit(line position: Int, text: String) {
+    lines[position].text = text
+  }
+
+  /// Sets one line's place in the order.
+  mutating func edit(line position: Int, index: Double) {
+    lines[position].index = index
   }
 
   /// Edits, adds, removes or reorders a few lines, or leaves the page as it is.
@@ -175,7 +235,7 @@ struct FingerprintPage {
         let index = Int(random.next() % UInt64(lines.count))
         lines[index].text = "line \(lines[index].id) at step \(step) \(random.next() % 1_000)"
       case 2:
-        lines.append(("fp-\(name)-\(nextLine)", "new line \(nextLine)", nextLine))
+        lines.append(("fp-\(name)-\(nextLine)", "new line \(nextLine)", Double(nextLine)))
         nextLine += 1
       case 3:
         guard lines.count > 1 else { continue }
@@ -183,7 +243,7 @@ struct FingerprintPage {
       default:
         guard !lines.isEmpty else { continue }
         let index = Int(random.next() % UInt64(lines.count))
-        lines[index].index = nextLine + 1_000
+        lines[index].index = Double(nextLine + 1_000)
       }
     }
   }
@@ -204,7 +264,7 @@ struct FingerprintPage {
       return .array([
         triple("id", .string(line.id)),
         triple("text", .string(line.text)),
-        triple("index", .number(Double(line.index))),
+        triple("index", .number(line.index)),
       ])
     }
     return .object([
