@@ -632,6 +632,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable () async -> Void)? = nil
   package var onAutomaticMutationPumpRetryWindowCompletedForTesting:
     (@Sendable () async -> Void)? = nil
+  /// Runs before the delivery pump sends a window a write's own save claimed (#653), with the window's write ids. Tests
+  /// pause here and end the session the window was claimed on.
+  package var onClaimedAtSaveDeliveryStartingForTesting:
+    (@Sendable (_ mutationIDs: [String]) async -> Void)? = nil
   package var onManualSynchronizationBlockerBeforeConnectionGateForTesting:
     (@Sendable () async -> Void)? = nil
   package var onAutomaticLiveConnectionTaskStartedForTesting:
@@ -11183,6 +11187,7 @@ public final class InstantRuntime: Sendable {
   private func deliverClaimedAtSave(
     _ selection: InstantAutomaticOutboxTransportSelection
   ) async -> InstantRuntimeMutationDeliveryPumpPassResult {
+    await configuration.onClaimedAtSaveDeliveryStartingForTesting?(selection.mutations.map(\.mutationID))
     do {
       try Task.checkCancellation()
       return try await deliverAutomaticOutboxSelection(selection) ? .continueImmediately : .finished

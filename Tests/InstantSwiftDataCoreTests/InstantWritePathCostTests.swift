@@ -11,6 +11,8 @@
 //                    the phone, builds 248-249, more than the save's 2.79 ms).
 // 2026-11-04  #1142  Red: every write's send started a task that slept until its acknowledgement deadline (about 6 s),
 //                    and its acknowledgement cancelled it: one task and one timer a write.
+// 2026-11-04  #653   Red: a window a write's save claimed, still on the pump when its session ended, went out on the
+//                    next session ahead of the older write the disconnect put back.
 
 import Foundation
 import Testing
@@ -228,6 +230,73 @@ struct InstantWritePathCostTests {
     _ = try? await runtime.closeConnection()
   }
 
+  /// A write its save claimed waits on the pump while the session it was claimed for ends, which puts back the older
+  /// write that was in flight. The next session gets the older write first: a window claimed at save goes out only on
+  /// the session it was claimed for, as a pass's window, claimed from the head, goes out after every write before it
+  /// (#653).
+  @Test
+  func aWriteClaimedAtSaveIsNotSentAheadOfAnOlderWriteOnTheNextSession() async throws {
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "claimed-at-save-first")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "claimed-at-save-second")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [first, second])
+    let hold = ClaimedAtSaveDeliveryHold(mutationID: "tx-ended-b")
+    let runtime = try await InstantObserverRegistrationGateTests.runtime(
+      "claim-at-save-session-ends",
+      transport: transport.transport
+    ) {
+      $0.onClaimedAtSaveDeliveryStartingForTesting = { ids in await hold.pass(ids) }
+    }
+    _ = try await runtime.connect()
+    try await InstantConnectionStateTruthTests.waitUntil("the connection's first pass to finish") {
+      await runtime.automaticMutationPumpIsIdleForTesting()
+    }
+
+    try await InstantOfflineRuntimeFixture.createTodo("ended-a", in: runtime)
+    try await InstantConnectionStateTruthTests.waitUntil("the older write to reach the first socket") {
+      await first.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-ended-a" }
+    }
+    try await InstantOfflineRuntimeFixture.createTodo("ended-b", in: runtime)
+    try await InstantConnectionStateTruthTests.waitUntil("the newer write's window to reach the pump") {
+      await hold.isHolding
+    }
+    let claimedAtSave = await runtime.persistence.claimedAtSaveCountForTesting()
+    #expect(claimedAtSave == 2, "both writes were claimed by their saves: \(claimedAtSave)")
+
+    await first.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "end the first session",
+        message: "The scripted first connection ended.",
+        recovery: "Reconnect and send the outbox again."
+      )
+    )
+    try await InstantConnectionStateTruthTests.waitUntil("the second session to open") {
+      await transport.connectionRequests().count == 2 && runtime.connectionHealth().isOpen
+    }
+    await hold.open()
+    try await InstantConnectionStateTruthTests.waitUntil("both writes to reach the second socket") {
+      await second.sentMessages().filter { $0.op == "transact" }.count >= 2
+    }
+
+    let sent = await second.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
+    #expect(sent == ["tx-ended-a", "tx-ended-b"], "the next session gets the older write first: \(sent)")
+    guard sent == ["tx-ended-a", "tx-ended-b"] else {
+      _ = try? await runtime.closeConnection()
+      return
+    }
+    for id in sent {
+      await second.enqueue(InstantLiveMessage(op: "transact-ok", clientEventID: id, fields: ["tx-id": .string("s-\(id)")]))
+    }
+    try await InstantConnectionStateTruthTests.waitUntil("the server to accept both writes") {
+      await runtime.pendingMutations().isEmpty
+    }
+    _ = try? await runtime.closeConnection()
+  }
+
   /// Saves each of `count` segments' first interim write alone: one outbox row per segment, none superseding another
   /// and none narrowing another's projection, as `FastDrainFixture.writeSegments` (six writes a segment) would.
   static func writeOneInterimPerSegment(_ count: Int, in fixture: inout FastDrainFixture) async throws -> [String] {
@@ -241,5 +310,31 @@ struct InstantWritePathCostTests {
       ids.append(write.id)
     }
     return ids
+  }
+}
+
+/// Holds the pump's send of the window a write's save claimed for `mutationID` until ``open()`` (#653).
+private actor ClaimedAtSaveDeliveryHold {
+  let mutationID: String
+  private(set) var isHolding = false
+  private var isOpen = false
+  private var release: CheckedContinuation<Void, Never>?
+
+  init(mutationID: String) {
+    self.mutationID = mutationID
+  }
+
+  func pass(_ mutationIDs: [String]) async {
+    guard !isOpen, mutationIDs.contains(mutationID) else { return }
+    await withCheckedContinuation { continuation in
+      release = continuation
+      isHolding = true
+    }
+  }
+
+  func open() {
+    isOpen = true
+    release?.resume()
+    release = nil
   }
 }
