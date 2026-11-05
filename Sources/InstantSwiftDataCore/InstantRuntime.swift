@@ -8214,7 +8214,7 @@ public final class InstantRuntime: Sendable {
         predecoded: predecoded
       )
       // #1500: a batch that only unloads closed results marks them where they are.
-      guard !batch.removedQueryKeys.isEmpty || !batch.unloadingQueryKeys.isEmpty else {
+      guard !batch.removedQueryKeys.isEmpty || batch.unloadsResults else {
         return batch.applicationRemovingNothing
       }
       let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: batch.releasedEntityIDs)

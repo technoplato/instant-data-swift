@@ -434,6 +434,9 @@ struct InstantLiveQueryResultPruneBatch: Sendable {
   /// The batch neither decodes them nor checks their facts.
   fileprivate var releasingQueryKeys: Set<String> = []
 
+  /// Whether the batch unloads any closed result, which it marks where it is (#1500).
+  var unloadsResults: Bool { !unloadingQueryKeys.isEmpty }
+
   /// The removed results the batch decodes: those it does not release over later batches (#1129).
   var decodedQueryKeys: [String] {
     removedQueryKeys.filter { !releasingQueryKeys.contains($0) }

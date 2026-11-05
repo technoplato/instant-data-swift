@@ -185,27 +185,32 @@ struct InstantResidencySweepTests {
   /// A local confirmation (`confirmMutationIfPresent`) keeps a row until such a frame.
   static func prove(lines: Range<Int>, on runtime: InstantRuntime) async throws {
     let ids = Set(lines.map { "write-line-\($0)" })
-    let token = "residency-sweep-claim-\(lines.lowerBound)"
-    let window = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
-      InstantAutomaticOutboxClaimRequest(
-        claimantID: await runtime.automaticDeliveryClaimantIDForTesting(),
-        claimToken: token,
-        now: InstantTimestamp(milliseconds: Int64(Date().timeIntervalSince1970 * 1_000)),
-        maximumMutationCount: ids.count
-      )
-    )
-    #expect(Set(window.mutations.map(\.id)) == ids, "every write is claimed")
     var number = 1_000 + lines.lowerBound
     var restated: [InstantTripleOperation] = []
-    for mutation in window.mutations.sorted(by: PendingMutation.creationOrder) {
-      number += 1
-      _ = try await runtime.acceptMutationIfPresent(
-        id: mutation.id,
-        serverTransactionID: String(number),
-        claimToken: token
+    var claimed: Set<String> = []
+    // A claim takes a bounded window of the outbox; claim until every write is taken, as the pump does.
+    for attempt in 0..<16 where claimed != ids {
+      let token = "residency-sweep-claim-\(lines.lowerBound)-\(attempt)"
+      let window = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+        InstantAutomaticOutboxClaimRequest(
+          claimantID: await runtime.automaticDeliveryClaimantIDForTesting(),
+          claimToken: token,
+          now: InstantTimestamp(milliseconds: Int64(Date().timeIntervalSince1970 * 1_000)),
+          maximumMutationCount: ids.count
+        )
       )
-      restated += mutation.transaction.operations
+      for mutation in window.mutations.sorted(by: PendingMutation.creationOrder) where ids.contains(mutation.id) {
+        number += 1
+        _ = try await runtime.acceptMutationIfPresent(
+          id: mutation.id,
+          serverTransactionID: String(number),
+          claimToken: token
+        )
+        restated += mutation.transaction.operations
+        claimed.insert(mutation.id)
+      }
     }
+    #expect(claimed == ids, "every write is claimed")
     _ = try await runtime.applyServerTransactionMergingAttributesForTesting(
       InstantStoreTransaction(id: String(number), operations: restated),
       attributesToMerge: []
