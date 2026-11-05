@@ -1,3 +1,6 @@
+## 2026-11-04 19:44:13 EST — scribe `be00c65e31e95709c60f2fd7f35639a69b712210`
+Feature (#1790): scribe decision amend says an open question's own lines again in what he can open (a WAITING line's file and line becomes whose note it was), adds drafts and links, keeps his words byte for byte and sends no notice.
+
 ## 2026-11-04 19:26:58 EST — scribe `29e42144ea489ae00b51387918ac04d910938010`
 Fix (#1751): in-app requests outlive the app store's listener. Start or Resume Recording (the Action button), the Home Screen quick actions, the Live Activity's and Control Center's recording controls, the timers' Live Activity presses (#612) and Pause Playback each went to the store through one process-wide AsyncStream; the store listens in an effect of the app view's .task, and an AsyncStream finishes for good when its one consumer is cancelled, so after the view went away once every later press only brought the app to the front. A new RequestMailbox target gives each listener its own stream (the newest takes each request, the newest N wait while none listens, it never finishes), the four listeners run per window without cancelInFlight, and each link and control logs system-surface.request.sent (delivered or waiting). Red 1b7b4e81b and d2b992fec, test stub 8699bdd82, changelog 94ea7e627, landed as b8523e940; measured on the mini (1751-redgreen, 1751-stub).
 
