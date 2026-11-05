@@ -1,3 +1,28 @@
+## 2026-11-05 00:05 EST — perf-send-1797 (#653, #1523, #1517): after v1.9.69: the ack fix measured, the next claim cut, job F
+
+- **v1.9.69** (tag on `10f89d53`, main `0554157e`) is job C's verified `7773cfa5` merged with v1.9.68. Scribe: pin
+  `85db0434b`, cut 260 `6123d4245`, landed `bc95e8bdd`. 260's install was stopped by #1803's agent (main's watchOS
+  -Osize setting crashed Swift; reverted in Scribe `482bcec57`); its next build from the fixed main carries the pin, so
+  260 is not re-cut. The phone measure waits for that build.
+- **Job E** (`1797-e-receipt-echo`, mini, 23:32-23:58; `~/Sync/audit/perf-send-1797/jobs/out-1797-e/`): the lane tree
+  (v1.9.68 merged + `6ff60ee9`) compiles; 207 tests in 20 suites pass, the seed pins and v1.9.68's suites included.
+  Release A/B v1.9.67 vs the lane head: acknowledgement 451.0 -> 457.9 us (v1.9.69 has 628.7), save + claim 4,946.1 ->
+  4,107.8 us (-17.0%), write side -15.3%. Its red did not compile (a checkout leaves files added since in place).
+- **On the lane branch, not released:** #1523 echo fix (red `9b792550`, green `6ff60ee9`, test `a5c21032` takes the
+  full rebase so the echo replays); #1517 claim at save measured by the save's own body encode (red `b3b819b4`, green
+  `26943d43`; 27 of the claim at save's 100 samples).
+- **Job F** (`1797-f-claim-measure`, mini, queued 23:35; stdout `jobs/1797-f.out`; script `gate-1797-f.sh` at the lane
+  root): the whole bundle at the lane head against `Tests/known-failing.txt`, the #1517 red at `b3b819b4`, the #1523 red
+  (9b792550's tree with files added since removed, HEAD's test file), release A/B v1.9.69 vs head.
+- **Next (resume here):** read job F. Green: merge origin/main into the lane, land on main, release the next free
+  v1.9.N (perf-sync-1796 and perf-mem-1797 may take one first), pin in Scribe as `85db0434b` did (10 files), cut, install.
+  If the #1523 test still fails its precondition (no replay), find a scenario whose echo replays pending writes (a frame
+  that changes a slot a pending write sets) or drop the echo counts and keep the acknowledgement count. Then the phone:
+  an hour after the build with 1.9.69 is on the iPhone, `ledger_disk.py` and the CPU split against
+  `phone/before-1815-*.txt`, on #653 and one line on #1797. Then the page roadmap in
+  `~/Sync/audit/perf-send-1797/maps/2026-11-04-write-path-maps.md` (2026-11-04 23:40 section): #1254 revisions in memory
+  (Hi/Lo, never reused), the ack's pages, #1464, the body in its row, #1434.
+
 ## 2026-11-04 23:20 EST — perf-send-1797 (#653, #1517, #1523, #1142, #1648): v1.9.69, a live write is claimed by its own save
 
 - **Why:** on the phone (builds 248-249, its own write recorder) the claim cost 3.06 ms a write, more than the save's
