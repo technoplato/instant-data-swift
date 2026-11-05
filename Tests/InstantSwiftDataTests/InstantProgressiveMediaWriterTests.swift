@@ -389,6 +389,123 @@ struct InstantProgressiveMediaWriterTests {
     }
   }
 
+  /// #632: a stream this device delivered and finished is continued (its recording resumed after it stopped). With no
+  /// spool record the writer started over at index 0: it stored every segment again, the store's rules refused the
+  /// rows (a stored stream keeps its createdAtMs, a stored segment every field), and the stream's count fell back to 1
+  /// on every device while it re-sent. From the stored row, the next segment takes its count and duration, the
+  /// initialization segment is not stored again, and the row keeps its createdAtMs and a stamp that never moves back.
+  @Test func aDeliveredStreamContinuesWhereItsStoredRowEnds() async throws {
+    let storage = StorageDouble(network: .open)
+    let writer = try InstantProgressiveMediaWriter(
+      stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage,
+      continuing: storedRow(.finished, segmentCount: 3, durationSeconds: 16.5)
+    )
+    expectNoDifference(await writer.nextIndex, 3)
+    expectNoDifference(await writer.appendedSeconds, 16.5)
+    #expect(await !writer.isFinished)
+
+    try await writer.start(initialization: Data(count: 612))
+    try await writer.append(Data(count: 25_700), durationSeconds: 6)
+    try await writer.finish()
+    try await writer.deliver()
+
+    expectNoDifference(
+      storage.events,
+      [
+        .upload(path: "media/recording-1/audio/000003.m4s", byteCount: 25_700, contentType: "audio/mp4"),
+        .write([
+          .streamProgress(storedRow(.finished, segmentCount: 4, durationSeconds: 22.5)),
+          .segment(segmentRow(3, startSeconds: 16.5, durationSeconds: 6, byteCount: 25_700)),
+        ]),
+      ]
+    )
+    expectNoDifference(try spool.streams(), [])
+  }
+
+  /// A continued stream is in the spool from its first append, so a relaunch resumes it as any other: the numbering
+  /// goes on and the initialization segment is still not stored again (#632).
+  @Test func aContinuedStreamResumesFromTheSpoolAfterARelaunch() async throws {
+    let storage = StorageDouble(network: .closed)
+    let writer = try InstantProgressiveMediaWriter(
+      stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage,
+      continuing: storedRow(.finished, segmentCount: 3, durationSeconds: 16.5)
+    )
+    try await writer.start(initialization: Data(count: 612))
+    try await writer.append(Data(count: 100), durationSeconds: 6)
+
+    let relaunched = try #require(try InstantProgressiveMediaWriter.resumable(in: spool, storage: storage.storage).first)
+    expectNoDifference(await relaunched.nextIndex, 4)
+    expectNoDifference(await relaunched.appendedSeconds, 22.5)
+    try await relaunched.finish()
+    storage.openNetwork()
+    try await relaunched.deliver()
+    expectNoDifference(storage.events.map(\.label), ["upload 000003.m4s", "write stream+3"])
+  }
+
+  /// The spool's own record wins over the stored row: a stream not yet delivered resumes where it was appended, which
+  /// the server's row may not reach yet (#632).
+  @Test func theSpoolsRecordWinsOverTheStoredRow() async throws {
+    let storage = StorageDouble(network: .closed)
+    let first = try InstantProgressiveMediaWriter(
+      stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage
+    )
+    try await first.start(initialization: Data(count: 612))
+    try await first.append(Data(count: 100), durationSeconds: 6)
+    try await first.append(Data(count: 100), durationSeconds: 6)
+
+    let resumed = try InstantProgressiveMediaWriter(
+      stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage,
+      continuing: storedRow(.recording, segmentCount: 1, durationSeconds: 6)
+    )
+    expectNoDifference(await resumed.nextIndex, 2)
+    expectNoDifference(await resumed.appendedSeconds, 12)
+  }
+
+  /// A row with no segments, or another stream's, says nothing about where this stream ends: it starts at index 0 with
+  /// its initialization segment, as before (#632).
+  @Test func aRowWithoutSegmentsOrOfAnotherStreamStartsTheStream() async throws {
+    let other = InstantProgressiveMediaStream(key: "recording-2/audio", pathPrefix: "media/recording-2/audio")
+    var othersRow = storedRow(.finished, segmentCount: 3, durationSeconds: 16.5)
+    othersRow.id = other.id
+    for stored in [storedRow(.recording, segmentCount: 0, durationSeconds: 0), othersRow] {
+      let storage = StorageDouble(network: .open)
+      let writer = try InstantProgressiveMediaWriter(
+        stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage, continuing: stored
+      )
+      expectNoDifference(await writer.nextIndex, 0)
+      try await writer.start(initialization: Data(count: 612))
+      try await writer.finish()
+      try await writer.deliver()
+      expectNoDifference(storage.events.map(\.label), ["upload init.mp4", "write stream", "write stream"])
+    }
+  }
+
+  /// A continued stream keeps the format its row was created with, as the store's rules do: a stream begun at 32 kbps
+  /// goes on at 32 kbps whatever the caller's stream says now, so its new segments match its initialization segment.
+  @Test func aContinuedStreamKeepsItsStoredFormat() async throws {
+    var format = stream.format
+    format.bitRate = 48_000
+    let writer = try InstantProgressiveMediaWriter(
+      stream: InstantProgressiveMediaStream(id: stream.id, pathPrefix: stream.pathPrefix, format: format),
+      ownerUserID: "owner", spool: spool, storage: StorageDouble(network: .closed).storage,
+      continuing: storedRow(.finished, segmentCount: 2, durationSeconds: 12)
+    )
+    expectNoDifference(writer.stream.format.bitRate, 32_000)
+    expectNoDifference(writer.stream.format, stream.format)
+  }
+
+  /// A stream row as another launch stored it: created at 900 s, last stamped at 1,200 s, after the test's clock.
+  func storedRow(
+    _ state: InstantProgressiveMediaState,
+    segmentCount: Int,
+    durationSeconds: Double
+  ) -> InstantProgressiveMediaStreamRow {
+    var row = streamRow(state, segmentCount: segmentCount, durationSeconds: durationSeconds)
+    row.createdAtMs = 900_000
+    row.updatedAtMs = 1_200_000
+    return row
+  }
+
   func streamRow(
     _ state: InstantProgressiveMediaState,
     segmentCount: Int,

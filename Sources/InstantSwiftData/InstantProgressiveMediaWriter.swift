@@ -116,7 +116,8 @@ public actor InstantProgressiveMediaWriter {
     stream: InstantProgressiveMediaStream,
     ownerUserID: String,
     spool: InstantProgressiveMediaSpool,
-    storage: Storage
+    storage: Storage,
+    continuing stored: InstantProgressiveMediaStreamRow? = nil
   ) throws {
     self.stream = stream
     self.ownerUserID = ownerUserID
