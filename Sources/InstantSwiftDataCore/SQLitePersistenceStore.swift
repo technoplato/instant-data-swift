@@ -112,6 +112,9 @@
 //   are unchanged, where each claim decoded them from JSON one statement at a time (#653).
 // - 2026-11-04: a server apply compares each restated result with its stored rows once: the save takes the retractions'
 //   comparison, made in the same read, instead of encoding every restated value and reading every row again (#1480).
+// - 2026-11-04: the server apply's body pages and staging and the supersession tail's check find a write's kept receipt
+//   by its stored bytes too: by its inputs, which the save no longer hashes, they missed and fingerprinted it again, and
+//   a body the echo changed was fingerprinted once more at its acknowledgement (+200 us a call, #1523).
 
 import CryptoKit
 import Foundation
@@ -6681,7 +6684,12 @@ public actor SQLitePersistenceStore {
                 "Mutation '\(mutation.id)' has a \(lifecycleByteCount)-byte compact lifecycle body, beyond the 8 MiB resident-patch limit."
             )
           }
-          guard let receiptFingerprint = try optimisticEffectFingerprint(of: mutation) else {
+          // #1523: kept by the bytes this stages, which the commit stores where the body changed; by the write's inputs,
+          // which the save no longer hashes, it missed here, and a body it changed missed again at its acknowledgement.
+          let stagedBody = Self.storedBodyBinding(body)
+          guard
+            let receiptFingerprint = try optimisticEffectFingerprint(of: mutation, storedBody: stagedBody)
+          else {
             throw persistenceError(
               operation: "stage bounded server apply",
               message:
@@ -6789,7 +6797,7 @@ public actor SQLitePersistenceStore {
             WHERE plan_id = ? AND mutation_id = ?
             """,
             [
-              Self.storedBodyBinding(body),
+              stagedBody,
               .int(Int64(body.utf8.count)),
               .int(Int64(lifecycleByteCount)),
               .text(mutation.status.rawValue),
@@ -8009,7 +8017,13 @@ public actor SQLitePersistenceStore {
           synchronizationBlocker: blocker
         )
       }
-      if !(try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)) {
+      // #1523: by the bytes the row stores, as the save kept it; looked up by the write's inputs, which the save no
+      // longer hashes, every pending write an echo replayed was fingerprinted again here.
+      let receipt = try optimisticEffectFingerprint(of: mutation, storedBody: stored.storedBody)
+      let receiptMatches = try receipt.map {
+        try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: mutation.id) == $0
+      } ?? false
+      if !receiptMatches {
         let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
           mutationID: candidate.mutationID
         )
@@ -9034,7 +9048,8 @@ public actor SQLitePersistenceStore {
         guard mutation.id == mutationID,
           mutation.status == .pending,
           mutation.provesReplayableOptimisticEffectReceipt,
-          try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)
+          // #1523: by the bytes the tail's row stores, as its save kept it.
+          try hasStoredPreparedOptimisticEffectReceipt(decodedFrom: row, mutation)
         else {
           throw persistenceError(
             operation: "validate immediate supersession tail",
@@ -18688,10 +18703,12 @@ public actor SQLitePersistenceStore {
 
   /// One stored body or lifecycle and the delivery columns it is decoded with (#1435): `sql` selects the body, then
   /// the status, the server transaction id and the confirmation source. Nil when no row matches or the body is NULL.
+  /// `storedBody` is column 0 exactly as SQLite holds it (#1523), so a receipt check of the body decoded from `json`
+  /// finds the kept fingerprint by those bytes.
   private func loadStoredBodyWithDeliveryWithoutTransaction(
     _ sql: String,
     _ bindings: [SQLiteBinding]
-  ) throws -> (json: String, delivery: InstantOutboxRowDelivery)? {
+  ) throws -> (json: String, storedBody: SQLiteBinding, delivery: InstantOutboxRowDelivery)? {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
     defer { finishStatement(statement) }
@@ -18703,7 +18720,16 @@ public actor SQLitePersistenceStore {
         message: "SQLite returned an outbox status or confirmation source this version does not know."
       )
     }
-    return (json, delivery)
+    return (json, Self.storedBody(statement, 0, json: json), delivery)
+  }
+
+  /// A body column exactly as SQLite holds it (#1523): a compressed body's bytes, or an older version's text. `json` is
+  /// the column as ``outboxBodyJSON(_:_:)`` read it.
+  private static func storedBody(_ statement: OpaquePointer?, _ column: Int32, json: String) -> SQLiteBinding {
+    if sqlite3_column_type(statement, column) == SQLITE_BLOB, let bytes = sqlite3_column_blob(statement, column) {
+      return .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, column))))
+    }
+    return .text(json)
   }
 
   /// A body column's JSON (#1463): a compressed body (a BLOB) inflated, a body an older version stored (TEXT) as it
@@ -19546,12 +19572,7 @@ public actor SQLitePersistenceStore {
           message: "SQLite returned a NULL bounded-delivery column."
         )
       }
-      let storedBody: SQLiteBinding
-      if sqlite3_column_type(statement, 2) == SQLITE_BLOB, let bytes = sqlite3_column_blob(statement, 2) {
-        storedBody = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 2))))
-      } else {
-        storedBody = .text(body)
-      }
+      let storedBody = Self.storedBody(statement, 2, json: body)
       guard let delivery = InstantOutboxRowDelivery(statement: statement, from: 6) else {
         throw persistenceError(
           operation: "read outbox delivery rows",
@@ -20588,10 +20609,13 @@ public actor SQLitePersistenceStore {
       entityIDs: effectFootprint?.entityIDs ?? []
     )
     try replaceOutboxWriteKeysWithoutTransaction(for: durableMutation)
+    // #1523: the lifecycle record of a supersession checks the receipt with this save's fingerprint of the same write;
+    // looked up by its inputs, which this save no longer hashes, it was fingerprinted again.
     try saveMutationLifecycleWithoutTransaction(
       durableMutation,
       lifecycleID: requestedLifecycleID,
-      advancingFromMutationID: advancingFromMutationID
+      advancingFromMutationID: advancingFromMutationID,
+      knownReceiptFingerprint: InstantKnownReceiptFingerprint(value: candidateFingerprint)
     )
   }
 
