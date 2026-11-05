@@ -1,3 +1,6 @@
+## 2026-11-05 05:44:14 EST — scribe `7d2fc7319b414bcb8e17df3fcd8b1acc6b413355`
+Performance (#1423, ADR 0128 amendment 1): the recordings list's page holds no row being recorded; the rows stamped active come from a small query of their own (at most 24) and join the window inside its range. Before (build 253): an idle recording minute restated the page once, 149.4 KB, on every device holding the list. Proved on the throwaway app: a duration write restated the old page 115.9 KB, the new page never, the live rows 4.3 KB. Gate liverows1423-green3 on the mini, 211 tests in 22 suites.
+
 ## 2026-11-05 05:21:27 EST — scribe `913d11e8b0978d3eecc21cb27ba2d605f3bd7d5c`
 Performance (#1423): the home screen's At work tile reads the agents' rows without their work (InstantAgentStatus.tileQuery: owners, order and limit of the board with ownerUserID, agentKey, name, state, heartbeatAtMs, stoppedAtMs), and the sheet reads each agent's work only while it shows. Before (build 251, home screen in front 30 min): agentStatuses/60 restated 152 times, 148.9 KB each, 45 MB an hour; 89% of the rows' values were workJSON. Gate atwork1423-green on the mini, 41 tests in 4 suites.
 
