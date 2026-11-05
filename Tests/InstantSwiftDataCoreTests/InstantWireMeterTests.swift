@@ -3,6 +3,8 @@
 //   them once a minute, so a phone's bytes per change can be measured.
 // - 2026-10-26 (#1117): a refresh's bytes are counted by the query each computation answers. On one device a recording
 //   received about 1.15 MB per final line, and only two copies of its store said which live queries carried it.
+// - 2026-11-05 (#1781): a query's first answer is timed from its own ask, by client-event-id, with the triples it
+//   carried, under its shape.
 
 import CustomDump
 import Foundation
@@ -163,6 +165,150 @@ extension InstantWireMeterTests {
       minute.logMetadata.filter { $0.key.hasPrefix("query.") },
       ["query.1": "b=1/900", "query.2": "d=1/400", "query.3": "a=1/200"]
     )
+  }
+}
+
+extension InstantWireMeterTests {
+  /// A query's first answer through the loopback socket: the add-query-ok that echoes the ask's client-event-id closes
+  /// its note, and the wait and the answer's triples, children included, count under the query's shape (#1781).
+  @Test
+  func aQuerysFirstAnswerIsTimedUnderItsShapeWithItsTriples() async throws {
+    let reply = #"{"op":"add-query-ok","client-event-id":"ask-1","q":{"liveLines":{"$":{"limit":8,"where":{"recordingID":"r-1"}}}},"result":[{"data":{"datalog-result":{"join-rows":[[["e-1","a-1","one",7]],[["e-1","a-2","two",7],["e-2","a-1","three",7]]]}},"child-nodes":[{"data":{"datalog-result":{"join-rows":[[["e-3","a-1","four",7]]]}}}]}]}"#
+    let server = try await LoopbackWebSocketServer.start(reply: reply)
+    defer { server.stop() }
+    let meter = InstantWireMeterStorage()
+    let socket = try InstantURLSessionLiveWebSocket(url: server.url, wireMeter: meter)
+
+    try await socket.send(Self.ask("ask-1", #"{"liveLines":{"$":{"limit":8,"where":{"recordingID":"r-1"}}}}"#))
+    _ = try await socket.receive()
+    await socket.close()
+
+    let firstAnswers = meter.snapshot().firstAnswersByQuery
+    expectNoDifference(Array(firstAnswers.keys), ["liveLines/8[recordingID]"])
+    let answers = try #require(firstAnswers["liveLines/8[recordingID]"])
+    expectNoDifference(answers.answers, 1)
+    expectNoDifference(answers.triples, 4)
+    expectNoDifference(answers.slowAnswers, 0)
+    #expect(answers.waitNanoseconds > 0)
+  }
+
+  /// Each answer closes its own ask's note by client-event-id, in whatever order answers arrive; the wait is the
+  /// uptime between the two, and five seconds or more counts as slow (#1781).
+  @Test
+  func eachAnswerClosesItsOwnAsksNote() {
+    var notes = InstantFirstAnswerNotes()
+    let meter = InstantWireMeterStorage()
+    let list = #"{"recordings":{"$":{"where":{"ownerUserID":"u-1"}}}}"#
+
+    let noted = [
+      notes.asked(Self.ask("a-1", list), at: 1_000),
+      notes.asked(Self.ask("a-2", list), at: 2_000),
+      notes.asked(InstantLiveMessage(op: "transact", clientEventID: "t-1"), at: 3_000),
+    ]
+    let second = notes.answered(InstantLiveMessage(op: "add-query-exists", clientEventID: "a-2"), at: 5_000_002_000)
+    let first = notes.answered(Self.answer("a-1", triples: 2), at: 41_001_000)
+    let unknown = notes.answered(Self.answer("a-9", triples: 1), at: 42_000_000)
+    for answer in [first, second].compactMap({ $0 }) { meter.recordFirstAnswer(answer) }
+
+    expectNoDifference(noted, [true, true, false])
+    expectNoDifference(
+      [first, second],
+      [
+        InstantFirstAnswer(shape: "recordings[ownerUserID]", waitNanoseconds: 41_000_000, triples: 2),
+        InstantFirstAnswer(shape: "recordings[ownerUserID]", waitNanoseconds: 5_000_000_000, triples: 0),
+      ]
+    )
+    expectNoDifference(unknown, nil)
+    expectNoDifference(notes.count, 0)
+    expectNoDifference(
+      meter.snapshot().firstAnswersByQuery,
+      [
+        "recordings[ownerUserID]": InstantWireSnapshot.FirstAnswers(
+          answers: 2, waitNanoseconds: 5_041_000_000, slowAnswers: 1, triples: 2)
+      ]
+    )
+  }
+
+  /// An error for a noted ask closes its note with no answer, a frame that was never sent is forgotten, and the notes
+  /// stay bounded when no answer comes (#1781).
+  @Test
+  func notesCloseOnAnErrorOrAFailedSendAndStayBounded() {
+    var notes = InstantFirstAnswerNotes()
+    let ask = Self.ask("a-1", #"{"lines":{}}"#)
+
+    let notedBeforeTheError = notes.asked(ask, at: 1)
+    let error = InstantLiveMessage(op: "error", clientEventID: "a-1", fields: ["status": .number(400)])
+    let answerToTheError = notes.answered(error, at: 2)
+    let afterTheError = notes.count
+    let notedBeforeTheFailedSend = notes.asked(ask, at: 3)
+    notes.forget(ask)
+    let afterTheFailedSend = notes.count
+    for index in 0..<(InstantFirstAnswerNotes.maximumNotes + 10) {
+      notes.asked(Self.ask("b-\(index)", #"{"lines":{}}"#), at: UInt64(index))
+    }
+    let notedPastTheBound = notes.asked(Self.ask("c-1", #"{"lines":{}}"#), at: 1_000)
+
+    expectNoDifference([notedBeforeTheError, notedBeforeTheFailedSend], [true, true])
+    expectNoDifference(answerToTheError, nil)
+    expectNoDifference([afterTheError, afterTheFailedSend], [0, 0])
+    expectNoDifference(notes.count, InstantFirstAnswerNotes.maximumNotes)
+    expectNoDifference(notedPastTheBound, false)
+  }
+
+  /// A minute's first answers subtract like the other counts, and its summary names the three longest waits in all,
+  /// `shape=answers/averageMs/slow/triples` (#1781).
+  @Test
+  func aSummaryNamesTheLongestFirstAnswerWaits() {
+    let earlier = InstantWireSnapshot(
+      firstAnswersByQuery: ["a": .init(answers: 1, waitNanoseconds: 100_000_000, slowAnswers: 0, triples: 10)]
+    )
+    let later = InstantWireSnapshot(
+      firstAnswersByQuery: [
+        "a": .init(answers: 3, waitNanoseconds: 700_000_000, slowAnswers: 0, triples: 30),
+        "b": .init(answers: 1, waitNanoseconds: 6_000_000_000, slowAnswers: 1, triples: 900),
+        "c": .init(answers: 1, waitNanoseconds: 20_000_000, slowAnswers: 0, triples: 0),
+        "d": .init(answers: 2, waitNanoseconds: 400_000_000, slowAnswers: 0, triples: 4),
+      ]
+    )
+
+    let minute = later.subtracting(earlier)
+
+    expectNoDifference(
+      minute.firstAnswersByQuery["a"],
+      .init(answers: 2, waitNanoseconds: 600_000_000, slowAnswers: 0, triples: 20)
+    )
+    expectNoDifference(
+      minute.logMetadata.filter { $0.key.hasPrefix("firstAnswer.") },
+      ["firstAnswer.1": "b=1/6000/1/900", "firstAnswer.2": "a=2/300/0/20", "firstAnswer.3": "d=2/200/0/4"]
+    )
+  }
+
+  /// Past the bound on shapes, a first answer counts as `other`, as the bytes do (#1781).
+  @Test
+  func firstAnswersKeepABoundedNumberOfShapes() {
+    let meter = InstantWireMeterStorage()
+    for index in 0..<(InstantWireMeterStorage.maximumQueryShapes + 2) {
+      meter.recordFirstAnswer(InstantFirstAnswer(shape: "q\(index)", waitNanoseconds: 10, triples: 1))
+    }
+
+    let byQuery = meter.snapshot().firstAnswersByQuery
+    expectNoDifference(byQuery.count, InstantWireMeterStorage.maximumQueryShapes + 1)
+    expectNoDifference(byQuery["other"], .init(answers: 2, waitNanoseconds: 20, slowAnswers: 0, triples: 2))
+  }
+
+  private static func ask(_ clientEventID: String, _ query: String) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "add-query",
+      clientEventID: clientEventID,
+      fields: ["q": try! JSONDecoder().decode(InstantLiveJSONValue.self, from: Data(query.utf8))]
+    )
+  }
+
+  private static func answer(_ clientEventID: String, triples: Int) -> InstantLiveMessage {
+    let triple = InstantLiveJSONValue.array([.string("e"), .string("a"), .string("v"), .number(7)])
+    let joinRows = InstantLiveJSONValue.array(Array(repeating: .array([triple]), count: triples))
+    let node = InstantLiveJSONValue.object(["data": .object(["datalog-result": .object(["join-rows": joinRows])])])
+    return InstantLiveMessage(op: "add-query-ok", clientEventID: clientEventID, fields: ["result": .array([node])])
   }
 }
 

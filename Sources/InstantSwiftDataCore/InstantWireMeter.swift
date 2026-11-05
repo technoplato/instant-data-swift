@@ -7,6 +7,8 @@ import os
 //   page restated by every refresh-ok), and no phone could be checked against it.
 // - 2026-10-26 (#1117): also by the query each answer carried, under its shape. On one device a recording received
 //   about 1.15 MB per final line in refresh-ok frames, and only two copies of its store said which queries carried it.
+// - 2026-11-05 (#1781): also each query's wait for its first answer and the triples that answer carried, by shape. A
+//   launch's first lines reached the screen 12.1 s after start, and no count said which query had waited.
 
 /// The live socket's traffic: frames and bytes by op, each way, counted where each frame is sent or received (#1124).
 ///
@@ -90,21 +92,49 @@ public struct InstantWireSnapshot: Sendable, Equatable {
     }
   }
 
+  /// What a query's first answers waited for and carried (#1781): one for each `add-query` the socket sent and saw
+  /// answered by `add-query-ok` or `add-query-exists`.
+  public struct FirstAnswers: Sendable, Equatable {
+    public var answers: Int
+    /// The answers' waits added up, each from its asking frame handed to the socket to its answer decoded.
+    public var waitNanoseconds: UInt64
+    /// The answers that waited ``InstantWireSnapshot/slowFirstAnswerNanoseconds`` or longer.
+    public var slowAnswers: Int
+    /// The triples the answers carried: every result node's `join-rows`, children included (`add-query-exists`
+    /// carries none: the session already had the query).
+    public var triples: Int
+
+    public init(answers: Int = 0, waitNanoseconds: UInt64 = 0, slowAnswers: Int = 0, triples: Int = 0) {
+      self.answers = answers
+      self.waitNanoseconds = waitNanoseconds
+      self.slowAnswers = slowAnswers
+      self.triples = triples
+    }
+  }
+
+  /// A first answer that waited this long or longer is counted as slow: five seconds, the request timeout the
+  /// socket's session keeps (#1781).
+  public static let slowFirstAnswerNanoseconds: UInt64 = 5_000_000_000
+
   /// By op (`transact`, `add-query`, ...).
   public var sent: [String: Measure]
   /// By op (`transact-ok`, `refresh-ok`, `add-query-ok`, ...).
   public var received: [String: Measure]
   /// What each query's answers carried (#1117), by its shape (``InstantWireMeter/queryShape(of:)``).
   public var receivedByQuery: [String: Measure]
+  /// Each query's first answers (#1781), by its shape (``InstantWireMeter/queryShape(of:)``).
+  public var firstAnswersByQuery: [String: FirstAnswers]
 
   public init(
     sent: [String: Measure] = [:],
     received: [String: Measure] = [:],
-    receivedByQuery: [String: Measure] = [:]
+    receivedByQuery: [String: Measure] = [:],
+    firstAnswersByQuery: [String: FirstAnswers] = [:]
   ) {
     self.sent = sent
     self.received = received
     self.receivedByQuery = receivedByQuery
+    self.firstAnswersByQuery = firstAnswersByQuery
   }
 
   public var sentFrames: Int { sent.values.reduce(0) { $0 + $1.frames } }
@@ -206,6 +236,10 @@ package final class InstantWireMeterStorage: Sendable {
   /// shapes, so this bounds only a shape built from data.
   package static let maximumQueryShapes = 48
 
+  /// Counts one query's first answer under its shape (#1781).
+  package func recordFirstAnswer(_ answer: InstantFirstAnswer) {
+  }
+
   /// Counts one answer for each shape, under one lock for the whole frame (#1117).
   package func recordQueries(_ answers: [(shape: String, bytes: Int)]) {
     guard !answers.isEmpty else { return }
@@ -219,5 +253,50 @@ package final class InstantWireMeterStorage: Sendable {
         state.counts.receivedByQuery[shape, default: InstantWireSnapshot.Measure()].bytes += max(0, answer.bytes)
       }
     }
+  }
+}
+
+/// One query's first answer, as ``InstantFirstAnswerNotes`` closes its ask (#1781).
+package struct InstantFirstAnswer: Equatable, Sendable {
+  package var shape: String
+  package var waitNanoseconds: UInt64
+  package var triples: Int
+
+  package init(shape: String, waitNanoseconds: UInt64, triples: Int) {
+    self.shape = shape
+    self.waitNanoseconds = waitNanoseconds
+    self.triples = triples
+  }
+}
+
+/// The `add-query` frames a socket sent that no answer has closed yet (#1781).
+package struct InstantFirstAnswerNotes: Sendable {
+  /// The most asks noted at once.
+  package static let maximumNotes = 256
+
+  package init() {}
+
+  package var count: Int { 0 }
+
+  /// Notes `message` at `now` if it asks a query; whether it was noted.
+  @discardableResult
+  package mutating func asked(_ message: InstantLiveMessage, at now: UInt64) -> Bool {
+    false
+  }
+
+  /// Drops `message`'s note: its frame was never sent.
+  package mutating func forget(_ message: InstantLiveMessage) {
+  }
+
+  /// The noted ask `message` answers at `now`.
+  package mutating func answered(_ message: InstantLiveMessage, at now: UInt64) -> InstantFirstAnswer? {
+    nil
+  }
+}
+
+extension InstantLiveMessage {
+  /// The triples a first answer carries (#1781).
+  var firstAnswerTriples: Int {
+    0
   }
 }
