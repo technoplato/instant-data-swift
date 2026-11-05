@@ -1,3 +1,6 @@
+## 2026-11-05 04:52:42 EST — scribe `93a3aea0699741886ffd5986012003ff7c877f2a`
+Test (#1716, #1674): snapshot references for batch 1-3's pictures, drawn on the laptop: the now-playing card per device, the picture sizes with Small, and playback's pinned name.
+
 ## 2026-11-05 04:52:22 EST — instant-data-swift `7bac40a2433c935b8831733374c18e136231dc07`
 Release (#1796): v1.9.71 tagged on 7bac40a2 (ledger 50f2b61e), landed on main as da110d5d with the lane's a5b5174d (merged with main as 5f848b89, ledger e56d179e): a waiting refresh-ok loses the results a newer one restates, a one-shot read waits while the connection works (up to 30 s) and survives a socket's death, live.receive-summary measures the follower's lag, a registration names its query in the gate's phase. Mac mini 1796-check2: reds fail on their own sources, green 99 tests, bundle 1,691 tests and 0 failing; the writer-and-follower test's worst lag 40,313 -> 13,469 ms, newest line 29,502 -> 1,500 ms.
 
