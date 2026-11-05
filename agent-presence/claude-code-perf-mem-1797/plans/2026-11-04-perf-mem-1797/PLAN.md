@@ -223,6 +223,17 @@ Design (the shape of deferred values, generalized to an entity's facts):
 4. Release: the residency sweep (#1145) and the prune release a partial entity whole, as any entity, and drop its mark.
 5. Not changed: lookups resolve against memory (the consuming app writes none); a delete's cascade reaches resident
    children only (as before #1165).
+Found while writing the red (`48f10a63`, `InstantPartialResidencyTests`): what "owned" loads must differ by attribute.
+- A many-valued link loads the values a result owns, not the attribute's every value: the recordings list owns two
+  segment links per recording under its nested limit, and loading the (recording, segments) pair would bring all
+  10,000 back. So exact facts for `.ref` + `.many` attributes (the ownership row's value, a primary-key probe each).
+- A single-valued attribute loads per (entity, attribute): the owned value can be stale (a local write changed the
+  title since the save), and the current one is the fact on disk.
+- The outbox's entities load whole, as now.
+- Partial marking: precise (an entity with a non-deferred fact on disk outside what loaded) costs a scan of the loaded
+  entities' rows in SQLite at launch, links included, without materializing them; conservative (every loaded entity
+  outside the outbox) costs a disk merge of each in every local read by lookup (history pages) and a whole read at its
+  first write. Prefer precise, measured on the store copy first.
 Red tests first: a relaunch holds a loaded result's owned attributes of an entity, not its unowned links; a write to it
 keeps its links on disk and leaves it whole in memory; a server apply to it keeps its disk-only facts; a local read
 with a lookup over it answers with its disk facts; reopening an unloaded result completes it. Measure: E07 (resident
