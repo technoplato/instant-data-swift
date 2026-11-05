@@ -97,6 +97,12 @@ public struct InstantProgressiveMediaSpool: Sendable {
     try save(record)
   }
 
+  /// Begins a stream whose initialization segment is already stored: a stored stream that is continued (#632).
+  func begin(continuing record: Record) throws {
+    try FileManager.default.createDirectory(at: streamDirectory(record.stream), withIntermediateDirectories: true)
+    try save(record)
+  }
+
   func save(_ record: Record) throws {
     try JSONEncoder().encode(record).write(to: recordURL(record.stream), options: .atomic)
   }
