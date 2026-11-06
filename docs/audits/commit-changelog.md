@@ -1,3 +1,6 @@
+## 2026-11-05 20:51:30 EST — scribe `e01c8a4104836b9df0e93a81e3bddce219b52ce0` and `b85102a1556ca82e3d7c1ed7867dc170fdc31903`
+Feature (#1726): an answer to a yes-or-no or agree-or-disagree question is stored as that measurement: asks.measure (yes, no, agree, disagree; indexed) beside his answer on the question's fixed form, the view kind agreeDisagree, an option's point and measureOf; the app's write, the door and the round keep it. Production schema and rules pushed first (drift 0); landed by merge b85102a15; ADR 0118 amendment.
+
 ## 2026-11-05 15:56:59 EST — scribe `fe6fe7f2d091963ae7361259219f2cb6ac1db596` and `599c318fdf365305df54c6e988e753d57e2c6143`
 Fix (#1129): pin instant-data-swift 1.9.75 (tag on 2eba5915) in Scribe's three packages and their Package.resolved, the installer's expected version and its tests (141 pass), and two docs; landed by merge 599c318fd. A prune batch now names and times the phase it holds Instant's gates for, and a batch held 1 s or more logs live-query-results.prune-batch-slow; the next cut (272) carries it.
 
