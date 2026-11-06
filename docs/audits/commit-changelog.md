@@ -1,3 +1,9 @@
+## 2026-11-06 04:53:50 EST — scribe `7b8b78534` (red), `27f44fd70` (green) and `79a9f9e9b` (docs), landed by `d33e1fecb9d2be5930d6f850205f844c2180c44b`; its changelog landed by `043d7a676`
+Perf (#1877): the storage walk (20 s after launch, then every 10 minutes, and Settings' Measure Now) places each file by its top-level folder's path prefix instead of standardizing every file's URL; the same sums. Before on the phone: a median of 2.2 to 5.3 CPU-seconds per walk (energy ledger, builds 272-277); the mini: 3,000 files, 60.7 ms to 26.6.
+
+## 2026-11-06 04:53:50 EST — scribe `ce55b9e69`, landed by `22721a928c31adf8a9c93c889044f10dc69fdab7`
+Test fix (#1878): the layout harness compiles again: CaptureHotPathExercises.swift imports AudioCaptureClient, where #1900's 75452c2ac moved AudioLevelMeter; every harness test build from main had failed at its line 274.
+
 ## 2026-11-06 04:14:44 EST — scribe `f73be2c2c67561a2476694c6ce9eea659cd1f4d2`
 Fix (#1886): Start or Resume Recording that reaches the app before its scene is active waits for the launch restore and resumes the paused take, where it started a second recording.
 
