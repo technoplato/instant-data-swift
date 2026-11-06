@@ -1,3 +1,6 @@
+## 2026-11-06 09:24:28 EST — scribe `34402ed0b0353089c58b03dadf14db597f206270`
+Docs (#1901): the iPad's first canned-audio profile (build 284) in docs/PERFORMANCE.md and audits/2026-11-06-ipad-profile-1901.md: five of six stated hypotheses held; during speech the recording screen hitches 2.3 times a second from the sidebar rows (#1923), each store action's SwiftUI update, the build bar ticker (#1878) and a closed threads panel (#1924); long recordings do not play on the Mac (#1916).
+
 ## 2026-11-06 09:06:54 EST — scribe `df7afcb16f863d8a5da89a92d826e3aa330ed795`
 Diagnostics (#1726): the phone's decisions.answer.sent line names the point its tap wrote (agree, disagree, yes, no, or none), because the Mac's round fills a missing point with no note and the row alone cannot say who wrote it; Decisions home 18 of 18 on the mini. A debug line only.
 
