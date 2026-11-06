@@ -1,3 +1,6 @@
+## 2026-11-05 22:04:06 EST — scribe `2a14aea63` landed by `75186433d`; `3fdc33c42` and `4bc2ea96d` landed by `07902ec5b`
+Tooling (#1646): a check-in sender whose folder is gone still posts (senders run in the home folder; an exit 1 is a refusal only with the mirror's answer), after two waiting check-ins were wrongly filed as refusals when their agents removed throwaway worktrees (both resent and delivered); and agent-progress-check shows each agent's last check-in for Michael and flags 30 minutes without one on every harness (scribe-f3's go at 21:49): 16 running agents read at 22:02, no check-in gaps.
+
 ## 2026-11-05 21:54:53 EST — scribe `cfb4bfbc24ca1430d1c25e9f7c94c74ce4707406` and `701eb66aa651d1b42189355f279af8f25b72fbc0`, landed by `316a191f5edfb03f1c6e6267e9881bd87b2410fe`
 Fix (#1808): a delivered compressed copy whose row this phone's store cannot decode is read from the server (bounded at 5 s), a row no source answers for is CompressedCopyState.unread and Stop's scan waits on it instead of sending the WAV, #632's continued copy reads its row the same way, and every stop-audio decision logs what it tested. Build 272 sent Recording 370's whole 2.42 GB WAV five seconds after its copy's row said finished on the server. Gate on the Mac mini: red fails 5 of 6 new tests, green 95 of 95 in 6 suites, three runs.
 
