@@ -40,3 +40,4 @@ claude-code/perf-mem-1797@pp 2026-11-04T18:10:00-0500 mower plan=2026-11-04-perf
 claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 (checkpoint)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
 claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-perf-sync-1796 #1796 #998 #1127 (checkpoint)
+claude-code/mac-longplay-1916@al 2026-11-06T08:49:36-0500 fixer plan=2026-11-06-mac-longplay-1916 #1916
