@@ -1,3 +1,12 @@
+## 2026-11-06 14:33:43 EST — scribe `f4db33d59fe974192967b6c4f52d9021c6de6f27`
+Cut (#496): Scribe 0.1 (290) from main: every agent row the app saves names its owner (the stamp the owner-scoped rules need on every device); CURRENT_PROJECT_VERSION 289 to 290 and build 290's plain block.
+
+## 2026-11-06 14:26:21 EST — scribe `9bbeab8cadc8be1e08e12918d137886729345d71`
+Feature (#496): agent rows name their owner: the app (ScribeAgentOwnedRow at every agent write) and scribe-mirror (planPost, planLink) stamp ownerUserID, the mirror's new threads and responses name their recording; the backfill script (applied 14:38, 16,742 rows); ADR 0136. Rules unchanged until every device runs it.
+
+## 2026-11-06 13:22:34 EST — scribe `2e81eb2eac90945a05e70948ffa404a21716725f`
+Feature (#496): the nine agent tables carry an optional, indexed ownerUserID (ADR 0136), pushed to production 13:21-13:22 with drift 0; and the agent-tables matrix (six kinds of caller, red 259 of 372 under the old rules).
+
 ## 2026-11-06 15:37:56 EST — scribe `42a4f400d` (plan), `a1ed2555bd6591353a12fa1f6255cf8025c27a64` (pin); its changelog landed by `7318751e5`
 Fix (#696): Scribe pins instant-data-swift 1.9.79 in its ten pin files, so the shipped library can verify a held write against the server's own rows and complete or discard it; Scribe calls none of it yet and no screen changes. The next cut carries it.
 
