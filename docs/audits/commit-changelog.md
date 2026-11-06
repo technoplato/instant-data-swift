@@ -1,3 +1,6 @@
+## 2026-11-06 17:25:32 EST — scribe `39371ea3c7c3485b3a93bf852a407c859c9e77fa`
+Feature (#1926): the notification watcher (scripts/notification-watch, installed as ~/Scribe/tools/notification-watch with a 10-minute LaunchAgent): every notification he gets counted from the records each sender and device keeps, repeats, bursts and sounds while he records found, each judged by his own words, fixes ranked by what they remove; read-only. Audit audits/2026-11-06-notifications-1926.md: 566 from midnight to 17:00, 80% check-ins, 53% repeated before #1925 and 4% after.
+
 ## 2026-11-06 16:53:11 EST — scribe `9a411337f58385abdeb14ccdb151fb8ba9675b83`
 Feature (#1946): the Watch's Diagnostics data: RecordingContinuity and SceneHistory (SharedModels) say how a recording runs against real time (its newest line on the capture clock, each clock stop with its cause and whether Scribe was behind, the behind stretches, the phone link); the list records each scene change and gives recordingContinuity(now:). The screen rows go to the UI lane (#1393).
 
