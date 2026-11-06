@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 6th, 2026 at 11:18:04 a.m. EST — `4294224f5f95` green(#1916): a player opening a stream waits for two reads in a row, not five
+
+- **Implementation commit:** `4294224f5f951b4a9099271fcd5de29797bfacf4`
+- **Change:** v1.9.78: a player opening a progressive media stream waits for two reads in a row, not five (#1916)
+- **Details:**
+  - Red b42666e7, green 4294224f, ADR 0021 amendment fa809f1c, release 020518a4 (tag v1.9.78), landed by acb99685. The first refresh reads the URLs a player asks for first (initialization, first page, the live edge's page while recording) alongside the listing, best effort; a refresh within 2 s of one that found the stream finished and wholly listed reads nothing. Mini jobs 1916-lib-red2, 1916-lib-green2 (17 reader tests), 1916-lib-media2 (42 tests in 3 suites, 5 in 2).
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaReader.swift` — the first refresh reads a player's first URLs; a finished stream read a moment ago is not read again
+- **User context (verbatim):**
+  > you can start up a scribe session on laptop too to ensure playback works well as well with computer use etc.
+- **SpecStory:** unavailable — unavailable — Claude Code headless session 0a98e91f-8aef-427e-9027-8d61136fdcce (tools/agent-run, claude/pp); no SpecStory capture for headless runs
+
 ## November 6th, 2026 at 9:55:07 a.m. EST — `5645a2ecec59` green(#1916): a long progressive media stream lists from its last rows read by id, and a break is found by splitting
 
 - **Implementation commit:** `5645a2ecec59198bbcaa24312a4afbd722c8c4e8`
