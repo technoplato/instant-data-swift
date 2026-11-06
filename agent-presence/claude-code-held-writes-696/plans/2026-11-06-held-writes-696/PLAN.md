@@ -66,3 +66,9 @@ InstantSwiftData.swift carry the 2026-11-04/05 perf plans (#1796, #1797, #653, #
 regions. No outbox column, no schema migration: the quarantine table gains its evidence column only when a resolution is
 first written, as the table itself is created only by the first quarantine. Channel:
 agent-presence/_channels/2026-11-06-held-writes-696.md.
+
+## Amendment 1 (2026-11-06T14:24:12-0500): InstantSlotCoverage is Codable
+
+A completion or discard records its verification beside the kept row, as JSON; the verification's slots are
+`InstantSlotCoverage` (#445), so that struct and its `Operation` and `Coverage` enums gain `Codable` (synthesized,
+additive, declarations only). Touching adds Sources/InstantSwiftDataCore/InstantModels.swift.
