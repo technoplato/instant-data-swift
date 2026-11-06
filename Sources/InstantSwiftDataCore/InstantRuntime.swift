@@ -1,4 +1,7 @@
 // History:
+// - 2026-11-06: a held write is verified against the server's own rows (an answer taken where it arrives, before it
+//   joins this device's view) and completed or discarded only on that evidence; a retained mutation whose effect is
+//   unknown is held first when launch left it in the outbox (#696, #134).
 // - 2026-11-05: a prune batch names each phase it holds its gates for in their reports and times it; a batch that held
 //   them 1 s or more logs its phases' times at notice. A Mac's batches held the server-apply gate 4.5-13.1 s at 1,000
 //   facts, unnamed (#1129).
@@ -2078,6 +2081,8 @@ public final class InstantRuntime: Sendable {
   /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
   private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
+  /// The answers reads of the server's own rows wait on (#696).
+  private let serverAnswerCaptures = InstantServerAnswerCaptures()
   /// Each live query's latest server error, delivered to its observers without ending them (#360).
   private let liveQueryErrors = InstantLiveQueryErrors()
   /// A live runtime's room presence, in memory (#461). A runtime without a live transport keeps it in SQLite.
@@ -10713,6 +10718,15 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+      // #696: a read of the server's own rows takes this answer's rows as they came, before they join this device's view.
+      serverAnswerCaptures.offer(
+        key: registrationKey,
+        answer: InstantServerAnswerCaptures.Answer(
+          result: queryOK.result,
+          serverAttributes: serverAttributes,
+          processedTransactionID: queryOK.processedTransactionID
+        )
+      )
       // #654, #932: the answer of a one-shot query that ended before it landed (it waited past its 5 s, or was
       // cancelled) is not applied: no query wants its facts, and the next prune would drop them again. On build 121 the
       // whole $files list's answer, about 27 MB, landed that way once a minute: a server apply held the operation gate
@@ -15978,39 +15992,252 @@ public final class InstantRuntime: Sendable {
   }
 
   /// Reads from the server what it holds of a held write, and says whether the write landed (#696).
+  ///
+  /// A held write's effect on this device's cache is unknown, so the verdict rests on the server's rows: one one-shot
+  /// read per entity the write set, the answer's own rows, not this device's view of them. It says
+  /// ``InstantQuarantinedMutationVerification/Verdict/applied`` only when the server holds every value the write set (or
+  /// a newer one a later accepted write of this device set), ``InstantQuarantinedMutationVerification/Verdict/notApplied(_:)``
+  /// only when the write's kept row says it never left this device or the server refused it, and otherwise
+  /// ``InstantQuarantinedMutationVerification/Verdict/cannotTell(_:)``, with the reason. Nothing is resolved, sent, or
+  /// written but the server's answers, which apply like any server result.
+  ///
+  /// A retained mutation whose local cache effect is unknown but that is still in the outbox (an application on
+  /// ``InstantRetainedMutationRecovery/blockSynchronization``, or a row whose overlay is inactive) is held first, whole,
+  /// the move launch makes under ``InstantRetainedMutationRecovery/quarantine``. Throws when nothing holds `id` and no
+  /// such row has it.
   @concurrent
   public func verifyQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
-    InstantQuarantinedMutationVerification(
-      id: id,
-      verifiedAt: configuration.now(),
-      verdict: .cannotTell(.serverUnreadable("Verification is not built yet.")),
-      slots: []
+    let evidence = try await heldMutationEvidenceHoldingIfNeeded(id: id)
+    let serverRead = await readServerRows(for: evidence)
+    let verification = InstantQuarantinedMutationVerification(
+      evidence: evidence,
+      serverRead: serverRead,
+      verifiedAt: configuration.now()
     )
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.quarantined-mutation.verified",
+      message: "Verified a held write on the server: \(verification.verdict.summary).",
+      metadata: ["mutationID": id, "slotCount": String(verification.slots.count)]
+    )
+    return verification
   }
 
-  /// Completes a held write the server holds (#696).
+  /// Completes a held write the server holds (#696): verifies it again, and only when the verdict is
+  /// ``InstantQuarantinedMutationVerification/Verdict/applied`` records it completed, with that verification, beside its
+  /// kept row. Its lifecycle observers see it accepted, and it is no longer listed as held. Its body is kept as it is.
+  /// Throws, and leaves it held, on any other verdict.
   @discardableResult
   @concurrent
   public func completeQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
-    throw InstantError(
-      code: .implementationFailed,
-      operation: "complete a quarantined mutation",
-      localID: id,
-      message: "Completing a held write is not built yet.",
-      recovery: "Leave it held."
-    )
+    try await settleQuarantinedMutation(id: id, as: .completed)
   }
 
-  /// Discards a held write the server does not hold (#696).
+  /// Discards a held write the server does not hold (#696): verifies it again, and only when the verdict is
+  /// ``InstantQuarantinedMutationVerification/Verdict/notApplied(_:)`` records it discarded, with that verification, beside
+  /// its kept row. Its lifecycle observers see it failed, the library never sends it, and it is no longer listed as held.
+  /// Its body is kept as it is, and this device's cache is not rolled back by guesswork: the server's answers to the
+  /// verification apply like any server result. Throws, and leaves it held, on any other verdict.
   @discardableResult
   @concurrent
   public func discardQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    try await settleQuarantinedMutation(id: id, as: .discarded)
+  }
+
+  private func settleQuarantinedMutation(
+    id: String,
+    as settlement: InstantQuarantinedMutationSettlement
+  ) async throws -> InstantQuarantinedMutationVerification {
+    let verification = try await verifyQuarantinedMutation(id: id)
+    guard settlement.isAllowed(by: verification.verdict) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: settlement.operation,
+        localID: id,
+        localMutationDisposition: .retainedUnknown,
+        message: "Held write '\(id)' stays held: \(verification.verdict.summary).",
+        recovery: "Complete a held write only when its verification says applied, and discard one only when it says "
+          + "not applied. Verify it again later, send it again, or leave it held; it is kept either way."
+      )
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let evidenceJSON = String(decoding: try encoder.encode(verification), as: UTF8.self)
+    recordActorHop(.persistence)
+    let resolved = try await persistence.resolveQuarantinedOutboxMutation(
+      id: id,
+      resolution: settlement.resolution,
+      evidenceJSON: evidenceJSON,
+      now: configuration.now()
+    )
+    guard resolved > 0 else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: settlement.operation,
+        localID: id,
+        message: "Held write '\(id)' was settled or sent again while it was being verified.",
+        recovery: "List the quarantined mutations again."
+      )
+    }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.quarantined-mutation.\(settlement.resolution)",
+      message: "Settled a held write (\(settlement.resolution)): \(verification.verdict.summary).",
+      metadata: ["mutationID": id]
+    )
+    return verification
+  }
+
+  /// The held write's evidence; a retained mutation whose effect is unknown, still in the outbox, is held first (#134).
+  private func heldMutationEvidenceHoldingIfNeeded(id: String) async throws -> InstantHeldWriteEvidence {
+    recordActorHop(.persistence)
+    if let evidence = try await persistence.heldQuarantinedMutationEvidence(id: id) {
+      return evidence
+    }
+    try await enterOperationGateUnlessCancelled(operation: "hold a retained mutation whose local effect is unknown")
+    let moved: Bool
+    do {
+      recordActorHop(.persistence)
+      moved = try await persistence.quarantineRetainedUnknownOutboxMutation(id: id, now: configuration.now())
+      if moved {
+        let state = try await loadStateWithDurableOutboxSynchronizingStore()
+        recordActorHop(.outbox)
+        await outbox.replace(with: state.snapshot.outbox)
+      }
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+    await leaveOperationGate()
+    if moved {
+      recordActorHop(.persistence)
+      if let evidence = try await persistence.heldQuarantinedMutationEvidence(id: id) {
+        return evidence
+      }
+    }
     throw InstantError(
-      code: .implementationFailed,
-      operation: "discard a quarantined mutation",
+      code: .validationFailed,
+      operation: "verify a quarantined mutation",
       localID: id,
-      message: "Discarding a held write is not built yet.",
-      recovery: "Leave it held."
+      message: "No held write, and no retained mutation whose local cache effect is unknown, has the id '\(id)'.",
+      recovery: "List the quarantined mutations and verify one of those."
+    )
+  }
+
+  /// The server's own rows for every entity a held write set, or why they could not be read (#696).
+  private func readServerRows(for evidence: InstantHeldWriteEvidence) async -> InstantServerRowsRead {
+    guard let slots = evidence.slots else { return .rows([]) }
+    var rows: [InstantTriple] = []
+    do {
+      for plan in InstantQuarantinedMutationVerification.serverReadPlans(for: slots) {
+        rows.append(contentsOf: try await serverRowsOnce(plan))
+      }
+    } catch {
+      return .failed((error as? InstantError)?.message ?? String(describing: error))
+    }
+    return .rows(rows)
+  }
+
+  /// The rows the server's answer to `plan` carried, read from the server now (#696).
+  ///
+  /// `queryOnce` answers from this device's store once the server's answer is applied, so unsent later writes and a
+  /// held write's own leftover effect color what it returns. This returns the answer's own rows, in this device's
+  /// attribute IDs: what the server holds. It registers, sends and waits as `queryOnceThroughLive` does (upstream
+  /// `Reactor.queryOnce`), and needs the server: with no live transport, or none open and none to open, it throws.
+  private func serverRowsOnce(_ plan: InstantQueryPlan) async throws -> [InstantTriple] {
+    guard configuration.liveTransport != nil else {
+      throw serverRowsUnreadable("This runtime has no live transport, so the server cannot be read.")
+    }
+    recordActorHop(.liveSession)
+    guard await liveSession.isOpen || configuration.autoConnectLiveTransport else {
+      throw serverRowsUnreadable("The live connection is not open, so the server cannot be read.")
+    }
+    let query = try InstantLiveQueryEncoder.encode(plan)
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
+    recordActorHop(.liveSession)
+    if await liveSession.isAnsweredOnCurrentSocket(key: registrationKey) {
+      // A live query of this exact shape is open and answered on this socket: its stored result is the server's rows,
+      // kept current by every refresh since.
+      recordActorHop(.persistence)
+      return try await persistence.liveQueryResult(key: registrationKey)?.triples ?? []
+    }
+    serverAnswerCaptures.expect(registrationKey)
+    defer { serverAnswerCaptures.forget(registrationKey) }
+    await liveQueryResultState.retain(key: registrationKey)
+    let cleanupOwner = InstantAsyncCancellationOwner(
+      cancelAndWait: { [self] in
+        await liveQueryResultState.release(key: registrationKey)
+        let ended = try? await liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: configuration.makeID()
+        )
+        if ended == true {
+          await endedOneShotQueries.insert(registrationKey)
+          await liveQueryAcknowledgements.forget(key: registrationKey)
+        }
+      }
+    )
+    do {
+      try Task.checkCancellation()
+      await enterOperationGate(priority: .interactive, writes: [])
+      let owedSend = await liveSession.recordQueryRegistration(
+        query,
+        key: registrationKey,
+        requiresServerAcknowledgement: true
+      )
+      await leaveOperationGate()
+      if let owedSend {
+        do {
+          try await liveSession.sendQueryRegistration(owedSend, clientEventID: configuration.makeID())
+        } catch is InstantReceiverOwnedLiveSessionSendFailure {
+          // The next session's init sends it, as `queryOnceThroughLive` relies on (#1796).
+        }
+      }
+      try await ensureLiveConnectionIfNeeded()
+      try await waitForLiveQueryAcknowledgement(key: registrationKey, after: observedRevision)
+    } catch {
+      cleanupOwner.finish()
+      await cleanupOwner.wait()
+      throw error
+    }
+    cleanupOwner.finish()
+    await cleanupOwner.wait()
+    guard let answer = serverAnswerCaptures.answer(for: registrationKey) else {
+      // add-query-exists: the server answered this query on this socket already; its stored result is that answer.
+      recordActorHop(.persistence)
+      return try await persistence.liveQueryResult(key: registrationKey)?.triples ?? []
+    }
+    recordActorHop(.store)
+    let attributes = await store.attributeStoreSnapshot().attributes
+    let translation = try InstantLiveRefreshTranslator.translate(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: answer.processedTransactionID,
+        attrs: answer.serverAttributes,
+        computations: [
+          .object([
+            "instaql-query": query,
+            "instaql-result": .array(answer.result),
+          ])
+        ]
+      ),
+      existingAttributes: attributes,
+      receivedAt: configuration.now()
+    )
+    return translation.queryResultReplacements.first?.triples ?? []
+  }
+
+  private func serverRowsUnreadable(_ message: String) -> InstantError {
+    InstantError(
+      code: .networkFailed,
+      operation: "read the server's rows",
+      message: message,
+      recovery: "Connect to the server, then verify again."
     )
   }
 

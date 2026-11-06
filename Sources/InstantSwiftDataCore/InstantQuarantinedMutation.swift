@@ -4,6 +4,7 @@ import Foundation
 // - 2026-10-14: added for #696. A store an earlier library version wrote can hold retained mutations whose optimistic
 //   effect has no SQLite-owned preparation receipt; the first one refused every live connection, so every later write
 //   waited unsent. Runtime bootstrap now moves each one aside, whole, and synchronizes the rest.
+// - 2026-11-06: a held mutation is settled on the server's evidence: verify, then complete or discard (#696, from #134).
 
 /// An outbox mutation the runtime moved aside, whole, instead of letting it stop synchronization (#696).
 ///
@@ -12,13 +13,18 @@ import Foundation
 /// Up to 1.9.9 the first such mutation refused every live connection until the application reset its store, and every
 /// later write, however valid, waited unsent behind it. Since 1.9.10, runtime bootstrap moves each one into the
 /// `instant_outbox_quarantined` table with its outbox row exactly as it was, then synchronizes every other write in its
-/// order. The library never sends, changes, or deletes a quarantined mutation; an application lists and exports them:
+/// order. The library never sends, changes, or deletes a quarantined mutation on its own; an application lists and
+/// exports them:
 ///
 /// ```swift
 /// for mutation in try await client.quarantinedMutations(limit: 100) {
 ///   print(mutation.id, mutation.reason, mutation.outboxRowJSON)
 /// }
 /// ```
+///
+/// Since 1.9.79 an application settles one on the server's evidence: ``InstantQuarantinedMutationVerification`` says
+/// whether the server holds it; complete one it holds, discard one it does not, and leave held one it cannot tell.
+/// Completing or discarding records the verification beside the kept row; the body is never touched.
 public struct InstantQuarantinedMutation: Hashable, Sendable, Identifiable {
   /// Why the runtime moved a mutation aside.
   public enum Reason: String, Hashable, Codable, Sendable {

@@ -1352,7 +1352,8 @@ public struct InstantSwiftDataClient: Sendable {
 
   /// The oldest `limit` mutations the runtime moved aside at launch instead of letting them stop synchronization, in the
   /// order they had in the outbox (#696). Each keeps its outbox row exactly as it was, for an export; the library
-  /// never sends, changes, or deletes one. A client without a runtime has none.
+  /// never sends, changes, or deletes one on its own. ``verifyQuarantinedMutation(id:)`` asks the server whether one
+  /// landed; a completed or discarded one is no longer listed. A client without a runtime has none.
   public func quarantinedMutations(limit: Int) async throws -> [InstantQuarantinedMutation] {
     guard let runtime else { return [] }
     return try await runtime.quarantinedMutations(limit: limit)
@@ -1382,17 +1383,30 @@ public struct InstantSwiftDataClient: Sendable {
   }
 
   /// Reads from the server what it holds of a held write, and says whether the write landed (#696).
+  ///
+  /// Success waits for the server: one one-shot read per entity the write set, whose answers' own rows decide the
+  /// verdict, never this device's view of them. Read only: nothing is resolved or sent. A retained mutation whose local
+  /// cache effect is unknown and that is still in the outbox is held first. See
+  /// ``InstantQuarantinedMutationVerification`` for what each verdict proves.
+  ///
+  /// ```swift
+  /// let verification = try await client.verifyQuarantinedMutation(id: mutation.id)
+  /// ```
   public func verifyQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
     try await quarantineRuntime(operation: "verify a quarantined mutation", id: id).verifyQuarantinedMutation(id: id)
   }
 
-  /// Completes a held write the server holds (#696).
+  /// Completes a held write the server holds (#696): verifies it again on the server and, only when the verdict is
+  /// applied, records it completed beside its kept row. Its observers see it accepted. Throws, and keeps it held, on any
+  /// other verdict.
   @discardableResult
   public func completeQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
     try await quarantineRuntime(operation: "complete a quarantined mutation", id: id).completeQuarantinedMutation(id: id)
   }
 
-  /// Discards a held write the server does not hold (#696).
+  /// Discards a held write that is not on the server (#696): verifies it again on the server and, only when the verdict
+  /// is not applied, records it discarded beside its kept row. Its observers see it failed and the library never sends
+  /// it. Throws, and keeps it held, on any other verdict.
   @discardableResult
   public func discardQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
     try await quarantineRuntime(operation: "discard a quarantined mutation", id: id).discardQuarantinedMutation(id: id)

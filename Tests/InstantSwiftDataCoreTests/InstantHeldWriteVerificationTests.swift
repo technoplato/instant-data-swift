@@ -297,6 +297,171 @@ struct InstantHeldWriteVerificationTests {
   }
 }
 
+/// The verdict's rules as a pure function of what was read: no socket, no store (#696).
+@Suite
+struct InstantHeldWriteVerdictTests {
+  private let verifiedAt = InstantTimestamp(milliseconds: 1_793_000_000_000)
+
+  private func slot(
+    _ attributeID: String,
+    _ value: InstantValue,
+    operation: InstantSlotCoverage.Operation = .insert,
+    linkNamespace: String? = nil,
+    uncheckable: String? = nil,
+    laterWrite: InstantSlotCoverage.Coverage? = nil
+  ) -> InstantHeldWriteSlot {
+    InstantHeldWriteSlot(
+      entityID: "entity-1",
+      namespace: "notes",
+      attributeName: String(attributeID.split(separator: "/").last ?? ""),
+      attributeID: attributeID,
+      operation: operation,
+      value: value,
+      linkNamespace: linkNamespace,
+      uncheckable: uncheckable,
+      laterWrite: laterWrite
+    )
+  }
+
+  private func row(_ attributeID: String, _ value: InstantValue) -> InstantTriple {
+    InstantTriple(entityID: "entity-1", attributeID: attributeID, value: value, txID: "server", txTime: verifiedAt)
+  }
+
+  private func verdict(
+    _ slots: [InstantHeldWriteSlot]?,
+    _ delivery: InstantHeldWriteEvidence.Delivery,
+    _ read: InstantServerRowsRead
+  ) -> InstantQuarantinedMutationVerification.Verdict {
+    InstantQuarantinedMutationVerification(
+      evidence: InstantHeldWriteEvidence(id: "held", slots: slots, delivery: delivery),
+      serverRead: read,
+      verifiedAt: verifiedAt
+    ).verdict
+  }
+
+  /// Applied needs every slot: one value the server does not hold leaves a sent write untold.
+  @Test
+  func appliedNeedsEverySlot() {
+    let slots = [slot("notes/title", .string("a")), slot("notes/body", .string("b"))]
+    expectNoDifference(
+      verdict(slots, .sent, .rows([row("notes/title", .string("a")), row("notes/body", .string("b"))])),
+      .applied
+    )
+    expectNoDifference(
+      verdict(slots, .sent, .rows([row("notes/title", .string("a")), row("notes/body", .string("c"))])),
+      .cannotTell(.serverDoesNotHoldIt)
+    )
+  }
+
+  /// The server holding the values outranks the delivery record: a refused or unsent write whose values the server
+  /// holds anyway loses nothing when completed.
+  @Test
+  func theServersRowsOutrankTheDeliveryRecord() {
+    let slots = [slot("notes/title", .string("a"))]
+    let rows = InstantServerRowsRead.rows([row("notes/title", .string("a"))])
+    expectNoDifference(verdict(slots, .neverSent, rows), .applied)
+    expectNoDifference(verdict(slots, .refused(status: 400, type: nil, message: "no"), rows), .applied)
+  }
+
+  /// A later accepted write of this device covers a slot; a later write the server has not accepted does not.
+  @Test
+  func onlyALaterAcceptedWriteCovers() {
+    let accepted = [slot("notes/title", .string("a"), laterWrite: .laterAcceptedWrite(mutationID: "w", serverTransactionID: "9"))]
+    let pending = [slot("notes/title", .string("a"), laterWrite: .laterPendingWrite(mutationID: "w"))]
+    let rows = InstantServerRowsRead.rows([row("notes/title", .string("newer"))])
+    expectNoDifference(verdict(accepted, .sent, rows), .applied)
+    expectNoDifference(verdict(pending, .sent, rows), .cannotTell(.serverDoesNotHoldIt))
+  }
+
+  /// An uncheckable slot never verifies applied; the delivery record can still say not applied.
+  @Test
+  func anUncheckableSlotIsNeverApplied() {
+    let slots = [slot("notes/title", .string("a")), slot("", .null, operation: .other("deleteEntity"), uncheckable: "deleteEntity")]
+    let rows = InstantServerRowsRead.rows([row("notes/title", .string("a"))])
+    expectNoDifference(verdict(slots, .sent, rows), .cannotTell(.uncheckableOperation("deleteEntity")))
+    expectNoDifference(verdict(slots, .neverSent, rows), .notApplied(.neverSent))
+  }
+
+  /// A deep merge holds when the server's object contains its patch, at any depth; not when a key differs.
+  @Test
+  func aDeepMergeHoldsWhenTheServersObjectContainsItsPatch() {
+    let patch = InstantValue.json(.object(["settings": .object(["theme": .string("dark")])]))
+    let slots = [slot("notes/meta", patch, operation: .merge)]
+    let holds = InstantValue.json(
+      .object(["settings": .object(["theme": .string("dark"), "size": .number(12)]), "pinned": .bool(true)])
+    )
+    let differs = InstantValue.json(.object(["settings": .object(["theme": .string("light")])]))
+    expectNoDifference(verdict(slots, .sent, .rows([row("notes/meta", holds)])), .applied)
+    expectNoDifference(verdict(slots, .sent, .rows([row("notes/meta", differs)])), .cannotTell(.serverDoesNotHoldIt))
+  }
+
+  /// Values compare as the wire carries them: a date at the millisecond, a link's ID as text or as a reference.
+  @Test
+  func valuesCompareAsTheWireCarriesThem() {
+    let date = Date(timeIntervalSince1970: 1_754_000_000.123)
+    #expect(
+      InstantQuarantinedMutationVerification.valuesMatch(
+        .date(Date(timeIntervalSince1970: 1_754_000_000.1234)),
+        .date(date)
+      )
+    )
+    #expect(InstantQuarantinedMutationVerification.valuesMatch(.ref("list-1"), .string("list-1")))
+    #expect(!InstantQuarantinedMutationVerification.valuesMatch(.string("1"), .number(1)))
+  }
+
+  /// One read per entity: its ID, the attributes the write set, and each link it set limited to the linked IDs.
+  @Test
+  func eachEntityIsReadByIDWithItsLinksLimitedToTheLinkedIDs() {
+    let plans = InstantQuarantinedMutationVerification.serverReadPlans(
+      for: [
+        slot("notes/id", .string("entity-1")),
+        slot("notes/title", .string("a")),
+        slot("notes/folder", .ref("folder-1"), linkNamespace: "folders"),
+        slot("notes/body", .string("b"), uncheckable: "retract"),
+      ]
+    )
+    expectNoDifference(plans.count, 1)
+    expectNoDifference(plans.first?.namespace, "notes")
+    expectNoDifference(plans.first?.filters, [.equals(field: "id", value: .string("entity-1"))])
+    expectNoDifference(plans.first?.selectedFields, ["id", "title"])
+    expectNoDifference(plans.first?.includes?.map(\.name), ["folder"])
+    expectNoDifference(plans.first?.includes?.first?.query?.filters, [.in(field: "id", values: [.string("folder-1")])])
+    expectNoDifference(plans.first?.includes?.first?.query?.limit, 1)
+  }
+
+  /// A server that cannot be read, or a body that does not decode, settles nothing.
+  @Test
+  func nothingReadSettlesNothing() {
+    expectNoDifference(
+      verdict([slot("notes/title", .string("a"))], .neverSent, .failed("offline")),
+      .cannotTell(.serverUnreadable("offline"))
+    )
+    expectNoDifference(verdict(nil, .neverSent, .rows([])), .cannotTell(.undecodable))
+  }
+
+  /// Only a client-error status from the server is a refusal; a failure recorded without one is not.
+  @Test
+  func onlyAServersClientErrorIsARefusal() {
+    var refused = PendingMutation(
+      id: "m",
+      createdAt: verifiedAt,
+      transaction: InstantStoreTransaction(id: "m", operations: []),
+      status: .failed,
+      failureMessage: "Permission denied"
+    )
+    expectNoDifference(InstantHeldWriteEvidence.delivery(deliveryStarted: true, mutation: refused), .sent)
+    refused.failure = InstantMutationFailure(code: .permissionRejected, message: "Permission denied", status: 400)
+    expectNoDifference(
+      InstantHeldWriteEvidence.delivery(deliveryStarted: true, mutation: refused),
+      .refused(status: 400, type: nil, message: "Permission denied")
+    )
+    refused.failure?.status = 503
+    expectNoDifference(InstantHeldWriteEvidence.delivery(deliveryStarted: true, mutation: refused), .sent)
+    expectNoDifference(InstantHeldWriteEvidence.delivery(deliveryStarted: false, mutation: refused), .neverSent)
+    expectNoDifference(InstantHeldWriteEvidence.delivery(deliveryStarted: nil, mutation: nil), .sent)
+  }
+}
+
 // MARK: - Fixtures
 
 private func heldWriteTestNow() -> InstantTimestamp {

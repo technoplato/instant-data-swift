@@ -142,6 +142,8 @@
 //   entities' fingerprints from its last save in memory, at the query-result revision its commit left (#1116).
 // - 2026-11-05: a server refresh's planning read saves each restated result as its translation limited it, when the
 //   store's attribute revision is the one the translation's schema came from, instead of limiting it again (#1109).
+// - 2026-11-06: a held write's verification evidence (its slots, later writes, and kept delivery record), its completion
+//   or discard with that verification in resolution_json, and a one-row hold for a retained mutation launch left (#696).
 
 import CryptoKit
 import Foundation
@@ -5843,45 +5845,7 @@ public actor SQLitePersistenceStore {
         """
       )
       guard !ids.isEmpty else { return [] }
-      try ensureQuarantinedOutboxTableWithoutTransaction()
-      let rowJSON = try outboxRowJSONObjectExpressionWithoutTransaction()
-      for id in ids {
-        try execute(
-          """
-          INSERT INTO instant_outbox_quarantined (
-            mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
-          )
-          SELECT outbox.mutation_id, ?, ?, outbox.created_at_ms, outbox.status, body.json, \(rowJSON)
-          FROM instant_outbox AS outbox
-          JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
-          WHERE outbox.mutation_id = ? AND \(predicate)
-          """,
-          [
-            .text(InstantQuarantinedMutation.Reason.noPreparationReceipt.rawValue),
-            .int(now.milliseconds),
-            .text(id),
-          ]
-        )
-        guard try selectInt64("SELECT changes()") == 1 else {
-          throw persistenceError(
-            operation: "quarantine a retained mutation without a preparation receipt",
-            message: "SQLite did not copy outbox row '\(id)' into the quarantine."
-          )
-        }
-        try execute("DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?", [.text(id)])
-        try execute("DELETE FROM instant_outbox_effect_entities WHERE mutation_id = ?", [.text(id)])
-        try execute(
-          "DELETE FROM instant_outbox WHERE mutation_id = ? AND \(predicate)",
-          [.text(id)]
-        )
-        guard try selectInt64("SELECT changes()") == 1 else {
-          throw persistenceError(
-            operation: "quarantine a retained mutation without a preparation receipt",
-            message: "SQLite did not remove outbox row '\(id)' after copying it into the quarantine."
-          )
-        }
-      }
-      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      try moveOutboxRowsIntoQuarantineWithoutTransaction(ids, predicate: predicate, now: now)
       return ids
     }
     if !quarantinedIDs.isEmpty {
@@ -5903,6 +5867,334 @@ public actor SQLitePersistenceStore {
       )
     }
     return quarantinedIDs
+  }
+
+  /// Moves each outbox row in `ids` that still matches `predicate`, whole, into `instant_outbox_quarantined` (#696): its
+  /// body byte for byte and every column of its row as one JSON object. Its derived write-key and effect-entity index
+  /// rows leave with it, as they do whenever a row leaves the outbox. Throws, and the caller's transaction rolls back,
+  /// when a row did not move whole.
+  private func moveOutboxRowsIntoQuarantineWithoutTransaction(
+    _ ids: [String],
+    predicate: String,
+    now: InstantTimestamp
+  ) throws {
+    try ensureQuarantinedOutboxTableWithoutTransaction()
+    let rowJSON = try outboxRowJSONObjectExpressionWithoutTransaction()
+    for id in ids {
+      try execute(
+        """
+        INSERT INTO instant_outbox_quarantined (
+          mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+        )
+        SELECT outbox.mutation_id, ?, ?, outbox.created_at_ms, outbox.status, body.json, \(rowJSON)
+        FROM instant_outbox AS outbox
+        JOIN instant_outbox_bodies AS body ON body.mutation_id = outbox.mutation_id
+        WHERE outbox.mutation_id = ? AND \(predicate)
+        """,
+        [
+          .text(InstantQuarantinedMutation.Reason.noPreparationReceipt.rawValue),
+          .int(now.milliseconds),
+          .text(id),
+        ]
+      )
+      guard try selectInt64("SELECT changes()") == 1 else {
+        throw persistenceError(
+          operation: "quarantine a retained mutation without a preparation receipt",
+          message: "SQLite did not copy outbox row '\(id)' into the quarantine."
+        )
+      }
+      try execute("DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?", [.text(id)])
+      try execute("DELETE FROM instant_outbox_effect_entities WHERE mutation_id = ?", [.text(id)])
+      try execute(
+        "DELETE FROM instant_outbox WHERE mutation_id = ? AND \(predicate)",
+        [.text(id)]
+      )
+      guard try selectInt64("SELECT changes()") == 1 else {
+        throw persistenceError(
+          operation: "quarantine a retained mutation without a preparation receipt",
+          message: "SQLite did not remove outbox row '\(id)' after copying it into the quarantine."
+        )
+      }
+    }
+    _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+  }
+
+  /// Moves the retained mutation with this ID into the quarantine, whole, when SQLite holds no preparation receipt for
+  /// it and no delivery claim holds it (#696, #134): the move launch makes for every such row under `.quarantine`, made
+  /// on request for one launch left in the outbox (an application on `.blockSynchronization`, or a row whose overlay is
+  /// inactive and whose receipt is unknown, which retry and discard refuse). Returns whether it moved one.
+  @discardableResult
+  func quarantineRetainedUnknownOutboxMutation(id: String, now: InstantTimestamp) throws -> Bool {
+    let predicate = "optimistic_effect_receipt_fingerprint IS NULL AND delivery_claim_state = 'ready'"
+    return try transaction {
+      guard
+        try selectInt64(
+          "SELECT COUNT(*) FROM instant_outbox WHERE mutation_id = ? AND \(predicate)",
+          [.text(id)]
+        ) == 1
+      else { return false }
+      try moveOutboxRowsIntoQuarantineWithoutTransaction([id], predicate: predicate, now: now)
+      return true
+    }
+  }
+
+  /// What `resolution` says of a held row besides NULL (held): sent again (#696's Send Again), or settled by a
+  /// verification of the server's rows.
+  static let quarantineResolutionSentAgain = "sent-again"
+  static let quarantineResolutionCompleted = "completed"
+  static let quarantineResolutionDiscarded = "discarded"
+
+  /// What verification needs from this device about the held write with this ID (#696): every slot it set, with the
+  /// newest later write of this device that sets each, and what its kept outbox row says of its sends. Nil when no held
+  /// write has this ID. Read only.
+  func heldQuarantinedMutationEvidence(id: String) throws -> InstantHeldWriteEvidence? {
+    try readTransaction {
+      guard
+        let held = try heldQuarantinedOutboxMutationsWithoutTransaction(
+          """
+          SELECT \(Self.quarantinedMutationColumns)
+          FROM instant_outbox_quarantined
+          WHERE resolution IS NULL AND mutation_id = ?
+          ORDER BY quarantine_id
+          LIMIT 1
+          """,
+          [.text(id)]
+        ).first
+      else { return nil }
+      // The kept row's `delivery_started`: 0 when no claim ever offered it. A row older than the column has none, and
+      // counts as offered, as migration 0012 counts it.
+      let deliveryStarted = try selectScalar(
+        """
+        SELECT json_extract(outbox_row_json, '$.delivery_started')
+        FROM instant_outbox_quarantined
+        WHERE resolution IS NULL AND mutation_id = ?
+        ORDER BY quarantine_id
+        LIMIT 1
+        """,
+        [.text(id)]
+      ).flatMap { Int64($0) }.map { $0 != 0 }
+      let delivery = InstantHeldWriteEvidence.delivery(deliveryStarted: deliveryStarted, mutation: held.mutation)
+      guard let mutation = held.mutation else {
+        return InstantHeldWriteEvidence(id: id, slots: nil, delivery: delivery)
+      }
+      let attributes = AttributeStore(
+        attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+      )
+      let position = InstantOutboxDeliveryPosition(
+        createdAtMilliseconds: held.createdAt.milliseconds,
+        mutationID: id
+      )
+      var coverages: [String: InstantAuthoritativeWriteCoverage] = [:]
+      var slots: [InstantHeldWriteSlot] = []
+      func uncheckable(_ entityID: String, _ attributeID: String, _ kind: String, _ value: InstantValue?) {
+        let attribute = attributes[attributeID]
+        slots.append(
+          InstantHeldWriteSlot(
+            entityID: entityID,
+            namespace: attribute?.namespace,
+            attributeName: attribute?.name,
+            attributeID: attributeID,
+            operation: .other(kind),
+            value: value,
+            uncheckable: kind
+          )
+        )
+      }
+      for operation in mutation.transaction.operations {
+        let triple: InstantTriple
+        let slotOperation: InstantSlotCoverage.Operation
+        switch operation {
+        case let .insert(inserted):
+          triple = inserted
+          slotOperation = .insert
+        case let .merge(merged):
+          triple = merged
+          slotOperation = .merge
+        case let .retract(retracted):
+          uncheckable(retracted.entityID, retracted.attributeID, "retract", retracted.value)
+          continue
+        case let .insertByLookup(entity, attributeID, value, _, _):
+          uncheckable(entity.description, attributeID, "insertByLookup", value)
+          continue
+        case let .mergeByLookup(entity, attributeID, value, _, _):
+          uncheckable(entity.description, attributeID, "mergeByLookup", value)
+          continue
+        case let .retractByLookup(entity, attributeID, value, _, _):
+          uncheckable(entity.description, attributeID, "retractByLookup", value)
+          continue
+        case let .deleteEntity(entityID):
+          uncheckable(entityID, "", "deleteEntity", nil)
+          continue
+        case let .deleteEntityInNamespace(entityID, _):
+          uncheckable(entityID, "", "deleteEntityInNamespace", nil)
+          continue
+        case let .deleteEntityByLookup(entity):
+          uncheckable(entity.description, "", "deleteEntityByLookup", nil)
+          continue
+        case .requireEntityMissing, .requireEntityMissingByLookup,
+          .requireEntityExists, .requireEntityExistsByLookup,
+          .requireTripleExists, .ruleParams, .ruleParamsByLookup:
+          continue
+        }
+        guard let attribute = attributes[triple.attributeID] else {
+          uncheckable(triple.entityID, triple.attributeID, "attribute this device does not know", triple.value)
+          continue
+        }
+        if attribute.valueType == .ref, attribute.linkNamespace == nil {
+          uncheckable(triple.entityID, triple.attributeID, "link with no namespace", triple.value)
+          continue
+        }
+        if slotOperation == .merge, Self.jsonRemovesAKey(triple.value) {
+          uncheckable(triple.entityID, triple.attributeID, "deep merge that removes a key", triple.value)
+          continue
+        }
+        slots.append(
+          InstantHeldWriteSlot(
+            entityID: triple.entityID,
+            namespace: attribute.namespace,
+            attributeName: attribute.name,
+            attributeID: triple.attributeID,
+            operation: slotOperation,
+            value: triple.value,
+            linkNamespace: attribute.valueType == .ref ? attribute.linkNamespace : nil,
+            laterWrite: try laterWriteCoverageWithoutTransaction(
+              of: operation,
+              key: InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID),
+              after: position,
+              attributes: attributes,
+              coverages: &coverages
+            )
+          )
+        )
+      }
+      return InstantHeldWriteEvidence(id: id, slots: slots, delivery: delivery)
+    }
+  }
+
+  /// The newest later write of this device that sets `operation`'s slot: accepted by the server, or else not yet
+  /// (#696, the rule #445 applies to a failed write). Failed rows never count.
+  private func laterWriteCoverageWithoutTransaction(
+    of operation: InstantTripleOperation,
+    key: InstantVisibleWriteKey,
+    after position: InstantOutboxDeliveryPosition,
+    attributes: AttributeStore,
+    coverages: inout [String: InstantAuthoritativeWriteCoverage]
+  ) throws -> InstantSlotCoverage.Coverage? {
+    var pending: String?
+    for candidate in try laterWritesOfSlotWithoutTransaction(key, after: position) {
+      let coverage: InstantAuthoritativeWriteCoverage
+      if let cached = coverages[candidate.id] {
+        coverage = cached
+      } else {
+        guard let candidateRow = try loadOutboxBodyRowWithoutTransaction(id: candidate.id) else { continue }
+        let covering: PendingMutation = try decodeOutboxBody(candidateRow)
+        coverage = InstantAuthoritativeWriteCoverage(
+          operations: covering.transaction.operations,
+          attributes: attributes,
+          previousChangedEntityTriples: [:],
+          changedEntityTriples: [:]
+        )
+        coverages[candidate.id] = coverage
+      }
+      guard coverage.covers([operation]) else { continue }
+      if candidate.accepted {
+        return .laterAcceptedWrite(mutationID: candidate.id, serverTransactionID: candidate.serverTransactionID)
+      }
+      pending = pending ?? candidate.id
+    }
+    return pending.map { .laterPendingWrite(mutationID: $0) }
+  }
+
+  /// Whether a deep merge's patch has a null anywhere in an object, which Instant's deep merge reads as removing that
+  /// key: an absence the server's rows cannot vouch for (#696).
+  private static func jsonRemovesAKey(_ value: InstantValue) -> Bool {
+    guard case let .json(json) = value else { return false }
+    func removes(_ json: JSONValue) -> Bool {
+      switch json {
+      case let .object(object): object.values.contains { $0 == .null || removes($0) }
+      case let .array(array): array.contains(where: removes)
+      default: false
+      }
+    }
+    return removes(json)
+  }
+
+  /// Records that the held write with this ID was completed or discarded, with the verification that allowed it as
+  /// JSON (#696). The row stays and its body is not touched: `resolution`, `resolved_at_ms` and `resolution_json` are
+  /// the only columns written. Returns how many held rows it resolved.
+  @discardableResult
+  func resolveQuarantinedOutboxMutation(
+    id: String,
+    resolution: String,
+    evidenceJSON: String,
+    now: InstantTimestamp
+  ) throws -> Int {
+    try transaction {
+      guard try quarantinedOutboxTableExistsWithoutTransaction() else { return 0 }
+      try ensureQuarantineResolutionEvidenceColumnWithoutTransaction()
+      try execute(
+        """
+        UPDATE instant_outbox_quarantined
+        SET resolution = ?, resolved_at_ms = ?, resolution_json = ?
+        WHERE mutation_id = ? AND resolution IS NULL
+        """,
+        [.text(resolution), .int(now.milliseconds), .text(evidenceJSON), .text(id)]
+      )
+      let resolved = Int(try selectInt64("SELECT changes()"))
+      if resolved > 0 {
+        // A held write's lifecycle observers read the quarantine; a new revision has them read it again.
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      }
+      return resolved
+    }
+  }
+
+  /// The newest completion or discard recorded for this ID, with the held row it settled (#696); nil when none.
+  private func settledQuarantinedOutboxMutationWithoutTransaction(
+    id: String
+  ) throws -> (held: InstantQuarantinedMutation, resolution: String, verification: InstantQuarantinedMutationVerification?)? {
+    guard try quarantinedOutboxTableExistsWithoutTransaction() else { return nil }
+    let hasEvidence = try selectInt64(
+      "SELECT COUNT(*) FROM pragma_table_info('instant_outbox_quarantined') WHERE name = 'resolution_json'"
+    ) != 0
+    guard
+      let quarantineIDText = try selectScalar(
+        """
+        SELECT quarantine_id FROM instant_outbox_quarantined
+        WHERE mutation_id = ? AND resolution IN (?, ?)
+        ORDER BY quarantine_id DESC
+        LIMIT 1
+        """,
+        [.text(id), .text(Self.quarantineResolutionCompleted), .text(Self.quarantineResolutionDiscarded)]
+      ),
+      let quarantineID = Int64(quarantineIDText),
+      let resolution = try selectScalar(
+        "SELECT resolution FROM instant_outbox_quarantined WHERE quarantine_id = ?",
+        [.int(quarantineID)]
+      ),
+      let held = try heldQuarantinedOutboxMutationsWithoutTransaction(
+        "SELECT \(Self.quarantinedMutationColumns) FROM instant_outbox_quarantined WHERE quarantine_id = ?",
+        [.int(quarantineID)]
+      ).first
+    else { return nil }
+    let verification = try hasEvidence
+      ? selectScalar(
+        "SELECT resolution_json FROM instant_outbox_quarantined WHERE quarantine_id = ?",
+        [.int(quarantineID)]
+      ).flatMap { try? JSONDecoder().decode(InstantQuarantinedMutationVerification.self, from: Data($0.utf8)) }
+      : nil
+    return (held, resolution, verification)
+  }
+
+  /// `resolution_json`, added to a table an earlier version created when a resolution is first recorded (#696): a store
+  /// that never settles a held write is not written to.
+  private func ensureQuarantineResolutionEvidenceColumnWithoutTransaction() throws {
+    guard
+      try selectInt64(
+        "SELECT COUNT(*) FROM pragma_table_info('instant_outbox_quarantined') WHERE name = 'resolution_json'"
+      ) == 0
+    else { return }
+    try execute("ALTER TABLE instant_outbox_quarantined ADD COLUMN resolution_json TEXT")
   }
 
   /// Bootstrap's call of ``quarantineRetainedMutationsWithoutPreparationReceipt(now:)`` (#696). With
@@ -5982,10 +6274,10 @@ public actor SQLitePersistenceStore {
       try execute(
         """
         UPDATE instant_outbox_quarantined
-        SET resolution = 'sent-again', resolved_at_ms = ?
+        SET resolution = ?, resolved_at_ms = ?
         WHERE mutation_id = ? AND resolution IS NULL
         """,
-        [.int(now.milliseconds), .text(id)]
+        [.text(Self.quarantineResolutionSentAgain), .int(now.milliseconds), .text(id)]
       )
       return Int(try selectInt64("SELECT changes()"))
     }
@@ -6050,7 +6342,8 @@ public actor SQLitePersistenceStore {
 
   /// Created by the first quarantine, not by a migration, so a store that never needs it never gains it (#696).
   /// `quarantine_id` keeps a mutation quarantined twice as two rows: nothing in the table is ever replaced. A row stays
-  /// after Send Again, with `resolution` saying so; until then `resolution` is NULL and the row is held.
+  /// after Send Again, a completion or a discard, with `resolution` saying which (and, for the last two,
+  /// `resolution_json` holding the verification that allowed it); until then `resolution` is NULL and the row is held.
   private func ensureQuarantinedOutboxTableWithoutTransaction() throws {
     try execute(
       """
@@ -6064,7 +6357,8 @@ public actor SQLitePersistenceStore {
         json TEXT NOT NULL,
         outbox_row_json TEXT NOT NULL,
         resolution TEXT,
-        resolved_at_ms INTEGER
+        resolved_at_ms INTEGER,
+        resolution_json TEXT
       )
       """
     )
@@ -9546,6 +9840,24 @@ public actor SQLitePersistenceStore {
           ) {
             return InstantMutationLifecycleResolution(observationID: lifecycleID, event: event)
           }
+        }
+        // A held write a verification of the server's rows settled (#696): completed, the server holds it; discarded,
+        // it is not on the server and the library will not send it.
+        if let settled = try settledQuarantinedOutboxMutationWithoutTransaction(id: currentMutationID),
+          var mutation = settled.held.mutation
+        {
+          let verdict = settled.verification?.verdict.summary ?? "verified on the server"
+          if settled.resolution == Self.quarantineResolutionCompleted {
+            mutation.status = .confirmed
+            mutation.failureMessage = nil
+            mutation.failure = nil
+            return InstantMutationLifecycleResolution(observationID: lifecycleID, event: .serverAccepted(mutation))
+          }
+          let message = "Discarded after its verification on the server: \(verdict)."
+          mutation.status = .failed
+          mutation.failureMessage = message
+          mutation.failure = InstantMutationFailure(code: .validationFailed, message: message)
+          return InstantMutationLifecycleResolution(observationID: lifecycleID, event: .failed(mutation))
         }
         return InstantMutationLifecycleResolution(
           observationID: lifecycleID,
