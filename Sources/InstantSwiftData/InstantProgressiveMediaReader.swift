@@ -9,6 +9,9 @@
 //   (#1916). Reading every row first, 500 a page and one page after another, kept a player from its first sound for as
 //   long as the stream was long: 2 reads for 811 segments, 16 for 7,695, and on a busy client the playlist request
 //   failed after 20 s on every retry. See `InstantProgressiveMediaListing` for why the rows' arithmetic is enough.
+// - 2026-11-06: a player opening a stream waits for two reads in a row, not five (#1916): the first refresh reads the
+//   URLs a player asks for first alongside the listing, and a finished stream read a moment ago is not read again. On a
+//   busy client every read waited 2-3 s for its turn.
 
 import Dependencies
 import Foundation
@@ -116,6 +119,8 @@ public actor InstantProgressiveMediaReader {
   private let urlPageSize: Int
   private let segmentPageSize = 500
   private var stream: InstantProgressiveMediaStreamRow?
+  /// When `stream` was read.
+  private var streamReadAt: Date?
   private var segments: [InstantProgressiveMediaSegment] = []
   private var urls: [String: (url: URL, readAt: Date)] = [:]
 
@@ -123,6 +128,10 @@ public actor InstantProgressiveMediaReader {
 
   /// A kept URL is read again after a day: storage signs it for 7 days from the start of the UTC day it was read.
   public static let urlLifetime: TimeInterval = 86_400
+
+  /// A stream found finished and wholly listed this recently is not read again: a player asks for a finished stream's
+  /// playlist twice as it opens (#1916). Short, so a change to the stream shows at the next request after it.
+  public static let finishedRereadInterval: TimeInterval = 2
 
   public init(
     streamID: InstantID<InstantProgressiveMediaStreamRow>,
@@ -140,9 +149,22 @@ public actor InstantProgressiveMediaReader {
   /// does, so a player never skips audio. The first listing of a stream longer than one listing page reads its last rows
   /// and only the rows its breaks need (`InstantProgressiveMediaListing`, #1916): its other segments are placed by the
   /// stream's grid, so the reads grow with the stream's breaks, never with its length.
+  ///
+  /// A player opening a stream waits for two reads in a row (#1916): the stream's row, then its listing, with the URLs
+  /// it asks for first read alongside on the first refresh. A stream found finished and wholly listed less than
+  /// `finishedRereadInterval` ago is not read again.
   public func refresh() async throws -> Snapshot {
+    if let streamReadAt, Snapshot(stream: stream, segments: segments).isFinished,
+      date.now.timeIntervalSince(streamReadAt) < Self.finishedRereadInterval
+    {
+      return Snapshot(stream: stream, segments: segments)
+    }
     stream = try await source.streamRow(streamID)
+    streamReadAt = date.now
     if let stream {
+      let firstPaths = segments.isEmpty ? self.firstPaths(of: stream) : []
+      let fileURLs = source.fileURLs
+      async let firstURLs = Self.prefetch(firstPaths, from: fileURLs)
       if segments.isEmpty, stream.segmentCount > InstantProgressiveMediaListing.pageSize,
         let listed = try await list(stream)
       {
@@ -162,8 +184,34 @@ public actor InstantProgressiveMediaReader {
           break
         }
       }
+      keep(await firstURLs)
     }
     return Snapshot(stream: stream, segments: segments)
+  }
+
+  /// The URLs a player asks for first that this reader has not kept: the initialization segment's, the first page's,
+  /// and while the stream records, the page at its live edge, where a player of a live playlist starts. The segments'
+  /// paths follow the stream's own naming, so they are known before their rows are read.
+  private func firstPaths(of stream: InstantProgressiveMediaStreamRow) -> [String] {
+    var paths = [stream.initializationPath]
+    if let media = stream.media {
+      var indexes = Array(0..<min(urlPageSize, stream.segmentCount))
+      if stream.state == .recording {
+        indexes += max(indexes.count, stream.segmentCount - urlPageSize)..<stream.segmentCount
+      }
+      paths += indexes.map(media.segmentPath)
+    }
+    return paths.filter { keptURL($0) == nil }
+  }
+
+  /// The URLs at `paths`, read before a player asks for them; none when the read fails, because the player's own read
+  /// of the same URL then reports why.
+  private static func prefetch(
+    _ paths: [String],
+    from fileURLs: @Sendable (_ paths: [String]) async throws -> [String: URL]
+  ) async -> [String: URL] {
+    guard !paths.isEmpty else { return [:] }
+    return (try? await fileURLs(paths)) ?? [:]
   }
 
   /// Lists a long stream from its last rows and the rows its breaks need (#1916), or nil when those rows are not the
@@ -220,12 +268,16 @@ public actor InstantProgressiveMediaReader {
     return kept.url
   }
 
+  private func keep(_ read: [String: URL]) {
+    let now = date.now
+    for (path, url) in read {
+      urls[path] = (url, now)
+    }
+  }
+
   private func read(_ paths: [String], for path: String) async throws -> URL {
     let read = try await source.fileURLs(paths)
-    let now = date.now
-    for (readPath, url) in read {
-      urls[readPath] = (url, now)
-    }
+    keep(read)
     guard let url = read[path] else {
       throw InstantError(
         code: .networkFailed,
@@ -366,17 +418,10 @@ struct InstantProgressiveMediaListing: Sendable {
 
   /// A listing from the stream's last rows, or nil when they are not all there at the stream's own paths.
   init?(stream: InstantProgressiveMediaStreamRow, lastRows rows: [InstantProgressiveMediaSegmentRow]) {
-    let suffix = "/init.mp4"
-    guard stream.segmentCount > 0, stream.segmentSeconds > 0, stream.initializationPath.hasSuffix(suffix) else {
-      return nil
-    }
+    guard stream.segmentCount > 0, stream.segmentSeconds > 0, let media = stream.media else { return nil }
     self.count = stream.segmentCount
     self.segmentSeconds = stream.segmentSeconds
-    self.media = InstantProgressiveMediaStream(
-      id: stream.id,
-      pathPrefix: String(stream.initializationPath.dropLast(suffix.count)),
-      format: stream.format
-    )
+    self.media = media
     let lastIndexes = Self.lastIndexes(of: stream)
     self.pending = lastIndexes.lowerBound > 0 ? [Stretch(lower: 0, upper: lastIndexes.lowerBound)] : []
     guard record(rows, asked: Array(lastIndexes)) else { return nil }
@@ -450,6 +495,18 @@ struct InstantProgressiveMediaListing: Sendable {
   /// A read row's start; the stream starts at 0 (the writer's first segment).
   private func start(of index: Int) -> Double {
     known[index]?.startSeconds ?? 0
+  }
+}
+
+extension InstantProgressiveMediaStreamRow {
+  /// The stream as its writer names its files (`segmentPath`), or nil when the initialization path is not
+  /// `<pathPrefix>/init.mp4`.
+  var media: InstantProgressiveMediaStream? {
+    let suffix = "/init.mp4"
+    guard initializationPath.hasSuffix(suffix) else { return nil }
+    return InstantProgressiveMediaStream(
+      id: id, pathPrefix: String(initializationPath.dropLast(suffix.count)), format: format
+    )
   }
 }
 
