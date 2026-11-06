@@ -1,3 +1,6 @@
+## 2026-11-06 06:01:40 EST — scribe `79d0abb1c5bc602615505538515aa51c8df41068` (red `b496e942e`, green `630c2be71`, red `8d2e576ce`, green `92122314b`, red `f60defe11`, green `7320a2624`, green `11e79462e`), its changelog landed by `2aff1e850ee3fda4a316d81b28598742560d72e5`
+Feature (#1899): `scribe wallet import` takes a Solana private key from the Mac clipboard into the login keychain (halves checked, cleared after, address printed only); the CLI signs on mainnet under SendAuthorization.terminal after printing what it is about to sign, `--from` names the paying key; Scribe records a copied private key or recovery phrase as a note, never the secret. Tests 61/61, 89/89, 42/42, 7/7, 9/9.
+
 ## 2026-11-06 05:49:20 EST — scribe `cbe78f6dfc9cad219dae5d9f36a7aaf04742ae7c`
 Fix (#1907, #1865): the share scrubber hides only what is private: every app's rows through the text pass with only the found words filled, small pictures, maps, codes and faces whole, no capitalized-word guess, no times or dates; on his 22 uploaded broadcasts 4.2% -> 74.5% of the pictures' text readable; a fixed must-redact set of fake identities passes (recall 100% in every medium, 98.7% of mundane words kept); clips read their audio in one query per stretch and wait out Instant's rate limit.
 
