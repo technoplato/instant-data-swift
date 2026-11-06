@@ -1,3 +1,6 @@
+## 2026-11-05 21:01:06 EST — scribe `72e49b0e9b60dd03f4be83ba7f5cb7e873bbda13` and `bd7de0c960a29c81a330fc6beb1db9ee7a1e732b`
+Tooling (#1684): agent-run --xcode-mcp gives a UI agent Xcode's own MCP tools (xcrun mcpbridge, RenderPreview among them) and no other connector, kept on --resume; install.py installs xcode-mcp.json; AGENTS.md says how a UI agent renders a #Preview on My Mac. Xcode trusts Claude Code since 20:50; a probe preview rendered in 34 s for the whole call. Landed by merge bd7de0c96.
+
 ## 2026-11-05 20:51:30 EST — scribe `e01c8a4104836b9df0e93a81e3bddce219b52ce0` and `b85102a1556ca82e3d7c1ed7867dc170fdc31903`
 Feature (#1726): an answer to a yes-or-no or agree-or-disagree question is stored as that measurement: asks.measure (yes, no, agree, disagree; indexed) beside his answer on the question's fixed form, the view kind agreeDisagree, an option's point and measureOf; the app's write, the door and the round keep it. Production schema and rules pushed first (drift 0); landed by merge b85102a15; ADR 0118 amendment.
 
