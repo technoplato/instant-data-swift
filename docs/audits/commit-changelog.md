@@ -1,3 +1,6 @@
+## 2026-11-06 09:06:54 EST — scribe `df7afcb16f863d8a5da89a92d826e3aa330ed795`
+Diagnostics (#1726): the phone's decisions.answer.sent line names the point its tap wrote (agree, disagree, yes, no, or none), because the Mac's round fills a missing point with no note and the row alone cannot say who wrote it; Decisions home 18 of 18 on the mini. A debug line only.
+
 ## 2026-11-06 08:56:17 EST — scribe `9b7e8d4fc651deb95d9566d7f554f838b7dc22c8`
 Security (#1899): the agent-chat uploader removes Solana private keys and BIP39 recovery phrases from every message and tool call before anything is saved (a key inside any text, matched by its own public half so transaction ids stay; a phrase by its checksum); the #1899 audit records the measured mainnet test, both transfers final.
 
