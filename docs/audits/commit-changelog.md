@@ -1,3 +1,6 @@
+## 2026-11-06 18:48:35 EST — scribe `7aacb0efcbfa97ddd7fd174d78a9c92c1060758f`
+Fix (#1955): at his Stop a thread's waiting agent posts go as one card in one write (the first answer's id and quote, every answer whole and in order under its time and author, the later ids in its tag so they still resolve), oldest thread first, and the waiting notices as one notice; one answer in a thread goes as before (green aaf75440a, ADR 0137 section 6). The real queue of 34 waiting during Recording 389 replays as 8 cards and 1 notice, not 27 and 7; the mirror is installed from it.
+
 ## 2026-11-06 18:38:43 EST — scribe `240f80b4f2eeae90a26c0a6188d6ee17e6e6ac2e`
 Changelog (#1946): the entry for ad126b2cb and its progress entry; the plan's claims released; #1945's progress entry says build 293.
 
