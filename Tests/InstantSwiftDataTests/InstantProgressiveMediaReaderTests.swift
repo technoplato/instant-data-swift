@@ -86,7 +86,7 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    expectNoDifference(source.segmentRequests, [count - 64])
+    expectNoDifference(source.reads, [.rows(Array((count - 64)..<count))])
     expectNoDifference(source.rowsRead, 64)
     #expect(snapshot.isFinished)
     try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
@@ -101,7 +101,7 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    expectNoDifference(source.segmentRequests, [1_004 - 64])
+    expectNoDifference(source.reads, [.rows(Array((1_004 - 64)..<1_004))])
     try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
     expectNoDifference(snapshot.segments[1_002], source.storedSegments[1_002].segment)
   }
@@ -116,9 +116,9 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    // The last rows, then at most four rounds of seven split points, then one short page: never every row.
-    #expect(source.rowsRead <= 64 + 4 * 7 + 64)
-    #expect(source.segmentRequests.count <= 1 + 4 * 7 + 1)
+    // The last rows, then two rounds of 15 split points, then one short stretch: four reads, never every row.
+    expectNoDifference(source.reads.count, 4)
+    #expect(source.rowsRead <= 64 + 2 * 15 + 63)
     try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
     expectNoDifference(snapshot.segments[2_999], source.storedSegments[2_999].segment)
     expectNoDifference(snapshot.segments[3_000].startSeconds, source.storedSegments[3_000].startSeconds)
@@ -136,7 +136,9 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    #expect(source.rowsRead <= 64 + 3 * (4 * 7 + 64))
+    // Breaks split in the same rounds: still four reads.
+    expectNoDifference(source.reads.count, 4)
+    #expect(source.rowsRead <= 64 + 15 + 3 * (15 + 63))
     try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
     for brokenAt in [99, 2_099, 5_099] {
       expectNoDifference(snapshot.segments[brokenAt], source.storedSegments[brokenAt].segment)
@@ -154,7 +156,7 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    expectNoDifference(source.segmentRequests, [1_000 - 64, 1_000])
+    expectNoDifference(source.reads, [.rows(Array((1_000 - 64)..<1_000)), .page(from: 1_000, limit: 3)])
     #expect(!snapshot.isFinished)
     try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
   }
@@ -168,7 +170,9 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    expectNoDifference(source.segmentRequests, [811 - 64, 0, 500])
+    expectNoDifference(
+      source.reads, [.rows(Array((811 - 64)..<811)), .page(from: 0, limit: 500), .page(from: 500, limit: 311)]
+    )
     expectNoDifference(snapshot.segments.map(\.index), Array(0..<800))
     #expect(!snapshot.isFinished)
   }
@@ -181,8 +185,20 @@ struct InstantProgressiveMediaReaderTests {
 
     let snapshot = try await reader.refresh()
 
-    expectNoDifference(source.segmentRequests, [0])
+    expectNoDifference(source.reads, [.page(from: 0, limit: 64)])
     expectNoDifference(snapshot.segments, source.storedSegments.map(\.segment))
+  }
+
+  /// A source made without `segmentsAt` still lists a long stream from its last rows: each run of indexes is one page.
+  @Test func aSourceWithoutRowsByIndexReadsTheirRunsAsPages() async throws {
+    let source = SourceDouble(stream: stream)
+    source.store(state: .finished, durations: Self.take(count: 811, last: 2.5))
+    let reader = InstantProgressiveMediaReader(streamID: stream.id, source: source.sourceWithoutRowsByIndex)
+
+    let snapshot = try await reader.refresh()
+
+    expectNoDifference(source.reads, [.page(from: 811 - 64, limit: 64)])
+    try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
   }
 
   /// One AAC frame at the stream's 24 kHz: AVAssetWriter cuts a take at the first frame at or after each 6 s.
@@ -289,7 +305,7 @@ private final class SourceDouble: Sendable {
     (
       row: InstantProgressiveMediaStreamRow?.none,
       segments: [InstantProgressiveMediaSegmentRow](),
-      segmentRequests: [Int](),
+      reads: [Read](),
       rowsRead: 0,
       urlRequests: [[String]]()
     )
@@ -299,8 +315,21 @@ private final class SourceDouble: Sendable {
     self.stream = stream
   }
 
-  /// Where each read of segment rows started, in the order the reads were asked for.
-  var segmentRequests: [Int] { state.value.segmentRequests }
+  /// A read of segment rows: a page from an index, or the rows at some indexes.
+  enum Read: Equatable {
+    case page(from: Int, limit: Int)
+    case rows([Int])
+  }
+
+  /// The reads of segment rows, in the order they were asked for.
+  var reads: [Read] { state.value.reads }
+  /// Where each page read started, in order.
+  var segmentRequests: [Int] {
+    reads.compactMap { read in
+      guard case let .page(from, _) = read else { return nil }
+      return from
+    }
+  }
   /// How many segment rows the reads returned, all together.
   var rowsRead: Int { state.value.rowsRead }
   var storedSegments: [InstantProgressiveMediaSegmentRow] { state.value.segments }
@@ -338,23 +367,49 @@ private final class SourceDouble: Sendable {
 
   var source: InstantProgressiveMediaReader.Source {
     InstantProgressiveMediaReader.Source(
-      streamRow: { id in
-        self.state.withValue { $0.row?.id == id ? $0.row : nil }
-      },
-      segments: { streamID, fromIndex, limit in
+      streamRow: streamRow,
+      segments: segments,
+      segmentsAt: { streamID, indexes in
         self.state.withValue { state in
-          state.segmentRequests.append(fromIndex)
-          let page = Array(
-            state.segments.filter { $0.streamID == streamID && $0.index >= fromIndex }.prefix(limit)
-          )
-          state.rowsRead += page.count
-          return page
+          state.reads.append(.rows(indexes))
+          let asked = Set(indexes)
+          let rows = state.segments.filter { $0.streamID == streamID && asked.contains($0.index) }
+          state.rowsRead += rows.count
+          return rows
         }
       },
-      fileURLs: { paths in
-        self.state.withValue { $0.urlRequests.append(paths) }
-        return Dictionary(uniqueKeysWithValues: paths.map { ($0, self.url($0)) })
-      }
+      fileURLs: fileURLs
     )
+  }
+
+  /// The same rows through the three-argument init, which reads rows at indexes as pages.
+  var sourceWithoutRowsByIndex: InstantProgressiveMediaReader.Source {
+    InstantProgressiveMediaReader.Source(streamRow: streamRow, segments: segments, fileURLs: fileURLs)
+  }
+
+  private var streamRow:
+    @Sendable (InstantID<InstantProgressiveMediaStreamRow>) async throws -> InstantProgressiveMediaStreamRow?
+  {
+    { id in self.state.withValue { $0.row?.id == id ? $0.row : nil } }
+  }
+
+  private var segments: @Sendable (String, Int, Int) async throws -> [InstantProgressiveMediaSegmentRow] {
+    { streamID, fromIndex, limit in
+      self.state.withValue { state in
+        state.reads.append(.page(from: fromIndex, limit: limit))
+        let page = Array(
+          state.segments.filter { $0.streamID == streamID && $0.index >= fromIndex }.prefix(limit)
+        )
+        state.rowsRead += page.count
+        return page
+      }
+    }
+  }
+
+  private var fileURLs: @Sendable ([String]) async throws -> [String: URL] {
+    { paths in
+      self.state.withValue { $0.urlRequests.append(paths) }
+      return Dictionary(uniqueKeysWithValues: paths.map { ($0, self.url($0)) })
+    }
   }
 }
