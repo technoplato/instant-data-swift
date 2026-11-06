@@ -1,3 +1,9 @@
+## 2026-11-06 18:38:43 EST — scribe `240f80b4f2eeae90a26c0a6188d6ee17e6e6ac2e`
+Changelog (#1946): the entry for ad126b2cb and its progress entry; the plan's claims released; #1945's progress entry says build 293.
+
+## 2026-11-06 18:37:44 EST — scribe `ad126b2cb20e2751fc610cb4aa0a9bacaa7414ad`
+Feature (#1946): the Watch's Diagnostics shows This recording while a recording is on screen: its newest line and how long ago, up to three clock stops with why and whether Scribe was behind, and when Scribe was last behind (WatchRecordingDiagnostics over recordingContinuity(now:)); pictured on watchOS 27 simulators, 40 mm and 49 mm; What's New build 293 also takes #1945's lines from 292.
+
 ## 2026-11-06 17:51:07  — scribe `65947ddbdab6ad4ab2586a987ac740d1b5d5942e`
 Changelog (#1945): the entry for f6a766618 and its progress entry; ui-watch-1945 releases its claims (plan amendment 2 at 7f5f9099f claimed CHANGELOG.md and PROGRESS.md).
 
