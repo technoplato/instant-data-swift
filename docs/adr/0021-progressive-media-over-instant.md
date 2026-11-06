@@ -185,6 +185,21 @@ through the ordinary outbox; media bytes never do.
   so following a six-hour stream costs one row and the new segments' rows per refresh, never the whole list again. A
   player's playlist reload (once a target duration) drives the refresh. Segments are listed contiguously from index 0:
   a row that has not arrived ends the listing until it does, so a player never skips audio.
+- Amendment, 2026-11-06 (#1916): a stream longer than one listing page (64 segments) is first listed from its last 64
+  rows and only the rows its breaks need (`InstantProgressiveMediaListing`), never every row. Reading every row first,
+  500 a page and one page after another, kept a player from its first sound for as long as the stream was long: 2
+  reads for 81 minutes, 16 for 12 h 49 min, a cold first page 1.1 s for 164 rows, 2.2 s for 811 and 5.2 s for 4,203 on
+  the server alone, and on a busy client the playlist request failed after AVFoundation's 20 s on every retry. The
+  rows' own arithmetic makes the walk unnecessary: the writer starts each segment where the one before it ends, names
+  each file after its index, and writes `segmentCount` with each segment row after its file, and AVAssetWriter cuts a
+  take every `segmentSeconds` from where the take starts. So only a segment that ends a take early moves later starts,
+  all by the same amount; a stretch whose two ends are `n` segments and `n * segmentSeconds` apart (within 0.25 s) is
+  placed by the grid, one that is off is split eight ways at rows read together, and a stretch of 64 or fewer is read
+  whole. Its reads grow with the breaks and the logarithm of the length. Measured on a live app's 221 streams: 212 had
+  every start within 0.25 s of the grid (6.016 and 5.973 s segments; 0.17 s of drift across a 12.8-hour take), 8 broke
+  only in their last two segments. A gap or a foreign path among the rows read sends the reader back to the walk.
+  Server query shapes measured the same day: `$in` on `index` took 7.6 s for 17 rows and 12.4 s for 29, and `$gte`
+  with `$lte` in one clause kept only the lower bound, so each split row is its own one-row page.
 - URLs are read lazily, a page of the following segments at a time (`$files` where `path` in the page, reading `url`;
   upstream signs each such read for 7 days from the start of its UTC day), and kept for a day.
 - The playlist is a pure function of the listed segments (`InstantProgressiveMediaPlaylist`): `EXT-X-PLAYLIST-TYPE:EVENT`
@@ -223,7 +238,8 @@ nothing across a reload and an always-on recorder must.
 
 - Formats, quality, segmenting and playback: `benchmarks/AudioCodecLab` (results in its `results/`).
 - Library: `InstantProgressiveMediaPlaylistTests`, `InstantProgressiveMediaWriterTests` and
-  `InstantProgressiveMediaReaderTests` (InstantSwiftDataTests); `InstantProgressiveMediaSegmenterTests` and
+  `InstantProgressiveMediaReaderTests` (InstantSwiftDataTests; since #1916 its listing tests: 811, 1,768 and 7,695
+  segments list from one read, breaks cost reads that grow with them); `InstantProgressiveMediaSegmenterTests` and
   `InstantProgressiveMediaResourceTests` (InstantSwiftDataMediaTests).
 - End to end through a live Instant app's storage and rows (`benchmarks/ProgressiveMediaLive`, a throwaway app,
   2026-10-23): a recording written in real time by one client is listed on a second client 22.0-22.8 s after it
