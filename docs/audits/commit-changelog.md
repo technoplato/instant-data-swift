@@ -1,3 +1,6 @@
+## 2026-11-06 11:46:31 EST — scribe `481d24d972679d3675dbb2cb16ce28098d0713fe`
+Feature (#1932): performance.pisspoursoftware.xyz's data: scripts/perf/performance_export.py writes one file per build and device (every metric over recording minutes, minutes not recording and canned runs, with its minutes or why it was not measured) and every performance issue's evidence (proven on a device only from docs/PERFORMANCE.md's new evidence table), run by the metrics LaunchAgent after its watch every 30 minutes.
+
 ## 2026-11-06 10:25:31 EST — scribe `40511255a2646bd1804ac472b90ae49586900bbd`
 Fix (#1917): Stop seals the words of every final line, never fewer than the running count, on the recording and its transcription, and a gap fill's last line after Stop seals again (Recording 370's row said 552 of its 30,059 words: its take restarted its tally at zero on a relaunch); every recording's stored count was recounted from production and the short ones raised (231 rows for 210 recordings; none of 885 short after).
 
