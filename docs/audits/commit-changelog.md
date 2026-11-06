@@ -1,3 +1,6 @@
+## 2026-11-06 06:31:35 EST — scribe `1c2580ee3e5efb6391390fae4106476077c151f4`, `57b9b1e51385ff5ddb376e37d22f92d3d33f7f3e`, `587d4819d96740854cdfb12c75c83036e79314e7` and `29c995363fc8ffdc72a5e4390c48ddd4a5ca339d`
+His iPad drawings and P1 asks (#1393): the photo viewer swipes again after a zoom (#426, UI test on an iPhone simulator), the frame strip glides after a flick (#1911), the Recording Map groups close recordings into counted pins and names each once (#1909, RecordingMapCore), and a calendar of recordings as its own module (#1908, RecordingCalendarFeature; its button follows). Checked in one combined mini run.
+
 ## 2026-11-06 06:13:39 EST — scribe `5643c95ac1527332673583dc8fee621403bbb947`
 Fix (#1380): a launch iOS makes in the background with a take still capturing (an install on the locked phone, a background task) says at once that the mic waits for Scribe: the Live Activity keeps the take with an alert and the outage notification goes out once, under a background task (at once when locked, else after 5 s behind); AppFeature shows the same wait until the restore continues the take; a second background launch alerts nothing new.
 
