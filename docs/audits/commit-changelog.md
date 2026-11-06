@@ -1,3 +1,6 @@
+## 2026-11-06 14:39:01 EST — scribe `6b138f0e6eb1bad96fdcc5908983388f14c5f5b8`
+Fix (#1931): a paused recording's rows show in the order they happened (rows at one recording moment by the wall clock, then id), so a picture taken during a long pause lands at the bottom where he looks; the photo watcher's lines carry #1931 (what Photos added and where each went, the comparison fallback when PhotoKit cannot describe a change, waits over 5 s, drops, refusals); scripts/perf/paused_pictures.py reads a recording's pauses (Recording 384: 4 placed, 4 on the Mac 8 to 35 s later).
+
 ## 2026-11-06 14:13:01 EST — scribe `26c61a7c671a82f0148e424749e55789e93ed526`
 Fix (#1607): a recording's whole chapter pass counts chapters where the talk changes, in a short recording too (rule 3's usual number an hour is not a target): Recording 387 (7.5 minutes) got 1-2 chapters from the first new whole pass where the old made 3, now 3 in each of three dry runs, and Recordings 348 and 344 keep 16 and 8; reinstalled on the laptop 14:12; the first live recording under the new writer (388, 28 s) got no live chapter.
 
