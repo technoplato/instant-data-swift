@@ -1,3 +1,9 @@
+## 2026-11-06 12:52:10 EST — scribe `fbb336062` (plan amendment 3), `625d088ba` (pin 1.9.78), docs `a029e8f34`, cut 286 `cd9015528`, landed by `7861108a3a1f965e9675b2fe3c960e63279fcf26`; changelog `693083e77` and the audit `f519016fb` landed by `9f3255e8d`
+Fix (#1916): a long recording without its sound on the Mac gets ready to play in two reads in a row, not five (instant-data-swift 1.9.78), and Scribe 0.1 (286) carries it. On 286 Recording 370 (7 h) was ready 3.4 s after its copy was found and 366 (12.8 h, unfinished copy) 6.8 s, both on the first try (285: 10.3 s, and 366 on its third try); a busy-client harness went from 11.0-12.0 s to 6.0-6.3 s at every length. Both still fail while a slow write acknowledgement replaces the Mac's live session (measured, filed as its own defect). The audit: audits/2026-11-06-mac-longplay-1916.md.
+
+## 2026-11-06 12:52:10 EST — instant-data-swift `b42666e7` (red), `4294224f` (green), `fa809f1c` (ADR 0021), release `020518a4` (v1.9.78) landed by `acb99685`; its changelog landed by `ac6913f7`
+Perf (#1916): a player opening a progressive media stream waits for two reads in a row, not five: the first refresh reads the URLs a player asks for first alongside the listing, and a finished stream read under 2 s ago is not read again. Mini jobs 1916-lib-red2 (the four new or restated tests fail), 1916-lib-green2 (17 reader tests pass), 1916-lib-media2 (42 tests in 3 suites, 5 in 2).
+
 ## 2026-11-06 12:47:55 EST — scribe `c12f58f511fc0782cab00568ecae0c766f224f20`
 Fix (#1932): the performance page's exporter reads every build's release tag, app/vakyume/<marketing>+N (build 1 is 1.0+1) and build 78's scribe-0.1-78, as ADR 0135 (#1934) names them.
 
