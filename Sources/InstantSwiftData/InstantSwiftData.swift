@@ -1381,6 +1381,36 @@ public struct InstantSwiftDataClient: Sendable {
     return try await runtime.retryQuarantinedMutation(id: id)
   }
 
+  /// Reads from the server what it holds of a held write, and says whether the write landed (#696).
+  public func verifyQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    try await quarantineRuntime(operation: "verify a quarantined mutation", id: id).verifyQuarantinedMutation(id: id)
+  }
+
+  /// Completes a held write the server holds (#696).
+  @discardableResult
+  public func completeQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    try await quarantineRuntime(operation: "complete a quarantined mutation", id: id).completeQuarantinedMutation(id: id)
+  }
+
+  /// Discards a held write the server does not hold (#696).
+  @discardableResult
+  public func discardQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    try await quarantineRuntime(operation: "discard a quarantined mutation", id: id).discardQuarantinedMutation(id: id)
+  }
+
+  private func quarantineRuntime(operation: String, id: String) throws -> InstantRuntime {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: operation,
+        localID: id,
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to settle quarantined mutations."
+      )
+    }
+    return runtime
+  }
+
   @discardableResult
   public func retryFailedMutation(id: String) async throws -> InstantFailedMutationResolution {
     guard let runtime else {

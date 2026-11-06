@@ -15977,6 +15977,43 @@ public final class InstantRuntime: Sendable {
     return result
   }
 
+  /// Reads from the server what it holds of a held write, and says whether the write landed (#696).
+  @concurrent
+  public func verifyQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    InstantQuarantinedMutationVerification(
+      id: id,
+      verifiedAt: configuration.now(),
+      verdict: .cannotTell(.serverUnreadable("Verification is not built yet.")),
+      slots: []
+    )
+  }
+
+  /// Completes a held write the server holds (#696).
+  @discardableResult
+  @concurrent
+  public func completeQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    throw InstantError(
+      code: .implementationFailed,
+      operation: "complete a quarantined mutation",
+      localID: id,
+      message: "Completing a held write is not built yet.",
+      recovery: "Leave it held."
+    )
+  }
+
+  /// Discards a held write the server does not hold (#696).
+  @discardableResult
+  @concurrent
+  public func discardQuarantinedMutation(id: String) async throws -> InstantQuarantinedMutationVerification {
+    throw InstantError(
+      code: .implementationFailed,
+      operation: "discard a quarantined mutation",
+      localID: id,
+      message: "Discarding a held write is not built yet.",
+      recovery: "Leave it held."
+    )
+  }
+
   /// The oldest `limit` pending mutations, in send order, read from SQLite without the operation gate and without
   /// decoding the rest of the queue (#445). Scribe's Sync view lists pending writes while a recording keeps writing;
   /// `pendingMutations()` decodes every pending row under the operation gate, and on Michael's iPhone after a relaunch

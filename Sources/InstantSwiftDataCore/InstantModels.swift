@@ -906,16 +906,17 @@ public enum InstantMutationSupersession: Hashable, Sendable {
   }
 }
 
-/// One write operation of a failed write, and what covers it (#445).
-public struct InstantSlotCoverage: Hashable, Sendable {
-  public enum Operation: Hashable, Sendable {
+/// One write operation of a failed write, and what covers it (#445). Codable since #696: a held write's completion or
+/// discard records its verification's slots.
+public struct InstantSlotCoverage: Hashable, Codable, Sendable {
+  public enum Operation: Hashable, Codable, Sendable {
     case insert
     case merge
     /// A retraction, a deletion, or a step addressed by a lookup (named by its operation), which nothing vouches for.
     case other(String)
   }
 
-  public enum Coverage: Hashable, Sendable {
+  public enum Coverage: Hashable, Codable, Sendable {
     /// A later write of this device that the server accepted sets the slot.
     case laterAcceptedWrite(mutationID: String, serverTransactionID: String?)
     /// A live-query result the server sent since the write was created shows the write's value (for an identity slot,
