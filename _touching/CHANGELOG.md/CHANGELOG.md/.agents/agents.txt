@@ -50,3 +50,4 @@ claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-per
 claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-perf-sync-1796 #1796 #998 #1127 (entries)
 claude-code/perf-metrics-1799@pp 2026-11-05T03:01:54-0500 grower plan=2026-11-05-perf-metrics-1781 #1781
 claude-code/mac-longplay-1916@al 2026-11-06T08:49:36-0500 fixer plan=2026-11-06-mac-longplay-1916 #1916
+claude-code/held-writes-696@al 2026-11-06T14:20:03-0500 grower plan=2026-11-06-held-writes-696 #696 (entries)
