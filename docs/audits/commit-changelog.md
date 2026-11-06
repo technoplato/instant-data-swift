@@ -1,3 +1,6 @@
+## 2026-11-06 13:55:40 EST — scribe `b74cdccc76a775ea6df66233f30e49e789cc7217`
+Fix (#1927): the current recording bar on every thread and every other sheet a recording, its playback or the root opens (one covering placement in Styleguide, the list hands its bar down, each sheet lays it with one modifier, a test fails for a sheet without it); Jump back closes the sheets in front.
+
 ## 2026-11-06 13:41:54 EST — scribe `14803b415c46e0fde48a66864b22ac20e7f1898e`
 Fix (#1607): a recording's chapters name a stretch of thought and idle talk gets none: a chapter holds at least 4 lines, 40 words and a minute in the live and whole passes (fold_short), and both Grok questions say not every line is a chapter and a title is never one line restated or a list of what was said, with bad and good example titles; dry replays on Recordings 348 and 344: live chapters 7.3-15.7 to 1.4-2.1 every ten minutes, one-line chapters 14-23% to none, restating headings 76-89% to 0-33%; ADR 0106 decision 9; installed on the laptop 13:41.
 
