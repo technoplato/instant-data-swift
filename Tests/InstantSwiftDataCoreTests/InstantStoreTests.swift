@@ -20506,13 +20506,13 @@ struct InstantStoreTests {
     )
     let committed = await store.commitAndPublish(prepared)
 
-    // The optimistic todo sorts before both windows: the waiting window shows no row until the server answers and the
-    // ready one only todo-2, between the server's cursors. A change outside a page's server-bounded rows both before and
-    // after it cannot change the page, so the commit publishes neither (#1513, 9fc6eff8; #540's behavior). Until then
-    // the commit published both unchanged windows and this test expected that. An observer is not handed a result equal
-    // to the one it was last handed (#653), so each observer was handed only its first result.
+    // The optimistic todo sorts before both windows, so neither result changes. The waiting window shows no row until
+    // the server answers, so the commit skips it (#1513, 9fc6eff8); until then it published that empty window too. The
+    // ready window orders by a date, which that judgment leaves to a refresh, so the commit publishes it again unchanged:
+    // todo-2, between the server's cursors. An observer is not handed a result equal to the one it was last handed
+    // (#653), so each observer was handed only its first result.
     let publishedWindows = committed.result.emissions.map { $0.values.map(\.id) }
-    expectNoDifference(publishedWindows, [])
+    expectNoDifference(publishedWindows, [["todo-2"]])
     let handed = await store.observerYieldCountsForTesting()[plan.id]
     expectNoDifference(handed, 2)
   }
