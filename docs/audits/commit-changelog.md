@@ -1,3 +1,6 @@
+## 2026-11-06 17:47:43 EST — scribe `59a66dfcb48fa557519b799a47dd6bbeb76e0151`
+Fix (#1455): the pre-plan check never calls a stale copy of the rule store clear: partial (exit 6), with "stale: N minutes, K of M rules" on its verdict's line; the store is asked again after Instant's own retry time (4 tries, 20 s) before the copy; the mirror's store read is 3 queries, not 24, and its rate-limit refusal carries the retry time; agent-run starts a partial check's agent and treats a verdict it does not know as a check that could not run.
+
 ## 2026-11-06 17:25:32 EST — scribe `39371ea3c7c3485b3a93bf852a407c859c9e77fa`
 Feature (#1926): the notification watcher (scripts/notification-watch, installed as ~/Scribe/tools/notification-watch with a 10-minute LaunchAgent): every notification he gets counted from the records each sender and device keeps, repeats, bursts and sounds while he records found, each judged by his own words, fixes ranked by what they remove; read-only. Audit audits/2026-11-06-notifications-1926.md: 566 from midnight to 17:00, 80% check-ins, 53% repeated before #1925 and 4% after.
 
