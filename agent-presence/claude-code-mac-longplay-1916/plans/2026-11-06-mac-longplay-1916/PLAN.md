@@ -48,3 +48,13 @@ docs/audits/commit-changelog.md.
 
 The reader and its tests carry only the first author's claim (#1012, 2026-10-23); no open plan touches progressive media.
 No storage change, no row change, no schema change. Channel: agent-presence/_channels/2026-11-06-mac-longplay-1916.md.
+
+## Amendment 1 (2026-11-06T10:38:49-0500): fewer reads in a row before a player is ready (v1.9.78)
+
+Measured on the consuming app's Mac with 1.9.77 (#1916 work log 15:3xZ): while a long recording is open its client's
+gates are held about 3 s at a time, back to back, so every one-shot read waits 2-3 s, and a player needs about five
+in a row before it is ready (the stream row, the last rows, the stream row again for the player's second playlist
+request, the initialization URL, the first segments' URLs). Steps: red tests, then (1) the first refresh also reads the
+URLs a player asks for first (the initialization segment, the first page, and the live edge's page while recording)
+alongside the listing; (2) a refresh while one runs waits for it, and a stream found finished and wholly listed a
+moment ago (2 s) is not read again. Same files as the plan; release record docs/releases/v1.9.78.md (new).
