@@ -1,3 +1,6 @@
+## 2026-11-05 21:17:03 EST — scribe `79c2da6e3a561b86ad1d1cf13e202a9ee7a13c8c`
+Fix (#1847): the Watch shows a live recording whatever the speech check says, and the Watch's check ends within 5 s with Try Again (a late answer still lands, the newest check wins, leaving the screen ends the wait); the Mac's ready no longer waits for the stand-in engine's check.
+
 ## 2026-11-05 21:12:59 EST — scribe `e3231c2f57dea80502de1fc561c5408755e30419` and `a15735e7e8e128c0b2171ecaba4b194e71bdb23c`, landed by `71a2f5fbec3d86532749f707aa0b62a0cb4bc0ed` and `fee64c0a7f4ae40af4f1cdc9886a0d5d567f7e84`
 Test (#1809): two RecordingAudioStreamTests that raced the take's forwarding task now build the earlier launch's unfinished copy themselves (segmenter and writer, forwarding awaited): anUnfinishedCopyInTheSpoolIsWaitedFor read the spool before the copy's first record was stored (.none for .encoding), and aCopyBegunBeforeTheAppClosedFinishesAtTheSweep's sweep found no copy begun and timed out at 30 s. Found by #632's post-landing check; on the Mac mini 4 of 10 suite runs failed before, 0 of 50 runs after. No source change.
 
