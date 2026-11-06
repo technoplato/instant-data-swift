@@ -1,3 +1,6 @@
+## 2026-11-06 09:27:01 EST — scribe `1fd8ecc60` (red), `677e5187d` (green), `35b43b598` (harness test), `ca3478dee` (fix), `925c4572f` and docs `03ce433e5`, `92a3226b3`, landed by `007fd4336fe201d7e911858d973db2004a25b0db`; its changelog landed by `32cd3ffef`
+Perf (#1878): the debug overlay's left bar (iOS 26+) draws its words in parts with UIKit and Core Animation's render server changes Installed For's milliseconds on a 30 s schedule, as the right bar's stamp does (#412), where a TimelineView drew the whole line 30 times a second (build 270's trace: SwiftUI's display link 51.2 ms/s of the main thread). Same words, font, color and 30 changes a second. Simulator harness 27 of 27: main thread TimelineView 57.79 -> 1.05 ms/s (idle 1.13).
+
 ## 2026-11-06 09:24:28 EST — scribe `34402ed0b0353089c58b03dadf14db597f206270`
 Docs (#1901): the iPad's first canned-audio profile (build 284) in docs/PERFORMANCE.md and audits/2026-11-06-ipad-profile-1901.md: five of six stated hypotheses held; during speech the recording screen hitches 2.3 times a second from the sidebar rows (#1923), each store action's SwiftUI update, the build bar ticker (#1878) and a closed threads panel (#1924); long recordings do not play on the Mac (#1916).
 
