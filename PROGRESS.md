@@ -1,3 +1,15 @@
+## 2026-11-06 10:58:22 EST — mac-longplay-1916 (#1916): v1.9.78, a player opening a progressive media stream waits for two reads in a row
+
+- **Why:** with 1.9.77 a player still made five reads in a row before it was ready, and on a consuming app's busy
+  client each waited 2-3 s for the operation gate: an 81-minute stream's first try failed after 20 s.
+- **Landed:** red `b42666e7`, green `4294224f`, ADR 0021 amendment `fa809f1c` (also corrects 1.9.77's: sixteen-way
+  splits, split rows read together by id).
+- **Checked:** Mac mini jobs `1916-lib-red2` (the four new or restated tests fail), `1916-lib-green2` (17 reader tests
+  pass) and `1916-lib-media2` (42 tests in 3 suites and 5 in 2 pass).
+- **Released:** v1.9.78 (`docs/releases/v1.9.78.md`).
+- **Next (resume here):** pin 1.9.78 in the consuming app (its ten pin files; model: its `096240402`), cut a build,
+  install it on the Mac and time 81-minute, 7-hour and 12.8-hour streams' first tries (#1916).
+
 ## 2026-11-06 09:20:03 EST — mac-longplay-1916 (#1916): v1.9.77, a long progressive media stream lists from its last rows, read by id
 
 - **Why:** the reader read every segment row, 500 a page and one page after another, before a player had a playlist; a

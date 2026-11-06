@@ -194,14 +194,26 @@ through the ordinary outbox; media bytes never do.
   each file after its index, and writes `segmentCount` with each segment row after its file, and AVAssetWriter cuts a
   take every `segmentSeconds` from where the take starts. So only a segment that ends a take early moves later starts,
   all by the same amount; a stretch whose two ends are `n` segments and `n * segmentSeconds` apart (within 0.25 s) is
-  placed by the grid, one that is off is split eight ways at rows read together, and a stretch of 64 or fewer is read
+  placed by the grid, one that is off is split sixteen ways at rows read together, and a stretch of 64 or fewer is read
   whole. Its reads grow with the breaks and the logarithm of the length. Measured on a live app's 221 streams: 212 had
   every start within 0.25 s of the grid (6.016 and 5.973 s segments; 0.17 s of drift across a 12.8-hour take), 8 broke
   only in their last two segments. A gap or a foreign path among the rows read sends the reader back to the walk.
-  Server query shapes measured the same day: `$in` on `index` took 7.6 s for 17 rows and 12.4 s for 29, and `$gte`
-  with `$lte` in one clause kept only the lower bound, so each split row is its own one-row page.
+  Server query shapes measured the same day: `$in` on `index` took 7.6 s for 17 rows and 12.4 s for 29, `$gte` with
+  `$lte` in one clause kept only the lower bound, and on streams not read for a while any read by `streamID` cost
+  1.0-6.6 s, so a round's rows are read together by their derived ids (`Source.segmentsAt`): 39-68 ms for one row and
+  171-315 ms for 64.
 - URLs are read lazily, a page of the following segments at a time (`$files` where `path` in the page, reading `url`;
   upstream signs each such read for 7 days from the start of its UTC day), and kept for a day.
+- Amendment, 2026-11-06 (#1916, 1.9.78): a player opening a stream waits for two reads in a row, the stream's row and
+  then its listing. The first refresh reads the URLs a player asks for first alongside the listing: the initialization
+  segment's, the first page's, and while the stream records the page at its live edge, where a player of a live
+  playlist starts. Their paths follow the stream's own naming, so the stream's row is enough to know them; the read is
+  best effort, since a player's own read of the same URL reports any failure. A refresh within 2 s
+  (`finishedRereadInterval`) of one that found the stream finished and wholly listed reads nothing: AVPlayer asks for a
+  finished stream's playlist twice as it opens. Measured on a consuming app with 1.9.77: while a long stream was open
+  and another device wrote, every one-shot read waited 2-3 s for the client's operation gate, and a player made five
+  reads in a row before it was ready (the row, the last rows, the row again, the initialization URL, the first
+  segments' URLs).
 - The playlist is a pure function of the listed segments (`InstantProgressiveMediaPlaylist`): `EXT-X-PLAYLIST-TYPE:EVENT`
   while the stream records, `VOD` with `EXT-X-ENDLIST` once every segment is listed; `EXT-X-TARGETDURATION` is the
   longest segment rounded to the nearest second (RFC 8216 4.3.3.1).
@@ -239,7 +251,8 @@ nothing across a reload and an always-on recorder must.
 - Formats, quality, segmenting and playback: `benchmarks/AudioCodecLab` (results in its `results/`).
 - Library: `InstantProgressiveMediaPlaylistTests`, `InstantProgressiveMediaWriterTests` and
   `InstantProgressiveMediaReaderTests` (InstantSwiftDataTests; since #1916 its listing tests: 811, 1,768 and 7,695
-  segments list from one read, breaks cost reads that grow with them); `InstantProgressiveMediaSegmenterTests` and
+  segments list from one read, breaks cost reads that grow with them; since 1.9.78 the first refresh reads a player's
+  first URLs, and a finished stream read under 2 s ago is not read again); `InstantProgressiveMediaSegmenterTests` and
   `InstantProgressiveMediaResourceTests` (InstantSwiftDataMediaTests).
 - End to end through a live Instant app's storage and rows (`benchmarks/ProgressiveMediaLive`, a throwaway app,
   2026-10-23): a recording written in real time by one client is listed on a second client 22.0-22.8 s after it

@@ -201,6 +201,70 @@ struct InstantProgressiveMediaReaderTests {
     try expectListing(snapshot, matches: source.storedSegments, within: Self.frame)
   }
 
+  // MARK: - Fewer reads in a row before a player is ready (#1916)
+
+  /// The first refresh also reads the URLs a player asks for first, alongside the listing: the initialization segment's
+  /// and the first page's. On a busy client each read waited 2-3 s for its turn, and a player made about five reads in
+  /// a row before it was ready.
+  @Test(arguments: [5, 811])
+  func theFirstRefreshAlsoReadsTheURLsAPlayerAsksForFirst(count: Int) async throws {
+    let source = SourceDouble(stream: stream)
+    source.store(state: .finished, durations: Self.take(count: count, last: 2.5))
+    let reader = InstantProgressiveMediaReader(streamID: stream.id, source: source.source, urlPageSize: 3)
+    _ = try await reader.refresh()
+
+    let urls = [
+      try await reader.initializationURL(),
+      try await reader.url(forSegment: 0),
+      try await reader.url(forSegment: 2),
+    ]
+
+    expectNoDifference(
+      urls, [stream.initializationPath, stream.segmentPath(0), stream.segmentPath(2)].map(source.url)
+    )
+    expectNoDifference(source.urlRequests, [[stream.initializationPath] + (0..<3).map(stream.segmentPath)])
+  }
+
+  /// While the stream records, a player starts near its newest segments, so their page is read with the first.
+  @Test func aRecordingStreamsFirstRefreshAlsoReadsItsNewestURLs() async throws {
+    let source = SourceDouble(stream: stream)
+    source.store(state: .recording, durations: Self.take(count: 811, last: 6.016))
+    let reader = InstantProgressiveMediaReader(streamID: stream.id, source: source.source, urlPageSize: 3)
+    _ = try await reader.refresh()
+
+    _ = try await reader.url(forSegment: 808)
+    _ = try await reader.url(forSegment: 810)
+
+    expectNoDifference(
+      source.urlRequests,
+      [[stream.initializationPath] + [0, 1, 2, 808, 809, 810].map(stream.segmentPath)]
+    )
+  }
+
+  /// A player asks for a finished stream's playlist twice as it opens: a refresh within 2 s of one that found the stream
+  /// finished and wholly listed reads nothing; a later one reads the stream's row again.
+  @Test func aFinishedStreamRefreshedAMomentAgoIsNotReadAgain() async throws {
+    let source = SourceDouble(stream: stream)
+    source.store(state: .finished, durations: Self.take(count: 811, last: 2.5))
+    let now = LockIsolated(Date(timeIntervalSince1970: 1_000))
+    try await withDependencies {
+      $0.date = DateGenerator { now.value }
+    } operation: {
+      let reader = InstantProgressiveMediaReader(streamID: stream.id, source: source.source)
+      let first = try await reader.refresh()
+      now.setValue(Date(timeIntervalSince1970: 1_001.5))
+
+      let again = try await reader.refresh()
+
+      expectNoDifference(again, first)
+      expectNoDifference(source.streamRowReads, 1)
+      now.setValue(Date(timeIntervalSince1970: 1_004))
+      _ = try await reader.refresh()
+      expectNoDifference(source.streamRowReads, 2)
+    }
+    expectNoDifference(source.reads, [.rows(Array((811 - 64)..<811))])
+  }
+
   /// One AAC frame at the stream's 24 kHz: AVAssetWriter cuts a take at the first frame at or after each 6 s.
   static let frame = 1_024.0 / 24_000
 
@@ -244,25 +308,26 @@ struct InstantProgressiveMediaReaderTests {
   }
 
   /// URLs are read in pages, from the asked segment on, and kept: the next segments a player asks for are already known.
+  /// (The first refresh reads the first page with the initialization segment's, #1916.)
   @Test func urlsAreReadInPagesAndKept() async throws {
     let source = SourceDouble(stream: stream)
-    source.store(state: .recording, durations: Array(repeating: 6, count: 5))
+    source.store(state: .finished, durations: Array(repeating: 6, count: 20))
     let reader = InstantProgressiveMediaReader(streamID: stream.id, source: source.source, urlPageSize: 3)
     _ = try await reader.refresh()
 
     let urls = [
-      try await reader.url(forSegment: 1),
-      try await reader.url(forSegment: 2),
-      try await reader.url(forSegment: 3),
+      try await reader.url(forSegment: 5),
+      try await reader.url(forSegment: 6),
+      try await reader.url(forSegment: 7),
       try await reader.initializationURL(),
     ]
 
     expectNoDifference(
       urls,
       [
-        source.url(stream.segmentPath(1)),
-        source.url(stream.segmentPath(2)),
-        source.url(stream.segmentPath(3)),
+        source.url(stream.segmentPath(5)),
+        source.url(stream.segmentPath(6)),
+        source.url(stream.segmentPath(7)),
         source.url(stream.initializationPath),
       ]
     )
@@ -270,8 +335,8 @@ struct InstantProgressiveMediaReaderTests {
     expectNoDifference(
       source.urlRequests,
       [
-        [stream.segmentPath(1), stream.segmentPath(2), stream.segmentPath(3)],
-        [stream.initializationPath],
+        [stream.initializationPath] + (0..<3).map(stream.segmentPath),
+        [stream.segmentPath(5), stream.segmentPath(6), stream.segmentPath(7)],
       ]
     )
   }
@@ -307,6 +372,7 @@ private final class SourceDouble: Sendable {
       segments: [InstantProgressiveMediaSegmentRow](),
       reads: [Read](),
       rowsRead: 0,
+      streamRowReads: 0,
       urlRequests: [[String]]()
     )
   )
@@ -333,6 +399,8 @@ private final class SourceDouble: Sendable {
   /// How many segment rows the reads returned, all together.
   var rowsRead: Int { state.value.rowsRead }
   var storedSegments: [InstantProgressiveMediaSegmentRow] { state.value.segments }
+  /// How many times the stream's row was read.
+  var streamRowReads: Int { state.value.streamRowReads }
   var urlRequests: [[String]] { state.value.urlRequests }
 
   func url(_ path: String) -> URL {
@@ -390,7 +458,12 @@ private final class SourceDouble: Sendable {
   private var streamRow:
     @Sendable (InstantID<InstantProgressiveMediaStreamRow>) async throws -> InstantProgressiveMediaStreamRow?
   {
-    { id in self.state.withValue { $0.row?.id == id ? $0.row : nil } }
+    { id in
+      self.state.withValue { state in
+        state.streamRowReads += 1
+        return state.row?.id == id ? state.row : nil
+      }
+    }
   }
 
   private var segments: @Sendable (String, Int, Int) async throws -> [InstantProgressiveMediaSegmentRow] {
