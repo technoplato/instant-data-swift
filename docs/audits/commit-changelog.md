@@ -1,3 +1,6 @@
+## 2026-11-06 05:29:53 EST — scribe `8e4124ddf7a04f86d6ac6c145a71633da7dcb605`
+Fix (#1309): a launch's timeline line ends when the recordings list's first page has come, so a launch with nothing to restore says when its list came (diagnostics only).
+
 ## 2026-11-06 05:28:05 EST — scribe `83971a8342853ebe35b9a618ead1b0bad4ce54e6` (red `c2ded1b48`, green `b127a1033`), its changelog `5d8723bd9e4bec9419874271d9369d0ad18105a9`
 Feature (#1890): the phone side of "the Mac offline is a state, not an error": a Mac that missed twelve beats (a minute of the mirror's 5 s beat; twice the worst healthy beat sampled, 29.5 s) reads "Offline since" a time in gray in Settings > Listener and "Mac offline", then "Mac back" for a minute, in the home screen's At work, and only while the phone's own heartbeat to Instant answers (one round-trip read of the account's freshest daemon every 15 s while those screens show, bounded at 5 s, never a write); otherwise it reads unknown and says why. 70 tests in 4 suites passed on the Mac mini, 17 of them new.
 
