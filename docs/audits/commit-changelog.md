@@ -1,3 +1,6 @@
+## 2026-11-06 04:14:44 EST — scribe `f73be2c2c67561a2476694c6ce9eea659cd1f4d2`
+Fix (#1886): Start or Resume Recording that reaches the app before its scene is active waits for the launch restore and resumes the paused take, where it started a second recording.
+
 ## 2026-11-06 03:49:32 EST — scribe `2ab915ae38cf0b341de4018ff02deecd768b3d12` (merge of red 39f113f68, green dcafc0d90, red 50a2de69e, green 02a6a5643, fix ed85d7d21, docs 13e41baf8, cut f2411a509)
 Feature (#1183): the Voices choice holds from the moment it changes, mid-recording: the voice gate reads the account's choice at every microphone buffer (pulled by the capture's own loop, #488), the system-audio lane never starts under Only Me and follows a change, the paused microphone reads it too; ADR 0097 amendment B; cut Scribe 0.1 (279).
 
