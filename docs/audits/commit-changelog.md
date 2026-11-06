@@ -1,3 +1,6 @@
+## 2026-11-06 16:53:11 EST — scribe `9a411337f58385abdeb14ccdb151fb8ba9675b83`
+Feature (#1946): the Watch's Diagnostics data: RecordingContinuity and SceneHistory (SharedModels) say how a recording runs against real time (its newest line on the capture clock, each clock stop with its cause and whether Scribe was behind, the behind stretches, the phone link); the list records each scene change and gives recordingContinuity(now:). The screen rows go to the UI lane (#1393).
+
 ## 2026-11-06 16:38:49 EST — scribe `4a2c93bb2e436f5a5aa780405aac3adda0b8089c`
 Feature (#1946): scribe watch recording [N|id]: how a Watch recording ran against real time, from this Mac's own copies: the last line, every stretch where its clock stood still (the capture gap and the minute samples), its cause, Scribe behind and suspended, the microphone restarts and their refusals, the audio a stop holds, the phone and server links, late deliveries, speech outages (Recording 389: 14:46:02-15:18:46, another session took the Watch's microphone while Scribe was behind; nothing was recorded).
 
