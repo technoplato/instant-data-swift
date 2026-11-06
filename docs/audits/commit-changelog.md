@@ -1,3 +1,6 @@
+## 2026-11-06 01:43:16 EST — instant-data-swift `b3b819b4` (red) and `26943d43` (green), tests `9b792550`, `9930850a`, `a5c21032`, `e153cf39`, `ae138f67` and `0d89c144`, landed by `20a076bd59473f853a60563cb215abd46f541001`
+Perf (#653 #1517 #1523): a write its own save claims is measured by the body the save encoded instead of being encoded once more (a pending write with no server id or confirmation source is its own stored body, and the projection is used only when it kept every operation as written); with #1523's receipt-after-echo test, #1648's todo-seed hop pin and #1513's page-window test restated for 1.9.73. Mac mini job 653-h-land-check, release, same job, v1.9.75 against the lane head, the 150 s recording exercise (225 writes): a write's save with its claim 3,922.7 -> 3,042.1 us (-22.4%), the write side -18.8%, every metered library operation -4.8%; the whole debug bundle (1,737 tests) failed only two tests that fail on main without it (a listed actor-hop pin under load, and the frame decoder's speed ratio, 0.3346 against 0.33).
+
 ## 2026-11-06 01:39:02 EST — scribe `67e082995df5f420abbe5aa9c77112aca0bfe084`
 Fix (#1381): a paused take that Record asks for at a launch (Start or Resume Recording) continues before the recordings list's first page, as a capturing take already did.
 

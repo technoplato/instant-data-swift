@@ -10,6 +10,112 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 6th, 2026 at 1:42:57 a.m. EST — `0d89c1448f76` test(#653 #1513): the commit still publishes the ready window: a date order is left to a refresh (corrects ae138f67)
+
+- **Implementation commit:** `0d89c1448f764c0e63de39779e40a8b24eae8483`
+- **Change:** test(#653 #1513): the commit still publishes the ready window: a date order is left to a refresh (corrects ae138f67)
+- **Details:**
+  - ae138f67 read the truncated diff in job G's compare summary as an empty publication. The whole diff (perf-sync-2's ten runs alone, ~/Sync/audit/perf-sync-1129/runs-1129) shows the commit publishes the ready window, unchanged, and only the waiting window is skipped: 9fc6eff8 skips a page that shows no row while its server page info is awaited, and leaves a date order, as this plan's createdAt is, to a refresh. The test now expects [[todo-2]].
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — #653 #1513 the commit still publishes the ready window: a date order is left to a refresh (corrects ae138f67)
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:56 a.m. EST — `ae138f67fe5f` test(#653 #1513): a row created before both page windows publishes neither, as main does since v1.9.73
+
+- **Implementation commit:** `ae138f67fe5f12f8b4bf3c0b6acb4a39aa93aad7`
+- **Change:** test(#653 #1513): a row created before both page windows publishes neither, as main does since v1.9.73
+- **Details:**
+  - storeObservationsHonorRemotePageInfoWindows expected the commit of a row that sorts before an offset page's waiting and ready windows to publish both unchanged windows. Since #1513's 9fc6eff8 (v1.9.73) a change outside a page's server-bounded rows before and after it does not refresh the page, which is #540's intended behavior, so the commit publishes none and the test failed on main in every whole-bundle run since: 1797-recv-merge-check (06:12), 1129-rebase-check (14:26), 1129-release-memory (15:45, 10 of 10) and this lane's job G (15:52), none of the first three carrying this lane. It passed at v1.9.72 (1797-1500-fixtests, 05:01). The test now expects no published window and still checks that each observer was handed only its first result (#653).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — #653 #1513 a row created before both page windows publishes neither, as main does since v1.9.73
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:56 a.m. EST — `e153cf39a43f` test(#1523): the receipt-after-echo test replays two pending edits under another device's change
+
+- **Implementation commit:** `e153cf39a43f4e59501c05b9b53123f883128620`
+- **Change:** test(#1523): the receipt-after-echo test replays two pending edits under another device's change
+- **Details:**
+  - Accepting this device's first write before the echo made the echo prune it, and a pruned write whose kept fingerprint its acknowledgement dropped may be fingerprinted again by any version, which the count could not tell from the miss this test is for. Now two pending edits of lines the server holds are claimed, another device changes a slot neither edit sets, and the frame restating both lines replays both edits on the full rebase; then both are acknowledged.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1523 the receipt-after-echo test replays two pending edits under another device's change
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:55 a.m. EST — `a5c210326f6c` test(#1523): the receipt-after-echo test takes the full rebase, so its echo replays the pending writes
+
+- **Implementation commit:** `a5c210326f6cf1fc2a769f7c43a838010d1c3c6f`
+- **Change:** test(#1523): the receipt-after-echo test takes the full rebase, so its echo replays the pending writes
+- **Details:**
+  - Job 1797-e: the test failed at its own precondition at 6ff60ee9 (the echo replayed 0 pending writes): the fast-drain fixture reduces server applies by default, patching receipts without loading body pages or staging. With the full rebase the echo of the first write peels and replays the other two, which is the path the fix changed.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1523 the receipt-after-echo test takes the full rebase, so its echo replays the pending writes
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:55 a.m. EST — `26943d43b7ea` green(#1517): a write its own save claims is measured by the body the save encoded
+
+- **Implementation commit:** `26943d43b7ea6d5d84031a7d6b51d651fd5a6388`
+- **Change:** green(#1517): a write its own save claims is measured by the body the save encoded
+- **Details:**
+  - projectionMetadata takes the caller's sorted-key size of the write and uses it when the projection kept every operation as written (an operation-by-operation comparison, which a dropped or hydrated write fails), and says whether it encoded. The claim at save passes the size of the body its save just encoded when the write is pending with no server transaction id or confirmation source, the fields the stored body clears, so the two encodings are the same bytes; the pump's claims pass nothing and measure as before. The claim encode counter counts only real encodes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — #1517 a write its own save claims is measured by the body the save encoded
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — #1517 a write its own save claims is measured by the body the save encoded
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:55 a.m. EST — `b3b819b461cd` red(#1517): a write its own save claims is encoded once more to measure its projected body, which is the write itself
+
+- **Implementation commit:** `b3b819b461cd98344f10664f8ce23f0a92382933`
+- **Change:** red(#1517): a write its own save claims is encoded once more to measure its projected body, which is the write itself
+- **Details:**
+  - Job 1797-b's sample of the recording exercise: the claim at save took 100 of the save's 273 samples, 27 of them the sorted-key encode projectionMetadata makes to measure the projected body. With nothing after the tail and every operation as written, the projection is the write itself, and a pending write with no server transaction id or confirmation source is its own stored body, which the save has just encoded with the same sorted-key encoder. The test saves three writes on an open connection, checks each claimed row's measure against the write's exact sorted-key size, and counts the projected-body encodes the claims at save made (3; 0 expected).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1517 a write its own save claims is encoded once more to measure its projected body, which is the write itself
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:54 a.m. EST — `9930850a9618` test(#1648): the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+
+- **Implementation commit:** `9930850a961804775ebd006280fbf9e438dd757d`
+- **Change:** test(#1648): the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+- **Details:**
+  - Job 1797-c (Mac mini, the whole debug bundle at 7773cfa5, 1,673 tests): the only failures not on Tests/known-failing.txt were InstantStoreTests' two deterministic benchmark pins, 7 actor hops for triple-insert.seed where 8 were pinned; both pass at v1.9.67 in the same job. 94a77045 stops restamping a write's step that its own later step overwrites. The seed sets each todo's isCompleted in its upsert and again in its completion, so localWriteStampedToWin restamped it and the runtime prepared it a second time on one more store turn; now it is prepared once (store 3 -> 2 turns).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — #1648 the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — #1648 the todo seed takes 7 actor hops, not 8: it is no longer restamped and prepared a second time
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
+## November 6th, 2026 at 1:42:54 a.m. EST — `9b792550b90a` red(#1523): a server apply and the acknowledgements after it fingerprint pending writes again
+
+- **Implementation commit:** `9b792550b90a296447999caef596bfca6e380a38`
+- **Change:** red(#1523): a server apply and the acknowledgements after it fingerprint pending writes again
+- **Details:**
+  - Jobs 1797-a and 1797-b (Mac mini, release recording exercise, same-job A/Bs): since 1ef4aa2f the acknowledgement costs about 200 us more a call (411.7 -> 618.7 us, then 675.3 us), and the full receipt fingerprint shows up in 14 of its 40 samples, with more in the echo's body pages (3 -> 14) and staging (8 -> 15). The save keeps a write's fingerprint by its stored bytes only; the server apply's body pages and staging look it up by the write's inputs, miss, and mint it again, and a body the echo changes is kept without a digest, so its acknowledgement mints it once more. The test replays two pending writes under an echo and counts what the echo and the acknowledgements after it mint.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathCostTests.swift` — #1523 a server apply and the acknowledgements after it fingerprint pending writes again
+- **User context (verbatim):**
+  > We're going to fix everything at the source.
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — headless claude -p runs (tools/agent-run, perf-send-1797@pp and perf-send-2@pp); no SpecStory capture
+
 ## November 5th, 2026 at 3:53:29 p.m. EST — `2eba59159479` release(#1129): v1.9.75: a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
 
 - **Implementation commit:** `2eba59159479cd3de67f03c8a92a1df8a5b93c7e`
