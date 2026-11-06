@@ -1,3 +1,12 @@
+## 2026-11-06 12:47:55 EST — scribe `c12f58f511fc0782cab00568ecae0c766f224f20`
+Fix (#1932): the performance page's exporter reads every build's release tag, app/vakyume/<marketing>+N (build 1 is 1.0+1) and build 78's scribe-0.1-78, as ADR 0135 (#1934) names them.
+
+## 2026-11-06 12:36:42 EST — scribe `40a82667376d5e1bbab05387e336faf7872d81e9`
+Fix (#1932): an issue reads as landed only by git (Scribe's commits between builds; instant-data-swift's fix commits between version tags, carried by the first Scribe build that pins that version), never by the tracker's live landing builds, which differed from read to read; the ledger's row keeps its column order.
+
+## 2026-11-06 12:22:39 EST — scribe `c787cce336933a1e6ba9c72c2a2d291f75790a6d`
+Fix (#1932): every number in the performance page's data has the same keys (value, minutes, isFew, note, url, or a reason), so the Foldkit page decodes it with one strict schema.
+
 ## 2026-11-06 11:46:31 EST — scribe `481d24d972679d3675dbb2cb16ce28098d0713fe`
 Feature (#1932): performance.pisspoursoftware.xyz's data: scripts/perf/performance_export.py writes one file per build and device (every metric over recording minutes, minutes not recording and canned runs, with its minutes or why it was not measured) and every performance issue's evidence (proven on a device only from docs/PERFORMANCE.md's new evidence table), run by the metrics LaunchAgent after its watch every 30 minutes.
 
