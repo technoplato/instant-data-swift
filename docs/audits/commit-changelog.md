@@ -1,3 +1,6 @@
+## 2026-11-06 03:43:17 EST — scribe `e377c8238` (red), `10173297f` (green) and `f4256c665` (docs), landed by `dbf4891361f039e570b7f5a255b73eaae5524b90`; its changelog landed by `56b343827`
+Tooling (#1903, #1849): the agents-guide installer installs only origin/main's guide. It fetches, fast-forwards the live tree (~/Sync/worktrees/skills-live), copies origin/main's committed files, links every harness's guide skills into the live tree, and refuses before any change a source behind origin/main, dirty in what it installs or holding unlanded changes; its old default, the shared checkout, was 1,444 commits behind and would have rolled every agent's guide back.
+
 ## 2026-11-06 03:24:16 EST — scribe `8cd5a80485a74aab4337b47f9bf797779704c754` and `74f8ec2c38dd89b404b8410066fcbb8c8b96cd04`
 Batches 4 and 5 (#1393: #1689 #1758 #1718 #1790 #1742 #1780 #1719 #1672 #1791 #1687) and the pause marks (#1807, P0): Catch Up asks his questions first, wallet transactions open, panels resize by hand, question drafts show in full, sideways frames show whole, agent pictures join Photos, a broadcast's ended row plays its recording; each pause shows in Lines and Playback as Paused and Resumed rows derived from its gap. Checked on the mini together (failures match main's). Landed by merges 8cd5a8048 and 74f8ec2c3.
 
