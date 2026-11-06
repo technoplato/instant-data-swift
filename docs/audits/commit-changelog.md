@@ -1,3 +1,9 @@
+## 2026-11-06 17:51:07  — scribe `65947ddbdab6ad4ab2586a987ac740d1b5d5942e`
+Changelog (#1945): the entry for f6a766618 and its progress entry; ui-watch-1945 releases its claims (plan amendment 2 at 7f5f9099f claimed CHANGELOG.md and PROGRESS.md).
+
+## 2026-11-06 17:49:12  — scribe `f6a766618b01a8492d189566e8dcad9be5136468`
+Fix (#1945): on the Watch the live words fill the screen under the clock and follow the newest line, and Stop and Pause hide while it records until a scroll (crown or finger) or a tap brings them back for 4 s (WatchLiveControls under Recording; WatchSessionHeader; the words' bottom margin 8 points either way after the first after pictures showed no word on the 40 mm with the buttons up). Pictures on watchOS 27 simulators, 40 mm and 49 mm; Debug app +248 KB.
+
 ## 2026-11-06 17:47:43 EST — scribe `59a66dfcb48fa557519b799a47dd6bbeb76e0151`
 Fix (#1455): the pre-plan check never calls a stale copy of the rule store clear: partial (exit 6), with "stale: N minutes, K of M rules" on its verdict's line; the store is asked again after Instant's own retry time (4 tries, 20 s) before the copy; the mirror's store read is 3 queries, not 24, and its rate-limit refusal carries the retry time; agent-run starts a partial check's agent and treats a verdict it does not know as a check that could not run.
 
