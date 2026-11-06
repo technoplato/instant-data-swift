@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 6th, 2026 at 3:06:03 p.m. EST — `9d26d2ca527e` green(#696): a held write is verified against the server's own rows, then completed or discarded only on that evidence
+
+- **Implementation commit:** `9d26d2ca527e3dbbb1f523755679e882c7ee6b0b`
+- **Change:** v1.9.79: a held write is verified against the server's own rows, then completed or discarded only on that evidence (#696, criteria from #134)
+- **Details:**
+  - Red e48ab65d, green 9d26d2ca, upgrade guide 339ca746, release ae2c6b99 (tag v1.9.79). verifyQuarantinedMutation(id:) reads the rows each add-query-ok carried for every entity the held write set, taken where the answer arrives before it joins this device's view; the verdict is pure: applied (every slot held, or set by a later accepted write of this device), not applied (never offered, or refused by the server with a 4xx), or cannot tell with its reason. completeQuarantinedMutation(id:) and discardQuarantinedMutation(id:) verify again, refuse any other verdict, and record the resolution with its verification in resolution_json; the body is never touched. A retained mutation whose effect is unknown and that launch left in the outbox is held first. Mac mini: red 9 of 10 fail; green 23 tests in 3 suites pass; the whole bundle 1,756 tests, its two unlisted failures not this change's (#1948 fails the same at v1.9.78; a CPU ratio passes alone).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantHeldWriteVerification.swift` — the verification, its pure verdict and read plans, the answer captures, the settlement
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — verify, complete and discard; the server-rows read beside queryOnceThroughLive; the add-query-ok capture
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — a held write's evidence, the one-row hold, the recorded resolution and resolution_json, a settled write's lifecycle
+  - `Sources/InstantSwiftDataCore/InstantQuarantinedMutation.swift` — the held-write documentation names verify, complete and discard
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client's verify, complete and discard
+  - `Tests/InstantSwiftDataCoreTests/InstantHeldWriteVerificationTests.swift` — the pure verdict tests (the fault tests came with red)
+- **User context (verbatim):**
+  > Can you also check that this production recording is syncing
+- **SpecStory:** unavailable — unavailable — Claude Code headless session 913966c7-7598-4600-ae90-83f6305dc078 (tools/agent-run, claude/al); no SpecStory capture for headless runs
+
 ## November 6th, 2026 at 11:18:04 a.m. EST — `4294224f5f95` green(#1916): a player opening a stream waits for two reads in a row, not five
 
 - **Implementation commit:** `4294224f5f951b4a9099271fcd5de29797bfacf4`
