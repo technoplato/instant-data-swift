@@ -1,3 +1,6 @@
+## 2026-11-06 08:48:43 EST — scribe `d3f2cee7349f0f3d22b240bb5598593c63c4ebf5`
+Fix (#1914): the Mac mirror keeps a slow Instant socket instead of killing it: a socket still connecting is not judged, Instant's 5 s server pings count, an open socket is replaced only after 10 s with nothing, and a deadline that ran late behind a busy loop reads its socket first (since the #1826 fix: 79 replacements in 21 bursts and 5 restarts in 21.2 h; each new socket was judged 5 s after it was made, before it had connected).
+
 ## 2026-11-06 08:37:48 EST — scribe `6f65c21236b5ee661a7782ee4d3c216d5f7dbd2c`
 Test (#1726): a measured answer end to end through the real Instant client and rules on the throwaway app bd40c50a (DecisionsLiveTests): the phone's tap on Agree reaches the Mac as agree, a changed mind to Disagree moves it, his own words alone clear it (the library's nil clears the attribute on the server), and a Yes keeps the yes-or-no scale's point; 2 of 2 passed on the mini (3.079 s and 11.313 s). Test only.
 
