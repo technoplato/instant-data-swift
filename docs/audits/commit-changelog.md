@@ -1,3 +1,6 @@
+## 2026-11-06 05:28:05 EST — scribe `83971a8342853ebe35b9a618ead1b0bad4ce54e6` (red `c2ded1b48`, green `b127a1033`), its changelog `5d8723bd9e4bec9419874271d9369d0ad18105a9`
+Feature (#1890): the phone side of "the Mac offline is a state, not an error": a Mac that missed twelve beats (a minute of the mirror's 5 s beat; twice the worst healthy beat sampled, 29.5 s) reads "Offline since" a time in gray in Settings > Listener and "Mac offline", then "Mac back" for a minute, in the home screen's At work, and only while the phone's own heartbeat to Instant answers (one round-trip read of the account's freshest daemon every 15 s while those screens show, bounded at 5 s, never a write); otherwise it reads unknown and says why. 70 tests in 4 suites passed on the Mac mini, 17 of them new.
+
 ## 2026-11-06 04:53:50 EST — scribe `7b8b78534` (red), `27f44fd70` (green) and `79a9f9e9b` (docs), landed by `d33e1fecb9d2be5930d6f850205f844c2180c44b`; its changelog landed by `043d7a676`
 Perf (#1877): the storage walk (20 s after launch, then every 10 minutes, and Settings' Measure Now) places each file by its top-level folder's path prefix instead of standardizing every file's URL; the same sums. Before on the phone: a median of 2.2 to 5.3 CPU-seconds per walk (energy ledger, builds 272-277); the mini: 3,000 files, 60.7 ms to 26.6.
 
