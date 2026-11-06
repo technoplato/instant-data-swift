@@ -1,3 +1,6 @@
+## 2026-11-06 08:56:17 EST — scribe `9b7e8d4fc651deb95d9566d7f554f838b7dc22c8`
+Security (#1899): the agent-chat uploader removes Solana private keys and BIP39 recovery phrases from every message and tool call before anything is saved (a key inside any text, matched by its own public half so transaction ids stay; a phrase by its checksum); the #1899 audit records the measured mainnet test, both transfers final.
+
 ## 2026-11-06 08:48:43 EST — scribe `d3f2cee7349f0f3d22b240bb5598593c63c4ebf5`
 Fix (#1914): the Mac mirror keeps a slow Instant socket instead of killing it: a socket still connecting is not judged, Instant's 5 s server pings count, an open socket is replaced only after 10 s with nothing, and a deadline that ran late behind a busy loop reads its socket first (since the #1826 fix: 79 replacements in 21 bursts and 5 restarts in 21.2 h; each new socket was judged 5 s after it was made, before it had connected).
 
