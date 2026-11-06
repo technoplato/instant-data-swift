@@ -10,6 +10,132 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 5th, 2026 at 3:53:29 p.m. EST — `2eba59159479` release(#1129): v1.9.75: a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
+
+- **Implementation commit:** `2eba59159479cd3de67f03c8a92a1df8a5b93c7e`
+- **Change:** release(#1129): v1.9.75: a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
+- **Details:**
+  - The release record and PROGRESS for v1.9.75, tagged on this commit (merged onto main by 598067f9 after a push race) for Scribe's next build: each prune batch names and times its phases, a slow one logs live-query-results.prune-batch-slow, and the memory release after an unload is its own phase. It carries 1.9.74.
+- **Files:**
+  - `docs/releases/v1.9.75.md` — #1129 the release record with the three jobs' results and what did not run
+  - `PROGRESS.md` — #1129 the lane's checkpoint: what landed, how it was checked, what is next
+- **User context (verbatim):**
+  > I want to restore the work you were working on in the order in which you think it will have the most impact with the P0s and the instant work
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 3:49:35 p.m. EST — `fe1e8fddc402` green(#1129): a batch's memory release after an unload is a phase of its own
+
+- **Implementation commit:** `fe1e8fddc402ea80e628a02d3f255c434900dbf6`
+- **Change:** green(#1129): a batch's memory release after an unload is a phase of its own
+- **Details:**
+  - The memory release after an unloading batch's apply (ownership and outbox reads, then the hot store's release) is its own phase, release memory, in the notice and the gates' reports (job 1129-release-memory, Mac mini: 90 tests in 16 prune and gate suites passed).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1129 the memory release after an unload is its own phase
+- **User context (verbatim):**
+  > I want to restore the work you were working on in the order in which you think it will have the most impact with the P0s and the instant work
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 3:49:34 p.m. EST — `8b6898adb92b` red(#1129): a batch's memory release after an unload is timed as part of its apply
+
+- **Implementation commit:** `8b6898adb92be34793d4f2169f1fbb433764b7cb`
+- **Change:** red(#1129): a batch's memory release after an unload is timed as part of its apply
+- **Details:**
+  - Main's #1500 unloads closed results in place and releases their entities from memory under the batch's gates; the rebase onto v1.9.73 counted that step as apply. The phase tests are restated to the unload (24 unloaded, none removed) and expect a release-memory phase (job 1129-release-memory: on the earlier green's sources only that phase list fails).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneBatchPhaseTests.swift` — #1129 the phase tests restated to #1500's unload in place
+- **User context (verbatim):**
+  > I want to restore the work you were working on in the order in which you think it will have the most impact with the P0s and the instant work
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 3:49:33 p.m. EST — `5a8da3a8dcf7` green(#1129): a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
+
+- **Implementation commit:** `5a8da3a8dcf788b9ca34929e9d35a92ee70ec0a5`
+- **Change:** green(#1129): a prune batch names and times each phase it holds its gates for, and a slow one says which phase grew
+- **Details:**
+  - Each prune batch names its phase in both gates' holder phase and times it; a batch that held them liveQueryResultPruneSlowBatchMilliseconds (1,000) or more logs live-query-results.prune-batch-slow at notice with each phase's milliseconds, the slowest phase and its counts. What a batch removes is unchanged (job 1129-check: 46 tests in 12 suites).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1129 each batch phase named and timed; a slow batch's notice
+- **User context (verbatim):**
+  > I want to restore the work you were working on in the order in which you think it will have the most impact with the P0s and the instant work
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 3:49:33 p.m. EST — `d7f704c1375c` red(#1129): a prune batch holds its gates without naming or timing its phases
+
+- **Implementation commit:** `d7f704c1375c1248846dbc916fa1a4b547ab5625`
+- **Change:** red(#1129): a prune batch holds its gates without naming or timing its phases
+- **Details:**
+  - On 2026-11-04 a Mac's cadence prune held the server-apply gate 4.5-13.1 s per batch at 1,000 facts and the gate reports said only "prune live query results". The tests expect each batch to time its phases, name the phase it ended in on the operation gate, and log one notice past a threshold; the types exist and nothing calls them (4 of 5 fail on their own sources, job 1129-check).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — #1129 the phase timer and timing types, not yet called
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneBatchPhaseTests.swift` — #1129 a batch times and names its phases; a slow one logs a notice
+- **User context (verbatim):**
+  > I want to restore the work you were working on in the order in which you think it will have the most impact with the P0s and the instant work
+- **SpecStory:** unavailable — headless claude -p run (tools/agent-run, perf-sync-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:11 p.m. EST — `82cd08ad5cbf` release(#632): v1.9.74: a delivered progressive media stream that is continued goes on where its stored row ends
+
+- **Implementation commit:** `82cd08ad5cbf04781c482e884b2da3e1f210dc19`
+- **Change:** release(#632): v1.9.74: a delivered progressive media stream that is continued goes on where its stored row ends
+- **Details:**
+  - The release record and PROGRESS for v1.9.74, tagged on main's landing merge a7223ead.
+- **Files:**
+  - `docs/releases/v1.9.74.md` — #632 the release record with the gate's results
+  - `PROGRESS.md` — #632 the lane's checkpoint: what landed, how it was checked, what is next
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:10 p.m. EST — `1a2ed1b9f90d` test(#632): the continued stream's tests read the writer's values in #expect, which takes await (CustomDump's expectNoDifference does not)
+
+- **Implementation commit:** `1a2ed1b9f90d9386a9d18fed2f323b080edcaa89`
+- **Change:** test(#632): the continued stream's tests read the writer's values in #expect, which takes await
+- **Details:**
+  - CustomDump's expectNoDifference takes no await, so the actor's values are read in #expect.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — #632 #expect for awaited reads
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:10 p.m. EST — `b52f287081ca` docs(#632): what a continued stream started over cost, corrected: each re-sent row is refused with its transaction
+
+- **Implementation commit:** `b52f287081ca61e72b330009a0e6977e7d768b05`
+- **Change:** docs(#632): what a continued stream started over cost, corrected: each re-sent row is refused with its transaction
+- **Details:**
+  - Comments only: the rules refuse each re-sent segment with its transaction, so the stored stream row keeps its count.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — #632 the comment states the refusal
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — #632 the tests' comments match
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:09 p.m. EST — `418ff8416e4c` green(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+
+- **Implementation commit:** `418ff8416e4c6d6da066772306a356906c657bf0`
+- **Change:** green(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+- **Details:**
+  - With no spool record and a stored row of this stream that has segments, the spool begins from the row: next index segmentCount at durationSeconds, init counted as stored, createdAtMs kept, stamps from updatedAtMs, the stored format kept. The spool's own record still wins.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaSpool.swift` — #632 begin(continuing:) without an init file
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — #632 the writer begins the spool from the stored row
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
+## November 5th, 2026 at 2:34:09 p.m. EST — `af95eb36c328` red(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+
+- **Implementation commit:** `af95eb36c328df825b144260afbe2147d230cdaa`
+- **Change:** red(#632): a delivered progressive media stream that is continued goes on where its stored row ends
+- **Details:**
+  - Three tests a writer given the stored row must pass (continued from the row, relaunched mid-continuation, stored format kept) and two that guard what stays; continuing: is accepted and ignored, so they fail.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — #632 continuing: parameter, accepted and not yet used
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — #632 the five tests
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — unavailable — headless claude -p run (tools/agent-run, perf-audio-2@pp); no SpecStory capture
+
 ## November 5th, 2026 at 7:04:20 a.m. EST — `49e090c79c87` release(#1109 #1513 #1116): v1.9.73: a server refresh compares only what it changed; its save takes the translation's limit
 
 - **Implementation commit:** `49e090c79c87c3504f160359370ba2bf7eebaff1`

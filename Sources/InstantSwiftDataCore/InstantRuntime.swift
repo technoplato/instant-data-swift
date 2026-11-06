@@ -1,4 +1,7 @@
 // History:
+// - 2026-11-05: a prune batch names each phase it holds its gates for in their reports and times it; a batch that held
+//   them 1 s or more logs its phases' times at notice. A Mac's batches held the server-apply gate 4.5-13.1 s at 1,000
+//   facts, unnamed (#1129).
 // - 2026-11-05: the prune's batches go on while the last one unloaded closed results and left more (#1500, #303).
 // - 2026-11-04: a launch keeps the newest `preloadedLiveQueryResultCount` (10) stored results loaded, as upstream
 //   preloads ten; the rest reload from disk when their query subscribes (#1107, #1149).
@@ -567,6 +570,9 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// waited; `nil` prunes everything at once. 1,000 since #1129: a batch also holds the server-apply gate, so a refresh
   /// that arrives during one waits for it, and a batch of 5,000 held both about 100 ms.
   var liveQueryResultPruneBatchTripleCount: Int? = 1_000
+  /// A prune batch that holds its gates this long or longer logs one notice with each phase's milliseconds (#1129). On
+  /// 2026-11-04 a Mac's batches held the server-apply gate 4.5-13.1 s each at 1,000 facts, and nothing named the phase.
+  var liveQueryResultPruneSlowBatchMilliseconds = 1_000
   /// What keeps the process running while the live-query prune works, and says when the system is about to suspend it
   /// (#1319).
   public var maintenanceActivity = InstantMaintenanceActivity.live
@@ -578,6 +584,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   /// Runs as each prune batch starts, holding the operation gate.
   var onLiveQueryResultPruneBatchHoldsOperationGateForTesting: (@Sendable () async -> Void)? = nil
+  /// Each prune batch's phases and their times, once it leaves its gates (#1129).
+  var onLiveQueryResultPruneBatchTimedForTesting: (@Sendable (InstantPruneBatchTiming) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   /// How the live socket's route watcher waits out a backoff or the minute between two moves (#1237).
@@ -1704,6 +1712,91 @@ struct InstantServerApplyGateTimeline: Sendable {
 
 /// One stall's length passed while a one-shot read still waited for its answer (#1796).
 private struct InstantLiveQueryAnswerStillOwed: Error {}
+
+/// One prune batch's hold of the server-apply and operation gates, by phase (#1129).
+struct InstantPruneBatchTiming: Sendable, Equatable {
+  struct Phase: Sendable, Equatable {
+    var name: String
+    var milliseconds: Int
+  }
+
+  /// From the batch's first phase to its last one's end, with both gates held.
+  var heldMilliseconds: Int
+  /// Each phase once, in the order the batch first entered it; a phase entered again (a choice gone stale) adds up.
+  var phases: [Phase]
+
+  /// The phases as one line, such as `choose 12 ms, apply 4,310 ms`.
+  var phasesDescription: String {
+    phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
+  }
+
+  /// The phase that took longest, the first of equals.
+  var slowestPhase: Phase? {
+    phases.reduce(nil) { slowest, phase in
+      guard let slowest, slowest.milliseconds >= phase.milliseconds else { return phase }
+      return slowest
+    }
+  }
+}
+
+/// Names each phase of one prune batch in its gates' holder phase, so a stall or wait report says which part held them,
+/// and times it (#1129). On 2026-11-04 a Mac's batches held the server-apply gate 4.5-13.1 s each with every live
+/// refresh behind them, and a phone's held a recording's first write 1.25 s, while a batch still releases at most 1,000
+/// facts: some phase stopped following the batch's size, and no report named it.
+// SAFETY: `lock` guards `current` and `spent`. One batch's task calls `begin` and `finish` in order.
+final class InstantPruneBatchPhases: @unchecked Sendable {
+  private let lock = NSLock()
+  private let gates: [AsyncSerialGate]
+  private let now: @Sendable () -> ContinuousClock.Instant
+  private var startedAt: ContinuousClock.Instant?
+  private var current: (name: String, startedAt: ContinuousClock.Instant)?
+  private var spent: [(name: String, duration: Duration)] = []
+
+  init(gates: [AsyncSerialGate], now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }) {
+    self.gates = gates
+    self.now = now
+  }
+
+  /// Ends the phase running now and starts `name`, which every gate's report names until the next one.
+  func begin(_ name: String) {
+    let instant = now()
+    lock.withLock {
+      if startedAt == nil { startedAt = instant }
+      endCurrentLocked(at: instant)
+      current = (name, instant)
+    }
+    for gate in gates { gate.markHolderPhase(name) }
+  }
+
+  /// Ends the last phase and returns the batch's timing.
+  func finish() -> InstantPruneBatchTiming {
+    let instant = now()
+    return lock.withLock {
+      endCurrentLocked(at: instant)
+      let start = startedAt ?? instant
+      return InstantPruneBatchTiming(
+        heldMilliseconds: InstantServerApplyGateTimeline.milliseconds(from: start, to: instant),
+        phases: spent.map {
+          InstantPruneBatchTiming.Phase(
+            name: $0.name,
+            milliseconds: InstantServerApplyGateTimeline.milliseconds(from: start, to: start + $0.duration)
+          )
+        }
+      )
+    }
+  }
+
+  private func endCurrentLocked(at instant: ContinuousClock.Instant) {
+    guard let current else { return }
+    self.current = nil
+    let duration = current.startedAt.duration(to: instant)
+    if let index = spent.firstIndex(where: { $0.name == current.name }) {
+      spent[index].duration += duration
+    } else {
+      spent.append((current.name, duration))
+    }
+  }
+}
 
 private actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
@@ -8302,20 +8395,31 @@ public final class InstantRuntime: Sendable {
       }
       let application: InstantLiveQueryResultPruneBatchApplication
       var checkedReleasedChunk = false
+      // #1129: each phase names itself in both gates' reports and is timed. A Mac's batches held the server-apply gate
+      // 4.5-13.1 s each at 1,000 facts on 2026-11-04, and the reports said only "prune live query results".
+      let phases = InstantPruneBatchPhases(gates: [serverApplyGate, operationGate])
+      let timing: InstantPruneBatchTiming
       do {
+        phases.begin("find released row")
         recordActorHop(.persistence)
         if let chunk = try await persistence.nextReleasedLiveQueryResultChunk(maximumTripleCount: chunkTripleCount) {
-          application = try await pruneReleasedLiveQueryResultChunk(chunk, carriedReleasedIdentities: carried)
+          application = try await pruneReleasedLiveQueryResultChunk(
+            chunk,
+            carriedReleasedIdentities: carried,
+            phases: phases
+          )
           checkedReleasedChunk = true
         } else {
           application = try await performPruneLiveQueryResults(
             policy: policy,
             now: now,
             carriedReleasedIdentities: carried,
-            predecoded: predecoded
+            predecoded: predecoded,
+            phases: phases
           )
           lastRemoval = application
         }
+        timing = phases.finish()
         await leaveOperationGate()
         await serverApplyGate.leave()
       } catch {
@@ -8323,6 +8427,7 @@ public final class InstantRuntime: Sendable {
         await serverApplyGate.leave()
         throw error
       }
+      await reportPruneBatch(timing, application: application, kind: checkedReleasedChunk ? "released-row" : "results")
       removedQueryKeys.append(contentsOf: application.result.removedQueryKeys)
       unloadedQueryKeys.append(contentsOf: application.result.unloadedQueryKeys)
       removedOrphanedTripleCount += application.result.removedOrphanedTripleCount
@@ -8353,6 +8458,41 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// One prune batch's phases (#1129): a notice when it held its gates `liveQueryResultPruneSlowBatchMilliseconds` or
+  /// longer, so a device's slow batch names the phase that grew with its counts beside it; nothing otherwise, since a
+  /// device prunes on its write cadence.
+  private func reportPruneBatch(
+    _ timing: InstantPruneBatchTiming,
+    application: InstantLiveQueryResultPruneBatchApplication,
+    kind: String
+  ) async {
+    if timing.heldMilliseconds >= configuration.liveQueryResultPruneSlowBatchMilliseconds {
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "live-query-results.prune-batch-slow",
+        message:
+          "A prune batch held the server-apply and operation gates \(timing.heldMilliseconds) ms: "
+          + "\(timing.phasesDescription).",
+        metadata: [
+          "appID": configuration.appID,
+          "kind": kind,
+          "heldMilliseconds": String(timing.heldMilliseconds),
+          "phases": timing.phasesDescription,
+          "slowestPhase": timing.slowestPhase?.name ?? "",
+          "removedResultCount": String(application.result.removedQueryKeys.count),
+          "unloadedResultCount": String(application.result.unloadedQueryKeys.count),
+          "removedFactCount": String(application.removedFacts.count),
+          "removedOrphanedTripleCount": String(application.result.removedOrphanedTripleCount),
+          "remainingTripleCount": String(application.result.remainingTripleCount),
+          "releasedRowLeft": String(application.leftReleasedRows),
+        ]
+      )
+    }
+    await configuration.onLiveQueryResultPruneBatchTimedForTesting?(timing)
+  }
+
   /// The stored results the next prune batch will likely remove and decode, read and decoded on the read connection with
   /// no gate (#1129): the batch chooses again under the gate and uses these while their rows are the ones read, so its
   /// hold no longer decodes them. Empty when anything fails: the batch then decodes under the gate, as before.
@@ -8381,16 +8521,19 @@ public final class InstantRuntime: Sendable {
   /// would have dropped them. The caller holds the operation gate.
   private func pruneReleasedLiveQueryResultChunk(
     _ chunk: InstantReleasedLiveQueryResultChunk,
-    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
+    phases: InstantPruneBatchPhases? = nil
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
     // #1319: an entity an earlier batch kept is checked again only here, where a fact of it is released again: its
     // decision cannot change in a batch that releases none of its facts. Every carried entity was read in every batch.
     let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: chunk.entityIDs)
+    phases?.begin("residency")
     recordActorHop(.store)
     let residency = await store.pruneResidency(of: chunk.releasedIdentities.union(touched))
     // #1133: from SQLite's delete to the store's retraction, the batch writes only these entities' facts, which no open
     // query holds, so a hydration that read others need not wait for it.
     operationGate.markHolderWrites(chunk.entityIDs)
+    phases?.begin("apply")
     recordActorHop(.persistence)
     var application = try await persistence.applyReleasedLiveQueryResultChunk(
       chunk,
@@ -8399,6 +8542,7 @@ public final class InstantRuntime: Sendable {
     )
     application.retainedReleasedIdentities.formUnion(untouched)
     if !application.removedFacts.isEmpty {
+      phases?.begin("retract")
       recordActorHop(.store)
       await store.retractFactsReleasedByPrune(application.removedFacts)
       installedStoreRevisions.install(
@@ -8440,8 +8584,10 @@ public final class InstantRuntime: Sendable {
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
-    predecoded: [String: InstantUnloadedLiveQueryResultRead] = [:]
+    predecoded: [String: InstantUnloadedLiveQueryResultRead] = [:],
+    phases: InstantPruneBatchPhases? = nil
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
+    phases?.begin("active keys")
     // A registration loading its closed result back records itself with the live session only when it is done (#1131).
     let activeQueryKeys = await liveSession.activeQueryKeys().union(liveQueryRegistrations.keys)
     if let onActiveKeysCaptured =
@@ -8455,11 +8601,13 @@ public final class InstantRuntime: Sendable {
       preservingQueryKeys: activeQueryKeys,
       maximumRemovedTripleCount: configuration.liveQueryResultPruneBatchTripleCount,
       carriedReleasedIdentities: carriedReleasedIdentities,
-      predecoded: predecoded
+      predecoded: predecoded,
+      phases: phases
     )
     guard !application.result.removedQueryKeys.isEmpty || !application.result.unloadedQueryKeys.isEmpty else {
       return application
     }
+    phases?.begin("unload")
     for key in Set(application.result.removedQueryKeys).union(application.result.unloadedQueryKeys) {
       await liveQueryResultState.unload(key: key)
     }
@@ -8501,11 +8649,13 @@ public final class InstantRuntime: Sendable {
     preservingQueryKeys: Set<String>,
     maximumRemovedTripleCount: Int?,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity>,
-    predecoded: [String: InstantUnloadedLiveQueryResultRead] = [:]
+    predecoded: [String: InstantUnloadedLiveQueryResultRead] = [:],
+    phases: InstantPruneBatchPhases? = nil
   ) async throws -> InstantLiveQueryResultPruneBatchApplication {
     var batch: InstantLiveQueryResultPruneBatch
     var staleAttempts = 0
     repeat {
+      phases?.begin("choose")
       recordActorHop(.persistence)
       // #1319: the batch's own facts first; the carried ones join only where it releases another fact of their entity.
       batch = try await persistence.liveQueryResultPruneBatch(
@@ -8522,11 +8672,13 @@ public final class InstantRuntime: Sendable {
       }
       let (touched, untouched) = Self.partition(carriedReleasedIdentities, touching: batch.releasedEntityIDs)
       batch.releasedIdentities.formUnion(touched)
+      phases?.begin("residency")
       recordActorHop(.store)
       let residency = await store.pruneResidency(of: batch.releasedIdentities)
       // #1133: from SQLite's delete to the store's retraction, the batch writes only these entities' facts, which no
       // open query holds. At bootstrap nothing holds the gate, so the marks change nothing.
       operationGate.markHolderWrites(batch.releasedEntityIDs)
+      phases?.begin("apply")
       recordActorHop(.persistence)
       if var application = try await persistence.applyLiveQueryResultPruneBatch(
         batch,
@@ -8536,6 +8688,7 @@ public final class InstantRuntime: Sendable {
       ) {
         application.retainedReleasedIdentities.formUnion(untouched)
         if !application.removedFacts.isEmpty {
+          phases?.begin("retract")
           recordActorHop(.store)
           await store.retractFactsReleasedByPrune(application.removedFacts)
           installedStoreRevisions.install(
@@ -8547,6 +8700,8 @@ public final class InstantRuntime: Sendable {
           // #1500: the unloaded results' rows and facts stay on disk; memory releases, under this batch's gates, what no
           // loaded result owns, no write waits on and no observer shows, as the residency sweep does (#1145). What it
           // cannot release now stays the sweep's candidate.
+          // #1129: a phase of its own: it reads the unloaded entities' ownership and outbox rows, then releases them.
+          phases?.begin("release memory")
           recordActorHop(.persistence)
           if let decision = try await persistence.residencySweepDecision(for: application.unloadedEntityIDs) {
             var kept = decision.pending
