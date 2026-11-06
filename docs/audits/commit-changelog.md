@@ -1,3 +1,36 @@
+## 2026-11-06 01:39:02 EST — scribe `67e082995df5f420abbe5aa9c77112aca0bfe084`
+Fix (#1381): a paused take that Record asks for at a launch (Start or Resume Recording) continues before the recordings list's first page, as a capturing take already did.
+
+## 2026-11-05 22:05:33 EST — scribe `987a1ff2e`, `95a097541` and `e4c0dd9ac` (green), landed by `f952771ffe270f6f39dddd14252760b420c92fdb`; its changelog landed by `ae378a74b`
+Feature (#1727): a post on his line goes into the thread it belongs to: the thread the agent names, the thread his line is in, the chat open in front when he said it, or the one the cheap model reads as the same subject, else a new one, saying why (ADR 0131); the app's answer cards lead with his lines since the thread's answer before it; five recordings replayed with the real model went from 209 threads to 106 (audits/2026-11-05-threads-weave-1727.md).
+
+## 2026-11-05 22:04:06 EST — scribe `2a14aea63` landed by `75186433d`; `3fdc33c42` and `4bc2ea96d` landed by `07902ec5b`
+Tooling (#1646): a check-in sender whose folder is gone still posts (senders run in the home folder; an exit 1 is a refusal only with the mirror's answer), after two waiting check-ins were wrongly filed as refusals when their agents removed throwaway worktrees (both resent and delivered); and agent-progress-check shows each agent's last check-in for Michael and flags 30 minutes without one on every harness (scribe-f3's go at 21:49): 16 running agents read at 22:02, no check-in gaps.
+
+## 2026-11-05 21:54:53 EST — scribe `cfb4bfbc24ca1430d1c25e9f7c94c74ce4707406` and `701eb66aa651d1b42189355f279af8f25b72fbc0`, landed by `316a191f5edfb03f1c6e6267e9881bd87b2410fe`
+Fix (#1808): a delivered compressed copy whose row this phone's store cannot decode is read from the server (bounded at 5 s), a row no source answers for is CompressedCopyState.unread and Stop's scan waits on it instead of sending the WAV, #632's continued copy reads its row the same way, and every stop-audio decision logs what it tested. Build 272 sent Recording 370's whole 2.42 GB WAV five seconds after its copy's row said finished on the server. Gate on the Mac mini: red fails 5 of 6 new tests, green 95 of 95 in 6 suites, three runs.
+
+## 2026-11-05 21:45:26 EST — scribe `32ff3bb50a45290b7df398a2e44c1eadb9841714`, its changelog `b7420236ee24de15420c043ff772e7d0bde66b93`
+Fix (#1890): the Mac side of "the Mac offline is a state, not an error": the health watch no longer tells Michael the Mac mini is down when the laptop itself reached no host (the mini, the Cloudflare API and Instant all silent; it did at 19:24 EST with the lid closed), and the mirror appends one line per gap of over a minute between landed heartbeat writes to ~/Scribe/logs/mac-offline.jsonl, with why (asleep, the lid, failed writes, a stall). Node tests 70/70; installed on the Mac at 21:39. The phone side lands after its tests.
+
+## 2026-11-05 21:37:10 EST — scribe `7bab2142f8a1669ff0cd040ccccfaa994bfd9e43`
+Perf (#1422): a bench for the recording screen's child-store fan-out (Tests/RecordingListFeatureTests/RecordingChildStoreFanOutBench.swift) and the recording-screen audit's section 8 numbers: 11.11 us a child store an action (Mac mini, debug); by the bench and a device trace, the five always-live child stores cost 0.03-0.33% of a core, so the views stay as they are and TCA 2 (#1626) is the lever. Changelog 1e0dc5a24.
+
+## 2026-11-05 21:30:12 EST — scribe `ff3cf1d9c` (green) and `4ef37ed5f` (docs), landed by `7274207718982e4101bfdc7125dca2954cb11e40`; `8a8cb0877` landed by `55857b6f5`
+Tooling (#1646): agents check in with Michael in the thread where he asked: scribe commit requires --checkin (one plain sentence, at most 25 words, no issue numbers, hashes, paths or code) and posts it after the commit lands; scribe checkin posts one without a commit; the thread comes from the issue's newest mention (his lines' thread), else the thread one agent message names only that issue in, else the issue's own thread; one post per thread and agent every 5 minutes, the rest merged into one list, never dropped; scribe-hooks reminds an agent-run run quiet for 30 minutes and holds its end once. Installed 21:23; 6 agents checked in within 2 minutes, 5 in the thread on his own lines.
+
+## 2026-11-05 21:17:03 EST — scribe `79c2da6e3a561b86ad1d1cf13e202a9ee7a13c8c`
+Fix (#1847): the Watch shows a live recording whatever the speech check says, and the Watch's check ends within 5 s with Try Again (a late answer still lands, the newest check wins, leaving the screen ends the wait); the Mac's ready no longer waits for the stand-in engine's check.
+
+## 2026-11-05 21:12:59 EST — scribe `e3231c2f57dea80502de1fc561c5408755e30419` and `a15735e7e8e128c0b2171ecaba4b194e71bdb23c`, landed by `71a2f5fbec3d86532749f707aa0b62a0cb4bc0ed` and `fee64c0a7f4ae40af4f1cdc9886a0d5d567f7e84`
+Test (#1809): two RecordingAudioStreamTests that raced the take's forwarding task now build the earlier launch's unfinished copy themselves (segmenter and writer, forwarding awaited): anUnfinishedCopyInTheSpoolIsWaitedFor read the spool before the copy's first record was stored (.none for .encoding), and aCopyBegunBeforeTheAppClosedFinishesAtTheSweep's sweep found no copy begun and timed out at 30 s. Found by #632's post-landing check; on the Mac mini 4 of 10 suite runs failed before, 0 of 50 runs after. No source change.
+
+## 2026-11-05 21:01:06 EST — scribe `72e49b0e9b60dd03f4be83ba7f5cb7e873bbda13` and `bd7de0c960a29c81a330fc6beb1db9ee7a1e732b`
+Tooling (#1684): agent-run --xcode-mcp gives a UI agent Xcode's own MCP tools (xcrun mcpbridge, RenderPreview among them) and no other connector, kept on --resume; install.py installs xcode-mcp.json; AGENTS.md says how a UI agent renders a #Preview on My Mac. Xcode trusts Claude Code since 20:50; a probe preview rendered in 34 s for the whole call. Landed by merge bd7de0c96.
+
+## 2026-11-05 20:51:30 EST — scribe `e01c8a4104836b9df0e93a81e3bddce219b52ce0` and `b85102a1556ca82e3d7c1ed7867dc170fdc31903`
+Feature (#1726): an answer to a yes-or-no or agree-or-disagree question is stored as that measurement: asks.measure (yes, no, agree, disagree; indexed) beside his answer on the question's fixed form, the view kind agreeDisagree, an option's point and measureOf; the app's write, the door and the round keep it. Production schema and rules pushed first (drift 0); landed by merge b85102a15; ADR 0118 amendment.
+
 ## 2026-11-05 15:56:59 EST — scribe `fe6fe7f2d091963ae7361259219f2cb6ac1db596` and `599c318fdf365305df54c6e988e753d57e2c6143`
 Fix (#1129): pin instant-data-swift 1.9.75 (tag on 2eba5915) in Scribe's three packages and their Package.resolved, the installer's expected version and its tests (141 pass), and two docs; landed by merge 599c318fd. A prune batch now names and times the phase it holds Instant's gates for, and a batch held 1 s or more logs live-query-results.prune-batch-slow; the next cut (272) carries it.
 
