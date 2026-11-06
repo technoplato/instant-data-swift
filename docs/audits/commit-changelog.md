@@ -1,3 +1,6 @@
+## 2026-11-06 15:06:42 EST — instant-data-swift `e48ab65d` (red), `9d26d2ca` (green), docs `339ca746`, release `ae2c6b99f0337a2e2c0f2c8349f688f5d09e1899` (v1.9.79); its changelog landed by `1fd335e9`
+Feature (#696, criteria from #134): a held write (a retained mutation whose local cache effect is unknown) is verified against the rows the server's own answer carried, never this device's view of them, and settled only on that evidence: completed when the server holds every value it set (or a later accepted write of this device set it), discarded when it never left the device or the server refused it, otherwise kept held with the reason. Each settlement records its verification beside the kept row; the body is never touched. Upgrade guidance: docs/held-writes.md.
+
 ## 2026-11-06 14:39:01 EST — scribe `6b138f0e6eb1bad96fdcc5908983388f14c5f5b8`
 Fix (#1931): a paused recording's rows show in the order they happened (rows at one recording moment by the wall clock, then id), so a picture taken during a long pause lands at the bottom where he looks; the photo watcher's lines carry #1931 (what Photos added and where each went, the comparison fallback when PhotoKit cannot describe a change, waits over 5 s, drops, refusals); scripts/perf/paused_pictures.py reads a recording's pauses (Recording 384: 4 placed, 4 on the Mac 8 to 35 s later).
 
