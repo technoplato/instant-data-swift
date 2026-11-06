@@ -1,3 +1,6 @@
+## 2026-11-06 18:55:49 EST — scribe `167bc8c820a2844d780b954e9be5bdd2fde4c066`
+Fix (#1954, #1921): the install watch reads a device again when another install took its lock, so an older build a release run left on a device in reach (289 over 291 on his iPad, 2026-11-06 16:11) is put right the next minute; the device lock file keeps the last holder's words. Reinstalled as LaunchAgent com.scribe.install-watch from this commit.
+
 ## 2026-11-06 18:52:23 EST — scribe `cc0c2fb5eef3ffe956a82a70d20bea2a4be7f9cd`
 Docs (#1954): docs/install-watch.md (what the install watch does, where to look, rolling back by writing withdrawn in each newer kept build's folder, what is measured and what is not); the scribe-builds skill's 2-minute iPhone retry is now the watch's, for every device; the change log and progress entry.
 
