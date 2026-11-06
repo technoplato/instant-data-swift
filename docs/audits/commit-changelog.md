@@ -1,3 +1,6 @@
+## 2026-11-06 06:13:39 EST — scribe `5643c95ac1527332673583dc8fee621403bbb947`
+Fix (#1380): a launch iOS makes in the background with a take still capturing (an install on the locked phone, a background task) says at once that the mic waits for Scribe: the Live Activity keeps the take with an alert and the outage notification goes out once, under a background task (at once when locked, else after 5 s behind); AppFeature shows the same wait until the restore continues the take; a second background launch alerts nothing new.
+
 ## 2026-11-06 06:01:40 EST — scribe `79d0abb1c5bc602615505538515aa51c8df41068` (red `b496e942e`, green `630c2be71`, red `8d2e576ce`, green `92122314b`, red `f60defe11`, green `7320a2624`, green `11e79462e`), its changelog landed by `2aff1e850ee3fda4a316d81b28598742560d72e5`
 Feature (#1899): `scribe wallet import` takes a Solana private key from the Mac clipboard into the login keychain (halves checked, cleared after, address printed only); the CLI signs on mainnet under SendAuthorization.terminal after printing what it is about to sign, `--from` names the paying key; Scribe records a copied private key or recovery phrase as a note, never the secret. Tests 61/61, 89/89, 42/42, 7/7, 9/9.
 
