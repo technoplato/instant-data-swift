@@ -1,3 +1,16 @@
+## 2026-11-06 16:38:51 EST — held-writes-696 (#696): v1.9.79 in the consuming app, its end-to-end gate, #696 at 7 of 8
+
+- **Landed in the consuming app:** its pin of 1.9.79 (`a1ed2555b`, the ten pin files; changelog `7318751e5`). No build was
+  cut for it: nothing visible changes, and the next cut carries it.
+- **Checked:** its Sync view tests pass on 1.9.79 (20); one navigation test fails the same way on 1.9.78 (its #1310).
+  #134's gate: deliverability PASS in all 5 runs; the 200 ms latency target fails on 1.9.78 and 1.9.79 alike (1.9.79 p95
+  1,661 / 449 / 463 ms, 1.9.78 885 / 743 ms; the network alone reached p95 351 ms). The library benchmarks exit 0.
+- **#696:** criteria 1-5, 7 and 8 met with evidence on the issue; 6 recorded as not meetable as worded (its 34 rows are
+  gone: the harness store holds 0 outbox rows since 2026-08-14). Filed #1948 (main's RealSizeFixtureSmokeTests failure)
+  and #1949 (the check-in tool crashes on a typed-chat mention).
+- **Next (resume here):** none for this run. The consuming app's held writes stay held until its owner decides; a verify
+  would answer not applied (refused 400) for each of the five on the device.
+
 ## 2026-11-06 15:05:05 EST — held-writes-696 (#696): v1.9.79, a held write is verified on the server, then completed or discarded
 
 - **Why:** since 1.9.10 launch holds each retained mutation whose local cache effect is unknown, and nothing settled
