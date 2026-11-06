@@ -1,3 +1,6 @@
+## 2026-11-06 03:24:16 EST — scribe `8cd5a80485a74aab4337b47f9bf797779704c754` and `74f8ec2c38dd89b404b8410066fcbb8c8b96cd04`
+Batches 4 and 5 (#1393: #1689 #1758 #1718 #1790 #1742 #1780 #1719 #1672 #1791 #1687) and the pause marks (#1807, P0): Catch Up asks his questions first, wallet transactions open, panels resize by hand, question drafts show in full, sideways frames show whole, agent pictures join Photos, a broadcast's ended row plays its recording; each pause shows in Lines and Playback as Paused and Resumed rows derived from its gap. Checked on the mini together (failures match main's). Landed by merges 8cd5a8048 and 74f8ec2c3.
+
 ## 2026-11-06 03:05:17 EST — scribe `b9958eab8ddeac4b2bdf767e24826d5e3621cd1c` and `08b17d1e2c483bda27df87953e656e88429850be`
 One Playground (#1673, #1642, P0): the drawer's Playground is the one home; Settings' ten labs join it (PlaygroundLab), its first screen lists what is being tried now above what is built, each lab one tap away, and Settings' row, "open playground" and scribe-shared://settings/playground open it. Green on the mini (the Playground's suites; seven AppFeature tests fail on main as well). Landed by merge 08b17d1e2.
 
