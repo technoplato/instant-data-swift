@@ -1,3 +1,6 @@
+## 2026-11-06 03:49:32 EST — scribe `2ab915ae38cf0b341de4018ff02deecd768b3d12` (merge of red 39f113f68, green dcafc0d90, red 50a2de69e, green 02a6a5643, fix ed85d7d21, docs 13e41baf8, cut f2411a509)
+Feature (#1183): the Voices choice holds from the moment it changes, mid-recording: the voice gate reads the account's choice at every microphone buffer (pulled by the capture's own loop, #488), the system-audio lane never starts under Only Me and follows a change, the paused microphone reads it too; ADR 0097 amendment B; cut Scribe 0.1 (279).
+
 ## 2026-11-06 03:43:17 EST — scribe `e377c8238` (red), `10173297f` (green) and `f4256c665` (docs), landed by `dbf4891361f039e570b7f5a255b73eaae5524b90`; its changelog landed by `56b343827`
 Tooling (#1903, #1849): the agents-guide installer installs only origin/main's guide. It fetches, fast-forwards the live tree (~/Sync/worktrees/skills-live), copies origin/main's committed files, links every harness's guide skills into the live tree, and refuses before any change a source behind origin/main, dirty in what it installs or holding unlanded changes; its old default, the shared checkout, was 1,444 commits behind and would have rolled every agent's guide back.
 
