@@ -1,3 +1,6 @@
+## 2026-11-06 14:13:01 EST — scribe `26c61a7c671a82f0148e424749e55789e93ed526`
+Fix (#1607): a recording's whole chapter pass counts chapters where the talk changes, in a short recording too (rule 3's usual number an hour is not a target): Recording 387 (7.5 minutes) got 1-2 chapters from the first new whole pass where the old made 3, now 3 in each of three dry runs, and Recordings 348 and 344 keep 16 and 8; reinstalled on the laptop 14:12; the first live recording under the new writer (388, 28 s) got no live chapter.
+
 ## 2026-11-06 13:55:40 EST — scribe `b74cdccc76a775ea6df66233f30e49e789cc7217`
 Fix (#1927): the current recording bar on every thread and every other sheet a recording, its playback or the root opens (one covering placement in Styleguide, the list hands its bar down, each sheet lays it with one modifier, a test fails for a sheet without it); Jump back closes the sheets in front.
 
