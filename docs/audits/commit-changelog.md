@@ -1,3 +1,6 @@
+## 2026-11-05 21:12:59 EST — scribe `e3231c2f57dea80502de1fc561c5408755e30419` and `a15735e7e8e128c0b2171ecaba4b194e71bdb23c`, landed by `71a2f5fbec3d86532749f707aa0b62a0cb4bc0ed` and `fee64c0a7f4ae40af4f1cdc9886a0d5d567f7e84`
+Test (#1809): two RecordingAudioStreamTests that raced the take's forwarding task now build the earlier launch's unfinished copy themselves (segmenter and writer, forwarding awaited): anUnfinishedCopyInTheSpoolIsWaitedFor read the spool before the copy's first record was stored (.none for .encoding), and aCopyBegunBeforeTheAppClosedFinishesAtTheSweep's sweep found no copy begun and timed out at 30 s. Found by #632's post-landing check; on the Mac mini 4 of 10 suite runs failed before, 0 of 50 runs after. No source change.
+
 ## 2026-11-05 21:01:06 EST — scribe `72e49b0e9b60dd03f4be83ba7f5cb7e873bbda13` and `bd7de0c960a29c81a330fc6beb1db9ee7a1e732b`
 Tooling (#1684): agent-run --xcode-mcp gives a UI agent Xcode's own MCP tools (xcrun mcpbridge, RenderPreview among them) and no other connector, kept on --resume; install.py installs xcode-mcp.json; AGENTS.md says how a UI agent renders a #Preview on My Mac. Xcode trusts Claude Code since 20:50; a probe preview rendered in 34 s for the whole call. Landed by merge bd7de0c96.
 
