@@ -1,3 +1,6 @@
+## 2026-11-05 21:37:10 EST — scribe `7bab2142f8a1669ff0cd040ccccfaa994bfd9e43`
+Perf (#1422): a bench for the recording screen's child-store fan-out (Tests/RecordingListFeatureTests/RecordingChildStoreFanOutBench.swift) and the recording-screen audit's section 8 numbers: 11.11 us a child store an action (Mac mini, debug); by the bench and a device trace, the five always-live child stores cost 0.03-0.33% of a core, so the views stay as they are and TCA 2 (#1626) is the lever. Changelog 1e0dc5a24.
+
 ## 2026-11-05 21:30:12 EST — scribe `ff3cf1d9c` (green) and `4ef37ed5f` (docs), landed by `7274207718982e4101bfdc7125dca2954cb11e40`; `8a8cb0877` landed by `55857b6f5`
 Tooling (#1646): agents check in with Michael in the thread where he asked: scribe commit requires --checkin (one plain sentence, at most 25 words, no issue numbers, hashes, paths or code) and posts it after the commit lands; scribe checkin posts one without a commit; the thread comes from the issue's newest mention (his lines' thread), else the thread one agent message names only that issue in, else the issue's own thread; one post per thread and agent every 5 minutes, the rest merged into one list, never dropped; scribe-hooks reminds an agent-run run quiet for 30 minutes and holds its end once. Installed 21:23; 6 agents checked in within 2 minutes, 5 in the thread on his own lines.
 
