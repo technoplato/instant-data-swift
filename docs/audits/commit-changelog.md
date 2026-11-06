@@ -1,3 +1,6 @@
+## 2026-11-06 08:37:48 EST — scribe `6f65c21236b5ee661a7782ee4d3c216d5f7dbd2c`
+Test (#1726): a measured answer end to end through the real Instant client and rules on the throwaway app bd40c50a (DecisionsLiveTests): the phone's tap on Agree reaches the Mac as agree, a changed mind to Disagree moves it, his own words alone clear it (the library's nil clears the attribute on the server), and a Yes keeps the yes-or-no scale's point; 2 of 2 passed on the mini (3.079 s and 11.313 s). Test only.
+
 ## 2026-11-06 08:19:33 EST — scribe `b4018ed42ffdd3568780eb03c2ae820ec25fbe79` and `cfa5d40e7f192c6bd8d0f2c1515f6f0a8f6d956d`
 Xcode previews for every UI module (#1684: a library product per module, AGENTS.md preview steps; a real screen renders in 17-20 s after an edit) and the pause rows' laptop pictures (#1807).
 
