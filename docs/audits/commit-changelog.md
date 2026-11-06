@@ -1,3 +1,6 @@
+## 2026-11-05 21:30:12 EST — scribe `ff3cf1d9c` (green) and `4ef37ed5f` (docs), landed by `7274207718982e4101bfdc7125dca2954cb11e40`; `8a8cb0877` landed by `55857b6f5`
+Tooling (#1646): agents check in with Michael in the thread where he asked: scribe commit requires --checkin (one plain sentence, at most 25 words, no issue numbers, hashes, paths or code) and posts it after the commit lands; scribe checkin posts one without a commit; the thread comes from the issue's newest mention (his lines' thread), else the thread one agent message names only that issue in, else the issue's own thread; one post per thread and agent every 5 minutes, the rest merged into one list, never dropped; scribe-hooks reminds an agent-run run quiet for 30 minutes and holds its end once. Installed 21:23; 6 agents checked in within 2 minutes, 5 in the thread on his own lines.
+
 ## 2026-11-05 21:17:03 EST — scribe `79c2da6e3a561b86ad1d1cf13e202a9ee7a13c8c`
 Fix (#1847): the Watch shows a live recording whatever the speech check says, and the Watch's check ends within 5 s with Try Again (a late answer still lands, the newest check wins, leaving the screen ends the wait); the Mac's ready no longer waits for the stand-in engine's check.
 
