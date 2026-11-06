@@ -1,3 +1,6 @@
+## 2026-11-05 21:45:26 EST — scribe `32ff3bb50a45290b7df398a2e44c1eadb9841714`, its changelog `b7420236ee24de15420c043ff772e7d0bde66b93`
+Fix (#1890): the Mac side of "the Mac offline is a state, not an error": the health watch no longer tells Michael the Mac mini is down when the laptop itself reached no host (the mini, the Cloudflare API and Instant all silent; it did at 19:24 EST with the lid closed), and the mirror appends one line per gap of over a minute between landed heartbeat writes to ~/Scribe/logs/mac-offline.jsonl, with why (asleep, the lid, failed writes, a stall). Node tests 70/70; installed on the Mac at 21:39. The phone side lands after its tests.
+
 ## 2026-11-05 21:37:10 EST — scribe `7bab2142f8a1669ff0cd040ccccfaa994bfd9e43`
 Perf (#1422): a bench for the recording screen's child-store fan-out (Tests/RecordingListFeatureTests/RecordingChildStoreFanOutBench.swift) and the recording-screen audit's section 8 numbers: 11.11 us a child store an action (Mac mini, debug); by the bench and a device trace, the five always-live child stores cost 0.03-0.33% of a core, so the views stay as they are and TCA 2 (#1626) is the lever. Changelog 1e0dc5a24.
 
