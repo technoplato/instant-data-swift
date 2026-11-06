@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 6th, 2026 at 9:55:07 a.m. EST — `5645a2ecec59` green(#1916): a long progressive media stream lists from its last rows read by id, and a break is found by splitting
+
+- **Implementation commit:** `5645a2ecec59198bbcaa24312a4afbd722c8c4e8`
+- **Change:** A long progressive media stream lists from its last rows, read by id, and a break is found by splitting (#1916; released as v1.9.77)
+- **Details:**
+  - InstantProgressiveMediaListing (pure): a stream longer than 64 segments lists from its last 64 rows; a stretch on its grid (ends n segments and n * segmentSeconds apart within 0.25 s) is placed by arithmetic, one off it is split 16 ways, a short one read whole. Source.segmentsAt (rows at indexes; .live by derived ids; the three-argument init reads runs as pages). Red b04dd179, green 5645a2ec, ADR 0021 amendment 215a0f87, landed by 56f92176; release 7da79e35 (tag v1.9.77) landed by 0dad696c. Mac mini jobs 1916-lib-red and 1916-lib-green as in docs/releases/v1.9.77.md.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaReader.swift` — the listing and segmentsAt
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaReaderTests.swift` — the listing's tests
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — Claude Code headless session 3f013ca8-4fa5-470e-959b-47cf9a727907; no SpecStory capture for headless runs
+
 ## November 6th, 2026 at 1:42:57 a.m. EST — `0d89c1448f76` test(#653 #1513): the commit still publishes the ready window: a date order is left to a refresh (corrects ae138f67)
 
 - **Implementation commit:** `0d89c1448f764c0e63de39779e40a8b24eae8483`
