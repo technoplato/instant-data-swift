@@ -1,3 +1,6 @@
+## 2026-11-06 07:11:02 EST — scribe `67c56465ac8cd66d78f70350dbdc019d94bf940b` and `0208edf303866d7d538ddcd13118668b6f998ed8`
+The calendar of recordings opens from Calendar beside Recording Map (#1908, slice 1b), and the logger's Instant lane is its own target, so 21 modules that only log stop building the Instant library (#1393, his "SPM modularization for quicker build times"). Both checked on the mini.
+
 ## 2026-11-06 07:04:02 EST — scribe `b0eae999580254e47d7883ab1170873549c53dbe`
 Feature (#1898): a spoken send's recipient that names no speaker whole is read by the voice model against the people he can pay (only a reply made wholly of listed names counts), and the send always asks aloud (ADR 0113 amendment J); the voice-command audit measured 276 of 424 ordinary phrasings for the 53 voice commands on the on-device model, and found that all 82 of his speakers' names made it refuse the question as an unsupported language.
 
