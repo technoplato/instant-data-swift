@@ -1,3 +1,9 @@
+## 2026-11-06 18:52:23 EST — scribe `cc0c2fb5eef3ffe956a82a70d20bea2a4be7f9cd`
+Docs (#1954): docs/install-watch.md (what the install watch does, where to look, rolling back by writing withdrawn in each newer kept build's folder, what is measured and what is not); the scribe-builds skill's 2-minute iPhone retry is now the watch's, for every device; the change log and progress entry.
+
+## 2026-11-06 18:42:55 EST — scribe `013bc89043fedfe0587fd3b27726e62dcdc7ca37`
+Feature (#1954): the install watch (scripts/install-watch, LaunchAgent com.scribe.install-watch, one pass a minute) puts the newest kept production build on each of his devices the moment it is back, iPhone first between the heads-up notices, never older over newer (#1921), never Debug; builds 286-292 never reached his iPhone because each release tried it once while he was away. install_target now holds a per-device install lock shared by every release run and the watch.
+
 ## 2026-11-06 18:48:35 EST — scribe `7aacb0efcbfa97ddd7fd174d78a9c92c1060758f`
 Fix (#1955): at his Stop a thread's waiting agent posts go as one card in one write (the first answer's id and quote, every answer whole and in order under its time and author, the later ids in its tag so they still resolve), oldest thread first, and the waiting notices as one notice; one answer in a thread goes as before (green aaf75440a, ADR 0137 section 6). The real queue of 34 waiting during Recording 389 replays as 8 cards and 1 notice, not 27 and 7; the mirror is installed from it.
 
