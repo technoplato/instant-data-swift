@@ -1,3 +1,15 @@
+## 2026-11-06 14:24:14 EST — scribe `db846c75e00e3e3a8a52cf05b833af8dc35cbf02`
+Cut (#1803): Scribe 0.1 (289) from main after the Watch cut; CURRENT_PROJECT_VERSION 288 to 289 and build 289's plain block. 289 reached the iPad only; 291, cut after it, was distributed by App Store Connect at 72.64 MB on Apple's figure.
+
+## 2026-11-06 14:21:54 EST — scribe `1307e03805d2f9c236aeafabc4e7faf992d73e04`
+Fix (#1803): the Watch app leaves out the language-model adapters and the design playground it never ran (2.1 MB: AnyLanguageModel, JSONSchema, EventSource and the playground's pictures), and an upload stops at 287's 75,184,353 bytes on Apple's figure, the smallest size App Store Connect refused (ITMS-90389).
+
+## 2026-11-06 12:41:15 EST — scribe `6fa8b987152b8bc18a7101e85fd1128509e1502c`
+Fix (#1803): an upload stops only at a size Apple refused on its own figure; Apple distributed 286 at 75,018,081 bytes, so a first line at 75,000,000 was taken back before any upload used it.
+
+## 2026-11-06 12:28:26 EST — scribe `f3d3c3e4f2a628279175df285fc84940a624c1f8`
+Fix (#1803): every TestFlight upload measures the Watch app with Apple's own ipatool (the largest thinned variant, the figure App Store Connect reads) before anything leaves the Mac; our old count read 533,516 bytes high (the universal asset catalog).
+
 ## 2026-11-06 14:33:43 EST — scribe `f4db33d59fe974192967b6c4f52d9021c6de6f27`
 Cut (#496): Scribe 0.1 (290) from main: every agent row the app saves names its owner (the stamp the owner-scoped rules need on every device); CURRENT_PROJECT_VERSION 289 to 290 and build 290's plain block.
 
