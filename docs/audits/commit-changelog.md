@@ -1,3 +1,6 @@
+## 2026-11-06 10:17:32 EST — scribe `31008edbc4b56efa89db1d3ee484cf7ddf97ec2d`
+Fix (#1920): an amount typed with a decimal comma ("0,001") is refused instead of read as en-US grouping, which sent a thousand times the amount meant, in the app, the terminal and by voice; and (#1899) a Solana private key or BIP39 phrase inside a longer copied text is removed from what the clipboard capture records, the rule the agent-chat uploader already follows.
+
 ## 2026-11-06 10:00:56 EST — scribe `509f23fd8` (red), `af991f2cf` (green), docs `7798bb41f`, landed by `d5b8ff1fef6ebdc817bdda04555dd18542a9a0c3`; its changelog landed by `7b1937a84`
 Feature (#1925): an agent's check-in tells a piece of work's story once, at the top of its thread (the quoted request with its link, what the agent took it to mean, the fix, the issue it is recorded as), and each later card there says only the work's name, linked to that card by an app link that draws no preview box, then what is done and what is left. What the thread already shows is read from the mirror's thread file, so a story not shown, or one that changed, is told again in full. Before: 56.1% of check-in characters in 25 threads repeated a line already in the thread. The agents guide (rule 4a, the core template, the listener's cards) and FEATURES.md item 43 say the same.
 
