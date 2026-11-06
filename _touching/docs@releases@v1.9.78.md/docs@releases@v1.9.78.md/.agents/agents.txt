@@ -1,0 +1,1 @@
+claude-code/mac-longplay-1916@al 2026-11-06T10:38:49-0500 fixer plan=2026-11-06-mac-longplay-1916 amendment 1 #1916 (v1.9.78 release record)
