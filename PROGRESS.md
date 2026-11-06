@@ -1,3 +1,18 @@
+## 2026-11-06 15:05:05 EST — held-writes-696 (#696): v1.9.79, a held write is verified on the server, then completed or discarded
+
+- **Why:** since 1.9.10 launch holds each retained mutation whose local cache effect is unknown, and nothing settled
+  one; #134's first criterion asked for a public recovery API that verifies the server's effect, then completes or
+  discards it, without guessing at the local cache.
+- **Landed:** plan `d10ef270` (amendment `9ee4d389`), red `e48ab65d`, green `9d26d2ca`, upgrade guide `339ca746`
+  (`docs/held-writes.md`).
+- **Checked:** Mac mini jobs `696-red-mini` (9 of the 10 fault tests fail against seams), `696-green` (23 tests in 3
+  suites pass) and `696-bundle` (1,756 tests; the 2 unlisted failures are not this change's: one fails the same at
+  `v1.9.78`, filed #1948, one is a CPU ratio that passes alone).
+- **Released:** v1.9.79 (`docs/releases/v1.9.79.md`).
+- **Next (resume here):** pin 1.9.79 in the consuming app (its ten pin files; model its `096240402`), cut and install a
+  build, run its end-to-end gate (`zsh scripts/e2e-sync/gate.sh`), and tick #696's criteria with evidence (criterion 6
+  is recorded as not meetable as worded: its 34 rows are gone).
+
 ## 2026-11-06 10:58:22 EST — mac-longplay-1916 (#1916): v1.9.78, a player opening a progressive media stream waits for two reads in a row
 
 - **Why:** with 1.9.77 a player still made five reads in a row before it was ready, and on a consuming app's busy
