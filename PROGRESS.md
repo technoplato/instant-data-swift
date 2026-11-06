@@ -1,3 +1,15 @@
+## 2026-11-06 09:20:03 EST — mac-longplay-1916 (#1916): v1.9.77, a long progressive media stream lists from its last rows, read by id
+
+- **Why:** the reader read every segment row, 500 a page and one page after another, before a player had a playlist; a
+  consuming app could not play streams of 81 minutes and longer while a large transcript loaded (AVFoundation gave up
+  after 20 s on every retry).
+- **Landed:** red `b04dd179`, green `5645a2ec`, ADR 0021 amendment `215a0f87`; landed by merge `56f92176`.
+- **Checked:** Mac mini jobs `1916-lib-red` (6 of 7 new tests fail as written) and `1916-lib-green` (39 tests in 3
+  suites and 5 in 2 pass). Server timings and the 221-stream census in `docs/releases/v1.9.77.md`.
+- **Released:** v1.9.77 (`docs/releases/v1.9.77.md`).
+- **Next (resume here):** pin 1.9.77 in the consuming app (its ten pin files; model: its `ea75c0dfe`), build and install
+  it on the Mac and measure time to first sound for 16-minute, 81-minute and 3-hour streams (#1916).
+
 ## 2026-11-06 01:45:19 EST — perf-send-2 (#653, #1517, #1523): v1.9.76, a write its own save claims is measured by the body the save encoded
 
 - **Why:** since 1.9.69 a live write is claimed by its own save, and the claim then encoded the write once more to
