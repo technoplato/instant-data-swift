@@ -1,3 +1,6 @@
+## 2026-11-05 22:05:33 EST — scribe `987a1ff2e`, `95a097541` and `e4c0dd9ac` (green), landed by `f952771ffe270f6f39dddd14252760b420c92fdb`; its changelog landed by `ae378a74b`
+Feature (#1727): a post on his line goes into the thread it belongs to: the thread the agent names, the thread his line is in, the chat open in front when he said it, or the one the cheap model reads as the same subject, else a new one, saying why (ADR 0131); the app's answer cards lead with his lines since the thread's answer before it; five recordings replayed with the real model went from 209 threads to 106 (audits/2026-11-05-threads-weave-1727.md).
+
 ## 2026-11-05 22:04:06 EST — scribe `2a14aea63` landed by `75186433d`; `3fdc33c42` and `4bc2ea96d` landed by `07902ec5b`
 Tooling (#1646): a check-in sender whose folder is gone still posts (senders run in the home folder; an exit 1 is a refusal only with the mirror's answer), after two waiting check-ins were wrongly filed as refusals when their agents removed throwaway worktrees (both resent and delivered); and agent-progress-check shows each agent's last check-in for Michael and flags 30 minutes without one on every harness (scribe-f3's go at 21:49): 16 running agents read at 22:02, no check-in gaps.
 
