@@ -1,3 +1,6 @@
+## 2026-11-06 08:19:33 EST — scribe `b4018ed42ffdd3568780eb03c2ae820ec25fbe79` and `cfa5d40e7f192c6bd8d0f2c1515f6f0a8f6d956d`
+Xcode previews for every UI module (#1684: a library product per module, AGENTS.md preview steps; a real screen renders in 17-20 s after an edit) and the pause rows' laptop pictures (#1807).
+
 ## 2026-11-06 07:11:02 EST — scribe `67c56465ac8cd66d78f70350dbdc019d94bf940b` and `0208edf303866d7d538ddcd13118668b6f998ed8`
 The calendar of recordings opens from Calendar beside Recording Map (#1908, slice 1b), and the logger's Instant lane is its own target, so 21 modules that only log stop building the Instant library (#1393, his "SPM modularization for quicker build times"). Both checked on the mini.
 
