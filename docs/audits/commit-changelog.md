@@ -1,3 +1,6 @@
+## 2026-11-06 10:25:31 EST — scribe `40511255a2646bd1804ac472b90ae49586900bbd`
+Fix (#1917): Stop seals the words of every final line, never fewer than the running count, on the recording and its transcription, and a gap fill's last line after Stop seals again (Recording 370's row said 552 of its 30,059 words: its take restarted its tally at zero on a relaunch); every recording's stored count was recounted from production and the short ones raised (231 rows for 210 recordings; none of 885 short after).
+
 ## 2026-11-06 10:17:32 EST — scribe `31008edbc4b56efa89db1d3ee484cf7ddf97ec2d`
 Fix (#1920): an amount typed with a decimal comma ("0,001") is refused instead of read as en-US grouping, which sent a thousand times the amount meant, in the app, the terminal and by voice; and (#1899) a Solana private key or BIP39 phrase inside a longer copied text is removed from what the clipboard capture records, the rule the agent-chat uploader already follows.
 
