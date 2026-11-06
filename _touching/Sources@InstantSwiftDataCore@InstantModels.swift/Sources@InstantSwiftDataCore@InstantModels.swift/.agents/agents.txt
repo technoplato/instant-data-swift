@@ -9,4 +9,3 @@ claude-opus-5.5-library-79 2026-10-03T12:48:24-04:00 mower plan=2026-10-02-libra
 claude-code/perf-send-1492@ld 2026-10-31T12:26:11-0400 mower plan=2026-10-31-perf-send-1492 #1497 (optimisticEffectReceiptFingerprint only)
 claude-code/perf-gate-1491@ld 2026-10-31T12:49:35-0400 mower plan=2026-10-31-perf-gate-1491 amendment 1 #1491 (instantSHA256HexDigest only)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
-claude-code/held-writes-696@al 2026-11-06T14:24:12-0500 grower plan=2026-11-06-held-writes-696 amendment 1 #696 (InstantSlotCoverage and its two enums gain Codable, declarations only)

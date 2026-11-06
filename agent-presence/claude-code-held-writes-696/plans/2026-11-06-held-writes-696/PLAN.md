@@ -72,3 +72,12 @@ agent-presence/_channels/2026-11-06-held-writes-696.md.
 A completion or discard records its verification beside the kept row, as JSON; the verification's slots are
 `InstantSlotCoverage` (#445), so that struct and its `Operation` and `Coverage` enums gain `Codable` (synthesized,
 additive, declarations only). Touching adds Sources/InstantSwiftDataCore/InstantModels.swift.
+
+## Outcome (2026-11-06T16:13:55-0500)
+
+Landed on main: red `e48ab65d`, green `9d26d2ca`, guide `339ca746`, release `ae2c6b99` (tag v1.9.79), changelog
+`1fd335e9`, ledgers `26431e1c` and `eee3ea19`. Mac mini: red 9 of 10 fault tests fail; green 23 tests in 3 suites
+pass; the whole bundle 1,756 tests, its two unlisted failures not this change's (#1948 fails the same at v1.9.78; a CPU
+ratio passes alone). The consuming app pins 1.9.79 (its `a1ed2555b`); no separate build was cut for an invisible pin,
+the next cut carries it. #696: criteria 1-5, 7 and 8 met; 6 recorded as not meetable as worded (its 34 rows are gone).
+Claims released.
