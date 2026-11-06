@@ -1,3 +1,6 @@
+## 2026-11-06 16:38:49 EST — scribe `4a2c93bb2e436f5a5aa780405aac3adda0b8089c`
+Feature (#1946): scribe watch recording [N|id]: how a Watch recording ran against real time, from this Mac's own copies: the last line, every stretch where its clock stood still (the capture gap and the minute samples), its cause, Scribe behind and suspended, the microphone restarts and their refusals, the audio a stop holds, the phone and server links, late deliveries, speech outages (Recording 389: 14:46:02-15:18:46, another session took the Watch's microphone while Scribe was behind; nothing was recorded).
+
 ## 2026-11-06 14:24:14 EST — scribe `db846c75e00e3e3a8a52cf05b833af8dc35cbf02`
 Cut (#1803): Scribe 0.1 (289) from main after the Watch cut; CURRENT_PROJECT_VERSION 288 to 289 and build 289's plain block. 289 reached the iPad only; 291, cut after it, was distributed by App Store Connect at 72.64 MB on Apple's figure.
 
