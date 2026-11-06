@@ -1,3 +1,6 @@
+## 2026-11-06 05:49:20 EST — scribe `cbe78f6dfc9cad219dae5d9f36a7aaf04742ae7c`
+Fix (#1907, #1865): the share scrubber hides only what is private: every app's rows through the text pass with only the found words filled, small pictures, maps, codes and faces whole, no capitalized-word guess, no times or dates; on his 22 uploaded broadcasts 4.2% -> 74.5% of the pictures' text readable; a fixed must-redact set of fake identities passes (recall 100% in every medium, 98.7% of mundane words kept); clips read their audio in one query per stretch and wait out Instant's rate limit.
+
 ## 2026-11-06 05:29:53 EST — scribe `8e4124ddf7a04f86d6ac6c145a71633da7dcb605`
 Fix (#1309): a launch's timeline line ends when the recordings list's first page has come, so a launch with nothing to restore says when its list came (diagnostics only).
 
