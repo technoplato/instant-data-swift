@@ -1,3 +1,25 @@
+## 2026-11-06 01:45:19 EST — perf-send-2 (#653, #1517, #1523): v1.9.76, a write its own save claims is measured by the body the save encoded
+
+- **Why:** since 1.9.69 a live write is claimed by its own save, and the claim then encoded the write once more to
+  measure its projected body, which for a write claimed at its save is the write itself (27 of the claim at save's 100
+  samples in job B's profile, 2026-11-04).
+- **Landed:** red `b3b819b4`, green `26943d43` (#1517); tests `9b792550`, `a5c21032`, `e153cf39` (#1523),
+  `9930850a` (#1648), `ae138f67` corrected by `0d89c144` (#1513's page windows); landed by merge `20a076bd` (main at
+  `6088df07`, ledger lines only since v1.9.75, into the lane); ledger `fc5e04ee`.
+- **Checked:** job H (`653-h-land-check`, Mac mini, 2026-11-05 23:06-23:36; outputs
+  `~/Sync/audit/perf-send-1797/jobs/out-653-h/`): the whole debug bundle at `0d89c144`, 1,737 tests, fails only the
+  listed actor-hop pin and the frame decoder's speed ratio (0.3346 vs 0.33; main's since 1.9.64-1.9.67, failing the same
+  way in three runs on 2026-11-05 without this lane). Release A/B v1.9.75 vs the lane head: save + claim 3,922.7 ->
+  3,042.1 us a write (-22.4%), write side -18.8%, every metered op -4.8%; the profile's save 250 -> 219 samples (-12.4%),
+  so the saving is nearer job F's -10.2% (inference); WAL frames per step unchanged.
+- **Released:** v1.9.76 (`docs/releases/v1.9.76.md`).
+- **Next (resume here):** pin 1.9.76 in Scribe: `~/Sync/audit/perf-send-1797/scripts/pin-scribe.sh` on branch
+  `agent/claude/perf-send-2-pin-273` in `~/Sync/worktrees/perf-send-2-scribe` (the ten pin files; Scribe `85db0434b`
+  is the model), cut the next free build and install it (skill scribe-builds); an hour of recording on it, then
+  `device-lab.py ledger` and `ledger_disk.py` against `phone/before-1815-*.txt`, on #653 with one line on #1797.
+  Then #1254 on `agent/claude/perf-send-1797-next` (worktree `~/Sync/worktrees/perf-send-1797-next`; job
+  `1254-a-wip-bundle` ran 2026-11-05 23:57-00:09, its outputs at that worktree's root).
+
 ## 2026-11-05 15:51:56 EST — perf-sync-2 (#1129): v1.9.75, a prune batch names and times its phases
 
 - **Why:** on 2026-11-04 a Mac's cadence prune held the server-apply gate 4.5-13.1 s per batch at 1,000 facts (the
