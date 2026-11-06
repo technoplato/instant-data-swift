@@ -20506,15 +20506,13 @@ struct InstantStoreTests {
     )
     let committed = await store.commitAndPublish(prepared)
 
-    let publishedWindows = committed.result.emissions
-      .map { $0.values.map(\.id) }
-      .sorted { $0.joined(separator: "|") < $1.joined(separator: "|") }
-    expectNoDifference(publishedWindows, [[], ["todo-2"]])
-
-    // The optimistic todo sorts before both windows, so neither observer's result changed: the waiting window still
-    // shows nothing and the ready one still shows todo-2 between its cursors, as the commit's emissions above say. An
-    // observer is not handed a result equal to the one it was last handed (#653), so the two streams, which this test
-    // used to read again, hold no new emission: each observer was handed only its first result.
+    // The optimistic todo sorts before both windows: the waiting window shows no row until the server answers and the
+    // ready one only todo-2, between the server's cursors. A change outside a page's server-bounded rows both before and
+    // after it cannot change the page, so the commit publishes neither (#1513, 9fc6eff8; #540's behavior). Until then
+    // the commit published both unchanged windows and this test expected that. An observer is not handed a result equal
+    // to the one it was last handed (#653), so each observer was handed only its first result.
+    let publishedWindows = committed.result.emissions.map { $0.values.map(\.id) }
+    expectNoDifference(publishedWindows, [])
     let handed = await store.observerYieldCountsForTesting()[plan.id]
     expectNoDifference(handed, 2)
   }
