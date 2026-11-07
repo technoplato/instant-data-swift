@@ -1,3 +1,6 @@
+## 2026-11-07 04:50:00 EST — scribe `3cf6d7564` (red), `da0c73636` (green), `0e8181959` (docs), landed by `db23add1998e03949fa2ad2eca2535b194d5f36f` with its changelog `9b607c487`
+Feature (#1990, #1176, #1905): scribe qa add and link keep a question Michael typed in the Claude chat: each passage copied from the session's own file through the decision add --typed gate, the question and each passage named by his words so one message's questions are rows of their own, printed with its claude-code link in qa list and show, and read again by qa check. No schema change (sourceMoments already held typed moments under questions).
+
 ## 2026-11-07 04:48:54 EST — scribe `979bb4377acc5e299c235a75cd70e1c118f98586`
 Fix (#1310): two RecordingList owner tests expect the word count the app keeps, one per recognized word (RecordingList 13 to 11 on the mini), with #1310's change log and progress entry.
 
