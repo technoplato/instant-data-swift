@@ -101,7 +101,7 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 | [F62](#f62) | Keep per-write counters out of a shared key-value page | #1245, #1254 | none yet |
 | [F63](#f63) | Write only the fields that changed, and keep partial writes collapsible | #1245, #1253, #1255 | none yet |
 | [F64](#f64) | Keep SQLite's busy timeout at five seconds | #1245 | none yet |
-| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #296, #932 | always |
+| [F65](#f65) | Never let a server frame's cost grow with the outbox: a queue that slows its own drain never recovers | #1270, #1378, #1383, #1942, #296, #932 | always |
 | [F66](#f66) | Keep one stored form of a result: a copy beside its rows must be rewritten, deferred or repaired | #566, #1123, #1426, #1440 | always |
 | [F67](#f67) | Decide a write's place in the outbox under the operation gate, never before it | #1648, #1609 | always |
 | [F68](#f68) | Never apply a buffered refresh a newer buffered refresh restates, and never fail a read behind a busy applier | #1796, #1768, #1127, #998 | always |
@@ -1216,7 +1216,15 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
 - Third piece (#1383, 1.9.52): the acknowledgement deferral treated a frame applying for 120 s as stuck, replaced the
   session and dropped the frame, so a full rebase that took longer never finished and the next session started it again;
   a deferral that waits behind a frame times it from its last progress.
-- Issues: #1270, #1378, #1383, #296, #932.
+- Fourth piece (#1942, 1.9.80): one write's late answer replaced a live session that kept delivering frames, 16 times
+  in 13 minutes on a busy Mac (11 of them while two long recordings opened), and every one-shot read in flight failed
+  with each; the same write was accepted 1.6 s later on the next session. Each replacement also sent every registered
+  query again, to a server already answering some of them `500 operation-timed-out`. A deadline asks whether the
+  session went quiet, not whether one answer came: while the applier took a frame within one interval, a claim past
+  its deadline is kept, in the claim admission's own transaction; a session that delivers nothing is still replaced,
+  and a write kept for the deferral limit is still given up. Upstream `Reactor.js` fails only that transaction
+  (`_sendMutation`) and keeps the socket.
+- Issues: #1270, #1378, #1383, #1942, #296, #932.
 - Guard: `InstantFastDrainTests/aLinkWrittenUnderItsNameDoesNotForceARebase`,
   `theReducedApplyObservesWhatTheFullRebaseObservesWithAttachments` and `aDeclinedFrameNamesItsAttributeInTheGateHeldLine`
   (always); `measureOneFrameAgainstTheQueue`,
@@ -1225,6 +1233,9 @@ a read-only copy of a store a device held. The appendix lists the fixtures a gua
   #1378: `thePreviewsUnsetFieldDoesNotForceARebase`, `aPendingRemovalOfThePreviewsUnsetFieldLeavesWhatTheFullRebaseLeaves`
   and `theReducedApplyObservesWhatTheFullRebaseObservesWithThePreviewsUnsetField` (always);
   `measureANewPreviewSegmentsFramesAgainstTheQueue` (measurement pass).
+  #1942: `InstantBoundedOutboxDeliveryTests/aLateAcknowledgementOnASessionThatStillDeliversFramesKeepsTheSession`,
+  `aLateAcknowledgementIsKeptOnlyUpToTheDeferralLimit` and `aSessionThatDeliversNothingPastTheDeadlineIsStillReplaced`
+  (always).
 - Upstream: `Reactor.js` `dataForQuery` reapplies every pending mutation to each query's server result on each change
   (`_applyOptimisticUpdates`), in memory; this library keeps one materialized store and replays durable receipts under
   its operation gate, so the same queue-sized work costs disk and the gate. The reduction exists to keep it off the
