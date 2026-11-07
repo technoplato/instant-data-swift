@@ -1,3 +1,6 @@
+## 2026-11-07 18:40:00 EST — scribe `65beb3ebd` (green), `cd2175689` (green), `9d997d0e7` (green), `478a7a9cb` (green), landed by `f4330e186` with its changelog
+Privacy (#2018, ADR 0140): Scribe's session tooling keeps no client's session. The status mod keeps a client session's live file as client work by id only; the board and scribe route name client work by id; agent-run refuses a Scribe run in a client's folder before anything starts and never prints the path; agent-progress-check names no client; the chat uploader refuses a transcript whole when any line touches client work and reads session files only from Scribe's logins; agents-sync reads its sources from the account list and keeps its old keep-out of ~/Development/jobs.
+
 ## 2026-11-07 18:36:46 EST — scribe `639b45a1daf838fa65c4ddcda7b1fadaf4866316` (merge), `5cf6fe6dc` (red), `b717c92e3` (green)
 Fix (#2023): `scribe hold off` says "writing what waited" only when it writes: one releaseDue check for the release timer and hold off (the live probe at 18:31, with Recording 393 live, printed it while all 21 posts rightly kept waiting). The mirror runs main 639b45a1d (installed 18:35; backups app.before-2023-* and app.before-2023b-*).
 
