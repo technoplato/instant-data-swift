@@ -1,3 +1,6 @@
+## 2026-11-07 01:15:53 EST — scribe `6c9e2b2e0b10258bc2a59d96664ffb842884a2f1`
+Feature (#1880): the listener's answer settings (read answers aloud, Start Reading, answer notifications and the tone and haptic while recording) are each device's own value in its settings row (four optional settingsDevices attributes, pushed to production 01:44 with evolve.sh, drift 0): the device applies a row's value at once and writes his toggles there; the mirror sets one device's value only after his spoken yes. Red eb878a970; fixes 65e5fb85c, 435407e69; docs 75e95c194; landed e64240631.
+
 ## 2026-11-07 01:22:43 EST — scribe `4a32574d5` (red), `16b270b7b` (green), `24bf63a4a` (docs), landed by `3b38f825919aab2d8228e9969747d0be37033fab` with its changelog `f4af2a902`
 Diagnostics (#1972, amendment 3): Play that asks the player to start says so (playback.play.requested), and so does the player's start (playback.play.started), with the audio played, so a device's own clock gives the seconds from Play to first audio; production builds run no agent control, and a Play that started wrote no line before. No state change. Lands after the 297 cut, so 298 carries it.
 
