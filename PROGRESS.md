@@ -11,9 +11,10 @@
   21), `1942-green` (255 tests in 9 suites pass) and `1942-bundle` (1,759 tests; the 2 unlisted failures are v1.9.79's two: #1948's fixture count
   fails alone as at `v1.9.78`, the decode CPU ratio passes alone).
 - **Released:** v1.9.80 (`docs/releases/v1.9.80.md`).
-- **Next (resume here):** pin 1.9.80 in the consuming app (its ten pin files; model its `a1ed2555b`), land it on its
-  main; a build cut is its commander's call. Then the after-measurement on its Mac with
-  `~/Sync/audit/ack-session-1942/scripts` (ack-timeout batches and replacements per hour, failed one-shot reads,
+- **Pinned:** the consuming app's main at `4698df28b` (its ten pin files; installer tests 155 pass; mini job `1942-pin`:
+  its sync view's 20 tests pass on the pin), changelog `e2ec8032e`.
+- **Next (resume here):** a build that carries the pin is its commander's call. Then the after-measurement on its Mac with
+  the scripts #1942's work log names (ack-timeout batches and replacements per hour, failed one-shot reads,
   acknowledgement times, the 7-hour recording's first try, each with the laptop's load).
 
 ## 2026-11-06 16:38:51 EST — held-writes-696 (#696): v1.9.79 in the consuming app, its end-to-end gate, #696 at 7 of 8

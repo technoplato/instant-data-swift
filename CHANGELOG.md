@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 6th, 2026 at 8:50:05 p.m. EST — `d10f9b13e2f2` green(#1942): a late answer on a session that still delivers frames keeps its claim and its session; a write is given up after the deferral limit; a quiet session is still replaced
+
+- **Implementation commit:** `d10f9b13e2f2d288df4bd1866b38e2caa02569ab`
+- **Change:** v1.9.80: one late answer no longer tears down a session that still delivers frames (#1942)
+- **Details:**
+  - Plan 80588602, red 7a8f53c5, green d10f9b13, release d4899f05 (tag v1.9.80). A delivery pass reads the frame being applied and the applier's taken-frame count in one hop; while the applier took a frame within one 6 s interval, the claim admission keeps this claimant's claims past their deadline (moved one interval later, tokens kept) in the SQLite transaction that would reclaim them; a write kept 120 s is given up as before; a session that delivers nothing is still replaced. Mini jobs: 1942-red (the late-answer and cap tests fail; the quiet guard and 5 neighbours pass), 1942-green (255 tests in 9 suites), 1942-bundle (1,759 tests; the 2 unlisted failures are v1.9.79's two, attributed alone in 1942-newfails).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the pass reads the session once, decides whether late claims are kept, notes and reports them; the deferral actor tracks delivery and each kept write
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — acknowledgementReading(): the frame being applied and the applier's taken-frame count in one hop
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the automatic claim keeps its claimant's late claims inside the transaction that would reclaim them; the deadline shift is shared with the #296 deferral
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — InstantLateClaimKeep, the request's keepsLateClaims and the window's kept and given-up writes
+- **User context (verbatim):**
+  > you can start up a scribe session on laptop too to ensure playback works well as well with computer use etc.
+- **SpecStory:** unavailable — unavailable — Claude Code headless session 6d3d09b5-03d0-42dd-a46a-35fd01ff3b34 (tools/agent-run, claude/pp); no SpecStory capture for headless runs
+
 ## November 6th, 2026 at 3:06:03 p.m. EST — `9d26d2ca527e` green(#696): a held write is verified against the server's own rows, then completed or discarded only on that evidence
 
 - **Implementation commit:** `9d26d2ca527e3dbbb1f523755679e882c7ee6b0b`

@@ -1,3 +1,24 @@
+## 2026-11-06 21:04:09 EST — scribe `e2ec8032e1b3a444a6063f4679c4e9e2010adf49`
+Changelog (#1942): the entry for 4698df28b (pin instant-data-swift 1.9.80); the claim on CHANGELOG.md appended.
+
+## 2026-11-06 20:58:54 EST — scribe `4698df28b9660808cd95f49c78eb59fb367d212b`
+Fix (#1942): pin instant-data-swift 1.9.80 in the ten pin files: one late answer no longer tears down a live session that still delivers frames (installer tests 155 pass; mini job 1942-pin: SyncViewFeatureTests, 20, pass on the pin). A build cut is the commander's call.
+
+## 2026-11-06 20:35:35 EST — scribe `9d2c515648349d4f38770ca4767d810cf017f759`
+Plan (#1942): 2026-11-06-ack-session-1942: pin instant-data-swift 1.9.80 (plan, claims and channel only).
+
+## 2026-11-06 20:49:14 EST — instant-data-swift `d4899f052a0bf308cc956c29f94c70ee55994ff5`
+Release (#1942): v1.9.80 (tag on this commit): the release record docs/releases/v1.9.80.md and PROGRESS.md's landing entry: the Mac's measurement that drove it, upstream's behaviour, what #296, #1383 and #1270 keep, the mini jobs (red, green, the whole bundle: 1,759 tests, its two unlisted failures v1.9.79's two) and the Mac's before numbers.
+
+## 2026-11-06 20:30:25 EST — instant-data-swift `d10f9b13e2f2d288df4bd1866b38e2caa02569ab`
+Fix (#1942): one late answer no longer tears down a session that still delivers frames: while the applier took a frame within one 6 s interval, the claim admission keeps the claims past their deadline in the transaction that would reclaim them; a write kept 120 s is given up as before; a session that delivers nothing is still replaced (255 tests in 9 suites pass on the mini).
+
+## 2026-11-06 20:20:37 EST — instant-data-swift `7a8f53c5d81b9420c98c06247a4d7201313127f1`
+Test (#1942): red: a late answer on a session that still delivers frames keeps the session; a late answer is kept only to the 120 s deferral limit; a quiet session is still replaced (the first two fail on the mini as the Mac did, the guard passes).
+
+## 2026-11-06 20:17:05 EST — instant-data-swift `80588602121dc36c6ea13589b935c8c8563e6a3d`
+Plan (#1942): 2026-11-06-ack-session-1942 and its claims (plan only).
+
 ## 2026-11-06 19:40:04 EST — scribe `c1ff27cc9c8fec7b3ac9b0aa6a1cee25e91a9b95`
 Changelog (#1956): the entry for eea526580 (build 293) and its progress entry; claims on CHANGELOG.md and PROGRESS.md appended.
 
