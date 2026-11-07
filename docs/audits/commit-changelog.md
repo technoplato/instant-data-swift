@@ -1,3 +1,9 @@
+## 2026-11-06 19:40:04 EST — scribe `c1ff27cc9c8fec7b3ac9b0aa6a1cee25e91a9b95`
+Changelog (#1956): the entry for eea526580 (build 293) and its progress entry; claims on CHANGELOG.md and PROGRESS.md appended.
+
+## 2026-11-06 19:02:25 EST — scribe `eea526580168bc2f1ce8280394cbc15c9e901d30`
+Release (#1956): Scribe 0.1 (293) cut at ba02bc2e1 (CURRENT_PROJECT_VERSION 293, What's New 293 dated) and landed; built at this commit, installed and read back as 293 on the iPad and the Mac, and distributed on TestFlight; the GitHub release held (#1934).
+
 ## 2026-11-06 18:55:49 EST — scribe `167bc8c820a2844d780b954e9be5bdd2fde4c066`
 Fix (#1954, #1921): the install watch reads a device again when another install took its lock, so an older build a release run left on a device in reach (289 over 291 on his iPad, 2026-11-06 16:11) is put right the next minute; the device lock file keeps the last holder's words. Reinstalled as LaunchAgent com.scribe.install-watch from this commit.
 
