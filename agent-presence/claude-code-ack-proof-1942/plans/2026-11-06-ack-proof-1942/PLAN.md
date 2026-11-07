@@ -33,3 +33,9 @@ hook that v1.9.79 lacks, so they ran on 1.9.79's code plus that hook, and none o
 
 No claim on the new file's path. InstantBoundedOutboxDeliveryTests.swift (1.9.80's tests) and every source file are left
 as they are. No other agent has a library branch past origin/main on these paths.
+
+## Amendment 1 (2026-11-06 23:15)
+
+The proof landed (test 2a4b6252 on main; red on 9f599964 = v1.9.79's tree plus the file, green on 3bcc5c01 = v1.9.80's
+sources). Its record goes beside v1.9.80's own. Touching, the proof's entry only: PROGRESS.md (a newest-first entry) and
+docs/releases/v1.9.80.md (a dated section after Checks). No other agent's claim on either since 2026-11-06 20:49.
