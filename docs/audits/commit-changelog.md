@@ -1,3 +1,6 @@
+## 2026-11-06 23:35:59 EST — scribe `cf76a659c` (red), `bc184f8a9` (green), `b9ec66301` and `1d288e40b` (docs), landed by `817c633756c7eb9050011ce6f5bac2b64f5093be`; its changelog landed by `b67ba958ad1ba9274a25a69c603b5f1dda937934`
+Feature (#1962): Start or Resume Recording, the press the Action button sends, follows a new setting, ScribeSettings.actionButtonMode: Always Record (the default, the press before the setting: a recording that records stays) or Toggle (it pauses); a paused recording resumes and nothing live is Record's in both, so #1886's wait for the launch restore holds. One exhaustive table in SharedModels (ActionButtonMode.press(finding:)); the catalog entry and the mirror's copy for scribe settings; recordingList.actionButtonModeChosen sets it from a terminal. Gate 1962-gate on the mini: the table and seven press tests red then green, the relaunch tests green in both. The Settings row is queued on #1393.
+
 ## 2026-11-06 23:10:22 EST — instant-data-swift `4a04c758406448c9542c981f235b2896b7255d8f`
 Plan (#1942): 2026-11-06-ack-proof-1942 amendment 1: the claims on PROGRESS.md and docs/releases/v1.9.80.md for the proof's entries (plan and claims only).
 
