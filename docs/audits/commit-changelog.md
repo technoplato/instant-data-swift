@@ -1,3 +1,9 @@
+## 2026-11-06 22:23:44 EST — scribe `a31e6eeb20d0805dfa3685935d1145dcfeb99b9f`
+Feature (#426 slice 2, #1911): the photo viewer's trash button moves a recording's picture to Recently Deleted with no dialog (next picture shows, closes after the last); the take and Playback take it off at once and put it back on a failed local write; Recently Deleted lists pictures with Recover; recordingAttachments.deletedAtMs written one local update a row through PictureTrashClient, never the durability lane (mini: uifb426-green3, green4); the glide UI check reads frames by place and flicks left.
+
+## 2026-11-06 21:40:48 EST — scribe `00962e4d5a13a1f42a3983429ff37fe265bd1c98`
+Schema (#426, #1911): recordingAttachments.deletedAtMs (optional, indexed) and its rule keepsPictureDeletion (only the recording's owners change it), pushed to production 21:40 with his standing approval (rules 68094110bf60 to 91085af7c8ee, schema dd2a87f8d28c to a6fed5b6ef5d, drift 0, #496's held rules untouched; matrix 14/14 on bd40c50a); modules.ts joins two modules' foreign attributes on one entity; the strip's glide UI test.
+
 ## 2026-11-06 21:07:55 EST — instant-data-swift `43aa91aae01958f42fdfdacad7c2b92e2828599c`
 Docs (#1942): FOOTGUNS F65's fourth piece: a missed acknowledgement on a session that still delivers frames is late, not lost; the deadline asks whether the session went quiet (the guard tests named).
 
