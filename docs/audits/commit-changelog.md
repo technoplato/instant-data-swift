@@ -1,3 +1,6 @@
+## 2026-11-07 01:02:21 EST — scribe `922efc46c3e1942b647e0a0187e6c3c96c61f71d`
+Fix (#1977): the Mac transcription server honours transcribe=false: a stream that asks for no words (a paused recording's custom catalogs, #1960) runs its sound features alone, with no models opened and no words made; deploy-mini.sh --guard restarts the server only when nothing is live, and a rollback before the restart no longer restarts it.
+
 ## 2026-11-07 01:03:27 EST — scribe `086d07987` (the cut), landed by `796de7a0a05068d29619b0bda7305aa9ed25fa31`; its changelog landed by `c01366d62cf8586c7d457d2a275d9b50c015b669`
 Release (#1983): Scribe 0.1 (296) cut from main (CURRENT_PROJECT_VERSION 295 -> 296, What's New 296 dated) and shipped on instant-data-swift 1.9.80: the Mac first (296 at 00:26:54), then the iPhone (00:47:39) and the Watch through the install watch (00:49:43); TestFlight distributed 00:56:15 with the Watch at 73.44 MB as Apple thins it; the GitHub release held on doubt 04c5ece9.
 
