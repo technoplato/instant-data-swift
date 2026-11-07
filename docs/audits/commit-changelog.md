@@ -1,3 +1,6 @@
+## 2026-11-06 21:28:30 EST — scribe `3858e090512d88ba173a41739fecf1de5bcfa4bd`
+Feature (#1807 slice 2, #1957, #1908): each scrub he lets go of while listening back, or on the now-playing card, is one synced row from where it played to where it went (two within 2 s fold), listening back syncs, play-pause says Played or Paused; the launch restore keeps a recording a link opened; recording links open in front of every sheet; the calendar's counts sit under their own dates. Production validKind gained scrub (drift 0).
+
 ## 2026-11-06 21:04:09 EST — scribe `e2ec8032e1b3a444a6063f4679c4e9e2010adf49`
 Changelog (#1942): the entry for 4698df28b (pin instant-data-swift 1.9.80); the claim on CHANGELOG.md appended.
 
