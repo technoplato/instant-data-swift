@@ -1,3 +1,6 @@
+## 2026-11-07 07:54:03 EST — scribe red (amendment 61), `1b76aae46` (green), `07a5d3d04` (docs), landed by `6b72e27ca`
+Fix (#1976): the Home Screen menu keeps its one item that follows what happens (Open Current Recording, Resume Playback or Start New Recording); Open Latest Recording and the fixed Search Recordings go, with the per-tick pass over every row. Verified on the laptop: the menu test and AppInfoPlistTests 15 of 15.
+
 ## 2026-11-07 07:29:43 EST — scribe red (amendment 60), `977c9afed` and `55f6f8518` (green), `db1f5d2a6` (docs), landed by `ed29fc7a0` with its changelog `18af6f5c5` (landed by `88acb1a7a`)
 Feature (#1909): the list and the map in step, second part: on iPad a recording tapped in the list while the map shows beside it is chosen on the map (route framed, card with Open, row marked), and a second tap opens it (RecordingList.Action.sidebarRowTapped; chooseOnMap shared with the pin's tap). Verified on the laptop: 12 of 12 list and map tests; AppFeatureVoiceActionsTests 44 of 44.
 
