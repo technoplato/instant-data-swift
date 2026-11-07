@@ -1,3 +1,6 @@
+## 2026-11-07 01:55:22 EST — scribe `78d1814e456d765b625c1096c58197ebb462640b` (green), landed by `01d163b894b7641955e86ed946ab33e00c451964` with its changelog `73048d7c5`
+Tests (#1982): two AppFeatureTests that guard his rules pass again: three controls with no voice command get their reasons (Expand Selection to Here in live and playback points at a word, #1679; the Watch's Diagnostics button, where no voice-actions model runs, #1919, #1803), and the spoken Stop test says the phone is online, since a spoken Stop is the Stop button's own action (#1592) and a Stop with words reads the network path for the welcome's offline quest (#1662). Both failed on main 9b7b8e1a4 and pass at the green commit on the Mac mini; test-only.
+
 ## 2026-11-07 01:15:53 EST — scribe `6c9e2b2e0b10258bc2a59d96664ffb842884a2f1`
 Feature (#1880): the listener's answer settings (read answers aloud, Start Reading, answer notifications and the tone and haptic while recording) are each device's own value in its settings row (four optional settingsDevices attributes, pushed to production 01:44 with evolve.sh, drift 0): the device applies a row's value at once and writes his toggles there; the mirror sets one device's value only after his spoken yes. Red eb878a970; fixes 65e5fb85c, 435407e69; docs 75e95c194; landed e64240631.
 
