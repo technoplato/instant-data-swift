@@ -1,3 +1,6 @@
+## 2026-11-07 04:08:00 EST — scribe `96eb5115030efcc2f17e9e12fbd9b66e0779f785` (docs), landed by `d3bf48d053f730c1aa329951fba4afa33e4da49d` with its changelog `ef56da277`
+Docs (#1988, #1269, #1268): the agents' clean-up guide says the release agent deletes no build by hand: the release's keep-five step does, and every build keeps its symbols/ and uuids.txt. The line it replaces said to keep the new build and one back (under it, releases 143-145 had deleted 141-143's apps, #1268); it is listed in the guide's superseded.tsv, so the coverage test still accounts for it (red without the row, 9/9 with it).
+
 ## 2026-11-07 04:01:59 EST — scribe `1d20f0aff` (299's cut), landed by `45a71046f6b10c64cfb03f1dbb0d63b254c5a732`; its changelog `b249c59cb`, landed by `e999a1e3cfea0a9ca458ebaf62b61aaac6986049`
 Release (#1987): Scribe 0.1 (299) cut from main with #1975's broadcast pause fix, the only app code since 298, and shipped in one run on instant-data-swift 1.9.80 after the drift gate passed before any device: the iPhone (03:35:08), the Watch through the install watch (03:36:14), the Mac (03:58:05); TestFlight distributed 03:44:49 with the Watch at 73.56 MB as Apple thins it; the GitHub release held on doubt 04c5ece9.
 
