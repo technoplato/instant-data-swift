@@ -1,3 +1,6 @@
+## 2026-11-06 22:36:03 EST — scribe `a04707dce4f1458de6876c357fe755638b8bd3d4`
+Fix (#1964, #1963): a setting is read once per layout pass, not once per row or block: the home list's rows compare their id with the stored cut-off offer before reading Continue Cut-Off Recordings (388 ms hang on 293), and Playback's blocks take the text size from blocks(_:) (484 and 288 ms hangs on 284); PerBlockSharedReadTests keeps both reads out of the per-item path (mini: uifb1964-green).
+
 ## 2026-11-06 22:27:57 EST — scribe `e8ff7b48b` (red), `11d73d567` (green), `a0f25b8fb` (comments) and `4a31eca25` (docs), landed by `47e4981de451facef7a840f8f758abf3fa39bded`; its changelog landed by `ad85d6d55`
 Perf (#1878, amendment 2): the debug overlay's floating pill (the recordings list) runs Installed For's 30-a-second TimelineView only while some of Installed For shows; SwiftUI measures, hidden, the words before it with its first character and an ellipsis against the cut line. 007fd4336 had moved only the resting label to the render server; on his iPad (builds 284-287, settled list minutes) the pill's ticking held the main thread at a median 8.3-9.9% of a core and 156 run-loop turns a second (0.56% and 28 without Installed For). Simulator harness: the cut pill 0.90 ms/s against 46.70 (idle 0.80), pixels 0 of 151,200 apart. Rides build 296.
 
