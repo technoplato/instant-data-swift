@@ -4307,6 +4307,203 @@ struct InstantBoundedOutboxDeliveryTests {
     )
   }
 
+  /// #1942: on a busy Mac one write missed its 6 s acknowledgement deadline while its session kept delivering frames,
+  /// and the expiry of its claim replaced the session, which failed every one-shot read in flight: 16 times in 13
+  /// minutes. The same write was accepted 1.6 s later on the next session; the old one was slow, not dead. Upstream
+  /// `Reactor.js` fails only the transaction when its timer fires (`_sendMutation`) and never closes the socket for it.
+  /// A session whose applier still takes frames keeps the late write's claim and its connection, and the answer, when
+  /// it comes, settles the write on the connection it was sent on.
+  @Test
+  func aLateAcknowledgementOnASessionThatStillDeliversFramesKeepsTheSession() async throws {
+    let outcome = try await oweTheAnswerPastTheDeadline(
+      prefix: "ack-late-delivering",
+      passes: 2,
+      deliversFrames: true,
+      answersAtTheEnd: true
+    )
+    expectNoDifference(outcome.reconnectDelay, nil, "The session still delivers frames: the answer is late, not lost.")
+    #expect(outcome.reconnectDelay == nil)
+    expectNoDifference(outcome.connectionRequests, 1)
+    expectNoDifference(outcome.claimDeadlineAfterPasses, 118_000, "Kept one interval past the last deadline pass.")
+    expectNoDifference(outcome.sentHeads, [outcome.headID], "Sent once, and answered on the connection it was sent on.")
+    expectNoDifference(outcome.pendingAfterAnswer, 0)
+  }
+
+  /// #1942: a late answer is waited for, not forever. A write still unanswered after the deferral limit (120 s) on a
+  /// session that keeps delivering frames is given up as before: its claim expires, which reports it, and the session is
+  /// replaced so the write goes out again behind the acknowledgement-unknown barrier.
+  @Test
+  func aLateAcknowledgementIsKeptOnlyUpToTheDeferralLimit() async throws {
+    var outcome: LateAcknowledgementOutcome?
+    try await withKnownIssue {
+      outcome = try await oweTheAnswerPastTheDeadline(
+        prefix: "ack-late-never",
+        passes: 30,
+        deliversFrames: true,
+        answersAtTheEnd: false
+      )
+    } matching: { issue in
+      issue.description.contains("did not acknowledge")
+    }
+    #expect(outcome?.reconnectDelay != nil, "A write that is never answered must not hold its claim forever.")
+    // Kept at the passes 6 s to 120 s after its first deadline; the pass 120 s after it gives the write up.
+    expectNoDifference(outcome?.deadlinePasses, 21)
+  }
+
+  /// #1942: a session that delivers nothing for a whole acknowledgement interval may be half-open, so a write's late
+  /// answer still replaces it at the deadline, as before: liveness is the frames a session delivers, not one answer.
+  @Test
+  func aSessionThatDeliversNothingPastTheDeadlineIsStillReplaced() async throws {
+    var outcome: LateAcknowledgementOutcome?
+    try await withKnownIssue {
+      outcome = try await oweTheAnswerPastTheDeadline(
+        prefix: "ack-late-quiet",
+        passes: 2,
+        deliversFrames: false,
+        answersAtTheEnd: false
+      )
+    } matching: { issue in
+      issue.description.contains("did not acknowledge")
+    }
+    #expect(outcome?.reconnectDelay != nil, "A session that delivers nothing must still be replaced.")
+    expectNoDifference(outcome?.deadlinePasses, 1)
+  }
+
+  struct LateAcknowledgementOutcome {
+    var headID: String
+    /// The deadline passes run; the last one scheduled the reconnect when there was one.
+    var deadlinePasses: Int
+    var reconnectDelay: UInt64?
+    var connectionRequests: Int
+    var claimDeadlineAfterPasses: Int64?
+    var sentHeads: [String]
+    var pendingAfterAnswer: Int?
+  }
+
+  /// #1942: sends one write, then runs up to `passes` acknowledgement deadline passes 6 s apart while its answer is
+  /// owed, the session delivering one frame before each pass when `deliversFrames`. Stops at the first reconnect. When
+  /// there was none and `answersAtTheEnd`, the answer then arrives on the first connection.
+  private func oweTheAnswerPastTheDeadline(
+    prefix: String,
+    passes: Int,
+    deliversFrames: Bool,
+    answersAtTheEnd: Bool
+  ) async throws -> LateAcknowledgementOutcome {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let head = boundedMutation(index: 0, prefix: prefix, entityID: "\(prefix)-entity")
+    try await seedBoundedOutbox([head], cacheURL: cacheURL)
+    let clock = BoundedOutboxLockedClock(milliseconds: 100_000)
+    let deadlineSleep = BoundedOutboxSteppedSleep()
+    let reconnectSleep = BoundedOutboxControlledSleep()
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "\(prefix)-slow")
+    ])
+    let replacementSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "\(prefix)-replacement")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, replacementSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-\(prefix)",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.liveMutationDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the head's send",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      try await firstSession.waitForSentMessageCount(2)
+    }
+    var deadlinePasses = 0
+    for pass in 1...passes {
+      try await waitForTheNextDeadlineOrAReconnect(deadlineSleep, reconnectSleep, operation: "deadline pass \(pass)")
+      if await reconnectSleep.firstDelay() != nil { break }
+      if deliversFrames {
+        try await deliverOneFrame(on: firstSession, to: runtime)
+      }
+      clock.advance(by: 6_000)
+      await deadlineSleep.resumePendingDelays()
+      deadlinePasses = pass
+    }
+    try await waitForTheNextDeadlineOrAReconnect(deadlineSleep, reconnectSleep, operation: "the last pass's outcome")
+    let reconnectDelay = await reconnectSleep.firstDelay()
+    let connectionRequests = await transport.connectionRequests().count
+    let claimDeadlineAfterPasses = try await runtime.persistence.outboxDeliveryClaimForTesting(id: head.id)?
+      .deadlineMilliseconds
+    var pendingAfterAnswer: Int?
+    if reconnectDelay == nil, answersAtTheEnd {
+      await firstSession.enqueue(
+        InstantLiveMessage(
+          op: "transact-ok",
+          clientEventID: head.id,
+          fields: ["tx-id": .string("server-\(head.id)")]
+        )
+      )
+      try await instantLiveWithTimeout(
+        operation: "wait for the late answer to settle the head",
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
+      ) {
+        while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+          await Task.yield()
+        }
+      }
+      pendingAfterAnswer = try await runtime.persistence.countOutboxMutations(status: .pending)
+    }
+    let sentHeads = await firstSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    _ = try? await runtime.closeConnection()
+    return LateAcknowledgementOutcome(
+      headID: head.id,
+      deadlinePasses: deadlinePasses,
+      reconnectDelay: reconnectDelay,
+      connectionRequests: connectionRequests,
+      claimDeadlineAfterPasses: claimDeadlineAfterPasses,
+      sentHeads: sentHeads,
+      pendingAfterAnswer: pendingAfterAnswer
+    )
+  }
+
+  private func waitForTheNextDeadlineOrAReconnect(
+    _ deadlineSleep: BoundedOutboxSteppedSleep,
+    _ reconnectSleep: BoundedOutboxControlledSleep,
+    operation: String
+  ) async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for \(operation), or a reconnect",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      while await !deadlineSleep.hasPendingDelay(), await reconnectSleep.firstDelay() == nil {
+        await Task.yield()
+      }
+    }
+  }
+
+  /// #1942: one frame the session delivers, and the wait until its applier has taken it. The runtime ignores the op.
+  private func deliverOneFrame(on session: LiveReactorParitySession, to runtime: InstantRuntime) async throws {
+    let taken = await runtime.liveReceiveProgressForTesting()?.takenFrameCount ?? 0
+    await session.enqueue(InstantLiveMessage(op: "frame-for-test", clientEventID: nil, fields: [:]))
+    try await instantLiveWithTimeout(
+      operation: "wait for the session's applier to take the frame",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      while (await runtime.liveReceiveProgressForTesting()?.takenFrameCount ?? 0) <= taken {
+        await Task.yield()
+      }
+    }
+  }
+
   /// #296: in Recording 023 every refusal was a re-send of a write an earlier connection had offered without an
   /// answer, and the device log said only "Permission denied: not perms-pass?". A refusal now says whether it was
   /// such a replay, and names the refused namespace, entity, attributes, and values.

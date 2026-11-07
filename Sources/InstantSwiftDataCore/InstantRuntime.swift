@@ -8959,6 +8959,12 @@ public final class InstantRuntime: Sendable {
     await liveSession.frameBeingApplied()?.op
   }
 
+  /// How far the open connection's receive side has come, nil while none is open (#1942).
+  @concurrent
+  func liveReceiveProgressForTesting() async -> InstantLiveReceiveProgress? {
+    await liveSession.receiveProgress()
+  }
+
   @concurrent
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
