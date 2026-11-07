@@ -1,3 +1,6 @@
+## 2026-11-07 05:15:21 EST — scribe `e7cf3a6f5` (red), `3b523f947` (green), `8e5c186f0` (docs), landed by `45bd148e588524d87da401f3c1c3ef349daf134d`
+Fix (#1990): a short question id is looked for among every question's id (ids only, up to 20,000, refused loudly beyond), then read whole; with 1,074 questions the 1,000-row scan missed the newest. ADR 0095 amendment A as built: the words page shows typed passages, and his 14 learning questions of 8a017cdd are kept and measured (14/14 listed and answered, 15/15 passages resolve).
+
 ## 2026-11-07 04:50:00 EST — scribe `3cf6d7564` (red), `da0c73636` (green), `0e8181959` (docs), landed by `db23add1998e03949fa2ad2eca2535b194d5f36f` with its changelog `9b607c487`
 Feature (#1990, #1176, #1905): scribe qa add and link keep a question Michael typed in the Claude chat: each passage copied from the session's own file through the decision add --typed gate, the question and each passage named by his words so one message's questions are rows of their own, printed with its claude-code link in qa list and show, and read again by qa check. No schema change (sourceMoments already held typed moments under questions).
 
