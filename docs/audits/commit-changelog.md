@@ -1,3 +1,6 @@
+## 2026-11-07 01:03:27 EST — scribe `086d07987` (the cut), landed by `796de7a0a05068d29619b0bda7305aa9ed25fa31`; its changelog landed by `c01366d62cf8586c7d457d2a275d9b50c015b669`
+Release (#1983): Scribe 0.1 (296) cut from main (CURRENT_PROJECT_VERSION 295 -> 296, What's New 296 dated) and shipped on instant-data-swift 1.9.80: the Mac first (296 at 00:26:54), then the iPhone (00:47:39) and the Watch through the install watch (00:49:43); TestFlight distributed 00:56:15 with the Watch at 73.44 MB as Apple thins it; the GitHub release held on doubt 04c5ece9.
+
 ## 2026-11-07 01:02:25 EST — scribe `4b574d333a513fbb7e3b12d22537a068e36d59ab`
 Fix (#1959): a device writes a setting only when he changes it there: the settings follower reads the shared settings as they are (his Watch read copies of its own half-applied writes as his edits at 14:09:37), a migration writes only where the server has no value, and scribe settings set and undo learn Side Bars, Picture Sizes and the frames fold.
 
