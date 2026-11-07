@@ -1,3 +1,6 @@
+## 2026-11-07 01:18:40 EST — scribe `ad8e281308948481282e1247ae1e4a89bb7e8af8`
+Security (#496): the nine agent tables are owner-scoped in production (pushed 2026-11-07 00:52 EST; perms 1dc7d3ed0257 -> c7b8ad39f122, only the ten namespaces) and $streams is admin-only; the stream-era media path is gone from the app and ScribeCLI (about 540 lines). prod-live-matrix 47 of 49 after the push (the 2 misses a race, cleared row by row); undo: rollback-rules.sh with the pre-push backup (ADR 0136, "Pushed").
+
 ## 2026-11-07 01:02:21 EST — scribe `922efc46c3e1942b647e0a0187e6c3c96c61f71d`
 Fix (#1977): the Mac transcription server honours transcribe=false: a stream that asks for no words (a paused recording's custom catalogs, #1960) runs its sound features alone, with no models opened and no words made; deploy-mini.sh --guard restarts the server only when nothing is live, and a rollback before the restart no longer restarts it.
 
