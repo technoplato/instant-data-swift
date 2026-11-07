@@ -10,3 +10,4 @@ claude-code/fix-storage-1076@ld 2026-10-25T02:01:09-0400 mower plan=2026-10-24-f
 claude-code/perf-gate-1491@ld 2026-10-31T12:34:11-0400 mower plan=2026-10-31-perf-gate-1491 #1491 (validateNewMutation only)
 claude-code/perf-writes-1510@ld 2026-10-31T16:10:58-0400 mower plan=2026-10-31-perf-writes-1510 amendment 1 #1510 (encodedProjectedBodyByteCount only)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
+claude-code/ack-session-1942@pp 2026-11-06T20:16:48-0500 mower plan=2026-11-06-ack-session-1942 #1942 (one claim request field, one window field)
