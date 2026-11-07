@@ -1,3 +1,6 @@
+## 2026-11-07 08:28:10 EST — scribe `b13b24c4e` (red), `bb72eedfd` (green), landed by `1a4481a1c` with its changelog `1aaf5d4c3` (landed by `6b3c38e56`)
+Feature (#2004): derive, don't bolt on, in the guide and the pre-plan check (decision 7e9e6e6f): the check asks a plan that adds a hand-kept registry, mapping, table or sync step for its source (a rewrite, never a refusal; on 737 real briefs 3 flagged, 1 real, 2 false alarms, 0.1 ms a brief); every agent-run brief carries the rule; his guiding line (decision c768c61a) opens ~/Scribe/AGENTS.md, the Scribe repo's AGENTS.md and ~/Scribe/CLAUDE.md (the installer takes it from the template). Installed and proven live.
+
 ## 2026-11-07 08:08:02 EST — scribe red (amendment 62), `c89d106ff` (green), `1f268fbbd` (docs), landed by `38fe91cb4`
 Fix (#1971): a tap on an item's link to one of Scribe's own screens writes Opened <the screen's title> on the timeline, as a screen visit's row reads, not Attachment tapped. Verified on the laptop: AppActionRowsTests 8 of 8.
 
