@@ -6,3 +6,4 @@ claude-code/sqlite-writes-1426@strangelearning 2026-10-31T03:04:27-0400 mower pl
 claude-code/order-1648@halfjew22 2026-11-02T23:00:07-0500 mower plan=2026-11-02-order-1648 amendment 2 #1648 (a new F67 entry and its index row only)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
 claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-perf-sync-1796 #1796 #998 #1127 (a new entry on frames a newer frame restates, and F41's query-once wait)
+claude-code/ack-session-1942@pp 2026-11-06T21:07:02-0500 mower plan=2026-11-06-ack-session-1942 amendment 1 #1942 (F65's fourth piece only)

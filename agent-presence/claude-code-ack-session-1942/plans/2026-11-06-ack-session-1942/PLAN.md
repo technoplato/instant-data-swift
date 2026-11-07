@@ -56,3 +56,9 @@ went quiet.
 The last claims on these paths are the 11-04 perf lanes (landed in 1.9.7x) and #1383 (1.9.52); the newest source change
 on main is #696 (1.9.79, held writes; no overlap with claim expiry). No other agent has a library branch past
 origin/main on these files.
+
+## Amendment 1 (2026-11-06 21:15)
+
+FOOTGUNS F65 gains its fourth piece (#1942, 1.9.80): a missed acknowledgement on a session that still delivers frames is
+late, not lost; a deadline asks whether the session went quiet. Touching: docs/FOOTGUNS.md (F65's list entry and body
+only). No other agent's claim on it since 2026-11-04.
