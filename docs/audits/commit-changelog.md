@@ -1,3 +1,6 @@
+## 2026-11-07 05:44:14 EST — scribe red (amendment 58), `1de8f3b92`, `8c50fbfbd` and `a33e82837` (green), `74cefe99e` (pictures), `f28db00bf` (docs), landed by `6560752fd` with its changelog `5623fac38` (landed by `6a0c63534`)
+Feature (#1961): every recognition its own card: this phone's Scribe Playback play first, then songs and films newest first, then other plays; two or more side by side in a row that scrolls sideways (an iPad's column shares the row, an iPhone pages with the next peeking), ending in Collapse, which folds them into chips with Expand; the choice is kept on each device (@Shared appStorage). Verified: 46 of 46 and 44 of 44 logic tests (mini), every bar picture (laptop).
+
 ## 2026-11-07 05:15:21 EST — scribe `e7cf3a6f5` (red), `3b523f947` (green), `8e5c186f0` (docs), landed by `45bd148e588524d87da401f3c1c3ef349daf134d`
 Fix (#1990): a short question id is looked for among every question's id (ids only, up to 20,000, refused loudly beyond), then read whole; with 1,074 questions the 1,000-row scan missed the newest. ADR 0095 amendment A as built: the words page shows typed passages, and his 14 learning questions of 8a017cdd are kept and measured (14/14 listed and answered, 15/15 passages resolve).
 
