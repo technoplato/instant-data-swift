@@ -1,3 +1,6 @@
+## 2026-11-07 08:08:02 EST — scribe red (amendment 62), `c89d106ff` (green), `1f268fbbd` (docs), landed by `38fe91cb4`
+Fix (#1971): a tap on an item's link to one of Scribe's own screens writes Opened <the screen's title> on the timeline, as a screen visit's row reads, not Attachment tapped. Verified on the laptop: AppActionRowsTests 8 of 8.
+
 ## 2026-11-07 07:54:03 EST — scribe red (amendment 61), `1b76aae46` (green), `07a5d3d04` (docs), landed by `6b72e27ca`
 Fix (#1976): the Home Screen menu keeps its one item that follows what happens (Open Current Recording, Resume Playback or Start New Recording); Open Latest Recording and the fixed Search Recordings go, with the per-tick pass over every row. Verified on the laptop: the menu test and AppInfoPlistTests 15 of 15.
 
