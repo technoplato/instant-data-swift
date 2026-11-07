@@ -1,3 +1,9 @@
+## 2026-11-07 01:02:25 EST — scribe `4b574d333a513fbb7e3b12d22537a068e36d59ab`
+Fix (#1959): a device writes a setting only when he changes it there: the settings follower reads the shared settings as they are (his Watch read copies of its own half-applied writes as his edits at 14:09:37), a migration writes only where the server has no value, and scribe settings set and undo learn Side Bars, Picture Sizes and the frames fold.
+
+## 2026-11-07 01:02:25 EST — scribe `392acfb6eb89366de4ecd6b2cce76ee604a1dbea`
+Rules (#1959): the server refuses a settings change from his Watches unless it is spoken, an agent's, or a word he spelled out there; pushed to production 23:56:34 (1dc7d3ed0257, drift 0).
+
 ## 2026-11-07 01:01:53 EST — scribe `a1fcc7d10` and `3e0ff032e` (red), `3e66619a4`, `0943ed6bd`, `7ac513b55` and `9090fcf1c` (green), `7c4e09fe3` (docs), landed by `31a1961c81d39126ca5bf8d5b128cc8e04dd5b1b` with its changelog `4351210fb`
 Fix (#1972): Recording 390's audio never left the iPad, which recorded it in Low Data Mode, where the compressed copy's upload waited with no line; Stop sent no WAV (the finished copy is the audio that travels, #1236), and a launch that recorded nothing never resent the copy, so the phone read Downloading and refused Play 12 times silently. Now a copy-carried row with no copy on Scribe reads Audio Not Sent Yet (the bar: No Audio), Play looks once more (5 s) and plays the copy or shows why, a stopped recording's copy goes on any network but none (#651's rule for a stopped recording's chunks), the launch sends a copy left in the spool, and every hold and failure of the copy says why once (ADR 0091 amendment E).
 
