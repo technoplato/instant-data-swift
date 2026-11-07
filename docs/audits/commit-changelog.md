@@ -1,3 +1,6 @@
+## 2026-11-07 00:22:33 EST — scribe `01da168cc7a37f1789092330925ccdb8abb81080`
+Feature (#1880): a setting he says to Claude changes only after his yes: a scribe settings set or undo named by his spoken line is only asked, as the quiet acknowledgement card (#1980), and written on his own short yes after it within 3 minutes (scribe settings confirm); his no, talk, an app's sound, a yes from before the card, or silence change nothing; his words for the ask and the yes go in the recording's events with the change. Red 4cbbfb1fb; docs 9d3bbabc5 (ADR 0055 amendment, FEATURES item 9, the settings skill); installed into the running mirror.
+
 ## 2026-11-06 23:38:20 EST — scribe `42b091fb49e3a25011d74f5e141a7773fa22e595`
 Fix (#1960): a paused recording streams its microphone to Your Mac for the custom catalogs alone (transcribe=false, no words kept, no file), so his films match while paused as they do while recording; Recording 390 matched Toy Story 3, 22 and 10 times recording and 0 in both pauses before. Apple's catalog and the sounds stay on the device. The server's words-off stream is #1977.
 
