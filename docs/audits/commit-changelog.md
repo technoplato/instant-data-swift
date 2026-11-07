@@ -1,3 +1,15 @@
+## 2026-11-07 03:29:50 EST — scribe `bdf711e2d14305787748fc9dbcf9ca9ef68ad1d6`
+Docs (#1969, #1965): PERFORMANCE.md's key metrics normalized to use and hangs per build; performance-budget.md's normalized rows. Measured: a minute of talking behind 16.3 -> 11.8 CPU-seconds (248 -> 270); the library per save 9.1 -> 5.0 ms (248 -> 293).
+
+## 2026-11-07 03:29:50 EST — scribe `99a13a85cf77b154d197594739d497792d89e178`
+Fix (#1969, #1965): a hang's Scribe frame is never the linker's deduplicated-symbol placeholder.
+
+## 2026-11-07 03:20:42 EST — scribe `d8d63aaf78f0a1f75096d7bcdd8509a3c2a58924`
+Fix (#1969, #1965): a hang pull records when it pulled, so minutes after the newest hang report count as known (until 15 minutes before the pull).
+
+## 2026-11-07 03:20:41 EST — scribe `21cd1cbc9478067fbcef3a0669036310682df406`
+Feature (#1969, #1965): key_metrics.py measures the key metrics normalized to use per build, device and scene (phone work per minute of talking and of silence, screen-thread time per line, data per word, the sync library per save and per received frame, battery per recording hour, freezes per hour in front by heaviest stack); performance.pisspoursoftware.xyz shows each with a plain name and a budget.
+
 ## 2026-11-07 02:50:10 EST — scribe `a53e783bf` (297's cut) and `7491f66f7` (its stories), landed by `fb41d0ee27392c962401c73c07c49c8cf5e4cc40` and `4c74defc6bfd93308ca2a1ce5d4055c27fbeeded`; `9bca6a59f` (298's cut), landed by `6fd1cbe4fc37341d66f3637a5c5454ba5b2f356f`; their changelog landed by `844320bd84f88acf4024d407bde09a8eefb94893`
 Release (#1984): Scribe 0.1 (297) cut from main and installed on the Mac (01:53:36), after its first run met the drift gate on #496's owner-scoped rules and 297 moved to main; 297's iPhone run met the gate on #1880's per-device answer settings, so Scribe 0.1 (298) was cut from main and shipped in one run on instant-data-swift 1.9.80: the iPhone (02:18:47), the Watch through the install watch (02:29:00), the Mac (02:45:18); TestFlight distributed 02:24:08 with the Watch at 73.51 MB as Apple thins it; the GitHub release held on doubt 04c5ece9.
 
