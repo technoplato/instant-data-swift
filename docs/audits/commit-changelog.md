@@ -1,4 +1,4 @@
-## 2026-11-06 23:38:20  — scribe `42b091fb49e3a25011d74f5e141a7773fa22e595`
+## 2026-11-06 23:38:20 EST — scribe `42b091fb49e3a25011d74f5e141a7773fa22e595`
 Fix (#1960): a paused recording streams its microphone to Your Mac for the custom catalogs alone (transcribe=false, no words kept, no file), so his films match while paused as they do while recording; Recording 390 matched Toy Story 3, 22 and 10 times recording and 0 in both pauses before. Apple's catalog and the sounds stay on the device. The server's words-off stream is #1977.
 
 ## 2026-11-06 23:35:59 EST — scribe `cf76a659c` (red), `bc184f8a9` (green), `b9ec66301` and `1d288e40b` (docs), landed by `817c633756c7eb9050011ce6f5bac2b64f5093be`; its changelog landed by `b67ba958ad1ba9274a25a69c603b5f1dda937934`
