@@ -1,3 +1,9 @@
+## 2026-11-06 21:07:55 EST — instant-data-swift `43aa91aae01958f42fdfdacad7c2b92e2828599c`
+Docs (#1942): FOOTGUNS F65's fourth piece: a missed acknowledgement on a session that still delivers frames is late, not lost; the deadline asks whether the session went quiet (the guard tests named).
+
+## 2026-11-06 21:07:07 EST — instant-data-swift `6f814c406ef63b483e841368959faccdd6cdf5de`
+Plan (#1942): 2026-11-06-ack-session-1942 amendment 1: the claim on docs/FOOTGUNS.md for F65's fourth piece (plan and claims only).
+
 ## 2026-11-06 21:28:30 EST — scribe `3858e090512d88ba173a41739fecf1de5bcfa4bd`
 Feature (#1807 slice 2, #1957, #1908): each scrub he lets go of while listening back, or on the now-playing card, is one synced row from where it played to where it went (two within 2 s fold), listening back syncs, play-pause says Played or Paused; the launch restore keeps a recording a link opened; recording links open in front of every sheet; the calendar's counts sit under their own dates. Production validKind gained scrub (drift 0).
 
