@@ -1,3 +1,21 @@
+## 2026-11-06 20:48:48 EST — ack-session-1942 (#1942): v1.9.80, one late answer no longer tears down a session that still delivers frames
+
+- **Why:** on a consuming app's Mac (1.9.78, 2026-11-06 12:27-12:41, load 105-300, two long recordings opening) one write
+  missing its 6 s acknowledgement deadline replaced the whole live session 16 times in 13 minutes, failing every
+  one-shot read in flight; the same write was accepted 1.6 s later on the next session (slow, not dead).
+- **Landed:** plan `80588602`, red `7a8f53c5`, green `d10f9b13`: while the applier took a frame within one interval
+  (6 s), the claim admission keeps the claims past their deadline in the transaction that would reclaim them; a write
+  kept 120 s is given up as before; a session that delivers nothing is still replaced. New lines
+  `outbox.mutation.ack-late-kept`, `outbox.mutation.ack-late-wait-exhausted`.
+- **Checked:** Mac mini jobs `1942-red` (the late-answer test fails as the Mac did; the cap test gives up at pass 1, not
+  21), `1942-green` (255 tests in 9 suites pass) and `1942-bundle` (1,759 tests; the 2 unlisted failures are v1.9.79's two: #1948's fixture count
+  fails alone as at `v1.9.78`, the decode CPU ratio passes alone).
+- **Released:** v1.9.80 (`docs/releases/v1.9.80.md`).
+- **Next (resume here):** pin 1.9.80 in the consuming app (its ten pin files; model its `a1ed2555b`), land it on its
+  main; a build cut is its commander's call. Then the after-measurement on its Mac with
+  `~/Sync/audit/ack-session-1942/scripts` (ack-timeout batches and replacements per hour, failed one-shot reads,
+  acknowledgement times, the 7-hour recording's first try, each with the laptop's load).
+
 ## 2026-11-06 16:38:51 EST — held-writes-696 (#696): v1.9.79 in the consuming app, its end-to-end gate, #696 at 7 of 8
 
 - **Landed in the consuming app:** its pin of 1.9.79 (`a1ed2555b`, the ten pin files; changelog `7318751e5`). No build was
