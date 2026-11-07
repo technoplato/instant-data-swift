@@ -1,3 +1,6 @@
+## 2026-11-07 10:00:48 EST — scribe `9da49ccd0` (red), `39fede548` (green), landed by `0b01d5439` with its changelog
+Feature (#2005 slice 1, plan amendment 64): the home screen's top card reads the same 12-hour start as the row it stands for (9:12 PM, never the device's 21:12), with the row's spoken start for VoiceOver. Verified on the Mac mini: RecordingRowPresentationTests 16 of 16. Plan amendment 65 (#2010) landed with it, plan and claims only.
+
 ## 2026-11-07 09:54:27 EST — scribe `c94c5d7b0` (300's cut), landed by `bb59cff3e6e716647d649da3d85d8e69d5db7b8e`; its notes fix `fcb8b6da7`, landed by `b9627d21e13635e84e65f52e7224a41eec5035cb`; its changelog `c661c5cac`, landed by `b4132f75bd0da2171f3162a7409faa8076a1653f`
 Release (#2001): Scribe 0.1 (300) cut from main with #1962's Action Button row and four more visible changes (#1674, #1961, #1909, #1976), on instant-data-swift 1.9.80, after the drift gate passed before any device; every note line verified against the build's commits, and a later change's line (#1971) moved off 300 to 301. Shipped in one run in build.sh's main lane: the iPhone (09:24:47), the Mac (09:40:29); TestFlight distributed 09:48:56 with the Watch at 73.61 MB as Apple thins it; the Watch and iPad left to the install watch; the GitHub release held on doubt 04c5ece9; keep five pruned 292 and 293.
 
