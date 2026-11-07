@@ -1,3 +1,6 @@
+## 2026-11-07 09:45:55 EST — scribe `e2f1a12c0` (red), `41b9bb266` (green), landed by `573bab598` with its changelog `1a17b0696`
+Feature (#2005 slice 1): a recording row's start reads on a 12-hour clock whatever the device's 24-hour setting (9:12 PM, not 21:12), the clock in subheadline semibold monospaced digits and its AM or PM in caption2 semibold grey, in its locale's order from Foundation's attributed time; at accessibility sizes the start stands on its own line under the title; VoiceOver reads "Started at 9:12 PM". Verified on the Mac mini: 24 of 24 row tests (four new). Michael, typed 2026-11-07 08:05: "Also let's make it clearer what the recording start time is with am/pm display and different text styling."
+
 ## 2026-11-07 09:17:53 EST — scribe `6a9abfebaf1e5eff287aa460287cafe95594bab6`
 Tools (#2009): a canned-audio drive experiment: a synthetic fixture of statements only, a detached capture script that holds the device's install lock and proves the microphone closed, its runbook, and its audit with the hypotheses. No app code.
 
