@@ -1,0 +1,1 @@
+claude-code/ack-proof-1942@pp 2026-11-06T22:42:32-0500 mower plan=2026-11-06-ack-proof-1942 #1942 (a new test file)
