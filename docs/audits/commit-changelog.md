@@ -1,3 +1,6 @@
+## 2026-11-07 07:29:43 EST — scribe red (amendment 60), `977c9afed` and `55f6f8518` (green), `db1f5d2a6` (docs), landed by `ed29fc7a0` with its changelog `18af6f5c5` (landed by `88acb1a7a`)
+Feature (#1909): the list and the map in step, second part: on iPad a recording tapped in the list while the map shows beside it is chosen on the map (route framed, card with Open, row marked), and a second tap opens it (RecordingList.Action.sidebarRowTapped; chooseOnMap shared with the pin's tap). Verified on the laptop: 12 of 12 list and map tests; AppFeatureVoiceActionsTests 44 of 44.
+
 ## 2026-11-07 07:15:31 EST — scribe `ef5d28730` (revert), `2a70e64bc` (docs), landed by `c4b5056fe72124fedc4123a317b3a6fb58b9834d` with its changelog `e2c9a29f4`
 Revert (#1842): the Mac mini's 15 GB floor (0edbcc25d) ran six minutes (installed 07:06:56, reverted on the mini 07:12:31) and is reverted on main: admission counted slot 1's 18.6 GB part-filled cache as cold (26.7 GB to come plus the 3 GB guard) and no eviction takes the cache of the slot a job leases, so 1083-red2 and uifb1909-green2 were refused at 29.4 GB free, a lockout. No job failed for space. The build tools equal 8cac3153a again; ADR 0104 amendment C records the attempt and what a lower floor needs (clear a job's own part-filled cache, or credit it by size), both the operator's call.
 
