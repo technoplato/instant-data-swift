@@ -1,3 +1,15 @@
+## 2026-11-07 04:48:54 EST — scribe `979bb4377acc5e299c235a75cd70e1c118f98586`
+Fix (#1310): two RecordingList owner tests expect the word count the app keeps, one per recognized word (RecordingList 13 to 11 on the mini), with #1310's change log and progress entry.
+
+## 2026-11-07 04:35:25 EST — scribe `e5f651ffeecca74905c7fd5733f978fc36af6ba0`
+Fix (#1310): the host device icon is a controlled dependency (live the detection, tests a laptop's), AppFeature expectations follow the lane and the now-playing note, the now-playing cost count follows #1393. Final census on the mini: main's ten test bundles 186 failing to 68, nothing skipped, no crash.
+
+## 2026-11-07 04:11:16 EST — scribe `19769452c06b23e75a7fc266a67c62b4ab72ecab`
+Fix (#1310): RecordingList tests set the clock, playback stop, build info and date they read; six ArchitectureTests guards follow later decisions; the agent chat reads tool inputs only up to 64 levels (a 400-level one crashed); no test forces a requirement with try! (14 sites, one the bundle crasher).
+
+## 2026-11-07 03:55:45 EST — scribe `7c5c1ac7f5cce0c704e31598c285b8889c1ccb52`
+Fix (#1310): Stop hands a standalone recording's promoted open line to its parent before the terminal value (the SIGTRAP that ended every RecordingFeatureTests run, skipped since 10-25), and 97 live test fixtures hold the now-playing note the app's live recordings hold.
+
 ## 2026-11-07 04:42:44 EST — scribe `84a89ac2b` (red), `db50db4a5`, `31f30902c`, `328d1a8ff`, `8dab6a7f5`, `804e0892c` and `c2ce93c96` (green), `1805bd5f7`, `b707a0a8a` and `0750658b6` (tests and pictures), `ece815ba0` (docs), landed by `67b00922` with its changelog `53cf5eaee` (landed by `09ba36ae8`)
 Feature (#1674): the now-playing card like the media Live Activity: a dark platter lit by its artwork's colors (plain with Reduce Transparency or Increase Contrast), artwork in its own shape (a video's wide), white words and a 6-point bar, a round X; back 15, pause and forward 30 for a play Scribe Playback on this phone handed over (one seek helper with the drag; Scribe's pause through MediaPauseClient); an item of Your Mac's catalogs says Video, Podcast, Book or Recording, never Song. Verified: 43 of 43 and 44 of 44 logic tests (mini), 42 pictures (laptop).
 
