@@ -1,3 +1,6 @@
+## 2026-11-07 18:36:46 EST — scribe `639b45a1daf838fa65c4ddcda7b1fadaf4866316` (merge), `5cf6fe6dc` (red), `b717c92e3` (green)
+Fix (#2023): `scribe hold off` says "writing what waited" only when it writes: one releaseDue check for the release timer and hold off (the live probe at 18:31, with Recording 393 live, printed it while all 21 posts rightly kept waiting). The mirror runs main 639b45a1d (installed 18:35; backups app.before-2023-* and app.before-2023b-*).
+
 ## 2026-11-07 18:27:23 EST — scribe `5d52ad6ec1441bb044b8d9b0394de312f3954b34` (merge), `ba0414b07` (red), `e6bed9b7f` (green), `9b1995eaa` (docs), `e32ba41f4` (red), `92d0dc8f4` (green)
 Feature (#2023): his hold: `scribe hold on [--until stop | --for 4h] [--why "the drive"] | off | status` holds every answer card and notice to his phone with nothing live (a drive, a meeting), until his next Stop on a take, its time, 12 hours at most, or hold off; one PostGate (post-hold.ts) says what posts wait for, for the post server and the outbox alike; at its end one card per thread and one notice, "while you were away (the drive)"; acknowledgements and --he-asked still go; the listener sets it when he says he is leaving (2026-11-07 17:01: two check-ins reached his iPhone in the car with nothing live).
 
