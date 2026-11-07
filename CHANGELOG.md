@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 6th, 2026 at 11:10:47 p.m. EST — `2a4b62525104` test(#1942): a late answer with no frame being applied keeps a session that still delivers frames; a session that took no frame for a whole interval is replaced (one file, v1.9.79's API only)
+
+- **Implementation commit:** `2a4b625251044fb971ce58a46f5f58ae66a38c4e`
+- **Change:** Proof of v1.9.80's late keep, red on v1.9.79 and green on v1.9.80, one test file (#1942; no source change, no tag)
+- **Details:**
+  - Plan 4a23931d, test 2a4b6252 (tested as 3bcc5c01, the same tree before a rebase), amendment 4a04c758. Two tests on one history at a controlled clock, a write offered at 100,000 ms with its deadline at 106,000 and no frame being applied at the deadline (asserted, so #296's deferral cannot keep it): A, the applier takes one frame at 103,000, must be kept by outbox.mutation.ack-late-kept (claim to 112,000, one connection, answered on it); B, no frame in the interval, must be replaced and answered on the next session. Built only on API v1.9.79 has: a frame counts as taken once the reader asks for its next one and the applier waits again. Mac mini, debug: job 1942-proof-v79 on 9f599964 (v1.9.79's tree plus the file): A fails (replaced, two connections, no late keep), B passes; job 1942-proof-v80 on 3bcc5c01: both pass. B cannot go red on v1.9.79, which already replaced every session whose write passed its deadline with no frame being applied; it guards that the keep did not make a quiet session immortal. Proves the path in a test, not on a busy Mac.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLateAcknowledgementTests.swift` — the slow and the quiet session, told apart by one frame in the interval before the deadline; self-contained so the same file runs on both releases
+- **User context (verbatim):**
+  > you can start up a scribe session on laptop too to ensure playback works well as well with computer use etc.
+- **SpecStory:** unavailable — unavailable — Claude Code headless session 3009327e-654e-423c-a249-032997bc979d (tools/agent-run, claude/pp); no SpecStory capture for headless runs
+
 ## November 6th, 2026 at 8:50:05 p.m. EST — `d10f9b13e2f2` green(#1942): a late answer on a session that still delivers frames keeps its claim and its session; a write is given up after the deferral limit; a quiet session is still replaced
 
 - **Implementation commit:** `d10f9b13e2f2d288df4bd1866b38e2caa02569ab`

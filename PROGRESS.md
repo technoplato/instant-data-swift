@@ -1,3 +1,25 @@
+## 2026-11-06 23:11:41 EST — ack-proof-1942 (#1942): v1.9.80's late keep proven in a test, red on v1.9.79 and green on v1.9.80; the consuming app's measurement armed
+
+- **Why:** the consuming app's after-measurement on its Mac (a build carrying 1.9.80, 2026-11-06 21:54-21:59) never
+  reached the new keep: its one write past the 6 s deadline was kept by #296's frame deferral (a frame was being
+  applied at that instant), and `outbox.mutation.ack-late-kept` ran 0 times. 1.9.80's own red tests use a test hook
+  v1.9.79 lacks, and none of them shows which path kept a session.
+- **Landed:** plan `4a23931d`, test `2a4b6252` (tested as `3bcc5c01`, the same tree before a rebase), amendment
+  `4a04c758`: `InstantLateAcknowledgementTests`, two tests on one history at a controlled clock. A write is offered at
+  100,000 ms and its deadline (106,000) passes with no frame being applied: the slow session, whose applier took a frame
+  at 103,000, must be kept by `ack-late-kept` and answered on its connection; the quiet one, which took none, must be
+  replaced and answered on the next. Only API v1.9.79 also has. No source change, so no tag and no pin.
+- **Checked:** Mac mini, debug. `1942-proof-v79` on `9f599964` (tag `v1.9.79`'s tree plus the file): the slow-session
+  test fails (replaced: two connections, the write expired as a timeout, no late keep), the quiet one passes.
+  `1942-proof-v80` on `3bcc5c01` (sources identical to `v1.9.80`): both pass (2 tests, 0.154 s). The quiet test cannot
+  fail on v1.9.79, which already replaced every session whose write passed its deadline with no frame being applied.
+- **Armed (outside this repository):** a one-shot waiter opens two long recordings on the consuming app's Mac once the
+  laptop's 1-minute load is over 150 on its own, the owner is away (idle 5 minutes or more), the output is muted and the
+  running build carries 1.9.80 or later; it records the after-measurement's numbers on #1942 and removes itself, or
+  logs "not measured" after 7 days.
+- **Next (resume here):** #1942's work log for the waiter's result. A green test proves the path in a test, not on a busy
+  Mac.
+
 ## 2026-11-06 20:48:48 EST — ack-session-1942 (#1942): v1.9.80, one late answer no longer tears down a session that still delivers frames
 
 - **Why:** on a consuming app's Mac (1.9.78, 2026-11-06 12:27-12:41, load 105-300, two long recordings opening) one write

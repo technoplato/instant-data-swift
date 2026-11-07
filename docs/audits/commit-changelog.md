@@ -1,3 +1,12 @@
+## 2026-11-06 23:10:22 EST — instant-data-swift `4a04c758406448c9542c981f235b2896b7255d8f`
+Plan (#1942): 2026-11-06-ack-proof-1942 amendment 1: the claims on PROGRESS.md and docs/releases/v1.9.80.md for the proof's entries (plan and claims only).
+
+## 2026-11-06 22:43:17 EST — instant-data-swift `2a4b625251044fb971ce58a46f5f58ae66a38c4e` (rebased 23:09:43 from the tested `3bcc5c01`, the same tree)
+Test (#1942): the proof of v1.9.80's late keep, one self-contained file on v1.9.79's API: a write passes its 6 s deadline with no frame being applied; a session whose applier took a frame 3 s before it is kept (ack-late-kept), one that took none is replaced. Mac mini, debug: red on `9f599964` (tag v1.9.79's tree plus the file: the slow session replaced, two connections), green on `3bcc5c01` (both pass); the quiet test passes on both, since v1.9.79 already replaced a quiet session. No source change: no tag, no pin.
+
+## 2026-11-06 22:42:42 EST — instant-data-swift `4a23931d32c8a9970800ca764f1749afddc86e24`
+Plan (#1942): 2026-11-06-ack-proof-1942: prove v1.9.80's late keep and the quiet session's replacement on both releases (plan and the claim on the new test file only).
+
 ## 2026-11-06 23:00:52 EST — scribe `f54704bfc33d853be292c9c76bd2b6ce8c6bda77`
 Feature (#1673 slice 2): the Playground's tap targets, Figma-style: playgroundAttempts.tapTargetsJSON pushed to production 22:59-23:00 with his standing approval (schema a6fed5b6ef5d to 7594084f187a, rules 91085af7c8ee to 316b09d577a4, drift 0, #496's held rules untouched; playground-matrix 107/107), scribe design link (a variant's newest attempt or an id; a rect or a drawing's cells), the attempt's page pushes a target's screen and outlines targets after a missed tap; #426's audio-upload schema test fixed (mini: uifb1673-green2).
 
