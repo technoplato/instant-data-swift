@@ -1,4 +1,6 @@
 // History:
+// - 2026-11-06: a claim admission can keep the claims that passed their deadline on a session that still delivers
+//   frames (`InstantLateClaimKeep`); one late answer replaced a live session about once a minute on a busy Mac (#1942).
 // - 2026-11-04: projectionMetadata hands back the projection it measured, so a claim that substitutes no required
 //   scalar records that value and its exact size instead of building and encoding it again (#1517).
 // - 2026-11-04: a window a write's save claimed names the session generation it was claimed for (#653).
@@ -124,6 +126,10 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
   /// Whether the process behind another claimant's claims has ended, so that the claim releases those claims first
   /// (#990). The default ends no claimant, so every claim keeps its lease.
   var claimantHasEnded: @Sendable (_ claimantID: String) -> Bool
+  /// Keeps this claimant's claims that passed their acknowledgement deadline instead of reclaiming them as timeouts
+  /// (#1942): the session they were offered on still delivers frames, so their answers are late, not lost. Nil reclaims
+  /// them, as a session that went quiet needs.
+  var keepsLateClaims: InstantLateClaimKeep?
 
   init(
     claimantID: String,
@@ -134,7 +140,8 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
     maximumBodyDecodeCount: Int = InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount,
     maximumEncodedBodyByteCount: Int = InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes,
     requiresExclusiveLane: Bool = false,
-    claimantHasEnded: @escaping @Sendable (_ claimantID: String) -> Bool = { _ in false }
+    claimantHasEnded: @escaping @Sendable (_ claimantID: String) -> Bool = { _ in false },
+    keepsLateClaims: InstantLateClaimKeep? = nil
   ) {
     self.claimantID = claimantID
     self.claimToken = claimToken
@@ -145,7 +152,23 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
     self.maximumEncodedBodyByteCount = maximumEncodedBodyByteCount
     self.requiresExclusiveLane = requiresExclusiveLane
     self.claimantHasEnded = claimantHasEnded
+    self.keepsLateClaims = keepsLateClaims
   }
+}
+
+/// How a claim admission keeps the claims that passed their acknowledgement deadline on a session that still delivers
+/// frames (#1942).
+///
+/// On a busy Mac one write's answer came 6.3 s after it was sent, past its 6 s deadline, while its session kept
+/// delivering frames; the expiry of its claim replaced the session, and every one-shot read in flight failed with it,
+/// 16 times in 13 minutes. Upstream `Reactor.js` fails only the transaction when its timer fires (`_sendMutation`) and
+/// never closes a socket for it. A kept claim moves later with its token, so the answer still matches it when it comes.
+struct InstantLateClaimKeep: Sendable, Equatable {
+  /// How far past the admission's `now` the earliest kept claim's deadline moves; later claims keep their spacing.
+  var milliseconds: Int64
+  /// Writes kept past their deadline for longer than the deferral limit: while any of them is still late, nothing is
+  /// kept, and the late claims expire as timeouts, which replaces the session before they go out again.
+  var givenUpMutationIDs: Set<String> = []
 }
 
 /// Later writes of this device that cover every operation of a write (library-78, item 3), and for a refused re-send
@@ -212,6 +235,11 @@ struct InstantAutomaticOutboxClaimWindow: Sendable {
   var synchronizationBlocker: InstantSynchronizationBlocker?
   /// Re-sends that accepted later writes cover, resolved as accepted instead of offered again (item 3).
   var supersededMutations: [PendingMutation] = []
+  /// This claimant's claims that had passed their deadline and were kept for a session that still delivers frames,
+  /// earliest first (#1942).
+  var keptLateMutationIDs: [String] = []
+  /// Writes the runtime had given up waiting for that were still late, so nothing was kept (#1942).
+  var givenUpLateMutationIDs: [String] = []
 }
 
 /// One durable mutation plus the exact later-write frontier that protects its

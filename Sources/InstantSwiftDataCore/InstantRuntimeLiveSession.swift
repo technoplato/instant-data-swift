@@ -13,6 +13,8 @@
 //   device following another one sees (#1796).
 // - 2026-11-04: a window a write's own save claimed is sent only on the session generation it was claimed for: a
 //   disconnect releases its claim and puts older writes back, which the next session must get first (#653).
+// - 2026-11-06: a delivery pass reads the frame being applied and how many frames the applier took in one hop, so a
+//   late answer on a session that still delivers frames keeps its claim instead of replacing the session (#1942).
 
 import Foundation
 import IssueReporting
@@ -498,6 +500,14 @@ struct InstantLiveReceiveProgress: Sendable, Equatable {
   func moved(since earlier: InstantLiveReceiveProgress) -> Bool {
     isApplying || receivedFrameCount != earlier.receivedFrameCount || takenFrameCount != earlier.takenFrameCount
   }
+}
+
+/// What the delivery pump reads from the live session before a claim (#296, #1942).
+struct InstantLiveAcknowledgementReading: Sendable {
+  /// The frame the open generation's applier is applying, if any.
+  var frameBeingApplied: (sequence: UInt64, op: String)?
+  /// How many frames the open generation's applier has taken; nil while no connection is open.
+  var takenFrames: (generation: Int, count: UInt64)?
 }
 
 /// One minute of the applier's buffer (#1796): how long frames waited between the reader and the applier, how deep
@@ -1841,6 +1851,8 @@ package actor InstantRuntimeLiveSession {
     }
     guard timedOut else { return }
     acknowledgementUnknownMutationIDs.formUnion(currentGenerationTimeouts)
+    // #1942: a claim reaches here only when its session delivered no frame for an acknowledgement interval or the write
+    // was kept past the deferral limit; a late answer on a session that still delivers frames keeps its claim.
     if !currentGenerationTimeouts.isEmpty, let session {
       generation += 1
       session.abort()
@@ -3009,6 +3021,18 @@ package actor InstantRuntimeLiveSession {
     var progress = receivedFrames.progressSnapshot
     progress.isApplying = frameBeingApplied() != nil
     return progress
+  }
+
+  /// What a delivery pass reads before it claims, in one hop (#296, #1942): the frame the applier is applying, and how
+  /// many frames the open generation's applier has taken. The count moves only as frames are applied, so an applier
+  /// stuck in one frame stops it and its claims fall back to that frame's own bounded deferral (#1383).
+  func acknowledgementReading() -> InstantLiveAcknowledgementReading {
+    InstantLiveAcknowledgementReading(
+      frameBeingApplied: frameBeingApplied(),
+      takenFrames: isOpened
+        ? receivedFrames.map { (generation: generation, count: $0.progressSnapshot.takenFrameCount) }
+        : nil
+    )
   }
 
   /// Applies one room frame the reader handed over, in arrival order and beside the query applier (#461): the room's

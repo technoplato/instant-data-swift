@@ -144,6 +144,8 @@
 //   store's attribute revision is the one the translation's schema came from, instead of limiting it again (#1109).
 // - 2026-11-06: a held write's verification evidence (its slots, later writes, and kept delivery record), its completion
 //   or discard with that verification in resolution_json, and a one-row hold for a retained mutation launch left (#696).
+// - 2026-11-06: the automatic claim keeps its claimant's late claims, in the transaction that would reclaim them, when
+//   the runtime says the session still delivers frames; one late answer replaced a live session (#1942).
 
 import CryptoKit
 import Foundation
@@ -10261,30 +10263,74 @@ public actor SQLitePersistenceStore {
     earliestDeadlineMilliseconds: Int64
   ) throws -> (deferredClaimCount: Int, nextClaimDeadlineMilliseconds: Int64?) {
     try transaction {
-      let claimed = InstantOutboxDeliveryClaimState.claimed.rawValue
-      guard
-        let earliest = try selectScalar(
-          """
-          SELECT CAST(MIN(delivery_claim_deadline_ms) AS TEXT) FROM instant_outbox
-          WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
-            AND delivery_claim_deadline_ms IS NOT NULL
-          """,
-          [.text(claimed), .text(claimantID)]
-        ).flatMap(Int64.init)
-      else { return (0, nil) }
-      guard earliest < earliestDeadlineMilliseconds else { return (0, earliest) }
-      let shift = earliestDeadlineMilliseconds - earliest
-      try execute(
+      try deferOutboxClaimDeadlinesWithoutTransaction(
+        claimantID: claimantID,
+        earliestDeadlineMilliseconds: earliestDeadlineMilliseconds
+      )
+    }
+  }
+
+  private func deferOutboxClaimDeadlinesWithoutTransaction(
+    claimantID: String,
+    earliestDeadlineMilliseconds: Int64
+  ) throws -> (deferredClaimCount: Int, nextClaimDeadlineMilliseconds: Int64?) {
+    let claimed = InstantOutboxDeliveryClaimState.claimed.rawValue
+    guard
+      let earliest = try selectScalar(
         """
-        UPDATE instant_outbox
-        SET delivery_claim_deadline_ms = delivery_claim_deadline_ms + ?
+        SELECT CAST(MIN(delivery_claim_deadline_ms) AS TEXT) FROM instant_outbox
         WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
           AND delivery_claim_deadline_ms IS NOT NULL
         """,
-        [.int(shift), .text(claimed), .text(claimantID)]
-      )
-      return (Int(sqlite3_changes(connection.raw)), earliestDeadlineMilliseconds)
-    }
+        [.text(claimed), .text(claimantID)]
+      ).flatMap(Int64.init)
+    else { return (0, nil) }
+    guard earliest < earliestDeadlineMilliseconds else { return (0, earliest) }
+    let shift = earliestDeadlineMilliseconds - earliest
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET delivery_claim_deadline_ms = delivery_claim_deadline_ms + ?
+      WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+        AND delivery_claim_deadline_ms IS NOT NULL
+      """,
+      [.int(shift), .text(claimed), .text(claimantID)]
+    )
+    return (Int(sqlite3_changes(connection.raw)), earliestDeadlineMilliseconds)
+  }
+
+  /// Keeps this claimant's claims that passed their deadline at `nowMilliseconds`, moved as
+  /// `deferAutomaticOutboxClaimDeadlines` moves them, so the earliest is `keep.milliseconds` past now (#1942). Returns
+  /// the late ones, earliest first, and nothing is kept while one the runtime gave up on is among them: those late
+  /// claims then expire as timeouts, which replaces the session.
+  private func keepLateOutboxClaimsWithoutTransaction(
+    claimantID: String,
+    nowMilliseconds: Int64,
+    keep: InstantLateClaimKeep
+  ) throws -> (kept: [String], givenUp: [String]) {
+    let late = try selectStrings(
+      """
+      SELECT mutation_id FROM instant_outbox
+      WHERE delivery_claim_state = ? AND delivery_claimant_id = ? AND delivery_claim_deadline_ms <= ?
+      ORDER BY created_at_ms, mutation_id
+      LIMIT ?
+      """,
+      [
+        .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+        .text(claimantID),
+        .int(nowMilliseconds),
+        .int(Int64(InstantAutomaticOutboxClaimLimits.maximumMutationCount)),
+      ]
+    )
+    guard !late.isEmpty else { return ([], []) }
+    let givenUp = late.filter(keep.givenUpMutationIDs.contains)
+    guard givenUp.isEmpty else { return ([], givenUp) }
+    let (keptUntil, overflow) = nowMilliseconds.addingReportingOverflow(keep.milliseconds)
+    _ = try deferOutboxClaimDeadlinesWithoutTransaction(
+      claimantID: claimantID,
+      earliestDeadlineMilliseconds: overflow ? .max : keptUntil
+    )
+    return (late, [])
   }
 
   /// Decodes one outbox row by id so a refusal can be logged with the refused write's values (#296). Read-only; a
@@ -11142,6 +11188,15 @@ public actor SQLitePersistenceStore {
         now: request.now,
         hasEnded: request.claimantHasEnded
       )
+      // #1942: kept in the transaction that would reclaim them, so a wait for the operation gate between the runtime's
+      // look at the session and this claim cannot let them expire.
+      let lateClaims = try request.keepsLateClaims.map {
+        try keepLateOutboxClaimsWithoutTransaction(
+          claimantID: request.claimantID,
+          nowMilliseconds: request.now.milliseconds,
+          keep: $0
+        )
+      } ?? (kept: [], givenUp: [])
       let reclaimedMutationIDs = try reclaimExpiredOutboxClaimsWithoutTransaction(
         nowMilliseconds: request.now.milliseconds
       )
@@ -11706,7 +11761,9 @@ public actor SQLitePersistenceStore {
         decodedBodyCount: bodyDecodeCount,
         decodedBodyByteCount: bodyByteCount,
         synchronizationBlocker: synchronizationBlocker,
-        supersededMutations: supersededMutations
+        supersededMutations: supersededMutations,
+        keptLateMutationIDs: lateClaims.kept,
+        givenUpLateMutationIDs: lateClaims.givenUp
       )
     }
     if let blocker = window.synchronizationBlocker {

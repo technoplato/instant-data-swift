@@ -1,4 +1,7 @@
 // History:
+// - 2026-11-06: a delivery pass keeps the claims past their acknowledgement deadline while the session's applier took a
+//   frame within one interval (6 s), and gives a write up after the deferral limit (120 s); one late answer replaced a
+//   live session about once a minute on a busy Mac, failing every one-shot read in flight (#1942).
 // - 2026-11-06: a held write is verified against the server's own rows (an answer taken where it arrives, before it
 //   joins this device's view) and completed or discarded only on that evidence; a retained mutation whose effect is
 //   unknown is held first when launch left it in the outbox (#696, #134).
@@ -1418,6 +1421,10 @@ private final class InstantExplicitMutationFlushOwner: @unchecked Sendable {
 /// queue; each expiry replaced the session, which dropped the frame, so the rebase never finished.
 private actor InstantRuntimeAcknowledgementDeferral {
   private var frame: (sequence: UInt64, progress: UInt64, since: InstantTimestamp)?
+  /// #1942: the open session's count of frames its applier took, when a pass first saw it at that count.
+  private var delivery: (generation: Int, takenFrames: UInt64, since: InstantTimestamp)?
+  /// #1942: when a pass first kept each write past its deadline, on the session generation it was kept on.
+  private var keptLate: (generation: Int, since: [String: InstantTimestamp])?
 
   /// Milliseconds since the pump first saw this frame being applied, or since server applies last reported progress
   /// while it was (0 the first time, and whenever `progress` moved).
@@ -1431,6 +1438,47 @@ private actor InstantRuntimeAcknowledgementDeferral {
 
   func reset() {
     frame = nil
+  }
+
+  /// #1942: how a pass's claim treats the claims past their deadline, and how long ago the pump last saw the session's
+  /// applier take a frame. They are kept, `interval` past the claim, while that was under `interval` ago, except while a
+  /// write kept for `limit` or longer is still late. The count is read at each pass, so a frame counts from the pass that
+  /// first sees it: a session that went quiet is replaced one or two intervals after its last frame.
+  func lateClaimKeep(
+    generation: Int,
+    takenFrames: UInt64,
+    now: InstantTimestamp,
+    interval: Int64,
+    limit: Int64
+  ) -> (keep: InstantLateClaimKeep?, quietMilliseconds: Int64) {
+    if delivery?.generation != generation || delivery?.takenFrames != takenFrames {
+      delivery = (generation, takenFrames, now)
+    }
+    if keptLate?.generation != generation {
+      keptLate = (generation, [:])
+    }
+    let quiet = max(0, now.milliseconds - (delivery?.since.milliseconds ?? now.milliseconds))
+    guard quiet < interval else { return (nil, quiet) }
+    let givenUp = (keptLate?.since ?? [:]).filter { now.milliseconds - $0.value.milliseconds >= limit }.keys
+    return (InstantLateClaimKeep(milliseconds: interval, givenUpMutationIDs: Set(givenUp)), quiet)
+  }
+
+  /// #1942: records the writes a claim kept past their deadline, earliest first, and returns how long the pump has kept
+  /// the earliest. Writes it gave up on are forgotten: their claims expire and the session is replaced, and a write kept
+  /// again on the next session gets a fresh limit. A write answered since it was kept is forgotten after twice `limit`.
+  func noteLateClaims(kept: [String], givenUp: [String], now: InstantTimestamp, limit: Int64) -> Int64 {
+    guard var state = keptLate else { return 0 }
+    guard givenUp.isEmpty else {
+      for mutationID in givenUp { state.since[mutationID] = nil }
+      keptLate = state
+      return 0
+    }
+    for mutationID in kept where state.since[mutationID] == nil {
+      state.since[mutationID] = now
+    }
+    state.since = state.since.filter { now.milliseconds - $0.value.milliseconds <= 2 * limit }
+    keptLate = state
+    return kept.first.flatMap { state.since[$0] }.map { max(0, now.milliseconds - $0.milliseconds) } ?? 0
   }
 }
 
@@ -11599,10 +11647,14 @@ public final class InstantRuntime: Sendable {
     let outstanding: InstantAutomaticOutboxTransportSelection
     do {
       try Task.checkCancellation()
-      // Claiming reclaims expired claims as acknowledgement timeouts; keep them while a frame is still applying.
-      try await deferAcknowledgementDeadlinesWhileAFrameIsApplied()
+      // Claiming reclaims expired claims as acknowledgement timeouts: keep them while a frame is still applying (#296),
+      // and keep the late ones while the session still delivers frames (#1942).
+      recordActorHop(.liveSession)
+      let reading = await liveSession.acknowledgementReading()
+      try await deferAcknowledgementDeadlinesWhileAFrameIsApplied(reading.frameBeingApplied)
       outstanding = try await automaticOutboxTransportMutationsForDelivery(
-        probesOneWrite: await mutationServerErrorBackoff.probesOneWrite
+        probesOneWrite: await mutationServerErrorBackoff.probesOneWrite,
+        keepsLateClaims: await lateClaimKeep(reading.takenFrames)
       )
     } catch is CancellationError {
       return .finished
@@ -11674,10 +11726,11 @@ public final class InstantRuntime: Sendable {
     noteServerApplyProgress()
   }
 
-  private func deferAcknowledgementDeadlinesWhileAFrameIsApplied() async throws {
+  private func deferAcknowledgementDeadlinesWhileAFrameIsApplied(
+    _ frameBeingApplied: (sequence: UInt64, op: String)?
+  ) async throws {
     let limit = configuration.acknowledgementDeferralLimitMilliseconds
-    recordActorHop(.liveSession)
-    guard limit > 0, let frame = await liveSession.frameBeingApplied() else {
+    guard limit > 0, let frame = frameBeingApplied else {
       await acknowledgementDeferral.reset()
       return
     }
@@ -11730,6 +11783,80 @@ public final class InstantRuntime: Sendable {
         "nextClaimDeadlineMilliseconds": deferral.nextClaimDeadlineMilliseconds.map(String.init) ?? "",
       ]
     )
+  }
+
+  /// Whether this pass's claim keeps the claims that passed their acknowledgement deadline, instead of reclaiming them as
+  /// timeouts, which replaces the session (#1942).
+  ///
+  /// The deadline exists to notice a session that went quiet, such as a half-open socket, not a slow one. On a busy Mac
+  /// one write's answer came 6.3 s after it was sent while its session kept delivering frames; the expiry of its claim
+  /// replaced the session 16 times in 13 minutes, every one-shot read in flight failed each time, and the next session
+  /// accepted the same write 1.6 s later. Upstream `Reactor.js` fails only that transaction when its timer fires
+  /// (`_sendMutation`) and keeps the socket; Swift keeps the write, so it keeps the claim, while the session's applier
+  /// took a frame within one acknowledgement interval. A write kept for `acknowledgementDeferralLimitMilliseconds`
+  /// (120 s) is given up as before, so a lost answer cannot hold the queue forever.
+  private func lateClaimKeep(
+    _ takenFrames: (generation: Int, count: UInt64)?
+  ) async -> (keep: InstantLateClaimKeep, quietMilliseconds: Int64)? {
+    let limit = configuration.acknowledgementDeferralLimitMilliseconds
+    guard limit > 0, let takenFrames else { return nil }
+    let decision = await acknowledgementDeferral.lateClaimKeep(
+      generation: takenFrames.generation,
+      takenFrames: takenFrames.count,
+      now: configuration.now(),
+      interval: InstantMutationAcknowledgementDeadlinePolicy.baseIntervalMilliseconds,
+      limit: limit
+    )
+    return decision.keep.map { ($0, decision.quietMilliseconds) }
+  }
+
+  /// Records and reports the claims an admission kept past their deadline, or the late writes it gave up on (#1942).
+  private func noteLateClaims(
+    _ window: InstantAutomaticOutboxClaimWindow,
+    keep: (keep: InstantLateClaimKeep, quietMilliseconds: Int64),
+    now: InstantTimestamp
+  ) async {
+    let limit = configuration.acknowledgementDeferralLimitMilliseconds
+    let keptForMilliseconds = await acknowledgementDeferral.noteLateClaims(
+      kept: window.keptLateMutationIDs,
+      givenUp: window.givenUpLateMutationIDs,
+      now: now,
+      limit: limit
+    )
+    if !window.givenUpLateMutationIDs.isEmpty {
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.ack-late-wait-exhausted",
+        message:
+          "A write stayed unanswered past its acknowledgement deadline for the deferral limit on a session that still delivers frames; its claim expires as a timeout and the session is replaced.",
+        metadata: [
+          "givenUpCount": String(window.givenUpLateMutationIDs.count),
+          "givenUpMutationIDs": window.givenUpLateMutationIDs.prefix(12).joined(separator: ","),
+          "limitMilliseconds": String(limit),
+          "quietMilliseconds": String(keep.quietMilliseconds),
+        ]
+      )
+    } else if let first = window.keptLateMutationIDs.first {
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.ack-late-kept",
+        message:
+          "Kept delivery claims past their acknowledgement deadline: the session still delivers frames, so the answers are late, not lost.",
+        metadata: [
+          "keptCount": String(window.keptLateMutationIDs.count),
+          "firstMutationID": first,
+          "keptForMilliseconds": String(keptForMilliseconds),
+          "quietMilliseconds": String(keep.quietMilliseconds),
+          "limitMilliseconds": String(limit),
+          "nextClaimDeadlineMilliseconds": window.nextClaimDeadlineMilliseconds.map(String.init) ?? "",
+        ],
+        correlationID: first
+      )
+    }
   }
 
   /// Frees the claim of a window a write's save claimed for a session that has ended (#653), under the operation gate,
@@ -16495,8 +16622,11 @@ public final class InstantRuntime: Sendable {
 
   /// - Parameter probesOneWrite: Claim at most one write in flight, while the server has answered a write with a
   ///   transient error and has not accepted one since (#376).
+  /// - Parameter keepsLateClaims: Keep this runtime's claims that passed their deadline, for a session that still
+  ///   delivers frames (#1942).
   private func automaticOutboxTransportMutationsForDelivery(
-    probesOneWrite: Bool = false
+    probesOneWrite: Bool = false,
+    keepsLateClaims: (keep: InstantLateClaimKeep, quietMilliseconds: Int64)? = nil
   ) async throws -> InstantAutomaticOutboxTransportSelection {
     try await enterOperationGateUnlessCancelled(
       operation: "claim automatic outbox transport mutations for delivery",
@@ -16506,21 +16636,26 @@ public final class InstantRuntime: Sendable {
       // #653: windows writes' saves claimed before this pass took the gate go out before anything it claims now.
       recordActorHop(.deliveryPump)
       let claimedAtSave = await mutationDeliveryPump.takeClaimedAtSave()
+      let now = configuration.now()
       recordActorHop(.persistence)
       let window = try await persistence.claimAutomaticOutboxDeliveryWindow(
         InstantAutomaticOutboxClaimRequest(
           claimantID: automaticDeliveryClaimantID,
           claimToken: UUID().uuidString.lowercased(),
-          now: configuration.now(),
+          now: now,
           maximumMutationCount: probesOneWrite
             ? 1
             : InstantAutomaticOutboxClaimLimits.maximumMutationCount,
           // A launch that ended left these claims; nothing can answer them, so they go out again now (#990).
           claimantHasEnded: { [process = configuration.outboxClaimantProcess] claimantID in
             process.hasEnded(claimantID: claimantID)
-          }
+          },
+          keepsLateClaims: keepsLateClaims?.keep
         )
       )
+      if let keepsLateClaims, !window.keptLateMutationIDs.isEmpty || !window.givenUpLateMutationIDs.isEmpty {
+        await noteLateClaims(window, keep: keepsLateClaims, now: now)
+      }
       recordActorHop(.outbox)
       for mutation in window.supersededMutations {
         await publishMutationLifecycle(mutation)
