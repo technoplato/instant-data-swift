@@ -1,3 +1,6 @@
+## 2026-11-07 01:22:43 EST — scribe `4a32574d5` (red), `16b270b7b` (green), `24bf63a4a` (docs), landed by `3b38f825919aab2d8228e9969747d0be37033fab` with its changelog `f4af2a902`
+Diagnostics (#1972, amendment 3): Play that asks the player to start says so (playback.play.requested), and so does the player's start (playback.play.started), with the audio played, so a device's own clock gives the seconds from Play to first audio; production builds run no agent control, and a Play that started wrote no line before. No state change. Lands after the 297 cut, so 298 carries it.
+
 ## 2026-11-07 01:18:40 EST — scribe `ad8e281308948481282e1247ae1e4a89bb7e8af8`
 Security (#496): the nine agent tables are owner-scoped in production (pushed 2026-11-07 00:52 EST; perms 1dc7d3ed0257 -> c7b8ad39f122, only the ten namespaces) and $streams is admin-only; the stream-era media path is gone from the app and ScribeCLI (about 540 lines). prod-live-matrix 47 of 49 after the push (the 2 misses a race, cleared row by row); undo: rollback-rules.sh with the pre-push backup (ADR 0136, "Pushed").
 
