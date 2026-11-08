@@ -1,3 +1,6 @@
+## 2026-11-07 21:12:50 EST — scribe `48fa060536855623e64876611f9cdca1b8b280a5`
+Data repair (#2018): rows that named a client now carry the client's id instead (97 of the 161 listed rows, written through apply-plan.mjs and read back, each backed up whole first); client-scrub.ts plans the change, tests first, and leaves fields the rules keep fixed.
+
 ## 2026-11-07 21:07:38 EST — scribe `b289d77f3e18321e3b102668500954cb9a42afd3` (merge of the UI walk's red, green and docs commits)
 Feature (#2032): a seeded, deterministic UI walk through the app on a phone, run from the Mac beside a canned take: the app's own links over the cable or Wi-Fi (devicectl --payload-url, no relaunch, the app's pid read before each step), 51 steps from the app's place table and the screen links the app printed on its timeline, each step's main-thread turns, hitches, hangs, CPU and memory from a light trace and the app's own samples, and a run score per build that metrics.py --compare --write puts in docs/PERFORMANCE.md.
 
