@@ -99,6 +99,15 @@ because a refresh restates its result whole. Count relations with tens of childr
 a query of its own (the threads or pictures of the page's recordings) rather than inside the list query, so a segment
 written during a recording does not restate every counted child, and a new picture restates only the small query.
 
+## Checked against Instant's server
+
+2026-11-08, the throwaway test app, read-only admin queries (`POST /admin/query`, which parses InstaQL as the client's
+live query does; it skips permissions): a count-only include's form, `recordings` narrowed to `fields: ["id"]` with
+`attachments: {$: {where: ..., fields: ["id", "kind"]}}` and no nested bound, answered HTTP 200 with each child narrowed
+to `id` and `kind`. On four recordings, `where: {kind: {$in: ["image", "screenFrame"]}}` brought 0, 0, 16 and 3 children
+and `where: {or: [{kind: "image"}, {kind: "audio"}]}` brought 1, 1, 16 and 4. Not yet seen: a client socket's answer
+under the app's permission rules.
+
 ## Not done
 
 - Counts other than `count` (min, max, sum): upstream's admin aggregate is `count` only; add when a screen needs one.
