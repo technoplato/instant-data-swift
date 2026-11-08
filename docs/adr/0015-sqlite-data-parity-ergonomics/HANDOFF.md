@@ -240,7 +240,7 @@ docs/adr/0015-sqlite-data-parity-ergonomics.md   stub body
 | `issue-155-L1-nested-limit` | **DONE** |
 | `issue-155-L2-map-selection` | **DONE** |
 | `issue-155-L2b-multibag` | **DONE** |
-| `issue-155-L3-aggregate-group` | TODO |
+| `issue-155-L3-aggregate-group` | **DONE** 2026-11-08 (red `50d1fd1e`, green `653ac656`; `l3-aggregates.md`) |
 | `issue-155-L4-sync-status` | TODO (ADR 0014) |
 | `issue-155-P1-client-id` | TODO (parallel OK) |
 | `issue-155-S0-entity-names` | TODO (aliases only) |
@@ -261,7 +261,7 @@ Claim still: `grok-build/architecture-audit-155`. Re-claim or keep if continuing
 3. **ScribeInstantStore still exists** — do not delete until S1–S2 paths work and are tested.  
 4. **liveChanges planners still exist** — still scheduled for deletion after write path rewrite.  
 5. **`@Selection` / Columns macros** — not implemented; multi-bag map is the interim.  
-6. **Aggregations / grouping (L3)** — decided in scope, not coded.  
+6. **Aggregations / grouping (L3)** — shipped 2026-11-08: counts on rows, sections, grouped counts (`l3-aggregates.md`).  
 7. **Entity sync status on fetch (L4)** — ADR 0014 proposed, not shipped.  
 8. **Client id (P1)** — decided as activity identity, not implemented.  
 9. **Words as JSON on segment (S5)** — decided, schema/write path not migrated.  
