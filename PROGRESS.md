@@ -1,3 +1,26 @@
+## 2026-11-07 22:53:19 EST — replay-2028 (#2028): v1.9.81, a replay refused because this device's newer write already landed is not a refusal
+
+- **Why:** a consuming app's device on a cellular network that dropped every few minutes (one build, 2026-11-07
+  17:47-19:24) recorded 16 writes as refused for good, each a replay of an unanswered write (`Permission denied: not
+  perms-pass?`), and the app reported data as refused; an admin read of the server's rows found every refused row held
+  at a newer `updatedAtMs`. Item 3 (library-78) reads the covering writes from the outbox, and the watermark had pruned
+  them; in the same minute four replay refusals whose covering writes were still in the outbox resolved as superseded.
+- **Landed:** plan `51285997` (written after the first red and green of this P0) and amendment `74496606`; red
+  `586649b4`, green `362fdbbf`: the watermark keeps an accepted write while an older write of its slots is open, so a
+  replay it covers is resolved without an offer or its refusal resolves as accepted. Measure `555dfff6`
+  (`InstantFlappingNetworkRefusalTests`), which found a second path on both trees; red `4073aa6f`, green `2881ae5b`: a
+  replay's refusal waits behind a covering write that waits its turn, and a refusal resolved by coverage records the
+  server's verdict, ending one write at a time after a transient error.
+- **Checked:** Mac mini jobs `2028-retention-red`, `2028-retention-green` (97 tests in 11 suites), `2028-waiting-red`,
+  `2028-waiting-green` (10 tests in 3 suites), the flapping network before and after (8 seeds: 1 false refusal before,
+  none after, every true refusal reported), and the whole bundle `2028-bundle3` (1,766 tests, 5 failing: 1 listed, the
+  decode CPU ratio and #1948 as at v1.9.80, a wall-clock bound at load 10, and the simulation's timeout beside the
+  bundle, which now runs in the measurement pass; the two runs before it hit the jobs' 256 open-file limit).
+- **Released:** v1.9.81 (`docs/releases/v1.9.81.md`).
+- **Next (resume here):** pin 1.9.81 in the consuming app (its ten pin files; model `4698df28b`), land it, cut its next
+  build and install it; then count refused writes per dropped connection on the device. Rows refused before this
+  release stay failed on a device until the app's own check clears them (its follow-up #2033).
+
 ## 2026-11-06 23:11:41 EST — ack-proof-1942 (#1942): v1.9.80's late keep proven in a test, red on v1.9.79 and green on v1.9.80; the consuming app's measurement armed
 
 - **Why:** the consuming app's after-measurement on its Mac (a build carrying 1.9.80, 2026-11-06 21:54-21:59) never

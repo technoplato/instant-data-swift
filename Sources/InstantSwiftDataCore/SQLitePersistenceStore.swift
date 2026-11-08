@@ -7117,7 +7117,7 @@ public actor SQLitePersistenceStore {
   }
 
   /// `outbox.status = confirmed`, proven, and covered by `processedTransactionID` (the watermark prune), as SQL that is
-  /// never NULL.
+  /// never NULL. A write kept as evidence for an older open write (`keepsEvidenceForAnOlderOpenWrite`) is not pruned.
   private static func serverApplyReductionPrunablePredicate(
     processedTransactionID: String,
     alias: String
@@ -7142,10 +7142,39 @@ public actor SQLitePersistenceStore {
     }
     return (
       """
-      (\(alias).status = ? AND COALESCE(\(alias).confirmation_proven, 0) = 1 AND \(covered))
+      (\(alias).status = ? AND COALESCE(\(alias).confirmation_proven, 0) = 1 AND \(covered)
+        AND NOT \(keepsEvidenceForAnOlderOpenWrite(alias: alias)))
       """,
       bindings
     )
+  }
+
+  /// Whether an accepted write stays in the outbox past the watermark as evidence (#2028): an older write that sets one
+  /// of its slots is still open (neither failed nor proven), so it may yet be offered again or refused.
+  ///
+  /// Item 3 (library-78) resolves such a write as accepted, and never offers it again, when later accepted writes of
+  /// this device cover every slot it sets (`laterWriteCoverageWithoutTransaction`). It reads those writes from the
+  /// outbox. A covering write the watermark pruned covered nothing: the older write's re-send went out, a rule that
+  /// keeps `updatedAtMs` from going back refused it, and the refusal stood as a failure although the server holds a
+  /// newer value for every slot. Kept, the newer write also keeps its overlay above the older one's, so the device
+  /// shows the newer value. It leaves at the first watermark after the older write resolves. In order, an older write
+  /// is answered before a newer one, so this keeps a write only after an answer was lost or came out of order.
+  private static func keepsEvidenceForAnOlderOpenWrite(alias: String) -> String {
+    """
+    EXISTS(
+      SELECT 1
+      FROM instant_outbox_write_keys AS kept_key
+      JOIN instant_outbox_write_keys AS older_key INDEXED BY instant_outbox_write_keys_lookup_idx
+        ON older_key.entity_id = kept_key.entity_id AND older_key.attribute_id = kept_key.attribute_id
+      JOIN instant_outbox AS older ON older.mutation_id = older_key.mutation_id
+      WHERE kept_key.mutation_id = \(alias).mutation_id
+        AND older.status != 'failed' AND COALESCE(older.confirmation_proven, 0) = 0
+        AND (
+          older.created_at_ms < \(alias).created_at_ms
+          OR (older.created_at_ms = \(alias).created_at_ms AND older.mutation_id < \(alias).mutation_id)
+        )
+    )
+    """
   }
 
   func loadServerApplyBodyPage(
@@ -8122,24 +8151,27 @@ public actor SQLitePersistenceStore {
     return Int(try selectInt64("SELECT changes()"))
   }
 
+  /// The writes the watermark covers, less those kept as evidence for an older open write (#2028), which the server-apply
+  /// reduction leaves out as well (`serverApplyReductionPrunablePredicate`).
   private func serverApplyWatermarkPredicate(
     _ control: InstantServerApplyPlanControl,
     alias: String
   ) -> (sql: String, bindings: [SQLiteBinding]) {
     let serverTransactionID = "\(alias).server_transaction_id"
+    let kept = Self.keepsEvidenceForAnOlderOpenWrite(alias: alias)
     if let processedNumber = control.processedTransactionNumber {
       return (
         """
-        (\(serverTransactionID) = ? OR (
+        ((\(serverTransactionID) = ? OR (
           \(serverTransactionID) != ''
           AND \(serverTransactionID) NOT GLOB '*[^0-9]*'
           AND CAST(\(serverTransactionID) AS INTEGER) <= ?
-        ))
+        )) AND NOT \(kept))
         """,
         [.text(control.processedTransactionID), .int(processedNumber)]
       )
     }
-    return ("\(serverTransactionID) = ?", [.text(control.processedTransactionID)])
+    return ("(\(serverTransactionID) = ? AND NOT \(kept))", [.text(control.processedTransactionID)])
   }
 
   /// - Parameter readsBodyBytes: Whether each row records its body's size, which reads the whole body. The commit's
@@ -10378,9 +10410,8 @@ public actor SQLitePersistenceStore {
   ///
   /// - Parameters:
   ///   - decoded: The write's body when the caller already decoded it.
-  ///   - acceptedOnly: Consider only later writes the server accepted.
-  ///   - pendingMustBeClaimed: Count a later write the server has not accepted only while it is in flight, so a write
-  ///     parked behind it waits for an answer that is coming.
+  ///   - acceptedOnly: Consider only later writes the server accepted. Otherwise a later write not answered yet counts
+  ///     too, in flight or waiting its turn (#2028): a refusal parked behind it waits for its answer.
   ///   - serverResults: For a refused re-send only (#441): an insert that a later write does not cover also counts
   ///     when a result the server sent since the write was created shows its value (`InstantServerResultCheck`).
   /// - Returns: The coverage, the write's decoded body (`nil` when no later write shares a slot with it and no server
@@ -10390,15 +10421,13 @@ public actor SQLitePersistenceStore {
     createdAtMilliseconds: Int64,
     decoded: PendingMutation?,
     acceptedOnly: Bool,
-    pendingMustBeClaimed: Bool = false,
     serverResults: InstantServerResultCheck? = nil,
     attributes: () throws -> AttributeStore
   ) throws -> (coverage: InstantOutboxWriteCoverage, mutation: PendingMutation?, serverResultSlotCount: Int) {
     let candidates = try laterWriteCandidatesWithoutTransaction(
       ofMutationID: mutationID,
       createdAtMilliseconds: createdAtMilliseconds,
-      acceptedOnly: acceptedOnly,
-      pendingMustBeClaimed: pendingMustBeClaimed
+      acceptedOnly: acceptedOnly
     )
     guard !candidates.isEmpty || serverResults != nil else { return (.none, decoded, 0) }
     let mutation: PendingMutation
@@ -10535,15 +10564,13 @@ public actor SQLitePersistenceStore {
   private func laterWriteCandidatesWithoutTransaction(
     ofMutationID mutationID: String,
     createdAtMilliseconds: Int64,
-    acceptedOnly: Bool,
-    pendingMustBeClaimed: Bool
+    acceptedOnly: Bool
   ) throws -> [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] {
     var candidates: [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] = []
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT DISTINCT o.mutation_id, o.created_at_ms, o.status, o.confirmation_proven, o.server_transaction_id,
-             o.delivery_claim_state
+      SELECT DISTINCT o.mutation_id, o.created_at_ms, o.status, o.confirmation_proven, o.server_transaction_id
       FROM instant_outbox_write_keys own
       JOIN instant_outbox_write_keys other
         ON other.entity_id = own.entity_id AND other.attribute_id = own.attribute_id
@@ -10578,9 +10605,6 @@ public actor SQLitePersistenceStore {
       }
       let status = sqlite3_column_text(statement, 2).map { String(cString: $0) }
       let accepted = status == InstantMutationStatus.confirmed.rawValue && sqlite3_column_int64(statement, 3) == 1
-      let claimed = sqlite3_column_text(statement, 5).map { String(cString: $0) }
-        == InstantOutboxDeliveryClaimState.claimed.rawValue
-      guard accepted || !pendingMustBeClaimed || claimed else { continue }
       candidates.append((
         id: String(cString: idBytes),
         createdAt: sqlite3_column_int64(statement, 1),
@@ -10713,8 +10737,9 @@ public actor SQLitePersistenceStore {
   /// Resolves a write the server refused, when later writes of this device cover all of it (item 3), or for a re-send
   /// when the server's own results show the rest (#441).
   ///
-  /// The server holds a newer value for every slot the refused write sets, or will once the covering writes in flight
-  /// are answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted: the write keeps its
+  /// The server holds a newer value for every slot the refused write sets, or will once the covering writes are
+  /// answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted, in flight or waiting their
+  /// turn (#2028: one write at a time after a transient error left the covering write unsent): the write keeps its
   /// claim, parked with a distant acknowledgement deadline, until they are answered (`resolveParkedRefusal`); delivery
   /// stays an ordered prefix. A re-send whose remaining slots a result from the server sent since the write was created
   /// shows with the write's values counts as covered too; one whose remaining slots are inserts no result shows yet is
@@ -10763,7 +10788,6 @@ public actor SQLitePersistenceStore {
         createdAtMilliseconds: position.createdAtMilliseconds,
         decoded: nil,
         acceptedOnly: !holdsBehindPendingWrites,
-        pendingMustBeClaimed: true,
         serverResults: holdsBehindPendingWrites ? serverResults : nil,
         attributes: {
           AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))

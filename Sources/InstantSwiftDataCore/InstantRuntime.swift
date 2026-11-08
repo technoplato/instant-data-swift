@@ -10397,7 +10397,7 @@ public final class InstantRuntime: Sendable {
     switch resolution {
     case let .superseded(_, coveringIDs, serverResultSlotCount):
       await liveSession.forgetEarlierOffers(of: mutationID)
-      await mutationServerErrorBackoff.forget(mutationID)
+      await mutationServerErrorBackoff.recordVerdict(on: mutationID)
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -10424,7 +10424,7 @@ public final class InstantRuntime: Sendable {
         category: "outbox",
         event: "outbox.mutation.refusal-parked",
         message:
-          "The server refused a re-sent write that later writes in flight cover; it keeps its claim, parked, until they are answered, and is not failed.",
+          "The server refused a re-sent write that later writes not answered yet cover; it keeps its claim, parked, until they are answered, and is not failed.",
         metadata: [
           "mutationID": mutationID,
           "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
@@ -10433,6 +10433,9 @@ public final class InstantRuntime: Sendable {
         ],
         correlationID: mutationID
       )
+      // A refusal is the server's verdict, not a stall (#2028): after a transient error delivery offers one write at a
+      // time, and this parked write holds its claim, so the write that covers it would never go out.
+      await mutationServerErrorBackoff.recordVerdict(on: mutationID)
       await startLiveMutationDeliveryIfNeeded()
       return true
     case let .awaitingServerResult(coveringIDs):
@@ -10453,6 +10456,7 @@ public final class InstantRuntime: Sendable {
         correlationID: mutationID
       )
       await scheduleParkedRefusalServerResultWake()
+      await mutationServerErrorBackoff.recordVerdict(on: mutationID)
       await startLiveMutationDeliveryIfNeeded()
       return true
     case .notCovered, .stale:
@@ -10904,7 +10908,7 @@ public final class InstantRuntime: Sendable {
         serverTransactionID: transactionID,
         claimToken: mutationClaimToken
       )
-      await mutationServerErrorBackoff.recordAcceptance(of: clientEventID)
+      await mutationServerErrorBackoff.recordVerdict(on: clientEventID)
       await liveSession.forgetEarlierOffers(of: clientEventID)
       await resolveParkedRefusalsIfNeeded()
       // #1130: the write this answers was claimed and sent by its own pass. Another pass is needed only when a write

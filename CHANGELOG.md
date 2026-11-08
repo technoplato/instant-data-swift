@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 7th, 2026 at 8:57:12 p.m. EST — `2881ae5b5178` green(#2028): a replay's refusal waits behind a later write that covers it whether that write is in flight or waiting its turn, and a refusal resolved by coverage is the server's verdict, so one write at a time after a transient error ends and the covering write goes out; 10 tests in 3 suites pass (InstantCoveringWriteRetentionTests 4, InstantFlappingNetworkRefusalTests 8 seeds with no false refusal, InstantTransientMutationRetryTests), mini job 2028-waiting-green
+
+- **Implementation commit:** `2881ae5b51789baf54030c5377d925631757103d`
+- **Change:** v1.9.81 (to tag): a replay's refusal waits behind a later write that covers it whether in flight or waiting its turn, and a refusal resolved by coverage records the server's verdict, ending one write at a time after a transient error (#2028)
+- **Details:**
+  - Found by the flapping-network simulation (InstantFlappingNetworkRefusalTests, seed 2028, on both trees): the server timed the older write out and applied the newer one, the socket dropped before the newer write's answer, and after the transient error the outbox offers one write at a time, so the older write's refusal arrived while the newer write waited its turn; item 3 counted a later write not yet answered only while in flight (pendingMustBeClaimed), so the refusal stood. The flag goes (net shrink); recordAcceptance becomes recordVerdict and runs for every refusal resolved by coverage, since a parked refusal holds its claim and one write at a time would never send its covering write. Red 4073aa6f (its test; on the unfixed sources a refusal parked to wait for a server result held the only slot and nothing else was sent), green 2881ae5b (mini job 2028-waiting-green: 10 tests in 3 suites).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the coverage counts a later write not yet answered whether in flight or waiting; pendingMustBeClaimed removed
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — a refusal resolved by coverage records the server's verdict
+  - `Sources/InstantSwiftDataCore/InstantServerErrorRetryPolicy.swift` — recordAcceptance becomes recordVerdict
+- **User context (verbatim):**
+  > we just got an instant not syncing, so let's diagnose in real time and fix that
+- **SpecStory:** unavailable — unavailable — Claude Code headless session a39796f0-eaed-4848-8657-1368d31edaba (tools/agent-run, claude/ld); no SpecStory capture for headless runs
+
+## November 7th, 2026 at 7:59:06 p.m. EST — `362fdbbf92f7` green(#2028): an accepted write stays in the outbox past the watermark while an older write of the same slots is open, so item 3 still finds it: the older write's re-send is resolved without an offer and its refusal resolves as accepted; one guard in both prune predicates (the server-apply reduction's and the plan's); 97 tests in 11 replay, refusal, supersession and prune suites pass (mini job 2028-retention-green)
+
+- **Implementation commit:** `362fdbbf92f777e8f031e76304245f4ef7d25749`
+- **Change:** v1.9.81 (to tag): an accepted write stays in the outbox past the watermark while an older write of its slots is open, so a replay the server refuses because this device's newer write already landed resolves as accepted, and such a write is not offered again (#2028)
+- **Details:**
+  - Plan 2026-11-07-replay-2028 (recorded after the red and green steps of this P0), red 586649b4, green 362fdbbf. The server apply's watermark pruned an accepted write even while an older write of the same slots was open; item 3 (library-78) reads covering writes from the outbox, so it found none, and the older write's replay refusal stood as a failure although the server held a newer value for every slot. One guard, keepsEvidenceForAnOlderOpenWrite, in serverApplyReductionPrunablePredicate and serverApplyWatermarkPredicate, so the reduction and the plan agree. Measured before: a consuming app's device, 2026-11-07 17:47-19:24 on a flapping cellular network, 16 replay refusals, every refused row held newer on the server. Checked: mini jobs 2028-retention-red (the refusal stood, the stale write was offered again) and 2028-retention-green (97 tests in 11 suites pass).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the guard and the two prune predicates that use it
+  - `Tests/InstantSwiftDataCoreTests/InstantCoveringWriteRetentionTests.swift` — the refusal, the re-send, and the partial-cover guard
+- **User context (verbatim):**
+  > we just got an instant not syncing, so let's diagnose in real time and fix that
+- **SpecStory:** unavailable — unavailable — Claude Code headless session a39796f0-eaed-4848-8657-1368d31edaba (tools/agent-run, claude/ld); no SpecStory capture for headless runs
+
 ## November 6th, 2026 at 11:10:47 p.m. EST — `2a4b62525104` test(#1942): a late answer with no frame being applied keeps a session that still delivers frames; a session that took no frame for a whole interval is replaced (one file, v1.9.79's API only)
 
 - **Implementation commit:** `2a4b625251044fb971ce58a46f5f58ae66a38c4e`
