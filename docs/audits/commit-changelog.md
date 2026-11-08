@@ -1,3 +1,6 @@
+## 2026-11-08 16:15:08 EST — scribe `47bed2a99272a9fe254d9b6ef40641bdb6867e05`
+Feature (#2060): stopwatches beside the timers, any number at once: a kind, laps and a Show in Recording switch; "stopwatch named laundry" and "remind me in 10 minutes to call mom" by voice; scribe timer through the toolbox's app.action from the timers panel's declared actions; one shared Live Activity (Recording 398 #548); the timeTimers schema pushed after the landing (drift 0).
+
 ## 2026-11-08 15:14:36 EST — scribe `b9ee682938896e44b088b3a7654f9f9ceed14a1c`
 Feature (#2068): the scrubber redacts exactly what is private, proved by a strict synthetic benchmark (leaks and over-redactions of equal weight, precision and recall per medium, one label per entity, no time hidden, his landscape recording screen as frames tagged and untagged): live on the mini 84.1/98.3% to 100/100%; 40 of his real broadcast frames' median covered 45.3% to 9.0%, p50 303 ms a frame; the private stream at two frames a second; installed on the mini 96eb369a6 (the installer's import closure).
 
