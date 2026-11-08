@@ -1,7 +1,8 @@
 import Foundation
 
 /// How long to wait before offering a write, or sending an add-query, again after the server answered it with a
-/// transient error: a 5xx such as a stalled server's `operation-timed-out`, a 408, a 425, or a 429.
+/// transient error: a 5xx such as a stalled server's `operation-timed-out`, a 408, a 425, a 429, or a rate limit
+/// (`type` `rate-limited`, status 400 over the socket), never sooner than a rate limit's retry time (#2037).
 ///
 /// The delay doubles from ``baseMilliseconds`` with each consecutive failure of the same write or query, is capped at
 /// ``maximumMilliseconds``, and is scaled by a jitter factor in `0.5...1`, so the clients that failed together in one
@@ -37,15 +38,20 @@ struct InstantMutationServerErrorBackoff: Sendable {
   private(set) var deliveryResumesAtMilliseconds: Int64?
   private(set) var probesOneWrite = false
 
-  /// Records one transient failure of `mutationID` at `now` and returns its attempt number and delay.
+  /// Records one transient failure of `mutationID` at `now` and returns its attempt number and delay. The delay is at
+  /// least until `notBeforeMilliseconds`, the time a rate-limiting server said to try again (#2037).
   mutating func recordFailure(
     of mutationID: String,
     now: Int64,
-    policy: InstantServerErrorRetryPolicy
+    policy: InstantServerErrorRetryPolicy,
+    notBeforeMilliseconds: Int64? = nil
   ) -> (attempt: Int, delayMilliseconds: UInt64, resumesAtMilliseconds: Int64) {
     let attempt = consecutiveFailures[mutationID, default: 0] + 1
     consecutiveFailures[mutationID] = attempt
-    let delay = policy.delayMilliseconds(afterFailure: attempt)
+    var delay = policy.delayMilliseconds(afterFailure: attempt)
+    if let notBeforeMilliseconds, notBeforeMilliseconds > now {
+      delay = max(delay, UInt64(notBeforeMilliseconds - now))
+    }
     let (resumesAt, overflow) = now.addingReportingOverflow(Int64(clamping: delay))
     let deadline = overflow ? Int64.max : resumesAt
     deliveryResumesAtMilliseconds = max(deliveryResumesAtMilliseconds ?? deadline, deadline)
@@ -88,9 +94,10 @@ actor InstantMutationServerErrorBackoffState {
   func recordFailure(
     of mutationID: String,
     now: Int64,
-    policy: InstantServerErrorRetryPolicy
+    policy: InstantServerErrorRetryPolicy,
+    notBeforeMilliseconds: Int64? = nil
   ) -> (attempt: Int, delayMilliseconds: UInt64, resumesAtMilliseconds: Int64) {
-    backoff.recordFailure(of: mutationID, now: now, policy: policy)
+    backoff.recordFailure(of: mutationID, now: now, policy: policy, notBeforeMilliseconds: notBeforeMilliseconds)
   }
 
   func recordVerdict(on mutationID: String) {

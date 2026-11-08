@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 8th, 2026 at 1:22:46 a.m. EST — `023887365106` green(#2037): the connection status carries a typed interruption: the errored funnel classifies the error (a server answer by its status and type; else a transport, no-route, unreachable, sign-in or local-repair failure) and stores it beside the last error with its start; the status reads it on the network path as it is now (no path reads as no network); a dropped socket and a failed reconnect attempt publish at once; a rate limit (type rate-limited, status 400 over the socket) keeps writes queued and queries registered, waits for the server's retry-at or retry-after, and shows in the status until the server answers again; an init error keeps its status, type and hint; failure events log the kind and the path
+
+- **Implementation commit:** `02388736510613a8190792f024dc9960039a1c76`
+- **Change:** v1.9.82 (to tag): the connection status carries a typed interruption (why changes are not reaching the server: no network, a weak network, the server not reachable, a rate limit with its retry time, a refused sign-in, a local repair, other); a dropped socket publishes at once; a rate limit keeps writes queued and queries registered and waits for the server's time (#2037)
+- **Details:**
+  - The errored funnel classifies the error (the server's status and type first, then the error's kind) and stores it beside the last error with the interruption's start; the status reads it on the network path as it is now, so no network and a weak one are told apart (the socket waits for connectivity, so both meet the 5 s open deadline). Measured on a consuming app's device on 2026-11-07: all 28 drive drops had the path up on cellular; no rate limit, no refused sign-in. Upstream sends a socket rate limit as status 400 type rate-limited with its retry time only in the hint; the library read that 400 as a refusal. InstantConnectionStatus.interruption itself came with the red commit da3579a0. Tests: InstantSyncInterruptionTests, InstantConnectionInterruptionTests (14 pass, mini job 2037-lib-green3); 67 of 68 in 11 neighbouring suites in 2037-lib-green2, the one a test fixed in b0fbe3f1.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantSyncInterruption.swift` — the typed cause and its classifier
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the errored funnel, the status's interruption, the drop's publish, the rate limit's routing and wait
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — an init error keeps its server fields
+  - `Sources/InstantSwiftDataCore/InstantWriteFailureKind.swift` — a rate limit is transient
+  - `Sources/InstantSwiftDataCore/InstantServerErrorRetryPolicy.swift` — the server's retry time as the earliest next offer
+- **User context (verbatim):**
+  > Let's make sure that the library provides us better diagnostics, so instead of saying instant isn't syncing, we can say, hey, it looks like your connection is super weak right now
+- **SpecStory:** unavailable — unavailable — Claude Code headless session 9132897d-0f20-49c3-bf72-0e85fd982ef2 (tools/agent-run, claude/ld); no SpecStory capture for headless runs
+
 ## November 7th, 2026 at 8:57:12 p.m. EST — `2881ae5b5178` green(#2028): a replay's refusal waits behind a later write that covers it whether that write is in flight or waiting its turn, and a refusal resolved by coverage is the server's verdict, so one write at a time after a transient error ends and the covering write goes out; 10 tests in 3 suites pass (InstantCoveringWriteRetentionTests 4, InstantFlappingNetworkRefusalTests 8 seeds with no false refusal, InstantTransientMutationRetryTests), mini job 2028-waiting-green
 
 - **Implementation commit:** `2881ae5b51789baf54030c5377d925631757103d`

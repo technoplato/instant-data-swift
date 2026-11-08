@@ -54,6 +54,10 @@ public enum InstantWriteFailureKind: Hashable, Codable, Sendable {
     if InstantAutomaticFailedMutationRetryPolicy.isRetryableFailureMessage(message) {
       return .transient
     }
+    // #2037: upstream sends a rate limit over the socket with status 400, so the type decides before the status does.
+    if InstantConnectionFailure.isRateLimit(status: status, type: type) {
+      return .transient
+    }
     if let status {
       if [408, 425, 429].contains(status) || (500...599).contains(status) {
         return .transient
