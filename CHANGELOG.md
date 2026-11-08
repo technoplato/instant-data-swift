@@ -10,6 +10,41 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 8th, 2026 at 1:55:20 p.m. EST — `fe80843491d2` green(#2005): a query counts each row's children of a relation, a reverse relation or a forward many-link, optionally only those a predicate admits, and groups rows into sections, all derived when it is read with nothing stored (ADR 0015 L3): the store counts from the children the query brings down (Instant answers aggregates for admin queries only) without materializing a child row and before an include's limit; a counted include goes on the wire without its nested bound, so a stored result keeps every child it counts, and narrowed to what its counts read; counts ride on the snapshot and in the answer digest; sections group in the order of their first rows, or by name (replaces local 653ac656, never pushed)
+
+- **Implementation commit:** `fe80843491d25acda579dc0f62d95e6995908f2a`
+- **Change:** green(#2005): rows count a relation's children and group into sections when a query is read (ADR 0015 L3)
+- **Details:**
+  - Mac mini job 2005-l3-bench-release (debug, the green tree): 18 tests in 4 suites pass (InstantAggregateFetchTests 9, InstantIncludedMapFetchTests 2, InstantCountedIncludeTests 6, InstantNestedIncludeLimit 1). Debug benchmark, one thread, 1,000 rows and 10,000 children: counting 46.5 ms and 232,803 allocations against 80.5 ms and 409,683 to link every child as rows; 10,000 rows into 100 sections 2.9 ms and 20,816 allocations. Counted on the device because Instant answers aggregates for admin queries only (instaql.clj).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the counting pass counts
+  - `Sources/InstantSwiftDataCore/InstantLiveQuery.swift` — a counted include goes up without its bound and narrowed
+  - `Sources/InstantSwiftDataCore/InstantQueryAnswerDigest.swift` — the digest writes a row's counts
+  - `Sources/InstantSwiftDataCore/InstantResultsSections.swift` — rows group into sections
+- **User context (verbatim):**
+  > We should strive to make our software more elegant as we grow it, and its elegance should serve to help decrease what we need to write and keep in sync as our software evolves
+- **SpecStory:** unavailable — unavailable: headless Claude Code session 0dd33a7d-f9d8-47be-af99-d5d591088f23 (tools/agent-run, claude/ld); the transcript path is on the issue
+
+## November 8th, 2026 at 1:55:18 p.m. EST — `e8657c69f5a4` red(#2005): rows count a relation's children and group into sections when a query is read, tested before it works (ADR 0015 L3): Relation.count(where:), InstantFetchRequest(query, counting:), query.counting(_:) with snapshot.count(_:), sectioned(by:) into InstantResultsSectionCollection; the API compiles with its behaviour stubbed, so every count reads 0, no rows group, a counted include goes on the wire as any other, and the answer digest ignores counts (replaces local 50d1fd1e, never pushed: its live tests passed an async iterator inout, which Swift 6.4's region check refuses)
+
+- **Implementation commit:** `e8657c69f5a42cac094608cf41f1fff66c20f26e`
+- **Change:** red(#2005): ADR 0015 L3's API and tests, behaviour stubbed: counts on rows, sections
+- **Details:**
+  - The same job ran red's stubs on the same tests: 13 of the 15 new tests fail with 34 issues (every count reads 0, no rows group, the counted include goes up with its limit and without its counted field, the digest ignores counts; the two live tests hit their one-minute limit waiting for counts that never come); the two that pass check what the stub already had (an empty result has no sections; a plan stored before counts decodes).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — the include plan's optional counts and count-only flag, InstantQueryIncludeCount, and counts on both snapshot types
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the store's counting pass over an include's children (stubbed in red), count filters validated, counts kept by the field projection
+  - `Sources/InstantSwiftDataCore/InstantLiveQuery.swift` — a counted include's wire form: no nested bound, fields widened to what its counts read (stubbed in red)
+  - `Sources/InstantSwiftDataCore/InstantQueryAnswerDigest.swift` — a row's counts in the answer digest (stubbed in red)
+  - `Sources/InstantSwiftDataCore/InstantResultsSections.swift` — InstantResultsSectionCollection and InstantResultsSection, SQLiteData's section shape (grouping stubbed in red)
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — InstantCount, count(where:) on both relation kinds, snapshot.count(_:), query.counting(_:), include keeps declared counts
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — InstantFetchRequest(query), (query, counting:) with one to three counts, map(_:), sectioned(by:) and sectioned(by:order:)
+  - `Tests/InstantSwiftDataTests/InstantAggregateFetchTests.swift` — counts on rows (reverse, forward many-link, predicates, before an include's limit, live through writes), sections, the grouped counts a list row reads of its threads
+  - `Tests/InstantSwiftDataCoreTests/InstantCountedIncludeTests.swift` — the wire form, plans stored before counts, the store's counts, the digest, sections, and the 10k-row benchmark
+- **User context (verbatim):**
+  > We should strive to make our software more elegant as we grow it, and its elegance should serve to help decrease what we need to write and keep in sync as our software evolves
+- **SpecStory:** unavailable — unavailable: headless Claude Code session 0dd33a7d-f9d8-47be-af99-d5d591088f23 (tools/agent-run, claude/ld); the transcript path is on the issue
+
 ## November 8th, 2026 at 8:03:25 a.m. EST — `3e759fcdd44e` test(#2037): with no network path a dropped socket's next write publishes why its change waits: no network (the status stores the drop as errored with its failure, and a write that adds an outbox row publishes it on the path as it is), so a recording's screen says so within seconds; passes on v1.9.82 (job 2037-lib-nopath, 15 tests in 2 suites on the mini)
 
 - **Implementation commit:** `3e759fcdd44ef4345c73af7a06ad1766159d9c00`
