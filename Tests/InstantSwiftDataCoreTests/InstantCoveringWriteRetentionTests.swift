@@ -17,10 +17,15 @@ import Testing
 struct InstantCoveringWriteRetentionTests {
   typealias Fixture = InstantRefusalHeldByServerTests.Fixture
 
+  /// The writes the scripted server leaves unanswered must not reach an acknowledgement deadline under load (#1021).
+  static func holdsDeadlines(_ configuration: inout InstantRuntimeConfiguration) {
+    configuration = configuration.holdingAcknowledgementDeadlines()
+  }
+
   /// The answers of the newer write and of the server's result arrive before the older re-send's refusal.
   @Test
   func aReSendRefusalThatALaterWriteThePrunePassedCoversResolvesAsAccepted() async throws {
-    let fixture = try await Fixture.make("retained-coverer-refusal")
+    let fixture = try await Fixture.make("retained-coverer-refusal", configure: Self.holdsDeadlines)
     try await fixture.transact("tx-first", at: 1, text: "first", isCompleted: false)
     try await fixture.transact("tx-second", at: 2, text: "second", isCompleted: true)
     _ = try await InstantSupersededReplayTests.waitForTransacts(3, on: fixture.first)
@@ -48,7 +53,7 @@ struct InstantCoveringWriteRetentionTests {
   /// connection resolves the older write without offering it.
   @Test
   func aReSendThatALaterWriteThePrunePassedCoversIsResolvedWithoutAnOffer() async throws {
-    let fixture = try await Fixture.make("retained-coverer-resend")
+    let fixture = try await Fixture.make("retained-coverer-resend", configure: Self.holdsDeadlines)
     try await fixture.transact("tx-first", at: 1, text: "first", isCompleted: false)
     try await fixture.transact("tx-second", at: 2, text: "second", isCompleted: true)
     _ = try await InstantSupersededReplayTests.waitForTransacts(3, on: fixture.first)
@@ -75,7 +80,7 @@ struct InstantCoveringWriteRetentionTests {
   /// shows another value for the rest.
   @Test
   func aReSendRefusalThatALaterWriteCoversOnlyInPartStillFails() async throws {
-    let fixture = try await Fixture.make("retained-partial-coverer")
+    let fixture = try await Fixture.make("retained-partial-coverer", configure: Self.holdsDeadlines)
     try await fixture.transact("tx-first", at: 1, text: "first", isCompleted: false)
     try await fixture.transact("tx-second", at: 2, text: nil, isCompleted: true)
     _ = try await InstantSupersededReplayTests.waitForTransacts(3, on: fixture.first)
