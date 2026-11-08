@@ -119,6 +119,25 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
 - Ban polymorphic writes where `await` sometimes means network. Name server
   waits in the API.
 
+### Why changes are not reaching the server (#2037)
+
+- Read `InstantConnectionStatus.interruption` (from `observeConnectionStatus()`),
+  never `lastErrorMessage`: a typed `InstantSyncInterruption` with a `cause`
+  (`noNetwork`, `weakNetwork`, `serverUnreachable`, `rateLimited` with
+  `retryAt`, `authentication`, `localRepairNeeded`, `other`), `since`, the
+  network path, and the library's words in `detail`. It is nil while changes
+  reach the server.
+- Every cause keeps the queued changes (`keepsQueuedChanges`); all but a
+  refused sign-in and a local repair end with no one acting (`endsOnItsOwn`).
+  Show it as a state, calmly ("weak connection; syncing resumes when it is
+  back"), not as an error.
+- The socket waits for connectivity, so no network and a weak one both meet
+  the 5 s open deadline; the cause comes from the network path, read when the
+  status is made. A dropped socket publishes its status at once.
+- A rate limit (`type` `rate-limited`, status 400 over the socket, 429 over
+  HTTP) is transient: writes stay queued and are offered again no sooner than
+  the hint's `retry-at` / `retry-after`; live queries stay registered.
+
 ### Auth changes keep the outbox (divergence from upstream)
 
 - Upstream `Reactor.updateUser` (`Reactor.js` 2240-2274; `changeCurrentUser` runs it
