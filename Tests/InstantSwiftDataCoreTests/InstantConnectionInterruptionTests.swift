@@ -36,7 +36,8 @@ struct InstantConnectionInterruptionTests {
 
     // The path goes away while the reconnect waits: the same failure now reads as no network.
     path.update(isSatisfied: false)
-    expectNoDifference(try await fixture.runtime.connectionStatus().interruption?.cause, .noNetwork)
+    let withoutPath = try await fixture.runtime.connectionStatus()
+    expectNoDifference(withoutPath.interruption?.cause, .noNetwork)
     await fixture.close()
   }
 
@@ -66,7 +67,8 @@ struct InstantConnectionInterruptionTests {
       $0.state != .errored && $0.interruption == nil
     }
     #expect(reopened != nil, "the second session's open should publish a status with no interruption")
-    expectNoDifference(try await fixture.runtime.connectionStatus().interruption, nil)
+    let open = try await fixture.runtime.connectionStatus()
+    expectNoDifference(open.interruption, nil)
     await fixture.close()
   }
 
@@ -92,8 +94,10 @@ struct InstantConnectionInterruptionTests {
     }
     let status = try #require(limited, "the status should say Instant limits this app")
     #expect(status.interruption?.retryAt != nil)
-    expectNoDifference(await fixture.runtime.failedMutations().map(\.id), [], "a rate limit is not a refusal")
-    expectNoDifference(await fixture.runtime.pendingMutationCount(), 1)
+    let failed = await fixture.runtime.failedMutations().map(\.id)
+    let pending = await fixture.runtime.pendingMutationCount()
+    expectNoDifference(failed, [], "a rate limit is not a refusal")
+    expectNoDifference(pending, 1)
     let delays = try await retries.waitForMutationDelays(mutationID, count: 1)
     #expect(delays.first.map { $0 >= 1_900 } == true, "the next offer waits for the server's two seconds: \(delays)")
 
@@ -162,7 +166,8 @@ struct InstantConnectionInterruptionTests {
       expectNoDifference(error.serverStatus, 500)
       expectNoDifference(error.serverType, "operation-timed-out")
     }
-    expectNoDifference(try await fixture.runtime.connectionStatus().interruption?.cause, .serverUnreachable)
+    let afterInit = try await fixture.runtime.connectionStatus()
+    expectNoDifference(afterInit.interruption?.cause, .serverUnreachable)
     await fixture.close()
   }
 }
