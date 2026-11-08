@@ -151,6 +151,47 @@ If the identity must change without creating a new view/model identity, use a
 replacement API that exists in the current source. Do not invent a composite
 `.instantFetch` modifier or builder syntax from a design sketch.
 
+## Derive counts and sections when the query is read
+
+Never store a count or a grouping that rows already imply (ADR 0015 L3,
+`docs/adr/0015-sqlite-data-parity-ergonomics/l3-aggregates.md`). A count of a
+relation's children per row is a typed value made from the relation:
+
+```swift
+let pictureCount = Recording.attachments.count(where: Attachment.kind == "image")
+let threadCount = Recording.threads.count()
+
+InstantFetchRequest(
+  Recording.query.order(Recording.startedAtMs, .descending).limit(50),
+  counting: pictureCount, threadCount
+) { recording, pictures, threads in
+  RecordingRow(recording: recording, pictureCount: pictures, threadCount: threads)
+}
+```
+
+- `count(where:)` works on a reverse relation and on a forward many-link.
+  The request adds the counts to the query; do not also call `counting`.
+- A request that decodes snapshots adds them with `query.counting(...)` and
+  reads `snapshot.count(pictureCount)`.
+- Counted on the device (Instant answers aggregates for admin queries only):
+  each counted child comes down, narrowed to its id and the predicate's
+  fields, on every refresh. Count relations with tens of children per row,
+  and prefer a small query of its own over growing a list query that
+  refreshes often.
+
+Group rows into sections with `sectioned(by:)`, the counterpart of
+SQLiteData's `fetchAll(_:sectionBy:)`; a section's `count` is its group's count:
+
+```swift
+InstantFetchRequest(Thread.query.where(Thread.recordingID.isIn(ids)).order(Thread.updatedAtMs, .descending))
+  .sectioned(by: \.recordingID)
+  .map { sections in Dictionary(uniqueKeysWithValues: sections.map { ($0.name, $0.count) }) }
+```
+
+Sections keep the order of their first rows (order the query by what it
+sections by); `sectioned(by:order:)` sorts them by name. Observe the result with
+`@Fetch`, never by grouping in a view's body.
+
 ## Preserve query semantics
 
 Use wrappers/subscriptions for local-first cached and optimistic state.

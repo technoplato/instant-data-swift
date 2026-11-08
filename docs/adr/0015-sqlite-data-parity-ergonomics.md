@@ -36,6 +36,8 @@ Full decided answers: [`0015-sqlite-data-parity-ergonomics/qanda.md`](./0015-sql
   migration plan (Q17).
 - Agents and the `instant-data` skill must treat dual-repo development as
   active iteration with the user.
+- Step L3 (aggregations: counts on rows, sections, grouped counts) shipped
+  2026-11-08: [`0015-sqlite-data-parity-ergonomics/l3-aggregates.md`](./0015-sqlite-data-parity-ergonomics/l3-aggregates.md).
 
 ## Notes
 

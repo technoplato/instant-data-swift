@@ -17,7 +17,7 @@ Borrow from `upstream/sqlite-data`. Gaps that force app hacks:
 | --- | --- | --- |
 | `@FetchAll` / `@FetchOne` + structured query on feature state | `@Fetch` exists; rarely used in Scribe features | App adoption + docs |
 | Join + `.select { Columns }` / `@Selection` list rows | Nested include + **map** (L1/L2/L2b **done**) | Columns macros still thin |
-| `.group` + aggregates / sectioned lists | Not shipped | **L3** open |
+| `.group` + aggregates / sectioned lists | Shipped 2026-11-08 (`l3-aggregates.md`) | **L3** done |
 | Row observation carries sync/delivery status | Not on fetch | **L4** / ADR 0014 open |
 | `database.write { }` local-only, no app SyncStore | `transact` local+outbox (correct contract) | App still wraps in façades |
 | One table model = one write surface | App still plans mutations from domain `Recording` graphs | Open-segment **recipe shipped** — see [`../open-segment-write-recipe.md`](../open-segment-write-recipe.md); peel app planners next |
