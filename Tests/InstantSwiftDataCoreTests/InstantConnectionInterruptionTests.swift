@@ -60,10 +60,12 @@ struct InstantConnectionInterruptionTests {
         recovery: "Reconnect."
       )
     )
-    _ = try #require(try await fixture.statuses.first(within: InstantTestWait.hang) { $0.interruption != nil })
+    let dropped = try #require(
+      try await fixture.statuses.firstIndex(within: InstantTestWait.hang) { $0.interruption != nil }
+    )
     // The status stream keeps only its newest value, so the reconnect waits until the drop was seen.
     await reconnect.release()
-    let reopened = try await fixture.statuses.first(within: InstantTestWait.hang) {
+    let reopened = try await fixture.statuses.first(within: InstantTestWait.hang, after: dropped) {
       $0.state != .errored && $0.interruption == nil
     }
     #expect(reopened != nil, "the second session's open should publish a status with no interruption")
@@ -195,14 +197,24 @@ extension InstantConnectionInterruptionTests {
       statuses.append(status)
     }
 
-    /// The first published status that matches, once one does or `timeout` passes.
+    /// The first published status after the one at `index` that matches, once one does or `timeout` passes.
     func first(
       within timeout: Duration,
+      after index: Int = -1,
       where matches: @Sendable (InstantConnectionStatus) -> Bool
     ) async throws -> InstantConnectionStatus? {
+      try await firstIndex(within: timeout, after: index, where: matches).map { statuses[$0] }
+    }
+
+    /// Where the first published status after the one at `index` that matches is, once one does or `timeout` passes.
+    func firstIndex(
+      within timeout: Duration,
+      after index: Int = -1,
+      where matches: @Sendable (InstantConnectionStatus) -> Bool
+    ) async throws -> Int? {
       let deadline = ContinuousClock.now + timeout
       while true {
-        if let status = statuses.first(where: matches) { return status }
+        if let found = statuses.indices.first(where: { $0 > index && matches(statuses[$0]) }) { return found }
         if ContinuousClock.now >= deadline { return nil }
         try await Task.sleep(for: .milliseconds(20))
       }
