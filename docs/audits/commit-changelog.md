@@ -1,3 +1,6 @@
+## 2026-11-08 08:10:30 EST — scribe `a741ea167c07eed5f242765bf2aea79853052c1f`
+Deploy (#2053): the Mac server runs 47139b1b3 (was 19e2da1bd), carrying only #2022's Mac learner; its labels read 2,331 -> 73 lineSpeakers rows a pass (170.2 -> 44.5 KB on the wire); audit 2022 section 7b; undo ~/Sync/audit/deploy-2053/undo.sh, rehearsed before the deploy.
+
 ## 2026-11-08 08:03:55 EST — instant-data-swift `e9426a0fab4dea3a79d45d47619c2658bfa071cb` (merge: test `3e759fcd`, changelog `80d89549`)
 Test (#2037): with no network path, a dropped socket's next write publishes the cause, no network (the drop is stored as errored with its failure and, per upstream parity, not published; a write that adds an outbox row publishes it on the path as it is). Passes on v1.9.82 as released; no product change. It withdraws #2037's earlier note that with no network path the line never shows: during a recording it shows at the next write. Left: while nothing writes (a paused recording) the drop is not published until something else is.
 
