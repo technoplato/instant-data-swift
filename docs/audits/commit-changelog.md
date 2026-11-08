@@ -1,3 +1,6 @@
+## 2026-11-07 21:07:38 EST — scribe `b289d77f3e18321e3b102668500954cb9a42afd3` (merge of the UI walk's red, green and docs commits)
+Feature (#2032): a seeded, deterministic UI walk through the app on a phone, run from the Mac beside a canned take: the app's own links over the cable or Wi-Fi (devicectl --payload-url, no relaunch, the app's pid read before each step), 51 steps from the app's place table and the screen links the app printed on its timeline, each step's main-thread turns, hitches, hangs, CPU and memory from a light trace and the app's own samples, and a run score per build that metrics.py --compare --write puts in docs/PERFORMANCE.md.
+
 ## 2026-11-07 20:49:10 EST — scribe `03e4f7d816edcc809880126ba280604c6bfeec12` (merge of red 0b76168e9, green 1e0770a93 and its changelog)
 Fix (#2027): the Mac mirror follows a recording's compressed copy through a 4-segment window on the socket instead of a 5 s HTTP poll, leaving Instant's admin query bucket (21.9 of its 36.5 queries a minute; 36 of the evening's 37 copy failures were that limit).
 
