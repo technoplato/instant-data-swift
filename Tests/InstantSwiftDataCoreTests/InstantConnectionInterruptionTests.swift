@@ -42,6 +42,37 @@ struct InstantConnectionInterruptionTests {
     await fixture.close()
   }
 
+  /// With no network path, a dropped socket waits for the path, and the next write that waits says why: no network. A
+  /// recording writes every few seconds, so its screen says so as soon as the socket drops.
+  @Test
+  func withNoNetworkPathTheNextWriteSaysNoNetwork() async throws {
+    let path = InstantNetworkPathMonitor(path: Self.cellular)
+    let fixture = try await Self.fixture(
+      "no-path",
+      attempts: [.session(Self.openingSession("no-path"))],
+      path: path
+    )
+    path.update(isSatisfied: false)
+    await fixture.sessions[0].failReceive(Self.socketNotConnected)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
+    var dropped = try await fixture.runtime.connectionStatus()
+    while dropped.state != .errored, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+      dropped = try await fixture.runtime.connectionStatus()
+    }
+    expectNoDifference(dropped.interruption?.cause, .noNetwork)
+
+    let before = await fixture.statuses.statuses.count
+    try await Self.createTodo(fixture.runtime, id: "offline-1")
+    let published = try await fixture.statuses.first(within: InstantTestWait.hang, after: before - 1) {
+      $0.interruption != nil
+    }
+    let status = try #require(published, "the write should publish why its change waits")
+    expectNoDifference(status.interruption?.cause, .noNetwork)
+    expectNoDifference(status.pendingMutationCount, 1)
+    await fixture.close()
+  }
+
   /// The next open ends the interruption.
   @Test
   func theNextOpenEndsTheInterruption() async throws {
