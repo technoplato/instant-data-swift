@@ -1384,6 +1384,8 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
   public var lastErrorMessage: String?
   /// A local condition that must be resolved before synchronization can resume.
   public var synchronizationBlocker: InstantSynchronizationBlocker?
+  /// Why this device's changes are not reaching Instant now, or nil while they are (#2037).
+  public var interruption: InstantSyncInterruption?
 
   public init(
     appID: String,
@@ -1396,7 +1398,8 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
     pendingMutationCount: Int,
     processedTransactionID: String?,
     lastErrorMessage: String? = nil,
-    synchronizationBlocker: InstantSynchronizationBlocker? = nil
+    synchronizationBlocker: InstantSynchronizationBlocker? = nil,
+    interruption: InstantSyncInterruption? = nil
   ) {
     self.appID = appID
     self.apiURI = apiURI
@@ -1409,6 +1412,7 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
     self.processedTransactionID = processedTransactionID
     self.lastErrorMessage = lastErrorMessage
     self.synchronizationBlocker = synchronizationBlocker
+    self.interruption = interruption
   }
 }
 
