@@ -22,3 +22,4 @@ claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-per
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
 claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-perf-sync-1796 #1796 #998 #1127 (InstantLiveReceivedFrames: superseded refresh-ok frames dropped; the receiver loop's take bookkeeping and a per-minute receive summary; not sendMutations/send/serverAttributes #1492, not query registration #1131)
 claude-code/ack-session-1942@pp 2026-11-06T20:16:48-0500 mower plan=2026-11-06-ack-session-1942 #1942 (a delivered-frame reading only)
+claude-code/sync-diagnostics-2037@ld 2026-11-07T22:09:46-0500 grower plan=2026-11-07-sync-diagnostics-2037 #2037 (the init error's server fields only)
