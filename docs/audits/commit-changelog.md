@@ -1,3 +1,6 @@
+## 2026-11-08 13:57:38 EST — scribe `e6af4c0f6dd2eca3c20a0ea77a7837b47eede8eb`
+Fix (#2056): the Watch's iPhone link comes from what WatchConnectivity's callbacks said; every other WCSession call runs on one serial queue bounded at 5 s and named when it holds (his Watch's list stopped running effects after calling WCSession on Swift's pool); what each side wants the other to have goes over at every session change and when the app comes to the front; landed as merge e548d7917.
+
 ## 2026-11-08 13:25:04 EST — scribe `d6b93023b0a540ed2cc2d4eed3b9cd9fd3d24d21`
 Docs (#2067): the rule rewritten everywhere agents read it, his words on top: every post comes through at once, a delivery kind decides ding or quiet, his hold only on his own words; ADR 0141, ADR 0137 superseded in part, FEATURES item 8.
 
