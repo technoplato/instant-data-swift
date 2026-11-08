@@ -10856,9 +10856,11 @@ public final class InstantRuntime: Sendable {
         return
       }
       shouldReconnect = !recordsOnly
+      // #2037: the failure's cause is stored with it, and the next status carries it (a failed reconnect attempt
+      // publishes one). Not published here: upstream `Reactor.js` sets CLOSED for a dropped socket and ERRORED only for
+      // a failed `init`, so an observer sees a drop as closed, not as an error, while the reconnect runs
+      // (`upstreamPythonSubscriptionPostInitFailureSilentlyRetriesAndResubscribes`).
       try await saveErroredConnectionMetadataWithGateHeld(error: error)
-      // #2037: observers learn of the drop now, with its cause, not at the next unrelated status.
-      _ = try? await publishConnectionStatusWithGateHeld()
       await leaveOperationGate()
       enteredOperationGate = false
     } catch is CancellationError {

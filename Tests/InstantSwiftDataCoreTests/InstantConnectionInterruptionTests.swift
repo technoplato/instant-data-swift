@@ -15,24 +15,25 @@ import Testing
 struct InstantConnectionInterruptionTests {
   static let cellular = InstantNetworkPathState(isSatisfied: true, isExpensive: true, interface: .cellular)
 
-  /// A dropped socket reaches the status's observers at once, with its cause on the path it was on.
+  /// On a network that does not carry the connection, a reconnect's failed attempt publishes the cause at once, on the
+  /// path it met. A dropped socket alone reads as closed while the reconnect runs, as upstream's does: `Reactor.js` sets
+  /// CLOSED for a drop and ERRORED only for a failed `init`.
   @Test
-  func aDroppedSocketIsPublishedAtOnceWithItsCause() async throws {
+  func aFailedReconnectAttemptPublishesItsCause() async throws {
     let path = InstantNetworkPathMonitor(path: Self.cellular)
-    let fixture = try await Self.fixture("dropped", sessions: [Self.openingSession("dropped")], path: path)
-    await fixture.sessions[0].failReceive(
-      InstantError(
-        code: .networkFailed,
-        operation: "receive Instant live message",
-        message: "Socket is not connected",
-        recovery: "Reconnect."
-      )
+    let reconnect = ReconnectGate(freeWaits: 1)
+    let fixture = try await Self.fixture(
+      "failed-attempt",
+      attempts: [.session(Self.openingSession("failed-attempt")), .failure(Self.openTimedOut)],
+      path: path,
+      reconnectSleep: { _ in try await reconnect.wait() }
     )
+    await fixture.sessions[0].failReceive(Self.socketNotConnected)
     let published = try await fixture.statuses.first(within: InstantTestWait.hang) { $0.state == .errored }
-    let status = try #require(published, "the drop should be published, not only saved")
+    let status = try #require(published, "the failed attempt should publish its cause")
     expectNoDifference(status.interruption?.cause, .weakNetwork)
     expectNoDifference(status.interruption?.networkPath, "cellular expensive")
-    #expect(status.interruption?.detail.contains("Socket is not connected") == true)
+    #expect(status.interruption?.detail.contains("Timed out after 5000ms") == true)
 
     // The path goes away while the reconnect waits: the same failure now reads as no network.
     path.update(isSatisfied: false)
@@ -45,30 +46,27 @@ struct InstantConnectionInterruptionTests {
   @Test
   func theNextOpenEndsTheInterruption() async throws {
     let path = InstantNetworkPathMonitor(path: Self.cellular)
-    let reconnect = ReconnectGate()
+    let reconnect = ReconnectGate(freeWaits: 1)
     let fixture = try await Self.fixture(
       "reopened",
-      sessions: [Self.openingSession("reopened-1"), Self.openingSession("reopened-2")],
+      attempts: [
+        .session(Self.openingSession("reopened-1")),
+        .failure(Self.openTimedOut),
+        .session(Self.openingSession("reopened-2")),
+      ],
       path: path,
       reconnectSleep: { _ in try await reconnect.wait() }
     )
-    await fixture.sessions[0].failReceive(
-      InstantError(
-        code: .networkFailed,
-        operation: "receive Instant live message",
-        message: "Socket is not connected",
-        recovery: "Reconnect."
-      )
-    )
-    let dropped = try #require(
+    await fixture.sessions[0].failReceive(Self.socketNotConnected)
+    let interrupted = try #require(
       try await fixture.statuses.firstIndex(within: InstantTestWait.hang) { $0.interruption != nil }
     )
-    // The status stream keeps only its newest value, so the reconnect waits until the drop was seen.
+    // The status stream keeps only its newest value, so the next attempt waits until the failure was seen.
     await reconnect.release()
-    let reopened = try await fixture.statuses.first(within: InstantTestWait.hang, after: dropped) {
+    let reopened = try await fixture.statuses.first(within: InstantTestWait.hang, after: interrupted) {
       $0.state != .errored && $0.interruption == nil
     }
-    #expect(reopened != nil, "the second session's open should publish a status with no interruption")
+    #expect(reopened != nil, "the next session's open should publish a status with no interruption")
     let open = try await fixture.runtime.connectionStatus()
     expectNoDifference(open.interruption, nil)
     await fixture.close()
@@ -240,9 +238,19 @@ extension InstantConnectionInterruptionTests {
 
   /// A reconnect wait that ends when the test releases it.
   actor ReconnectGate {
+    private var freeWaits: Int
     private var isReleased = false
 
+    /// The first `freeWaits` waits end at once; later ones wait for `release()`.
+    init(freeWaits: Int = 0) {
+      self.freeWaits = freeWaits
+    }
+
     func wait() async throws {
+      if freeWaits > 0 {
+        freeWaits -= 1
+        return
+      }
       while !isReleased {
         try await Task.sleep(for: .milliseconds(5))
       }
@@ -253,6 +261,22 @@ extension InstantConnectionInterruptionTests {
     }
   }
 
+  /// A socket that died under the receive loop.
+  static let socketNotConnected = InstantError(
+    code: .networkFailed,
+    operation: "receive Instant live message",
+    message: "Socket is not connected",
+    recovery: "Reconnect."
+  )
+
+  /// An open that met the five-second deadline: what a weak network, and no network, look like to the socket.
+  static let openTimedOut = InstantError(
+    code: .networkFailed,
+    operation: "open Instant live session",
+    message: "Timed out after 5000ms waiting for Instant live transport.",
+    recovery: "Check the Instant WebSocket endpoint, credentials, and server response."
+  )
+
   static func openingSession(_ sessionID: String) -> LiveReactorParitySession {
     LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: sessionID)])
   }
@@ -261,7 +285,8 @@ extension InstantConnectionInterruptionTests {
   /// its first wait unless the test gives its own wait, so a drop stays visible.
   static func fixture(
     _ name: String,
-    sessions: [LiveReactorParitySession],
+    sessions: [LiveReactorParitySession] = [],
+    attempts: [LiveReactorParityTransportAttempt]? = nil,
     path: InstantNetworkPathMonitor?,
     reconnectSleep: (@Sendable (UInt64) async throws -> Void)? = nil,
     connects: Bool = true,
@@ -270,7 +295,8 @@ extension InstantConnectionInterruptionTests {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantConnectionInterruptionTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    var transport = LiveReactorParityTransport(sessions: sessions).transport
+    let attempts = attempts ?? sessions.map { .session($0) }
+    var transport = LiveReactorParityTransport(attempts: attempts).transport
     if let path {
       transport.networkPath = InstantNetworkPath(monitor: path)
     }
@@ -305,7 +331,11 @@ extension InstantConnectionInterruptionTests {
       let opened = try await runtime.connect()
       expectNoDifference(opened.state, .opened)
     }
-    return Fixture(runtime: runtime, sessions: sessions, statuses: statuses, observation: observation)
+    let opened = attempts.compactMap { attempt -> LiveReactorParitySession? in
+      if case let .session(session) = attempt { return session }
+      return nil
+    }
+    return Fixture(runtime: runtime, sessions: opened, statuses: statuses, observation: observation)
   }
 
   static func createTodo(_ runtime: InstantRuntime, id: String) async throws {
