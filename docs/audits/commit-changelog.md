@@ -1,3 +1,6 @@
+## 2026-11-08 15:14:36 EST — scribe `b9ee682938896e44b088b3a7654f9f9ceed14a1c`
+Feature (#2068): the scrubber redacts exactly what is private, proved by a strict synthetic benchmark (leaks and over-redactions of equal weight, precision and recall per medium, one label per entity, no time hidden, his landscape recording screen as frames tagged and untagged): live on the mini 84.1/98.3% to 100/100%; 40 of his real broadcast frames' median covered 45.3% to 9.0%, p50 303 ms a frame; the private stream at two frames a second; installed on the mini 96eb369a6 (the installer's import closure).
+
 ## 2026-11-08 14:21:00 EST — instant-data-swift `c50aaefd` (test), on v1.9.83 `8ccdde75` (release of merge `306cde58`)
 Test (#2005, ADR 0015 L3): the 10k-row benchmark compares allocated bytes. Optimized on the Mac mini (2005-l3-bench-release2, three runs): counting 13.9-14.5 ms, 24,034 allocations, 6.5 MB; linking every child as rows 37.8 ms, 19,052 allocations, 13.8 MB; 10,000 rows into 100 sections 2.4-2.6 ms. Counting is 2.7x faster at half the bytes but allocates 26% more often (a small snapshot per counted child), so the allocation-count check failed and now compares bytes. v1.9.83 itself (release `8ccdde75`, tag pushed) carries L3 for Scribe #2005 slice 2.
 
