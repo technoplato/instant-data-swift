@@ -1,3 +1,6 @@
+## 2026-11-07 21:37:10 EST — scribe `db238399822e96a92f5dd59a92ef29cae2a98875` (merge of 13 commits: red/green pairs and docs), changelog landed by `ba5409d6c0d1d21ccd622aacef28aba4f3c8a0f2`
+Measurement tools (#2009, #2020): after the drive, each tested first: a desk walk take for #2032 (drive start --agent-control, drive mark walk-started|walk-ended, its window left out); memory from the samples that split out the Neural Engine; every pulled copy kept and read once; device-lab.py reads runloop hang reports (build 300's three hangs: a launch commit and two window rotations); drive report --power for the unplugged power profile (window A: 19.7% an hour, the model's Live Activity term its largest behind).
+
 ## 2026-11-07 21:29:30 EST — scribe `6f5d46f83fcc2c34fcf5c2a513e99900cd17081a` (merge of red and green for the late listing, and its changelog)
 Fix (#2027): the Mac mirror's listener state moves from a process listing that answered after its beat stopped waiting, so a slow ps delays only the listener state, never the heartbeat.
 
