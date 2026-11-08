@@ -10410,9 +10410,8 @@ public actor SQLitePersistenceStore {
   ///
   /// - Parameters:
   ///   - decoded: The write's body when the caller already decoded it.
-  ///   - acceptedOnly: Consider only later writes the server accepted.
-  ///   - pendingMustBeClaimed: Count a later write the server has not accepted only while it is in flight, so a write
-  ///     parked behind it waits for an answer that is coming.
+  ///   - acceptedOnly: Consider only later writes the server accepted. Otherwise a later write not answered yet counts
+  ///     too, in flight or waiting its turn (#2028): a refusal parked behind it waits for its answer.
   ///   - serverResults: For a refused re-send only (#441): an insert that a later write does not cover also counts
   ///     when a result the server sent since the write was created shows its value (`InstantServerResultCheck`).
   /// - Returns: The coverage, the write's decoded body (`nil` when no later write shares a slot with it and no server
@@ -10422,15 +10421,13 @@ public actor SQLitePersistenceStore {
     createdAtMilliseconds: Int64,
     decoded: PendingMutation?,
     acceptedOnly: Bool,
-    pendingMustBeClaimed: Bool = false,
     serverResults: InstantServerResultCheck? = nil,
     attributes: () throws -> AttributeStore
   ) throws -> (coverage: InstantOutboxWriteCoverage, mutation: PendingMutation?, serverResultSlotCount: Int) {
     let candidates = try laterWriteCandidatesWithoutTransaction(
       ofMutationID: mutationID,
       createdAtMilliseconds: createdAtMilliseconds,
-      acceptedOnly: acceptedOnly,
-      pendingMustBeClaimed: pendingMustBeClaimed
+      acceptedOnly: acceptedOnly
     )
     guard !candidates.isEmpty || serverResults != nil else { return (.none, decoded, 0) }
     let mutation: PendingMutation
@@ -10567,15 +10564,13 @@ public actor SQLitePersistenceStore {
   private func laterWriteCandidatesWithoutTransaction(
     ofMutationID mutationID: String,
     createdAtMilliseconds: Int64,
-    acceptedOnly: Bool,
-    pendingMustBeClaimed: Bool
+    acceptedOnly: Bool
   ) throws -> [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] {
     var candidates: [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] = []
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT DISTINCT o.mutation_id, o.created_at_ms, o.status, o.confirmation_proven, o.server_transaction_id,
-             o.delivery_claim_state
+      SELECT DISTINCT o.mutation_id, o.created_at_ms, o.status, o.confirmation_proven, o.server_transaction_id
       FROM instant_outbox_write_keys own
       JOIN instant_outbox_write_keys other
         ON other.entity_id = own.entity_id AND other.attribute_id = own.attribute_id
@@ -10610,9 +10605,6 @@ public actor SQLitePersistenceStore {
       }
       let status = sqlite3_column_text(statement, 2).map { String(cString: $0) }
       let accepted = status == InstantMutationStatus.confirmed.rawValue && sqlite3_column_int64(statement, 3) == 1
-      let claimed = sqlite3_column_text(statement, 5).map { String(cString: $0) }
-        == InstantOutboxDeliveryClaimState.claimed.rawValue
-      guard accepted || !pendingMustBeClaimed || claimed else { continue }
       candidates.append((
         id: String(cString: idBytes),
         createdAt: sqlite3_column_int64(statement, 1),
@@ -10745,8 +10737,9 @@ public actor SQLitePersistenceStore {
   /// Resolves a write the server refused, when later writes of this device cover all of it (item 3), or for a re-send
   /// when the server's own results show the rest (#441).
   ///
-  /// The server holds a newer value for every slot the refused write sets, or will once the covering writes in flight
-  /// are answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted: the write keeps its
+  /// The server holds a newer value for every slot the refused write sets, or will once the covering writes are
+  /// answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted, in flight or waiting their
+  /// turn (#2028: one write at a time after a transient error left the covering write unsent): the write keeps its
   /// claim, parked with a distant acknowledgement deadline, until they are answered (`resolveParkedRefusal`); delivery
   /// stays an ordered prefix. A re-send whose remaining slots a result from the server sent since the write was created
   /// shows with the write's values counts as covered too; one whose remaining slots are inserts no result shows yet is
@@ -10795,7 +10788,6 @@ public actor SQLitePersistenceStore {
         createdAtMilliseconds: position.createdAtMilliseconds,
         decoded: nil,
         acceptedOnly: !holdsBehindPendingWrites,
-        pendingMustBeClaimed: true,
         serverResults: holdsBehindPendingWrites ? serverResults : nil,
         attributes: {
           AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))

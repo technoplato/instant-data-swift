@@ -53,8 +53,10 @@ struct InstantMutationServerErrorBackoff: Sendable {
     return (attempt, delay, deliveryResumesAtMilliseconds ?? deadline)
   }
 
-  /// The server accepted `mutationID`: it is healthy again, so delivery returns to full windows.
-  mutating func recordAcceptance(of mutationID: String) {
+  /// The server gave `mutationID` a verdict, not a transient error: it accepted it, or refused a write that later writes
+  /// of this device cover (#2028). Either way it is healthy again, so delivery returns to full windows; a refusal parked
+  /// behind a covering write holds its claim, so one write at a time would never send that write.
+  mutating func recordVerdict(on mutationID: String) {
     consecutiveFailures[mutationID] = nil
     probesOneWrite = false
   }
@@ -91,8 +93,8 @@ actor InstantMutationServerErrorBackoffState {
     backoff.recordFailure(of: mutationID, now: now, policy: policy)
   }
 
-  func recordAcceptance(of mutationID: String) {
-    backoff.recordAcceptance(of: mutationID)
+  func recordVerdict(on mutationID: String) {
+    backoff.recordVerdict(on: mutationID)
   }
 
   func forget(_ mutationID: String) {
