@@ -1668,6 +1668,18 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
   public var last: Int?
   public var selectedFields: [String]?
   public var includes: [InstantQueryInclude]?
+  /// Per-parent counts of this include's children (ADR 0015 L3), stored on each parent's snapshot under
+  /// ``InstantQueryIncludeCount/snapshotKey(relation:)``. A count covers every child the include matches, before
+  /// its `limit`, `first` or `last`, narrowed by the count's own filters.
+  ///
+  /// Optional, like ``countOnly``, so results stored before counts existed still decode, and a plan without counts
+  /// keeps its cache key.
+  public var counts: [InstantQueryIncludeCount]?
+  /// `true` when the include exists only for its ``counts``: no child rows link into the parent (ADR 0015 L3).
+  public var countOnly: Bool?
+
+  /// Whether the include links no child rows into its parent, only its ``counts``.
+  public var isCountOnly: Bool { countOnly == true }
 
   public init(
     id: String,
@@ -1717,6 +1729,28 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
     self.last = last
     self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
     self.includes = includes.isEmpty ? nil : includes
+  }
+}
+
+/// One per-parent count of an include's children: the Instant counterpart of SQLiteData's
+/// `$1.id.count(filter:)` in a grouped join (ADR 0015 L3).
+///
+/// Counted on this device. Instant's server answers aggregates for admin queries only (`instaql.clj`: "Aggregates
+/// are currently only available for admin queries"), so a client query brings the children down, narrowed to the
+/// fields the count reads, and the store counts them, as upstream's client applies a nested `limit` itself
+/// (`queryValidation.ts`: "only supported client side").
+public struct InstantQueryIncludeCount: Hashable, Codable, Sendable {
+  /// The children counted: those the include matches that also match every filter here. Empty counts them all.
+  public var filters: [InstantQueryFilter]
+
+  public init(filters: [InstantQueryFilter] = []) {
+    self.filters = filters
+  }
+
+  /// The key a parent snapshot stores this count under for the include named `relation`: the relation and the
+  /// count's filters, canonically, so two counts of one relation with different filters never share a value.
+  public func snapshotKey(relation: String) -> String {
+    "\(relation.cacheKeyEncodedString)|filters:[\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ","))]"
   }
 }
 
@@ -1921,6 +1955,13 @@ private extension InstantQueryIncludePlan {
     if let includes, !includes.isEmpty {
       components.append("includes:[\(includes.map(\.canonicalCacheKeyPayload).joined(separator: ","))]")
     }
+    // ADR 0015 L3: only a plan that counts adds these, so every plan stored before counts keeps its key.
+    if let counts, !counts.isEmpty {
+      components.append("counts:[\(counts.map { $0.snapshotKey(relation: "").cacheKeyEncodedString }.joined(separator: ","))]")
+    }
+    if isCountOnly {
+      components.append("countOnly")
+    }
     return components.joined(separator: "|")
   }
 }
@@ -2091,6 +2132,8 @@ public struct InstantLinkedEntitySnapshot: Hashable, Codable, Sendable, Identifi
   public var namespace: String
   public var values: [String: InstantMaterializedValue]
   public var links: [String: [InstantLinkedEntitySnapshot]]?
+  /// Per-row counts of this entity's own counted includes (ADR 0015 L3), as on ``InstantEntitySnapshot/counts``.
+  public var counts: [String: Int]?
 
   public init(id: String, namespace: String, values: [String: InstantMaterializedValue]) {
     self.init(id: id, namespace: namespace, values: values, links: nil)
@@ -2100,12 +2143,14 @@ public struct InstantLinkedEntitySnapshot: Hashable, Codable, Sendable, Identifi
     id: String,
     namespace: String,
     values: [String: InstantMaterializedValue],
-    links: [String: [InstantLinkedEntitySnapshot]]?
+    links: [String: [InstantLinkedEntitySnapshot]]?,
+    counts: [String: Int]? = nil
   ) {
     self.id = id
     self.namespace = namespace
     self.values = values
     self.links = links
+    self.counts = counts
   }
 
   public init(_ snapshot: InstantEntitySnapshot) {
@@ -2113,7 +2158,8 @@ public struct InstantLinkedEntitySnapshot: Hashable, Codable, Sendable, Identifi
       id: snapshot.id,
       namespace: snapshot.namespace,
       values: snapshot.values,
-      links: snapshot.links
+      links: snapshot.links,
+      counts: snapshot.counts
     )
   }
 }
@@ -2123,24 +2169,33 @@ public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
   public var namespace: String
   public var values: [String: InstantMaterializedValue]
   public var links: [String: [InstantLinkedEntitySnapshot]]?
+  /// Per-row counts of the query's counted includes (ADR 0015 L3), keyed by
+  /// ``InstantQueryIncludeCount/snapshotKey(relation:)``: how many children each relation links to this row.
+  ///
+  /// Nil when the query counts nothing. A query that counts sets every count on every row it shows, zeros included, so
+  /// one query's answers either all carry counts or none do.
+  public var counts: [String: Int]?
 
   public init(id: String, namespace: String, values: [String: InstantMaterializedValue]) {
     self.id = id
     self.namespace = namespace
     self.values = values
     self.links = nil
+    self.counts = nil
   }
 
   public init(
     id: String,
     namespace: String,
     values: [String: InstantMaterializedValue],
-    links: [String: [InstantLinkedEntitySnapshot]]?
+    links: [String: [InstantLinkedEntitySnapshot]]?,
+    counts: [String: Int]? = nil
   ) {
     self.id = id
     self.namespace = namespace
     self.values = values
     self.links = links
+    self.counts = counts
   }
 
   /// Included children for a relation name as entity snapshots (empty if none).
@@ -2150,7 +2205,8 @@ public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
         id: linked.id,
         namespace: linked.namespace,
         values: linked.values,
-        links: linked.links
+        links: linked.links,
+        counts: linked.counts
       )
     }
   }

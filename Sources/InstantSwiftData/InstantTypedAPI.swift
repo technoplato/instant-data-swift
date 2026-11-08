@@ -1,10 +1,12 @@
 // History:
 // - 2026-11-02: the typed transact no longer passes a creation time read before the operation gate; the runtime
 //   assigns it under the gate, after the outbox tail, and stamps the write's facts with it (#1648).
+// - 2026-11-08: counts of a relation's children per row, derived when the query is read (ADR 0015 L3, #2005).
 
 import Dependencies
 import Foundation
 import InstantSwiftDataCore
+import IssueReporting
 
 extension InstantID {
   public init() {
@@ -1847,6 +1849,117 @@ extension InstantAttributePath where Value == String {
   }
 }
 
+/// How many children a relation links to each row of a query: the Instant counterpart of SQLiteData's
+/// `$1.id.count(filter:)` in a grouped join (ADR 0015 L3).
+///
+/// Make one from a relation, then pass it to a fetch request that maps rows, which adds it to the query and hands each
+/// row's value to the map:
+///
+/// ```swift
+/// let pictureCount = Recording.attachments.count(where: Attachment.kind == "image")
+/// let threadCount = Recording.threads.count()
+///
+/// InstantFetchRequest(
+///   Recording.query.order(Recording.startedAtMs, .descending).limit(50),
+///   counting: pictureCount, threadCount
+/// ) { recording, pictures, threads in
+///   RecordingRow(recording: recording, pictureCount: pictures, threadCount: threads)
+/// }
+/// ```
+///
+/// A request that decodes snapshots itself adds counts with ``InstantEntityQuery/counting(_:)`` and reads each row's
+/// value with ``InstantEntitySnapshot/count(_:)``.
+///
+/// A count is derived when the query is read, so nothing stores it and nothing keeps it in sync: it follows the
+/// children as they are written, locally at once, and from the server as they arrive. It is counted on this device:
+/// Instant answers aggregates for admin queries only, so the query brings the children down, each narrowed to its id
+/// and the fields the count's predicate reads, and every refresh of the query restates them. Count relations whose
+/// children number in the tens per row; a relation that grows without bound costs its whole size on every refresh.
+///
+/// When the query also includes the relation, the count covers that include's children (its `where` applies) before
+/// its `limit`, so a row can show its first twelve pictures and how many more there are.
+public struct InstantCount<Entity: InstantEntityModel>: Hashable, Sendable {
+  let relation: String
+  let direction: InstantQueryIncludeDirection
+  let targetNamespace: String
+  let filters: [InstantQueryFilter]
+
+  fileprivate init(
+    relation: String,
+    direction: InstantQueryIncludeDirection,
+    targetNamespace: String,
+    predicate: InstantQueryFilter?
+  ) {
+    self.relation = relation
+    self.direction = direction
+    self.targetNamespace = targetNamespace
+    self.filters = predicate.map { [$0] } ?? []
+  }
+
+  var includeCount: InstantQueryIncludeCount {
+    InstantQueryIncludeCount(filters: filters)
+  }
+
+  /// The key each counted row stores this count under (``InstantEntitySnapshot/counts``).
+  public var snapshotKey: String {
+    includeCount.snapshotKey(relation: relation)
+  }
+}
+
+extension InstantReverseRelation {
+  /// How many children this relation links to each row, or only those matching `predicate` (ADR 0015 L3).
+  ///
+  /// ```swift
+  /// let runningThreadCount = Recording.threads.count(where: AgentThread.status == "running")
+  /// ```
+  public func count(where predicate: InstantPredicate<Target>? = nil) -> InstantCount<Entity> {
+    validateIncludeRelation()
+    return InstantCount(
+      relation: name,
+      direction: .reverse,
+      targetNamespace: Target.instantNamespace,
+      predicate: predicate?.filter
+    )
+  }
+}
+
+extension InstantAttributePath {
+  /// How many entities this many-link holds for each row, or only those matching `predicate` (ADR 0015 L3).
+  ///
+  /// ```swift
+  /// let pictureCount = Recording.attachments.count(where: Attachment.kind == "image")
+  /// ```
+  public func count<Target: InstantEntityModel>(
+    where predicate: InstantPredicate<Target>? = nil
+  ) -> InstantCount<Entity> where Value == InstantID<Target> {
+    validateIncludeAttribute(target: Target.self)
+    return InstantCount(
+      relation: name,
+      direction: .forward,
+      targetNamespace: Target.instantNamespace,
+      predicate: predicate?.filter
+    )
+  }
+}
+
+extension InstantEntitySnapshot {
+  /// This row's value of `count`, which the query that read the row must count (ADR 0015 L3).
+  ///
+  /// A row of a query that does not count it reports an issue and reads 0.
+  public func count<Entity: InstantEntityModel>(_ count: InstantCount<Entity>) -> Int {
+    guard let value = counts?[count.snapshotKey] else {
+      reportIssue(
+        """
+        Read a count of '\(count.relation)' from a '\(namespace)' row whose query does not count it. Add it with \
+        'counting(_:)', or pass it to the fetch request's 'counting:'.
+        """
+      )
+      return 0
+    }
+    return value
+  }
+}
+
 public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable {
   public private(set) var plan: InstantQueryPlan
 
@@ -2053,25 +2166,119 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       "InstantEntityQuery.include does not support nested offset/cursor pagination."
     )
 
+    // ADR 0015 L3: counts declared on this relation before it was included now count the include's children.
+    let declaredCounts = (plan.includes ?? []).first { $0.name == name }?.query?.counts
     var includes = (plan.includes ?? []).filter { $0.name != name }
-    includes.append(
-      InstantQueryInclude(
-        name,
-        direction: direction,
-        query: InstantQueryIncludePlan(
-          id: includePlan.id,
-          namespace: includePlan.namespace,
-          filters: includePlan.filters,
-          order: includePlan.order,
-          limit: includePlan.limit,
-          first: includePlan.first,
-          last: includePlan.last,
-          selectedFields: includePlan.selectedFields,
-          includes: includePlan.includes ?? []
-        )
-      )
+    var nestedPlan = InstantQueryIncludePlan(
+      id: includePlan.id,
+      namespace: includePlan.namespace,
+      filters: includePlan.filters,
+      order: includePlan.order,
+      limit: includePlan.limit,
+      first: includePlan.first,
+      last: includePlan.last,
+      selectedFields: includePlan.selectedFields,
+      includes: includePlan.includes ?? []
     )
+    nestedPlan.counts = declaredCounts
+    includes.append(InstantQueryInclude(name, direction: direction, query: nestedPlan))
+    return replacingIncludes(includes)
+  }
 
+  /// Adds per-row counts of relations' children to the query (ADR 0015 L3).
+  ///
+  /// Each row's snapshot carries every count, read with ``InstantEntitySnapshot/count(_:)``:
+  ///
+  /// ```swift
+  /// let pictureCount = Recording.attachments.count(where: Attachment.kind == "image")
+  ///
+  /// InstantFetchRequest(snapshotsOf: Recording.query.counting(pictureCount)) { snapshots in
+  ///   snapshots.map { $0.count(pictureCount) }
+  /// }
+  /// ```
+  ///
+  /// A counted relation the query also includes is counted over that include's children, before its `limit`. One that
+  /// it does not include is brought down for the counts alone: each child narrowed to its id and the fields the
+  /// counts' predicates read, and only children some count admits.
+  public func counting(_ counts: InstantCount<Entity>...) -> Self {
+    counting(counts)
+  }
+
+  /// Adds per-row counts of relations' children to the query (ADR 0015 L3): the variadic `counting(_:)` for an array.
+  public func counting(_ counts: [InstantCount<Entity>]) -> Self {
+    var includes = plan.includes ?? []
+    for count in counts {
+      if let index = includes.firstIndex(where: { $0.name == count.relation }) {
+        var include = includes[index]
+        var nestedPlan =
+          include.query
+          ?? InstantQueryIncludePlan(
+            id: "\(count.targetNamespace).included.\(count.relation)",
+            namespace: count.targetNamespace
+          )
+        var nestedCounts = nestedPlan.counts ?? []
+        guard !nestedCounts.contains(count.includeCount) else { continue }
+        nestedCounts.append(count.includeCount)
+        if nestedPlan.isCountOnly {
+          nestedPlan = Self.countOnlyIncludePlan(namespace: count.targetNamespace, counts: nestedCounts)
+        } else {
+          nestedPlan.counts = nestedCounts
+        }
+        include.query = nestedPlan
+        includes[index] = include
+      } else {
+        includes.append(
+          InstantQueryInclude(
+            count.relation,
+            direction: count.direction,
+            query: Self.countOnlyIncludePlan(namespace: count.targetNamespace, counts: [count.includeCount])
+          )
+        )
+      }
+    }
+    return replacingIncludes(includes)
+  }
+
+  /// The narrowest include that still brings every counted child: each child's id and the fields the counts read, and
+  /// only the children some count admits.
+  private static func countOnlyIncludePlan(
+    namespace: String,
+    counts: [InstantQueryIncludeCount]
+  ) -> InstantQueryIncludePlan {
+    let filters: [InstantQueryFilter]
+    if counts.contains(where: { $0.filters.isEmpty }) {
+      filters = []
+    } else if counts.count == 1 {
+      filters = counts[0].filters
+    } else {
+      filters = [.or(counts.map { $0.filters.count == 1 ? $0.filters[0] : .and($0.filters) })]
+    }
+    var fields: Set<String> = ["id"]
+    func collect(_ filter: InstantQueryFilter) {
+      switch filter {
+      case let .equals(field, _), let .notEquals(field, _),
+        let .greaterThan(field, _), let .greaterThanOrEqual(field, _),
+        let .lessThan(field, _), let .lessThanOrEqual(field, _),
+        let .in(field, _), let .like(field, _), let .iLike(field, _),
+        let .isNull(field), let .isNotNull(field):
+        fields.insert(field.firstIndex(of: ".").map { String(field[..<$0]) } ?? field)
+      case let .and(filters), let .or(filters):
+        filters.forEach(collect)
+      }
+    }
+    counts.flatMap(\.filters).forEach(collect)
+    var plan = InstantQueryIncludePlan(
+      id: "\(namespace).counted",
+      namespace: namespace,
+      filters: filters,
+      selectedFields: fields.sorted()
+    )
+    plan.counts = counts
+    plan.countOnly = true
+    return plan
+  }
+
+  private func replacingIncludes(_ includes: [InstantQueryInclude]) -> Self {
     var copy = self
     copy.plan = InstantQueryPlan(
       id: Self.queryID(

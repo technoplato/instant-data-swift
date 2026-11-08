@@ -66,17 +66,26 @@ enum InstantLiveQueryEncoder {
       if let query = include.query {
         // Nested limit/first/last go on the wire when present (InstaQL $ options).
         // Nested offset/cursors stay omitted — not supported on includes (ADR 0015).
+        //
+        // A counted include (ADR 0015 L3) leaves its bound off: its counts cover every child, and the nested-limit pass
+        // trims stored results by the bounds written here, so a bound on the wire would leave a relaunch counting only
+        // the first rows. The server sends every child either way (it bounds top-level namespaces only, ADR 0015 Q32);
+        // the store still windows the include's rows. Its fields widen to what the counts' filters read.
+        let counts = query.counts ?? []
+        let isCounted = counts.isEmpty && false  // red: a counted include goes up like any other
         value[include.name] = try namespaceValue(
           namespace: query.namespace,
           filters: query.filters,
           order: query.order,
           offset: nil,
-          limit: query.limit,
-          first: query.first,
+          limit: isCounted ? nil : query.limit,
+          first: isCounted ? nil : query.first,
           after: nil,
-          last: query.last,
+          last: isCounted ? nil : query.last,
           before: nil,
-          selectedFields: query.selectedFields,
+          selectedFields: isCounted
+            ? query.selectedFields.map { Self.fields($0, widenedFor: counts) }
+            : query.selectedFields,
           includes: query.includes ?? []
         )
       } else {
@@ -141,6 +150,26 @@ enum InstantLiveQueryEncoder {
       options["fields"] = .array(selectedFields.map(InstantLiveJSONValue.string))
     }
     return options
+  }
+
+  /// `fields` plus every field a count's filters read (for a path through a link, the link), sorted: a counted child
+  /// must arrive with what the store reads to count it (ADR 0015 L3).
+  private static func fields(_ fields: [String], widenedFor counts: [InstantQueryIncludeCount]) -> [String] {
+    var widened = Set(fields)
+    func collect(_ filter: InstantQueryFilter) {
+      switch filter {
+      case let .equals(field, _), let .notEquals(field, _),
+        let .greaterThan(field, _), let .greaterThanOrEqual(field, _),
+        let .lessThan(field, _), let .lessThanOrEqual(field, _),
+        let .in(field, _), let .like(field, _), let .iLike(field, _),
+        let .isNull(field), let .isNotNull(field):
+        widened.insert(field.firstIndex(of: ".").map { String(field[..<$0]) } ?? field)
+      case let .and(filters), let .or(filters):
+        filters.forEach(collect)
+      }
+    }
+    counts.flatMap(\.filters).forEach(collect)
+    return widened.sorted()
   }
 
   private static func opaqueCursorValidationError(

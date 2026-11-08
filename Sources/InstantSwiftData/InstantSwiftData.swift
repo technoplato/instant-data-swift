@@ -7092,6 +7092,15 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
     self.init(source: InstantFetchSource(query).map(transform))
   }
 
+  /// The query's rows: a request to build on with ``map(_:)`` or ``sectioned(by:)`` (ADR 0015 L3).
+  ///
+  /// ```swift
+  /// InstantFetchRequest(Reminder.query.order(Reminder.title)).sectioned(by: \.priority, order: .descending)
+  /// ```
+  public init<Entity: InstantEntityModel>(_ query: InstantEntityQuery<Entity>) where Value == [Entity] {
+    self.init(source: InstantFetchSource(query))
+  }
+
   public init<A: InstantEntityModel, B: InstantEntityModel>(
     _ a: InstantEntityQuery<A>,
     _ b: InstantEntityQuery<B>,
@@ -7309,11 +7318,146 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
     )
   }
 
+  /// ADR 0015 L3 — rows with a count of a relation's children per row, derived when the query is read.
+  ///
+  /// The request adds `count` to `query` itself, so the count is declared once, here, and each row's value arrives as
+  /// the map's second argument. Nothing stores it and nothing keeps it in sync:
+  ///
+  /// ```swift
+  /// InstantFetchRequest(
+  ///   Recording.query.order(Recording.startedAtMs, .descending).limit(50),
+  ///   counting: Recording.threads.count()
+  /// ) { recording, threadCount in
+  ///   RecordingRow(recording: recording, threadCount: threadCount)
+  /// }
+  /// ```
+  ///
+  /// See ``InstantCount`` for what a count covers and what it costs.
+  public init<Root: InstantEntityModel, Row: Sendable>(
+    _ query: InstantEntityQuery<Root>,
+    counting count: InstantCount<Root>,
+    map: @escaping @Sendable (_ root: Root, _ count: Int) throws -> Row
+  ) where Value == [Row] {
+    let quarantine = InstantRowQuarantine()
+    self.init(
+      source: InstantFetchSource.entitySnapshots(query.counting(count)).map { snapshots in
+        try quarantine.decodeRoots(snapshots, as: Root.self).map { snapshot, root in
+          try map(root, snapshot.count(count))
+        }
+      }
+    )
+  }
+
+  /// ADR 0015 L3 — rows with two counts per row, in the order the counts are passed. See
+  /// ``init(_:counting:map:)``.
+  public init<Root: InstantEntityModel, Row: Sendable>(
+    _ query: InstantEntityQuery<Root>,
+    counting countA: InstantCount<Root>,
+    _ countB: InstantCount<Root>,
+    map: @escaping @Sendable (_ root: Root, _ countA: Int, _ countB: Int) throws -> Row
+  ) where Value == [Row] {
+    let quarantine = InstantRowQuarantine()
+    self.init(
+      source: InstantFetchSource.entitySnapshots(query.counting(countA, countB)).map { snapshots in
+        try quarantine.decodeRoots(snapshots, as: Root.self).map { snapshot, root in
+          try map(root, snapshot.count(countA), snapshot.count(countB))
+        }
+      }
+    )
+  }
+
+  /// ADR 0015 L3 — rows with three counts per row, in the order the counts are passed. See
+  /// ``init(_:counting:map:)``.
+  ///
+  /// ```swift
+  /// InstantFetchRequest(
+  ///   Recording.query.order(Recording.startedAtMs, .descending).limit(50),
+  ///   counting: Recording.attachments.count(where: Attachment.kind == "image"),
+  ///   Recording.threads.count(),
+  ///   Recording.threads.count(where: AgentThread.status == "running")
+  /// ) { recording, pictures, threads, running in
+  ///   RecordingRow(recording: recording, pictureCount: pictures, threadCount: threads, runningCount: running)
+  /// }
+  /// ```
+  public init<Root: InstantEntityModel, Row: Sendable>(
+    _ query: InstantEntityQuery<Root>,
+    counting countA: InstantCount<Root>,
+    _ countB: InstantCount<Root>,
+    _ countC: InstantCount<Root>,
+    map: @escaping @Sendable (_ root: Root, _ countA: Int, _ countB: Int, _ countC: Int) throws -> Row
+  ) where Value == [Row] {
+    let quarantine = InstantRowQuarantine()
+    self.init(
+      source: InstantFetchSource.entitySnapshots(query.counting(countA, countB, countC)).map { snapshots in
+        try quarantine.decodeRoots(snapshots, as: Root.self).map { snapshot, root in
+          try map(root, snapshot.count(countA), snapshot.count(countB), snapshot.count(countC))
+        }
+      }
+    )
+  }
+
+  /// This request with its value transformed each time it loads or changes: a request built on another's value.
+  ///
+  /// The transform runs off the main thread, once per emission, so a view reads its result without recomputing it.
+  public func map<Mapped: Sendable>(
+    _ transform: @escaping @Sendable (Value) throws -> Mapped
+  ) -> InstantFetchRequest<Mapped> {
+    InstantFetchRequest<Mapped>(
+      source: InstantFetchSource(load: loadOperation, subscribe: subscribeOperation).map(transform)
+    )
+  }
+
+  /// ADR 0015 L3 — this request's rows grouped into named sections, the counterpart of SQLiteData's
+  /// `fetchAll(_:sectionBy:)`.
+  ///
+  /// Sections appear in the order of their first rows, and rows within a section keep the query's order, so a query
+  /// ordered by what it sections by yields sections in that order: recordings ordered newest first and sectioned by
+  /// day give the newest day first. Grouping runs once per emission, never in a view's body:
+  ///
+  /// ```swift
+  /// struct RecordingsByDay: InstantFetchKeyRequest {
+  ///   var fetchRequest: InstantFetchRequest<InstantResultsSectionCollection<Recording, Date>> {
+  ///     InstantFetchRequest(Recording.query.order(Recording.startedAtMs, .descending)) { $0 }
+  ///       .sectioned { Calendar.current.startOfDay(for: $0.startedAt) }
+  ///   }
+  /// }
+  ///
+  /// @Fetch(RecordingsByDay()) var days = InstantResultsSectionCollection()
+  ///
+  /// ForEach(days) { day in
+  ///   Section(day.name.formatted(date: .abbreviated, time: .omitted)) {
+  ///     ForEach(day) { recording in RecordingRow(recording: recording) }
+  ///   }
+  /// }
+  /// ```
+  ///
+  /// A section is a collection, so its `count` is the group's count.
+  public func sectioned<Element: Sendable, SectionName: Hashable & Sendable>(
+    by sectionName: @escaping @Sendable (Element) -> SectionName
+  ) -> InstantFetchRequest<InstantResultsSectionCollection<Element, SectionName>> where Value == [Element] {
+    map { InstantResultsSectionCollection(grouping: $0, by: sectionName) }
+  }
+
+  /// ADR 0015 L3 — this request's rows grouped into sections ordered by name, as SQLiteData orders sections by their
+  /// expression; rows within a section keep the query's order.
+  ///
+  /// ```swift
+  /// InstantFetchRequest(Reminder.query.order(Reminder.title)) { $0 }
+  ///   .sectioned(by: \.priority, order: .descending)
+  /// ```
+  public func sectioned<Element: Sendable, SectionName: Comparable & Hashable & Sendable>(
+    by sectionName: @escaping @Sendable (Element) -> SectionName,
+    order: InstantQuerySortDirection
+  ) -> InstantFetchRequest<InstantResultsSectionCollection<Element, SectionName>> where Value == [Element] {
+    map { InstantResultsSectionCollection(grouping: $0, by: sectionName).sortedByName(order) }
+  }
+
   private init(source: InstantFetchSource<Value>) {
     self.loadOperation = source.load
     self.subscribeOperation = source.subscribe
   }
 }
+
 
 private struct InstantFetchSource<Value: Sendable>: Sendable {
   var load: @Sendable (InstantSwiftDataClient) async throws -> Value
@@ -7340,7 +7484,7 @@ private struct InstantFetchSource<Value: Sendable>: Sendable {
     )
   }
 
-  private init(
+  fileprivate init(
     load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
     subscribe: @escaping @Sendable (InstantSwiftDataClient) async throws
       -> FetchSubscription<Value>
