@@ -137,7 +137,7 @@ struct InstantQueryAnswerDigest: Hashable, Sendable {
       }
       // ADR 0015 L3: written only when present. One query's rows either all carry counts or none do (its plan decides),
       // and a digest is compared only with its own query's, so this adds no ambiguity and keeps older rows' digests.
-      if let counts, counts.isEmpty && !counts.isEmpty {  // red: counts are not digested
+      if let counts {
         byte(3)
         count(counts.count)
         for key in counts.keys.sorted() {
