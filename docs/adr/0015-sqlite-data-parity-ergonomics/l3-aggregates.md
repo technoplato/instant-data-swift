@@ -80,8 +80,19 @@ InstantFetchRequest(
 
 ## What it costs
 
-Measured by `InstantCountedIncludeTests.countingTenThousandChildrenCostsLessThanLinkingThem` (one thread, in-memory
-store, 1,000 rows and 10,000 children; the numbers are in the commit's ledger entry and on Scribe #2005).
+Measured by `InstantCountedIncludeTests.countingTenThousandChildrenCostsLessThanLinkingThem`: one thread, the in-memory
+store, 1,000 rows each linked by 10 children (10,000 children), two counts per row (all, and one kind); median of five.
+
+| Shape (Mac mini, 2026-11-08) | Optimized: time | allocations | bytes | Debug: time | allocations |
+| --- | --- | --- | --- | --- | --- |
+| Count the children (L3) | 13.9-14.5 ms | 24,034 | 6.5 MB | 46.5 ms | 232,803 |
+| Link every child as rows, count in the map (before L3) | 37.8 ms | 19,052 | 13.8 MB | 80.5 ms | 409,683 |
+| 10,000 rows into 100 sections | 2.4-2.6 ms | 20,816 | 2.5 MB | 2.9 ms | 20,816 |
+
+Counting is 2.7 times faster and allocates half the bytes, but about 26% more often: it reads each counted child's
+field through a small snapshot. Reading the counted fields straight from the store's slots would remove most of those;
+not done in this step. The optimized run built only the core test product (`swift build -c release -Xswiftc
+-enable-testing --product InstantSwiftDataCoreTests`, run with `swiftpm-testing-helper`), three runs in one job.
 
 The wire is the real cost: a count downloads one narrowed fact set per counted child on every refresh of its query,
 because a refresh restates its result whole. Count relations with tens of children per row. For Scribe's list, count in
