@@ -13,7 +13,9 @@ import Testing
 /// every 25 ms and the device writes every 8 ms, so several writes are in flight at once, as on a slow network. A
 /// refusal of the first row's writes is always false: a newer write of this device holds every slot it sets. A refusal
 /// of the second row's writes is always true and must be reported. Seeds replay exactly; the interleaving of the
-/// runtime's tasks does not.
+/// runtime's tasks does not. Its scripted server answers on the wall clock, so it runs in the measurement pass: beside
+/// the whole bundle it once timed out waiting for the last answers (job 2028-bundle3), and passed alone and beside 12
+/// busy loops.
 @Suite(.serialized)
 struct InstantFlappingNetworkRefusalTests {
   static let keptRowID = "todo-flapping-kept"
@@ -196,7 +198,7 @@ struct InstantFlappingNetworkRefusalTests {
     ]
   }
 
-  @Test(arguments: [UInt64(2028), 7, 41, 99, 314, 1234, 4242, 9001])
+  @Test(.measurement, arguments: [UInt64(2028), 7, 41, 99, 314, 1234, 4242, 9001])
   func onAFlappingNetworkOnlyTrueRefusalsAreReported(seed: UInt64) async throws {
     let sessions = (0..<80).map { index in
       LiveReactorParitySession(messages: [

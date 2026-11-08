@@ -111,8 +111,8 @@ struct InstantCoveringWriteRetentionTests {
     _ = try await fixture.runtime.closeConnection()
   }
 
-  /// A parked refusal is not a write in flight: when the write that covers it meets a transient error, one write at a
-  /// time sends that write again, though the parked refusal still holds its claim.
+  /// The write that covers a parked refusal meets a transient error: one write at a time sends it again, and the
+  /// refusal resolves when it is accepted. (Suspected on 2026-11-07 to stall behind the parked claim; it does not.)
   @Test
   func aCoveringWritesTransientErrorIsRetriedWhileTheRefusalItCoversIsParked() async throws {
     let fixture = try await Fixture.make("parked-during-probe") {
