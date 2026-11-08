@@ -1,3 +1,6 @@
+## 2026-11-07 19:01:33 EST — scribe `adea7a2b777d5c88187ba2239b41edb0dcb8835f` (merge), `1e8bf1e23` (red), `be4887c92` (green), `24f50aa84` (docs)
+Fix (#2023, #2026): the hold's words name the take's Stop ("the Stop of Recording 393"), never "his Stop", and `scribe hold on --until stop` warns that a canned or test take that stops itself lifts it too, so such a hold is --for; the listener's step says so. The mirror cannot tell his tap from such a Stop (Instant carries no stop trigger; #2026 holds the canonical fix). The mirror runs main adea7a2b7 (installed 19:01).
+
 ## 2026-11-07 18:40:00 EST — scribe `65beb3ebd` (green), `cd2175689` (green), `9d997d0e7` (green), `478a7a9cb` (green), landed by `f4330e186` with its changelog
 Privacy (#2018, ADR 0140): Scribe's session tooling keeps no client's session. The status mod keeps a client session's live file as client work by id only; the board and scribe route name client work by id; agent-run refuses a Scribe run in a client's folder before anything starts and never prints the path; agent-progress-check names no client; the chat uploader refuses a transcript whole when any line touches client work and reads session files only from Scribe's logins; agents-sync reads its sources from the account list and keeps its old keep-out of ~/Development/jobs.
 
