@@ -1,3 +1,6 @@
+## 2026-11-07 22:30:48 EST — scribe `6291d36c0cdcfc4e83d4887c91ce3d7cb31bbb03` (merge of docs e1e24a9c1 and its changelog c0a9c010d)
+Measurement (#2021, #2022): memory on long recordings. The 1,034 MB an hour was a window artifact (a fall-back's Neural Engine spike and a log gap); the fall-back spike is the on-device speech models running (964 MB; loaded once in 0.87 s, 0.01 s after); the steady 45-50 MB an hour grows only with the recording screen and is TCA 1.x keeping the finished tasks of every effectful action the long-living speech stream sends (soak: about 37 a line; TCA's own test 1,366 -> 17 bytes an action with a patch, branch agent/memory-2021/finished-child-tasks ff2c699f08 in the local TCA clone; the fork waits on Michael). audits/2026-11-07-memory-2021.md.
+
 ## 2026-11-07 22:09:43 EST — scribe `dc9d7c1b8d325c100e4314742849e38182a017c3` (merge: the power write-up), changelog landed by `5efb782d4ba70aa4ca0685516aeed51662a74142`
 Measurement (#2020): a long canned take off the charger on his iPhone: 16.9% of the battery an hour with Scribe on screen (build 301, a clean hour), the energy model led by the display, and nothing grows within the hour; window A (build 300) 19.7% an hour with his own use mixed in. Not measured: iOS's own accounting and a screen-off hour.
 
