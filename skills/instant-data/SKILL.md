@@ -214,8 +214,11 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
 - **Correctness over convenience** — fix query ergonomics rather than denorm
   workarounds.
 - **First #155 milestone:** nested limit-per-parent include + request-time
-  **map** to list rows; grow toward `@Selection`/Columns-style projections;
-  aggregations / grouping / sectioned results (SQLiteData parity). Prior art:
+  **map** to list rows; grow toward `@Selection`/Columns-style projections.
+  Aggregations shipped as ADR 0015 L3 (2026-11-08): per-row counts
+  (`Relation.count(where:)`, `InstantFetchRequest(query, counting:)`,
+  `snapshot.count(_:)`) and sections (`sectioned(by:)`, a section's `count` for
+  grouped counts); see `instant-data-modeling`. Prior art:
   `upstream/sqlite-data`, `/Users/laptop/Sync/tca/pointfree-research` (ep328,
   ep374). Then delete app Instant stores/planners.
 

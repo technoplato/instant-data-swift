@@ -30,7 +30,7 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 | L1 | Nested limit-per-parent on reverse `include` (e.g. 2 segments/recording) | instant-data-swift | — | `issue-155-L1-nested-limit` **done** `3948460c` | Unit: InstantNestedIncludeLimit; validation parity |
 | L2b | Multi-bag map (segments + attachments) | instant-data-swift | L2 | `issue-155-L2b-multibag` | Two reverse includes → map(root, a, b) |
 | L2 | Request-time **map** (+ Selection/Columns-shaped list row direction) | instant-data-swift | L1 | `issue-155-L2-map-selection` **done** | InstantFetchRequest map + InstantIncludedMapFetchTests; Columns macros later |
-| L3 | Aggregations / group / sectioned result maps | instant-data-swift | L2 | `issue-155-L3-aggregate-group` | Count-on-row or sectioned fixture like Reminders/SyncUps |
+| L3 | Aggregations / group / sectioned result maps | instant-data-swift | L2 | `issue-155-L3-aggregate-group` **done** red `e8657c69`, green `fe808434` (2026-11-08, Scribe #2005) | `InstantAggregateFetchTests`, `InstantCountedIncludeTests` (10k-row benchmark); design: [`l3-aggregates.md`](./l3-aggregates.md) |
 | L4 | Entity sync status on fetch (coordinate ADR 0014) | instant-data-swift | — | `issue-155-L4-sync-status` | Status ADT on observed row in test |
 | P1 | Instant **client id** for activity ADT (parallel) | instant-data-swift + Scribe | — | `issue-155-P1-client-id` **library API done** | `clientID()` + InstantClientID; Scribe activity field wiring still product |
 | S0 | Prefer short Instant entity names (aliases → rename) | Scribe | — | `issue-155-S0-entity-names` | InstantRecording/Segment/Attachment |
@@ -45,7 +45,7 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 
 ```text
 L1 → L2 → S1          (list unblocked) — largely done
-L3, L4, P1            (library SQLiteData parity — prioritize with Scribe peel)
+L3, L4, P1            (library SQLiteData parity — prioritize with Scribe peel; L3 done 2026-11-08)
 S2 → S3 → S5 → S4     (write path then delete store last among Scribe steps)
 ```
 
@@ -99,6 +99,7 @@ commitSha: <full sha when landed>
 - Interview: `qanda.md`
 - Smells/deletes: `findings.md`
 - List query sketch: `overviews/03-list-query-syntax-sketch.md`
+- **L3 aggregates (counts on rows, sections, grouped counts):** [`l3-aggregates.md`](./l3-aggregates.md)
 - **Open-segment write recipe:** [`open-segment-write-recipe.md`](./open-segment-write-recipe.md)
   (Core: `Sources/InstantSwiftDataCore/OpenSegmentWriteRecipe.swift`;
   typed: `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift`)
