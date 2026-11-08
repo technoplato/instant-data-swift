@@ -1,3 +1,6 @@
+## 2026-11-08 00:52:11 EST — scribe `9d0acb4f659e12bb5141d4b2049a5a105ad19133`
+Feature (#2035): devices other than the Mac encode no kept AAC copy: a device lists the finished WAVs it awaits copies for, a Mac tool converts each with afconvert at the listed format and returns it with a SHA-256 receipt, and a WAV is removed only once its copy matches the receipt; a WAV past 4 GiB is read to its end.
+
 ## 2026-11-08 00:43:41 EST — scribe `94b68cc9c` (red), `be6cf278f` (green), landed by `abea4c005`, changelog `f3aedf3f2` landed by `f0f3624a7`
 Feature (#2010 slice 4's model): LiveWordsOpenLine, the live screen's open segment as words that each know when they appeared: each text the segment shows is folded in with the moment it arrived by the Playground lab's rules (a correction takes the old word's place, the final settles the line, a paced take shows only the words due by a moment, the same text again changes nothing). Pure and take-agnostic, ahead of his pick for the live screen (plan amendment 66). Verified on the Mac mini: LiveWordsMotionTests 27 of 27. Michael, typed 2026-11-07 08:16: "The words kind of just flash into existing".
 
