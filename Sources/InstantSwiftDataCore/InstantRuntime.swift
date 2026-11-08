@@ -2122,6 +2122,9 @@ public final class InstantRuntime: Sendable {
   private let liveSession = InstantRuntimeLiveSession()
   /// The in-memory counters behind ``connectionHealth()`` (#482).
   private let connectionHealthRecorder = InstantConnectionHealthRecorder()
+  /// The server's newest rate limit on the open socket, until it answers an operation again (#2037). One small value
+  /// for one load or store, as the health recorder's counters.
+  private let rateLimit = OSAllocatedUnfairLock<InstantConnectionFailure?>(initialState: nil)
   private let liveQueryResultState = InstantLiveQueryResultState()
   /// The live queries whose registration is loading a closed result back, which the prune keeps (#1131).
   private let liveQueryRegistrations = InstantLiveQueryRegistrations()
@@ -9379,9 +9382,7 @@ public final class InstantRuntime: Sendable {
         if let blocker = try await persistence.synchronizationBlocker() {
           await mutationDeliveryPump.suspend()
           let error = blocker.error(operation: "open Instant live connection")
-          try await saveErroredConnectionMetadataWithGateHeld(
-            message: String(describing: error)
-          )
+          try await saveErroredConnectionMetadataWithGateHeld(error: error)
           if reportsFailure {
             _ = try? await publishConnectionStatusWithGateHeld()
           }
@@ -9506,10 +9507,9 @@ public final class InstantRuntime: Sendable {
             operation: "record failed live session open"
           )
           enteredOperationGate = true
-          try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
-          if reportsFailure {
-            _ = try? await publishConnectionStatusWithGateHeld()
-          }
+          try await saveErroredConnectionMetadataWithGateHeld(error: error)
+          // #2037: a reconnect's failed attempt is published too, so the status follows a cause that changes.
+          _ = try? await publishConnectionStatusWithGateHeld()
           throw error
         }
       }
@@ -9583,13 +9583,12 @@ public final class InstantRuntime: Sendable {
         category: "connection",
         event: "connection.open-failed",
         message: "Instant connection failed to open.",
-        metadata: [
-          "appID": configuration.appID,
+        metadata: connectionFailureMetadata(error).merging([
           "isReconnect": String(!reportsFailure),
           "durationMilliseconds": String(
             Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
           ),
-        ]
+        ]) { _, new in new }
       )
       throw error
     }
@@ -9808,13 +9807,16 @@ public final class InstantRuntime: Sendable {
       ?? .opened
     let lastErrorMessage = try persistence.loadMetadataValue(key: keys.connectionLastError)
     let synchronizationBlocker = try persistence.synchronizationBlocker()
+    let connectionFailure = try persistence.loadMetadataValue(key: keys.connectionFailure)
+      .flatMap(InstantConnectionFailure.init(storedJSON:))
     return InstantConnectionStatusInputs(
       pendingMutationCount: pendingMutationCount,
       session: session,
       processedTransactionID: processedTransactionID,
       storedState: storedState,
       lastErrorMessage: lastErrorMessage,
-      synchronizationBlocker: synchronizationBlocker
+      synchronizationBlocker: synchronizationBlocker,
+      connectionFailure: connectionFailure
     )
   }
 
@@ -9823,7 +9825,8 @@ public final class InstantRuntime: Sendable {
       authSession: authSessionKey,
       processedTransactionID: processedTransactionIDMetadataKey,
       connectionState: connectionStateMetadataKey,
-      connectionLastError: connectionLastErrorMetadataKey
+      connectionLastError: connectionLastErrorMetadataKey,
+      connectionFailure: connectionFailureMetadataKey
     )
   }
 
@@ -9840,23 +9843,50 @@ public final class InstantRuntime: Sendable {
       // configured, so without one the hop would buy nothing.
       liveSessionIsOpen = false
     }
+    let state = connectionState(
+      inputs.storedState,
+      isAuthenticated: inputs.session != nil,
+      liveSessionIsOpen: liveSessionIsOpen
+    )
     return InstantConnectionStatus(
       appID: configuration.appID,
       apiURI: configuration.apiURI,
       websocketURI: configuration.websocketURI,
       transport: configuration.liveTransport == nil ? .localCacheOnly : .webSocket,
-      state: connectionState(
-        inputs.storedState,
-        isAuthenticated: inputs.session != nil,
-        liveSessionIsOpen: liveSessionIsOpen
-      ),
+      state: state,
       isAuthenticated: inputs.session != nil,
       userID: inputs.session?.userID,
       pendingMutationCount: inputs.pendingMutationCount,
       processedTransactionID: inputs.processedTransactionID,
       lastErrorMessage: inputs.lastErrorMessage,
-      synchronizationBlocker: inputs.synchronizationBlocker
+      synchronizationBlocker: inputs.synchronizationBlocker,
+      interruption: connectionInterruption(state: state, inputs: inputs)
     )
+  }
+
+  /// Why changes are not reaching Instant now (#2037): the stored failure while the connection is `.errored`, a rate
+  /// limit the server answered on the open socket, each read on the network path as it is now, so a path that went away
+  /// after the failure reads as no network. A lock read of the path's newest answer, with no hop.
+  private func connectionInterruption(
+    state: InstantConnectionState,
+    inputs: InstantConnectionStatusInputs
+  ) -> InstantSyncInterruption? {
+    let path = configuration.liveTransport?.networkPath.monitor?.routeMark.path
+    switch state {
+    case .errored:
+      let failure =
+        inputs.connectionFailure
+        ?? InstantConnectionFailure(
+          kind: .other,
+          sinceMilliseconds: configuration.now().milliseconds,
+          detail: inputs.lastErrorMessage ?? "The Instant connection failed."
+        )
+      return InstantSyncInterruption(failure: failure, path: path)
+    case .opened, .authenticated:
+      return rateLimit.withLock { $0 }.map { InstantSyncInterruption(failure: $0, path: path) }
+    case .connecting, .closed:
+      return nil
+    }
   }
 
   @discardableResult
@@ -9959,20 +9989,37 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func saveErroredConnectionMetadataWithGateHeld(message: String) async throws {
+  /// Stores `.errored` with `error` as the last error and as the failure it is (#2037), which keeps the start of the
+  /// failures before it since the connection was last open. Returns the failure as stored.
+  @discardableResult
+  private func saveErroredConnectionMetadataWithGateHeld(error: any Error) async throws -> InstantConnectionFailure {
     forgetConnectionStatusInputs()
     let keys = connectionStatusKeys
     let now = configuration.now()
-    try await withPersistence { persistence in
-      try Self.saveConnectionMetadata(.errored, lastErrorMessage: message, in: persistence, keys: keys, now: now)
+    let message = String(describing: error)
+    let failure = InstantConnectionFailure(classifying: error, atMilliseconds: now.milliseconds)
+    return try await withPersistence { persistence in
+      let earlier = try persistence.loadMetadataValue(key: keys.connectionFailure)
+        .flatMap(InstantConnectionFailure.init(storedJSON:))
+      let kept = failure.continuing(earlier)
+      try Self.saveConnectionMetadata(
+        .errored,
+        lastErrorMessage: message,
+        failure: kept,
+        in: persistence,
+        keys: keys,
+        now: now
+      )
+      return kept
     }
   }
 
-  /// Writes the stored connection state, then its last error (deleted when there is none), in one persistence turn
-  /// (#403). They stay two SQLite statements, as the two awaits before were.
+  /// Writes the stored connection state, then its last error and its failure (each deleted when there is none), in
+  /// one persistence turn (#403, #2037).
   private static func saveConnectionMetadata(
     _ state: InstantConnectionState,
     lastErrorMessage: String?,
+    failure: InstantConnectionFailure? = nil,
     in persistence: isolated SQLitePersistenceStore,
     keys: InstantConnectionStatusKeys,
     now: InstantTimestamp
@@ -9987,6 +10034,11 @@ public final class InstantRuntime: Sendable {
     } else {
       try persistence.deleteMetadataValue(key: keys.connectionLastError)
     }
+    if let failure = failure?.storedJSON {
+      try persistence.saveMetadataValue(failure, key: keys.connectionFailure, updatedAt: now)
+    } else {
+      try persistence.deleteMetadataValue(key: keys.connectionFailure)
+    }
   }
 
   /// Stores a failure of the configured mutation transport, which an explicit flush meets, as the connection's error;
@@ -9996,7 +10048,7 @@ public final class InstantRuntime: Sendable {
     guard Self.callerOwnsLiveSessionFailure(error) else { return }
     await operationGate.enter()
     do {
-      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      try await saveErroredConnectionMetadataWithGateHeld(error: error)
       await operationGate.leave()
     } catch {
       await operationGate.leave()
@@ -10068,7 +10120,7 @@ public final class InstantRuntime: Sendable {
         await connectionGate.leave()
         return
       }
-      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      try await saveErroredConnectionMetadataWithGateHeld(error: error)
       _ = try await publishConnectionStatusWithGateHeld()
       await leaveOperationGate()
       enteredOperationGate = false
@@ -10519,10 +10571,12 @@ public final class InstantRuntime: Sendable {
       )
       return
     }
+    let now = configuration.now().milliseconds
     let retry = await mutationServerErrorBackoff.recordFailure(
       of: mutationID,
-      now: configuration.now().milliseconds,
-      policy: configuration.liveServerErrorRetryPolicy
+      now: now,
+      policy: configuration.liveServerErrorRetryPolicy,
+      notBeforeMilliseconds: now + Int64(clamping: Self.serverRetryFloorMilliseconds(error, now: now))
     )
     InstantDiagnostics.shared.record(
       .warning,
@@ -10673,6 +10727,93 @@ public final class InstantRuntime: Sendable {
   ///   Upstream `_startSocket` closes an open previous transport, but it runs only from `_scheduleReconnect` and the
   ///   network listener, so it rarely meets a session this fresh. Swift has more connection paths (the delivery pump,
   ///   sign-in), and replacing a fresh session re-adds every query. In Recording 023 that meant another 26-37 s apply.
+  /// The server rate-limited an operation on the open socket (#2037): the status says so, with the server's retry time,
+  /// until the server answers an operation again (``endRateLimitIfAny()``). Every queued change stays queued.
+  private func recordRateLimit(_ error: InstantLiveErrorMessage) {
+    let failure = InstantConnectionFailure(rateLimitedBy: error, atMilliseconds: configuration.now().milliseconds)
+    let began = rateLimit.withLock { current -> Bool in
+      let began = current == nil
+      current = failure.continuing(current)
+      return began
+    }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "connection",
+      event: "connection.rate-limited",
+      message: "Instant rate-limited this app; its changes stay queued and go out after the server's retry time.",
+      metadata: [
+        "appID": configuration.appID,
+        "originalEventOp": error.originalEvent?.op ?? "",
+        "serverStatus": error.status.map(String.init) ?? "",
+        "serverType": error.type ?? "",
+        "errorMessage": error.message,
+        "retryAtMilliseconds": failure.retryAtMilliseconds.map(String.init) ?? "",
+      ],
+      correlationID: error.clientEventID
+    )
+    if began { republishConnectionStatusSoon() }
+  }
+
+  /// The server answered an operation: a rate limit it set has ended (#2037).
+  private func endRateLimitIfAny() {
+    let ended = rateLimit.withLock { current -> InstantConnectionFailure? in
+      defer { current = nil }
+      return current
+    }
+    guard let ended else { return }
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "connection",
+      event: "connection.rate-limit-ended",
+      message: "Instant answered this app again after a rate limit.",
+      metadata: [
+        "appID": configuration.appID,
+        "limitedForMilliseconds": String(configuration.now().milliseconds - ended.sinceMilliseconds),
+      ]
+    )
+    republishConnectionStatusSoon()
+  }
+
+  /// Publishes the connection status after a change only this runtime's memory holds (a rate limit), in its own task:
+  /// it takes the operation gate, which the frame that changed it may wait on.
+  private func republishConnectionStatusSoon() {
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.enterOperationGateUnlessCancelled(operation: "publish the connection status")
+      } catch {
+        return
+      }
+      _ = try? await self.publishConnectionStatusWithGateHeld()
+      await self.leaveOperationGate()
+    }
+  }
+
+  /// How long the server said to wait before sending a rate-limited operation again, from `now`; zero for any other
+  /// error, or a rate limit that gave no time (#2037).
+  private static func serverRetryFloorMilliseconds(_ error: InstantLiveErrorMessage, now: Int64) -> UInt64 {
+    guard InstantConnectionFailure.isRateLimit(status: error.status, type: error.type),
+      let retryAt = InstantConnectionFailure.retryAtMilliseconds(hint: error.hint, nowMilliseconds: now)
+    else { return 0 }
+    return UInt64(max(0, retryAt - now))
+  }
+
+  /// A connection failure's log keys (#2037): the kind of failure and the network path when it was met, so a device's
+  /// log says why changes stopped reaching Instant.
+  private func connectionFailureMetadata(_ error: any Error) -> [String: String] {
+    let failure = InstantConnectionFailure(classifying: error, atMilliseconds: configuration.now().milliseconds)
+    var metadata = ["appID": configuration.appID, "failureKind": failure.kind.rawValue]
+    if let path = configuration.liveTransport?.networkPath.monitor?.routeMark.path {
+      metadata["path"] = path.logDescription
+    }
+    if let retryAt = failure.retryAtMilliseconds {
+      metadata["retryAtMilliseconds"] = String(retryAt)
+    }
+    return metadata
+  }
+
   private func scheduleReconnect(
     after error: Error,
     event: String,
@@ -10690,7 +10831,7 @@ public final class InstantRuntime: Sendable {
       category: "connection",
       event: event,
       message: message,
-      metadata: ["appID": configuration.appID]
+      metadata: connectionFailureMetadata(error)
     )
     let recordsOnly = (error as? InstantError)?.operation == "process Instant stream file retries"
     // Order reconnect creation against explicit close. Whichever operation acquires this gate
@@ -10715,7 +10856,9 @@ public final class InstantRuntime: Sendable {
         return
       }
       shouldReconnect = !recordsOnly
-      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      try await saveErroredConnectionMetadataWithGateHeld(error: error)
+      // #2037: observers learn of the drop now, with its cause, not at the next unrelated status.
+      _ = try? await publishConnectionStatusWithGateHeld()
       await leaveOperationGate()
       enteredOperationGate = false
     } catch is CancellationError {
@@ -10767,6 +10910,7 @@ public final class InstantRuntime: Sendable {
     switch event {
     case let .addQueryOK(queryOK):
       connectionHealthRecorder.recordServerResult(at: configuration.now().date)
+      endRateLimitIfAny()
       guard let query = queryOK.query else {
         throw InstantError(
           code: .decodeFailed,
@@ -10857,6 +11001,7 @@ public final class InstantRuntime: Sendable {
 
     case let .refreshOK(refreshOK):
       connectionHealthRecorder.recordServerResult(at: configuration.now().date)
+      endRateLimitIfAny()
       try await applyLiveRefresh(
         InstantLiveRefreshOK(
           clientEventID: refreshOK.clientEventID,
@@ -10903,6 +11048,7 @@ public final class InstantRuntime: Sendable {
         correlationID: clientEventID
       )
       connectionHealthRecorder.recordServerAcknowledgement(at: configuration.now().date)
+      endRateLimitIfAny()
       _ = try await acceptMutationIfPresent(
         id: clientEventID,
         serverTransactionID: transactionID,
@@ -10944,6 +11090,10 @@ public final class InstantRuntime: Sendable {
       }
 
     case let .error(error):
+      // #2037: a rate limit is the app's state, not one operation's: the status says so until the server answers again.
+      if InstantConnectionFailure.isRateLimit(status: error.status, type: error.type) {
+        recordRateLimit(error)
+      }
       // Query and stream errors carry client event IDs too, but they are not
       // mutation delivery responses and therefore have no SQLite claim token.
       // Route those feature-owned errors before interpreting a missing token as
@@ -11027,10 +11177,11 @@ public final class InstantRuntime: Sendable {
           retry = nil
         } else {
           let policy = configuration.liveServerErrorRetryPolicy
+          let retryFloor = Self.serverRetryFloorMilliseconds(error, now: configuration.now().milliseconds)
           recordActorHop(.liveSession)
           retry = await liveSession.scheduleQueryResend(
             key: registrationKey,
-            delayMilliseconds: { policy.delayMilliseconds(afterFailure: $0) },
+            delayMilliseconds: { max(policy.delayMilliseconds(afterFailure: $0), retryFloor) },
             sleep: configuration.liveQueryRetrySleep
           )
         }
@@ -11258,6 +11409,11 @@ public final class InstantRuntime: Sendable {
 
   private static func isRetryableMutationError(_ error: InstantLiveErrorMessage) -> Bool {
     let type = error.type?.lowercased() ?? ""
+    // #2037: upstream answers a rate-limited operation over the socket with status 400 and type `rate-limited`; the
+    // write can succeed later, so it stays queued and is offered again after the server's retry time.
+    if InstantConnectionFailure.isRateLimit(status: error.status, type: error.type) {
+      return true
+    }
     if isPermissionError(error) {
       return false
     }
@@ -11281,6 +11437,10 @@ public final class InstantRuntime: Sendable {
   /// transient, as upstream treats every add-query error.
   private static func addQueryRejectionRepeats(_ error: InstantLiveErrorMessage) -> Bool {
     let type = error.type?.lowercased() ?? ""
+    // #2037: a rate limit (status 400 over the socket) ends; the query is sent again after the server's retry time.
+    if InstantConnectionFailure.isRateLimit(status: error.status, type: error.type) {
+      return false
+    }
     if type.contains("timed-out") || type.contains("timeout") {
       return false
     }
@@ -17892,7 +18052,8 @@ public final class InstantRuntime: Sendable {
         value: failure.message,
         updatedAt: now
       ),
-    ]
+    ] + (InstantConnectionFailure(kind: .other, sinceMilliseconds: now.milliseconds, detail: failure.message).storedJSON
+      .map { [InstantPersistenceMetadataEntry(key: connectionFailureMetadataKey, value: $0, updatedAt: now)] } ?? [])
   }
 
   /// Peels and replays only the transitive optimistic component selected from
@@ -18493,7 +18654,7 @@ public final class InstantRuntime: Sendable {
         : []
       let deletingMetadataKeys =
         shouldClearConnectionFailure
-        ? [connectionLastErrorMetadataKey]
+        ? [connectionLastErrorMetadataKey, connectionFailureMetadataKey]
         : []
       if shouldClearConnectionFailure { forgetConnectionStatusInputs() }
 
@@ -19142,6 +19303,11 @@ public final class InstantRuntime: Sendable {
     "connection.last_error:\(configuration.appID)"
   }
 
+  /// The stored `.errored`'s failure as JSON, with when it began (#2037).
+  private var connectionFailureMetadataKey: String {
+    "connection.failure:\(configuration.appID)"
+  }
+
   private var appScopedCookieSyncLastUpdatedMetadataKey: String {
     "\(Self.cookieSyncLastUpdatedMetadataKey):\(configuration.appID)"
   }
@@ -19294,6 +19460,8 @@ private struct InstantConnectionStatusInputs: Sendable {
   var storedState: InstantConnectionState
   var lastErrorMessage: String?
   var synchronizationBlocker: InstantSynchronizationBlocker?
+  /// The failure the stored `.errored` stands for, with when it began (#2037).
+  var connectionFailure: InstantConnectionFailure? = nil
 }
 
 /// The metadata keys a connection status reads, captured so a persistence turn can use them.
@@ -19302,6 +19470,7 @@ private struct InstantConnectionStatusKeys: Sendable {
   var processedTransactionID: String
   var connectionState: String
   var connectionLastError: String
+  var connectionFailure: String
 }
 
 /// What one transact attempt read from SQLite before preparing its write, in one persistence turn (#403).

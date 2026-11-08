@@ -44,11 +44,12 @@ struct InstantConnectionInterruptionTests {
   @Test
   func theNextOpenEndsTheInterruption() async throws {
     let path = InstantNetworkPathMonitor(path: Self.cellular)
+    let reconnect = ReconnectGate()
     let fixture = try await Self.fixture(
       "reopened",
       sessions: [Self.openingSession("reopened-1"), Self.openingSession("reopened-2")],
       path: path,
-      parksReconnect: false
+      reconnectSleep: { _ in try await reconnect.wait() }
     )
     await fixture.sessions[0].failReceive(
       InstantError(
@@ -59,6 +60,8 @@ struct InstantConnectionInterruptionTests {
       )
     )
     _ = try #require(try await fixture.statuses.first(within: InstantTestWait.hang) { $0.interruption != nil })
+    // The status stream keeps only its newest value, so the reconnect waits until the drop was seen.
+    await reconnect.release()
     let reopened = try await fixture.statuses.first(within: InstantTestWait.hang) {
       $0.state != .errored && $0.interruption == nil
     }
@@ -218,17 +221,32 @@ extension InstantConnectionInterruptionTests {
     }
   }
 
+  /// A reconnect wait that ends when the test releases it.
+  actor ReconnectGate {
+    private var isReleased = false
+
+    func wait() async throws {
+      while !isReleased {
+        try await Task.sleep(for: .milliseconds(5))
+      }
+    }
+
+    func release() {
+      isReleased = true
+    }
+  }
+
   static func openingSession(_ sessionID: String) -> LiveReactorParitySession {
     LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: sessionID)])
   }
 
   /// A runtime on scripted sessions, one per connection, with its published statuses recorded. Its reconnect parks in
-  /// its first wait unless `parksReconnect` is false, so a drop stays visible.
+  /// its first wait unless the test gives its own wait, so a drop stays visible.
   static func fixture(
     _ name: String,
     sessions: [LiveReactorParitySession],
     path: InstantNetworkPathMonitor?,
-    parksReconnect: Bool = true,
+    reconnectSleep: (@Sendable (UInt64) async throws -> Void)? = nil,
     connects: Bool = true,
     retries: RetryRecorder? = nil
   ) async throws -> Fixture {
@@ -246,11 +264,11 @@ extension InstantConnectionInterruptionTests {
       liveTransport: transport
     )
     configuration.autoConnectLiveTransport = false
-    if parksReconnect {
-      let reconnectSleep = LiveReactorParityReconnectSleep(suspendsUntilCancelled: true)
-      configuration.liveReconnectSleep = { try await reconnectSleep.sleep(milliseconds: $0) }
+    if let reconnectSleep {
+      configuration.liveReconnectSleep = reconnectSleep
     } else {
-      configuration.liveReconnectSleep = { _ in }
+      let parked = LiveReactorParityReconnectSleep(suspendsUntilCancelled: true)
+      configuration.liveReconnectSleep = { try await parked.sleep(milliseconds: $0) }
     }
     configuration.liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy(jitter: { 1 })
     if let retries {

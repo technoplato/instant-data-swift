@@ -1310,10 +1310,17 @@ package actor InstantRuntimeLiveSession {
         )
 
       case let .error(error):
+        // #2037: the server's status, type and hint stay with the error, so the connection's status can say why (a rate
+        // limit, a refused sign-in, a server error) instead of a failure to open.
         throw InstantError(
           code: .networkFailed,
           operation: "open Instant live session",
           serverEventID: error.clientEventID,
+          serverStatus: error.status,
+          serverType: error.type,
+          serverHint: error.hint,
+          serverTraceID: error.traceID,
+          serverOriginalEventTraceID: error.originalEventTraceID,
           message: error.message,
           recovery: "Inspect the Instant runtime WebSocket init request and credentials."
         )

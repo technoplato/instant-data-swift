@@ -125,24 +125,161 @@ struct InstantConnectionFailure: Hashable, Codable, Sendable {
     self.detail = detail
   }
 
-  /// The failure `error` is, met at `nowMilliseconds`.
+  /// The failure `error` is, met at `nowMilliseconds`: pure.
+  ///
+  /// A server's answer decides first (its status and type), then the error's own kind. The socket waits for
+  /// connectivity, so a device without a network fails as a transport timeout too; the path tells them apart later,
+  /// when a status is made.
   init(classifying error: any Error, atMilliseconds nowMilliseconds: Int64) {
-    self.init(kind: .other, sinceMilliseconds: nowMilliseconds, detail: String(describing: error))
+    switch error {
+    case let error as InstantError:
+      let kind = Self.kind(of: error)
+      self.init(
+        kind: kind,
+        sinceMilliseconds: nowMilliseconds,
+        retryAtMilliseconds: kind == .rateLimited
+          ? Self.retryAtMilliseconds(hint: error.serverHint, nowMilliseconds: nowMilliseconds) : nil,
+        detail: error.description
+      )
+    case let error as URLError:
+      self.init(kind: Self.kind(of: error.code), sinceMilliseconds: nowMilliseconds, detail: String(describing: error))
+    default:
+      let error = error as NSError
+      let kind: Kind =
+        if error.domain == NSPOSIXErrorDomain {
+          // ECONNREFUSED: a host answered and refused. Any other socket error is the link: not connected, reset, timed
+          // out, aborted, unreachable.
+          error.code == 61 ? .serverUnreachable : .transport
+        } else {
+          .other
+        }
+      self.init(kind: kind, sinceMilliseconds: nowMilliseconds, detail: String(describing: error))
+    }
+  }
+
+  /// The failure as the runtime stores it beside the connection's last error.
+  var storedJSON: String? {
+    (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) }
+  }
+
+  /// A failure the runtime stored, or nil for one it cannot read.
+  init?(storedJSON: String) {
+    guard let failure = try? JSONDecoder().decode(Self.self, from: Data(storedJSON.utf8)) else { return nil }
+    self = failure
+  }
+
+  /// The failure a server's rate-limit answer on the socket is (#2037): `type` `rate-limited` with its retry time.
+  init(rateLimitedBy error: InstantLiveErrorMessage, atMilliseconds nowMilliseconds: Int64) {
+    self.init(
+      kind: .rateLimited,
+      sinceMilliseconds: nowMilliseconds,
+      retryAtMilliseconds: Self.retryAtMilliseconds(hint: error.hint, nowMilliseconds: nowMilliseconds),
+      detail: error.message
+    )
   }
 
   /// This failure, kept as the start of an interruption that `earlier` began: the newest kind and retry time, the
   /// earliest start.
   func continuing(_ earlier: Self?) -> Self {
-    self
+    guard let earlier else { return self }
+    var kept = self
+    kept.sinceMilliseconds = min(earlier.sinceMilliseconds, sinceMilliseconds)
+    return kept
+  }
+
+  /// Whether a server's answer is a rate limit: type `rate-limited` (status 400 over the socket, 429 over HTTP), or a
+  /// 429 that is not the server's `timeout` (a query or transaction that took too long, which upstream also sends as a
+  /// 429 over HTTP).
+  static func isRateLimit(status: Int?, type: String?) -> Bool {
+    let type = type?.lowercased()
+    return type == "rate-limited" || (status == 429 && type != "timeout")
+  }
+
+  private static func kind(of error: InstantError) -> Kind {
+    if error.serverStatus != nil || error.serverType != nil {
+      let type = error.serverType?.lowercased()
+      if isRateLimit(status: error.serverStatus, type: type) { return .rateLimited }
+      if error.serverStatus == 401 { return .authentication }
+      if let status = error.serverStatus, (500...599).contains(status) { return .serverUnreachable }
+      if type == "timeout" || type == "operation-timed-out" { return .serverUnreachable }
+      return .other
+    }
+    switch error.code {
+    case .networkFailed:
+      return .transport
+    case .authFailed:
+      return .authentication
+    case .persistenceFailed where error.localMutationDisposition == .retainedUnknown:
+      return .localRepairNeeded
+    case .persistenceFailed, .validationFailed, .permissionRejected, .decodeFailed, .implementationFailed:
+      return .other
+    }
+  }
+
+  private static func kind(of code: URLError.Code) -> Kind {
+    switch code {
+    case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff, .callIsActive:
+      .noNetwork
+    case .timedOut, .networkConnectionLost:
+      .transport
+    case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost, .secureConnectionFailed, .serverCertificateUntrusted,
+      .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
+      .clientCertificateRejected, .clientCertificateRequired, .badServerResponse, .zeroByteResource,
+      .cannotParseResponse:
+      .serverUnreachable
+    case .userAuthenticationRequired:
+      .authentication
+    default:
+      .other
+    }
+  }
+
+  /// When a rate limit's hint says to try again: `retry-at` (ISO 8601, as upstream writes a `java.time.Instant`, with or
+  /// without a fraction of a second), else `retry-after` seconds from `nowMilliseconds`.
+  static func retryAtMilliseconds(hint: InstantLiveJSONValue?, nowMilliseconds: Int64) -> Int64? {
+    guard let hint = hint?.objectValue else { return nil }
+    if let text = hint["retry-at"]?.stringValue, let date = Self.instant(text) {
+      return Int64((date.timeIntervalSince1970 * 1_000).rounded())
+    }
+    if case let .number(seconds)? = hint["retry-after"], seconds.isFinite, seconds >= 0 {
+      return nowMilliseconds + Int64((seconds * 1_000).rounded())
+    }
+    return nil
+  }
+
+  /// An ISO 8601 instant with an optional fraction of any length: `2026-11-08T03:42:00Z`, `2026-11-08T03:42:00.123456Z`.
+  private static func instant(_ text: String) -> Date? {
+    guard let dot = text.firstIndex(of: ".") else { return try? Date(text, strategy: .iso8601) }
+    let digits = text[text.index(after: dot)...].prefix(while: \.isNumber)
+    guard !digits.isEmpty, let whole = try? Date(String(text[..<dot]) + text[digits.endIndex...], strategy: .iso8601)
+    else { return nil }
+    return whole.addingTimeInterval(Double("0." + digits) ?? 0)
   }
 }
 
 extension InstantSyncInterruption {
   /// The interruption `failure` means while the network path is `path` (nil: the runtime reads none): pure.
+  ///
+  /// With no path at all, no network is what stands in the way first, except for what waits on someone: a refused
+  /// sign-in or a local repair.
   init(failure: InstantConnectionFailure, path: InstantNetworkPathState?) {
+    let pathIsMissing = path.map { !$0.isSatisfied } ?? false
+    let cause: Cause =
+      switch failure.kind {
+      case .authentication: .authentication
+      case .localRepairNeeded: .localRepairNeeded
+      case _ where pathIsMissing: .noNetwork
+      case .noNetwork: .noNetwork
+      case .transport: .weakNetwork
+      case .serverUnreachable: .serverUnreachable
+      case .rateLimited: .rateLimited
+      case .other: .other
+      }
     self.init(
-      cause: .other,
+      cause: cause,
       since: Date(timeIntervalSince1970: Double(failure.sinceMilliseconds) / 1_000),
+      retryAt: failure.retryAtMilliseconds.map { Date(timeIntervalSince1970: Double($0) / 1_000) },
+      networkPath: path?.logDescription,
       detail: failure.detail
     )
   }
