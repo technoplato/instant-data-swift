@@ -1,3 +1,6 @@
+## 2026-11-07 21:29:30 EST — scribe `6f5d46f83fcc2c34fcf5c2a513e99900cd17081a` (merge of red and green for the late listing, and its changelog)
+Fix (#2027): the Mac mirror's listener state moves from a process listing that answered after its beat stopped waiting, so a slow ps delays only the listener state, never the heartbeat.
+
 ## 2026-11-07 21:14:24 EST — scribe `dc5d062c3bcc9775eaf85d9784c20f8d1fdc80d5` (merge of red and green pairs for the heartbeat's listing and the copy's hole, and their changelog)
 Fix (#2027): the Mac mirror's heartbeat never waits behind a slow process listing (ps took 25.95 s at load 200), and a compressed copy's hole the server lacks is read once instead of 500 rows every 5 s; the copy window follows the newest landed so a late hole still arrives.
 
