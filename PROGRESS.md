@@ -1,3 +1,23 @@
+## 2026-11-08 14:05:00 EST — ids-l3-aggregate (#2005): v1.9.83, ADR 0015 L3: rows count a relation's children and group into sections when a query is read
+
+- **Why:** a consuming app's list row wants its picture and thread counts derived when the list is read, with no second
+  stored copy that every capture, drop, trash, restore and thread open must keep in sync (decision "derived from rather
+  than bolted on to"). Instant answers aggregates for admin queries only (`instaql.clj`), so the store counts.
+- **Landed:** red `e8657c69`, green `fe808434`, docs `e390a165` (ADR 0015 plan, handoff and inventory; design note
+  `docs/adr/0015-sqlite-data-parity-ergonomics/l3-aggregates.md`; the instant-data skills), changelog `12a7052e`, merge
+  `306cde58`, ledger entry on main.
+- **API:** `Relation.count(where:)` (reverse relation or forward many-link) makes an `InstantCount`;
+  `InstantFetchRequest(query, counting: a[, b[, c]]) { row, a, b, c in ... }`; `query.counting(_:)` with
+  `snapshot.count(_:)`; `InstantFetchRequest(query).sectioned(by:)` / `sectioned(by:order:)` into
+  `InstantResultsSectionCollection`; `InstantFetchRequest.map(_:)`.
+- **Checked:** Mac mini job `2005-l3-bench-release`: green 18 tests in 4 suites pass; red's stubs fail 13 of the 15 new
+  tests (34 issues). Debug benchmark (1,000 rows, 10,000 children): counting 46.5 ms / 232,803 allocations, linking
+  every child 80.5 ms / 409,683; 10,000 rows into 100 sections 2.9 ms.
+- **Released:** v1.9.83 (`docs/releases/v1.9.83.md`).
+- **Next (resume here):** the neighbouring suites (includes, stored results, digest, refresh splices) on v1.9.83;
+  the optimized benchmark (`2005-l3-bench-release2`) into the design note; the consuming app pins 1.9.83 for its list
+  rows' counts (its slice 2).
+
 ## 2026-11-08 02:20:00 EST — sync-diagnostics-2037 (#2037): v1.9.82, the connection status says why changes are not reaching the server
 
 - **Why:** a consuming app could only say it was not syncing: the status read `.errored` with the error as text. Its
