@@ -2,6 +2,8 @@
 // - 2026-10-31: created (#1498): a one-shot read compares its answer with the query cache's row by this digest instead
 //   of encoding the answer as JSON to write it again. The encode was 431 of queryOnce's 795 ms of CPU a minute in the
 //   #1482 audit's sample of the recording exercise (60 reads of one unchanged page, Mac mini, release).
+// - 2026-11-08: a row's counts are part of what its answer shows (ADR 0015 L3, #2005), so a changed count rewrites the
+//   cached row; a row without counts writes the bytes it wrote before.
 
 import Crypto
 import Foundation
@@ -27,7 +29,13 @@ struct InstantQueryAnswerDigest: Hashable, Sendable {
     writer.string(emission.queryID)
     writer.count(emission.values.count)
     for snapshot in emission.values {
-      writer.entity(id: snapshot.id, namespace: snapshot.namespace, values: snapshot.values, links: snapshot.links)
+      writer.entity(
+        id: snapshot.id,
+        namespace: snapshot.namespace,
+        values: snapshot.values,
+        links: snapshot.links,
+        counts: snapshot.counts
+      )
     }
     writer.codable(emission.pageInfo)
     writer.codable(emission.error)
@@ -89,7 +97,8 @@ struct InstantQueryAnswerDigest: Hashable, Sendable {
       id: String,
       namespace: String,
       values: [String: InstantMaterializedValue],
-      links: [String: [InstantLinkedEntitySnapshot]]?
+      links: [String: [InstantLinkedEntitySnapshot]]?,
+      counts: [String: Int]?
     ) {
       string(id)
       string(namespace)
@@ -106,18 +115,34 @@ struct InstantQueryAnswerDigest: Hashable, Sendable {
           for value in many { self.value(value) }
         }
       }
-      guard let links else {
+      if let links {
+        byte(1)
+        count(links.count)
+        for name in links.keys.sorted() {
+          string(name)
+          let children = links[name]!
+          count(children.count)
+          for child in children {
+            entity(
+              id: child.id,
+              namespace: child.namespace,
+              values: child.values,
+              links: child.links,
+              counts: child.counts
+            )
+          }
+        }
+      } else {
         byte(0)
-        return
       }
-      byte(1)
-      count(links.count)
-      for name in links.keys.sorted() {
-        string(name)
-        let children = links[name]!
-        count(children.count)
-        for child in children {
-          entity(id: child.id, namespace: child.namespace, values: child.values, links: child.links)
+      // ADR 0015 L3: written only when present. One query's rows either all carry counts or none do (its plan decides),
+      // and a digest is compared only with its own query's, so this adds no ambiguity and keeps older rows' digests.
+      if let counts, counts.isEmpty && !counts.isEmpty {  // red: counts are not digested
+        byte(3)
+        count(counts.count)
+        for key in counts.keys.sorted() {
+          string(key)
+          count(counts[key]!)
         }
       }
     }

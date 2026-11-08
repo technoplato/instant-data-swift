@@ -3800,7 +3800,13 @@ private struct PreparedInclude {
 
     var preparedIncludes: [PreparedInclude] = []
     preparedIncludes.reserveCapacity(includes.count)
+    var countedIncludes: [CountedInclude] = []
     for include in includes {
+      if let counted = countedInclude(include, planNamespace: plan.namespace, attributes: attributes) {
+        countedIncludes.append(counted)
+      }
+      // ADR 0015 L3: an include that only counts links no child rows.
+      if include.query?.isCountOnly == true { continue }
       // A finite bound must be applied per parent. Batch the pool only when
       // every matching child is returned unbounded.
       let includePlan = include.query?.queryPlan
@@ -3908,13 +3914,139 @@ private struct PreparedInclude {
           (prepared.orderIndex[$0.id] ?? 0) < (prepared.orderIndex[$1.id] ?? 0)
         }
       }
+      var counts = snapshot.counts
+      if !countedIncludes.isEmpty {
+        var rowCounts = counts ?? [:]
+        for counted in countedIncludes {
+          let totals = includeCounts(counted, parent: snapshot, attributes: attributes, metrics: &metrics)
+          for (key, total) in zip(counted.keys, totals) {
+            rowCounts[key] = total
+          }
+        }
+        counts = rowCounts
+      }
       return InstantEntitySnapshot(
         id: snapshot.id,
         namespace: snapshot.namespace,
         values: snapshot.values,
-        links: links.isEmpty ? nil : links
+        links: links.isEmpty ? nil : links,
+        counts: counts
       )
     }
+  }
+
+  /// An include's counts, resolved once per materialization (ADR 0015 L3).
+  private struct CountedInclude {
+    var name: String
+    var direction: InstantQueryIncludeDirection
+    /// The ref attribute that links a parent to its children: the parent's own for a forward include, the child's
+    /// for a reverse one.
+    var linkAttributeID: String
+    var childNamespace: String
+    var includeFilters: [InstantQueryFilter]
+    var counts: [InstantQueryIncludeCount]
+    /// Each count's ``InstantQueryIncludeCount/snapshotKey(relation:)``, in `counts` order.
+    var keys: [String]
+    /// The fields a child is read for, nil when no filter reads one: then a child counts by existing alone.
+    var childFields: Set<String>?
+  }
+
+  private func countedInclude(
+    _ include: InstantQueryInclude,
+    planNamespace: String,
+    attributes: AttributeStore
+  ) -> CountedInclude? {
+    guard let query = include.query, let counts = query.counts, !counts.isEmpty else { return nil }
+    let linkAttributeID: String
+    let childNamespace: String
+    switch include.direction {
+    case .forward:
+      guard
+        let attribute = attributes.attribute(namespace: planNamespace, name: include.name),
+        let linkNamespace = attribute.linkNamespace
+      else { return nil }
+      linkAttributeID = attribute.id
+      childNamespace = linkNamespace
+    case .reverse:
+      guard
+        let attribute = reverseAttribute(namespace: planNamespace, name: include.name, attributes: attributes)
+      else { return nil }
+      linkAttributeID = attribute.id
+      childNamespace = attribute.namespace
+    }
+    let readFilters = query.filters + counts.flatMap(\.filters)
+    return CountedInclude(
+      name: include.name,
+      direction: include.direction,
+      linkAttributeID: linkAttributeID,
+      childNamespace: childNamespace,
+      includeFilters: query.filters,
+      counts: counts,
+      keys: counts.map { $0.snapshotKey(relation: include.name) },
+      childFields: readFilters.isEmpty
+        ? nil
+        : Self.filterAndOrderFields(
+          of: InstantQueryPlan(id: "", namespace: childNamespace, filters: readFilters)
+        )
+    )
+  }
+
+  /// How many of `parent`'s children each count of `counted` admits: the children the include's filters match, then
+  /// each count's own (ADR 0015 L3). Reads only the fields the filters read, so a count never materializes a child row;
+  /// the include's `limit`, `first` and `last` bound its rows, never its counts.
+  private func includeCounts(
+    _ counted: CountedInclude,
+    parent: InstantEntitySnapshot,
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
+  ) -> [Int] {
+    var totals = [Int](repeating: 0, count: counted.counts.count)
+    if counted.counts.count >= 0 { return totals }  // red: counting is not written yet
+    func tally(_ childID: String) {
+      metrics.examinedCandidateCount += 1
+      guard let fields = counted.childFields else {
+        guard hasNamespaceData(childID, namespace: counted.childNamespace, attributes: attributes) else { return }
+        for index in totals.indices { totals[index] += 1 }
+        return
+      }
+      guard
+        let child = snapshot(
+          entityID: childID,
+          namespace: counted.childNamespace,
+          attributes: attributes,
+          fields: fields
+        ),
+        matches(child, filters: counted.includeFilters, namespace: counted.childNamespace, attributes: attributes)
+      else { return }
+      for (index, count) in counted.counts.enumerated()
+      where count.filters.isEmpty
+        || matches(child, filters: count.filters, namespace: counted.childNamespace, attributes: attributes)
+      {
+        totals[index] += 1
+      }
+    }
+    switch counted.direction {
+    case .forward:
+      var seen: Set<String> = []
+      for childID in Self.linkedEntityIDs(parent.values[counted.name]) where seen.insert(childID).inserted {
+        tally(childID)
+      }
+    case .reverse:
+      if let children = vae[.ref(parent.id)]?[counted.linkAttributeID] {
+        for childID in children.keys {
+          tally(childID)
+        }
+      }
+    }
+    return totals
+  }
+
+  /// Whether `entityID` holds a fact of `namespace`: a counted child that no filter reads counts by this alone.
+  private func hasNamespaceData(_ entityID: String, namespace: String, attributes: AttributeStore) -> Bool {
+    if let members = entitiesByNamespace[namespace] {
+      return members.contains(entityID)
+    }
+    return snapshot(entityID: entityID, namespace: namespace, attributes: attributes, fields: ["id"]) != nil
   }
 
   /// Materializes a bounded include one parent at a time so each parent's
@@ -6208,6 +6340,12 @@ private struct PreparedInclude {
       if let issue = validate(filters: query.filters, namespace: query.namespace, attributes: attributes) {
         return issue
       }
+      // ADR 0015 L3: a count's filters read the include's children, as the include's own filters do.
+      for count in query.counts ?? [] {
+        if let issue = validate(filters: count.filters, namespace: query.namespace, attributes: attributes) {
+          return issue
+        }
+      }
       if let issue = validateSelectedFields(
         query.selectedFields,
         namespace: query.namespace,
@@ -6630,7 +6768,8 @@ private struct PreparedInclude {
         id: snapshot.id,
         namespace: snapshot.namespace,
         values: snapshot.values.filter { selectedFieldSet.contains($0.key) },
-        links: snapshot.links
+        links: snapshot.links,
+        counts: snapshot.counts
       )
     }
   }
