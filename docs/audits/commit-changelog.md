@@ -1,3 +1,6 @@
+## 2026-11-07 19:08:33 EST — scribe `a6e85c2ca` (red), `d642d91b2` (green), `933915ec7` (docs), changelog `c8fc63b64`, landed by `9b265e21782ef2975c0add645e77892c78dd27eb`
+Feature (#2004): one declaration per feature (decision 7e9e6e6f): Packages/swift-declared, `@Declared` reads a reducer's Action and State and writes its case table, O(1) case index, agent constructors and screen path; `.declared()` marks each action in a debug build (16-byte enqueue, read in the background with FoldKit's rhythm rules) and is the reducer itself in release (Mac mini, 10,485,760 actions: bare 33.17 ns, declared 33.30 ns, 0 marks); the timers declared, so the root's agent control reaches them; ADR 0138 and the audit of 27 hand-kept registries (2,017 entries, 17 drifted).
+
 ## 2026-11-07 19:01:33 EST — scribe `adea7a2b777d5c88187ba2239b41edb0dcb8835f` (merge), `1e8bf1e23` (red), `be4887c92` (green), `24f50aa84` (docs)
 Fix (#2023, #2026): the hold's words name the take's Stop ("the Stop of Recording 393"), never "his Stop", and `scribe hold on --until stop` warns that a canned or test take that stops itself lifts it too, so such a hold is --for; the listener's step says so. The mirror cannot tell his tap from such a Stop (Instant carries no stop trigger; #2026 holds the canonical fix). The mirror runs main adea7a2b7 (installed 19:01).
 
