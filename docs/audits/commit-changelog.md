@@ -1,3 +1,9 @@
+## 2026-11-08 13:25:04 EST — scribe `d6b93023b0a540ed2cc2d4eed3b9cd9fd3d24d21`
+Docs (#2067): the rule rewritten everywhere agents read it, his words on top: every post comes through at once, a delivery kind decides ding or quiet, his hold only on his own words; ADR 0141, ADR 0137 superseded in part, FEATURES item 8.
+
+## 2026-11-08 13:07:48 EST — scribe `fdf292e1fb6348d0e259d6cfd1b49af5c8c3f7f7`
+Fix (#2067): the mirror writes every agent post at once while he records, with a delivery derived from what it is (delivery.ts): a ding for an answer to something he asked or a question only he can answer, quiet=1 and a passive push for the rest; only his hold keeps posts, on his own words (--his-words). Measured on live Recording 398 after the install: written at once, delivery quiet, Instant write 383 ms.
+
 ## 2026-11-08 12:25:51 EST — scribe `cc07c912ab7b018a6d6aec182cc85a6d89f4d042` (merge: plan `00b19f1fc`, refactor `6a150eb32`, red `99b3f9c68`, green `67b1079ae`, docs `3a326a237`, changelog `71ea85ef1`)
 Feature (#2058): the word animation is a setting, Fade its default on every device: LiveWordsTake's declaration moves to LiveWordsTakes (Foundation only, below SharedModels, re-exported; the Watch links an enum, no motion), ScribeSettings.wordAnimation in the settings catalog (old files and unknown takes read Fade), recordingList.wordAnimationChosen and Recording.State.liveWordsTake; the Settings row, its preview cards and the live row come from the UI lane (#1393). 75 tests in 10 suites on the mini.
 
