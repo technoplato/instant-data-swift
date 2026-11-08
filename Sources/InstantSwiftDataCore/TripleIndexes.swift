@@ -4001,7 +4001,6 @@ private struct PreparedInclude {
     metrics: inout QueryMaterializationMetrics
   ) -> [Int] {
     var totals = [Int](repeating: 0, count: counted.counts.count)
-    if counted.counts.count >= 0 { return totals }  // red: counting is not written yet
     func tally(_ childID: String) {
       metrics.examinedCandidateCount += 1
       guard let fields = counted.childFields else {

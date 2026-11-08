@@ -30,7 +30,7 @@ public struct InstantResultsSectionCollection<Element, SectionName: Hashable> {
   package init(grouping elements: some Sequence<Element>, by sectionName: (Element) -> SectionName) {
     var sections: [InstantResultsSection<Element, SectionName>] = []
     var indexByName: [SectionName: Int] = [:]
-    for element in elements.prefix(0) {  // red: grouping is not written yet
+    for element in elements {
       let name = sectionName(element)
       if let index = indexByName[name] {
         sections[index].elements.append(element)

@@ -72,7 +72,7 @@ enum InstantLiveQueryEncoder {
         // the first rows. The server sends every child either way (it bounds top-level namespaces only, ADR 0015 Q32);
         // the store still windows the include's rows. Its fields widen to what the counts' filters read.
         let counts = query.counts ?? []
-        let isCounted = counts.isEmpty && false  // red: a counted include goes up like any other
+        let isCounted = !counts.isEmpty
         value[include.name] = try namespaceValue(
           namespace: query.namespace,
           filters: query.filters,
