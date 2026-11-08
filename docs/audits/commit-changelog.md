@@ -1,3 +1,6 @@
+## 2026-11-08 10:18:15 EST — scribe `3713372a9518878c3a031a4e3c289624954e52bb`
+Fix (#1817): the Watch app 5.51 MB smaller: its widget links no SharedModels (6,073,616 -> 1,045,944 bytes; RecordingCaptureStatus and ScribeIdentity are leaf modules SharedModels re-exports, ScribeLaunchCaptureWait its own module), the screen stream's three modules leave the Watch (Xcode reads a dependency's platform condition on each edge alone), and an upload refused at the Watch step logs a finding on #1817.
+
 ## 2026-11-08 08:10:30 EST — scribe `a741ea167c07eed5f242765bf2aea79853052c1f`
 Deploy (#2053): the Mac server runs 47139b1b3 (was 19e2da1bd), carrying only #2022's Mac learner; its labels read 2,331 -> 73 lineSpeakers rows a pass (170.2 -> 44.5 KB on the wire); audit 2022 section 7b; undo ~/Sync/audit/deploy-2053/undo.sh, rehearsed before the deploy.
 
