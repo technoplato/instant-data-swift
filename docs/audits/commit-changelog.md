@@ -1,3 +1,6 @@
+## 2026-11-08 12:25:51 EST — scribe `cc07c912ab7b018a6d6aec182cc85a6d89f4d042` (merge: plan `00b19f1fc`, refactor `6a150eb32`, red `99b3f9c68`, green `67b1079ae`, docs `3a326a237`, changelog `71ea85ef1`)
+Feature (#2058): the word animation is a setting, Fade its default on every device: LiveWordsTake's declaration moves to LiveWordsTakes (Foundation only, below SharedModels, re-exported; the Watch links an enum, no motion), ScribeSettings.wordAnimation in the settings catalog (old files and unknown takes read Fade), recordingList.wordAnimationChosen and Recording.State.liveWordsTake; the Settings row, its preview cards and the live row come from the UI lane (#1393). 75 tests in 10 suites on the mini.
+
 ## 2026-11-08 10:18:15 EST — scribe `3713372a9518878c3a031a4e3c289624954e52bb`
 Fix (#1817): the Watch app 5.51 MB smaller: its widget links no SharedModels (6,073,616 -> 1,045,944 bytes; RecordingCaptureStatus and ScribeIdentity are leaf modules SharedModels re-exports, ScribeLaunchCaptureWait its own module), the screen stream's three modules leave the Watch (Xcode reads a dependency's platform condition on each edge alone), and an upload refused at the Watch step logs a finding on #1817.
 
