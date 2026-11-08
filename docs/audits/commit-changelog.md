@@ -1,3 +1,6 @@
+## 2026-11-07 20:27:20 EST — scribe `f3fc056d7be2eeba12c7a2af588669c958b8b1a0` (merge of red 1945d7812, green 69765d988 and its changelog)
+Diagnostics (#2027): the Mac mirror counts each Instant request by caller (an agent's command by name, its own job by the namespace it touches), so the app's admin budget, a token bucket per app for queries and one for transacts that the realtime socket never touches, says who spends it.
+
 ## 2026-11-07 20:05:50 EST — scribe `a536efd2638c9bf43579564e484bd1300ddfd5bc` (merge of red a97d7a745, green 9f9e063b9, docs 551731fa4, changelog 18dd4f25f)
 Fix (#2027): the Mac mirror reads a line the phone delivers late the moment it lands (a window of the 16 newest-landed ids; line 296 of Recording 393 had waited 704 s for a restart), its socket's give-up never counts a sleep and never fires while Instant's HTTP fails, and every stall and start is logged with its cause; the evening's stalls themselves were the Mac's network on the iPhone's tether.
 
