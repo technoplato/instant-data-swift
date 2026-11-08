@@ -1,3 +1,6 @@
+## 2026-11-07 22:58:40 EST — scribe `7f41f4f54521` (pin instant-data-swift 1.9.81) and changelog `860f0d6a2`, landed by `060f29ec7523bd227fbddf500ce96c13cff4973e`
+Fix (#2028): the app pins instant-data-swift 1.9.81 (tag on ec9d8b917): a replayed write the server refuses because this device's newer write already landed resolves as accepted, so the Not Synced card counts only true refusals. Measured on his iPhone, build 300: 16 replay refusals in 17:47-19:24, every refused row held newer on the server. The ten pin files and build 302's What's New; the installer's tests pass (175).
+
 ## 2026-11-07 22:30:48 EST — scribe `6291d36c0cdcfc4e83d4887c91ce3d7cb31bbb03` (merge of docs e1e24a9c1 and its changelog c0a9c010d)
 Measurement (#2021, #2022): memory on long recordings. The 1,034 MB an hour was a window artifact (a fall-back's Neural Engine spike and a log gap); the fall-back spike is the on-device speech models running (964 MB; loaded once in 0.87 s, 0.01 s after); the steady 45-50 MB an hour grows only with the recording screen and is TCA 1.x keeping the finished tasks of every effectful action the long-living speech stream sends (soak: about 37 a line; TCA's own test 1,366 -> 17 bytes an action with a patch, branch agent/memory-2021/finished-child-tasks ff2c699f08 in the local TCA clone; the fork waits on Michael). audits/2026-11-07-memory-2021.md.
 
