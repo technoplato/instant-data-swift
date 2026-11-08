@@ -1,3 +1,6 @@
+## 2026-11-07 20:49:10 EST — scribe `03e4f7d816edcc809880126ba280604c6bfeec12` (merge of red 0b76168e9, green 1e0770a93 and its changelog)
+Fix (#2027): the Mac mirror follows a recording's compressed copy through a 4-segment window on the socket instead of a 5 s HTTP poll, leaving Instant's admin query bucket (21.9 of its 36.5 queries a minute; 36 of the evening's 37 copy failures were that limit).
+
 ## 2026-11-07 20:39:47 EST — scribe `314013435688e261c549d8c652b5015dab42fd7e` (merge of red 894c11206, green 18d0ea5e6, green acd06c32c, red a166a1f76, green 8c7253d96, 2af3e9fe5, b7be8023e and its changelog)
 Feature and fix (#2015, #1856): a film Your Mac recognizes is its own. Each catalog film is declared once as a things row of kind film keyed by its Wikidata id (Toy Story 1-5 as #1-#5 of Toy Story; Moana 2016, Moana 2, Moana 2026), and its catalog item's thing, poster, release and directors, the mini's catalog pieces (media_catalog.py refresh, no audio signed again), its page videos.pisspoursoftware.xyz/films/<slug> and the phone's RecognizedSong.thingID, ownPage and length derive from it; 5 past film rows backfilled. One play is one hearing: the Mac places each custom-catalog match where its signature ends and reports the match reaching each span's end; the phone tells another play by where the film should be now (Recording 370: 16 reports, 3 plays).
 
