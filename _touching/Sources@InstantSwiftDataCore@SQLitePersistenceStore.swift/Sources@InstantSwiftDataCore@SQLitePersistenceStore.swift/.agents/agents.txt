@@ -92,3 +92,4 @@ claude-code/perf-mem-1797@pp 2026-11-04T18:10:00-0500 mower plan=2026-11-04-perf
 claude-code/perf-recv-1797@pp 2026-11-04T18:06:37-0500 mower plan=2026-11-04-perf-recv-1797 #1109 (serverApplyPlanningReads, the retraction diff, the result saves' preparation only)
 claude-code/perf-send-1797@pp 2026-11-04T18:09:58-0500 mower plan=2026-11-04-perf-send-1797 #653
 claude-code/ack-session-1942@pp 2026-11-06T20:16:48-0500 mower plan=2026-11-06-ack-session-1942 #1942 (claimAutomaticOutboxDeliveryWindow keeps late claims; deferAutomaticOutboxClaimDeadlines' shift)
+claude-code/replay-2028@ld 2026-11-07T19:50:45-0500 mower plan=2026-11-07-replay-2028 #2028 (the watermark prune's two predicates and their guard only)
