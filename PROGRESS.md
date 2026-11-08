@@ -1,3 +1,19 @@
+## 2026-11-08 02:20:00 EST — sync-diagnostics-2037 (#2037): v1.9.82, the connection status says why changes are not reaching the server
+
+- **Why:** a consuming app could only say it was not syncing: the status read `.errored` with the error as text. Its
+  device's log for a drive on cellular (2026-11-07, 16:49-19:33) holds 28 drops, all with the network path up, 46 opens
+  that met the 5 s deadline, no rate limit and no refused sign-in. The socket waits for connectivity, so no network and
+  a weak one look alike to it; only the path tells them apart. Upstream answers a rate-limited socket operation with
+  status 400 type `rate-limited` (retry time in the hint only), which the library read as a refusal.
+- **Landed:** plan `643e160c`; red `ba50e4ae`, green `02388736`, fix `91186166` (a drop is not published as errored:
+  upstream parity), tests `74acc5ed`, `d71fd071`; changelog `0325ba8c`; the instant-data skill's section `b6a12db7`.
+- **Checked:** red (12 of 14 new tests fail on v1.9.80's sources, 58 issues), green (67 of 68 in 11 suites, then 14 of
+  14), the neighbouring status and refusal suites (597 tests; the two real failures fixed or shown to be load), and
+  `2037-lib-check` on the Mac mini (80 tests in 8 suites pass).
+- **Released:** v1.9.82 (`docs/releases/v1.9.82.md`).
+- **Next (resume here):** pin 1.9.82 in the consuming app (its ten pin files, model `7f41f4f54`) and map the cause to
+  its words; its recording screen shows the cause as one quiet line.
+
 ## 2026-11-07 22:53:19 EST — replay-2028 (#2028): v1.9.81, a replay refused because this device's newer write already landed is not a refusal
 
 - **Why:** a consuming app's device on a cellular network that dropped every few minutes (one build, 2026-11-07
