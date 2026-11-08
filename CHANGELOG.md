@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 8th, 2026 at 8:03:25 a.m. EST — `3e759fcdd44e` test(#2037): with no network path a dropped socket's next write publishes why its change waits: no network (the status stores the drop as errored with its failure, and a write that adds an outbox row publishes it on the path as it is), so a recording's screen says so within seconds; passes on v1.9.82 (job 2037-lib-nopath, 15 tests in 2 suites on the mini)
+
+- **Implementation commit:** `3e759fcdd44ef4345c73af7a06ad1766159d9c00`
+- **Change:** A test (#2037): with no network path, a dropped socket's next write publishes the cause, no network
+- **Details:**
+  - The drop is stored as errored with its classified failure and not published (upstream parity); the next write that adds an outbox row publishes the status, read on the path as it is: no network, one pending change. Passes on v1.9.82 as released (15 tests in 2 suites).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantConnectionInterruptionTests.swift` — withNoNetworkPathTheNextWriteSaysNoNetwork
+- **User context (verbatim):**
+  > Let's make sure that the library provides us better diagnostics, so instead of saying instant isn't syncing, we can say, hey, it looks like your connection is super weak right now
+- **SpecStory:** unavailable — unavailable: headless session; the transcript path is on the issue
+
 ## November 8th, 2026 at 1:22:46 a.m. EST — `023887365106` green(#2037): the connection status carries a typed interruption: the errored funnel classifies the error (a server answer by its status and type; else a transport, no-route, unreachable, sign-in or local-repair failure) and stores it beside the last error with its start; the status reads it on the network path as it is now (no path reads as no network); a dropped socket and a failed reconnect attempt publish at once; a rate limit (type rate-limited, status 400 over the socket) keeps writes queued and queries registered, waits for the server's retry-at or retry-after, and shows in the status until the server answers again; an init error keeps its status, type and hint; failure events log the kind and the path
 
 - **Implementation commit:** `02388736510613a8190792f024dc9960039a1c76`
