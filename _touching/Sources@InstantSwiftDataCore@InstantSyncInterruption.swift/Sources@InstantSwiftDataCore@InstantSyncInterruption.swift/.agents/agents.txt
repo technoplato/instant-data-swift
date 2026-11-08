@@ -1,0 +1,1 @@
+claude-code/sync-diagnostics-2037@ld 2026-11-07T22:09:46-0500 grower plan=2026-11-07-sync-diagnostics-2037 #2037 (new: the typed cause and its classifier)
