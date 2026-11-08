@@ -111,6 +111,40 @@ struct InstantCoveringWriteRetentionTests {
     _ = try await fixture.runtime.closeConnection()
   }
 
+  /// A parked refusal is not a write in flight: when the write that covers it meets a transient error, one write at a
+  /// time sends that write again, though the parked refusal still holds its claim.
+  @Test
+  func aCoveringWritesTransientErrorIsRetriedWhileTheRefusalItCoversIsParked() async throws {
+    let fixture = try await Fixture.make("parked-during-probe") {
+      $0.liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy(
+        baseMilliseconds: 20,
+        maximumMilliseconds: 80,
+        jitter: { 1 }
+      )
+    }
+    try await fixture.transact("tx-first", at: 1, text: "first", isCompleted: false)
+    try await fixture.transact("tx-second", at: 2, text: "second", isCompleted: true)
+    _ = try await InstantSupersededReplayTests.waitForTransacts(3, on: fixture.first)
+    await fixture.dropTheFirstConnection()
+    let resent = try await InstantSupersededReplayTests.waitForTransacts(2, on: fixture.second)
+    expectNoDifference(resent, ["tx-first", "tx-second"])
+    await fixture.second.enqueue(InstantSupersededReplayTests.refused("tx-first"))
+    await fixture.second.enqueue(InstantTransientMutationRetryTests.transactTimedOut("tx-second"))
+    let retried = try await InstantSupersededReplayTests.waitForTransacts(3, on: fixture.second)
+    expectNoDifference(retried, ["tx-first", "tx-second", "tx-second"], "the covering write goes out again")
+    await fixture.second.enqueue(InstantSupersededReplayTests.accepted("tx-second", transactionID: 4))
+    try await InstantSupersededReplayTests.waitUntil("the refusal is resolved") {
+      await InstantSupersededReplayTests.mutation("tx-first", in: fixture.runtime)?.status != .pending
+    }
+
+    let first = await InstantSupersededReplayTests.mutation("tx-first", in: fixture.runtime)
+    expectNoDifference(first?.status, .confirmed)
+    expectNoDifference(first?.confirmationSource, .supersededByAcceptedWrite)
+    let failed = await fixture.failedMutationIDs()
+    expectNoDifference(failed, [])
+    _ = try await fixture.runtime.closeConnection()
+  }
+
   /// A true refusal still stands: the newer write sets only some of the refused write's slots, and the server's result
   /// shows another value for the rest.
   @Test
