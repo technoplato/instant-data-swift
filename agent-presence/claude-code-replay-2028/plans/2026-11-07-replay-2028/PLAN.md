@@ -44,3 +44,17 @@ other replay refusals resolved as superseded because their covering writes were 
 The last claims on the store file are the 11-04 perf lanes (landed) and #1942 (1.9.80, claim expiry; no overlap with the
 prune). No library source change on main since v1.9.80. The branches past origin/main that touch the store file are
 scratch and perf branches last committed 2026-11-05.
+
+## Amendment 1 (2026-11-07 20:55): a refusal waits behind a covering write that waits its turn
+
+The flapping-network simulation, with several writes in flight, found a second path (seed 2028, on both trees): the
+server timed out the older write and applied the newer one, the socket dropped before the newer write's answer, and
+after the transient error the outbox offers one write at a time, so on the next connection the older write went out
+alone and its refusal arrived while the newer write waited its turn. Item 3 counted a later write not yet answered only
+while in flight, so the refusal stood. Red `c5b7a4f3`'s test (the refusal waits for the waiting write); green: the
+coverage counts a later write not answered yet whether in flight or waiting, and a refusal resolved by coverage records
+the server's verdict (`recordAcceptance` becomes `recordVerdict`), which ends one write at a time, since the parked
+refusal holds its claim and the window would never send the covering write.
+
+Touching, added: Sources/InstantSwiftDataCore/InstantRuntime.swift (`resolveRefusedWriteIfCovered`'s resolved cases,
+the transact-ok verdict) and Sources/InstantSwiftDataCore/InstantServerErrorRetryPolicy.swift (`recordVerdict`).

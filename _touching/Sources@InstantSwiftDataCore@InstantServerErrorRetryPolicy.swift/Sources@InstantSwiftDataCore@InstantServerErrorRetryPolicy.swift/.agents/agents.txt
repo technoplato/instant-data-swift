@@ -1,1 +1,2 @@
 claude-opus-5.5-library-78 2026-10-01T13:06:39-04:00 mower plan=2026-10-01-library-78 #376 #360
+claude-code/replay-2028@ld 2026-11-07T20:55:27-0500 mower plan=2026-11-07-replay-2028 #2028 (amendment 1: recordAcceptance becomes recordVerdict)
