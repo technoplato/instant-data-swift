@@ -1,3 +1,6 @@
+## 2026-11-07 21:14:24 EST — scribe `dc5d062c3bcc9775eaf85d9784c20f8d1fdc80d5` (merge of red and green pairs for the heartbeat's listing and the copy's hole, and their changelog)
+Fix (#2027): the Mac mirror's heartbeat never waits behind a slow process listing (ps took 25.95 s at load 200), and a compressed copy's hole the server lacks is read once instead of 500 rows every 5 s; the copy window follows the newest landed so a late hole still arrives.
+
 ## 2026-11-07 21:12:50 EST — scribe `48fa060536855623e64876611f9cdca1b8b280a5`
 Data repair (#2018): rows that named a client now carry the client's id instead (97 of the 161 listed rows, written through apply-plan.mjs and read back, each backed up whole first); client-scrub.ts plans the change, tests first, and leaves fields the rules keep fixed.
 
