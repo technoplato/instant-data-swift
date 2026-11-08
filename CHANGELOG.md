@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 8th, 2026 at 2:19:56 p.m. EST — `c50aaefd91b9` test(#2005): the 10k-row benchmark compares allocated bytes, not allocation counts: optimized on the Mac mini (2005-l3-bench-release2, three runs) counting took 13.9-14.5 ms, 24,034 allocations and 6.5 MB against linking every child's 37.8 ms, 19,052 and 13.8 MB, so the count check failed while counting allocates half the bytes; the measured table goes in ADR 0015 L3's design note
+
+- **Implementation commit:** `c50aaefd91b9936ad458a2c5789178f92f9f3a3b`
+- **Change:** test(#2005): the 10k-row benchmark compares allocated bytes; ADR 0015 L3's measured table
+- **Details:**
+  - Optimized on the Mac mini (job 2005-l3-bench-release2, built like the contention exercises: only the core test product, run with swiftpm-testing-helper; three runs): counting 13.9-14.5 ms, 24,034 allocations, 6,678 KB; linking every child 37.8 ms, 19,052 allocations, 14,145 KB; 10,000 rows into 100 sections 2.4-2.6 ms, 20,816 allocations. The allocation-count check failed on those numbers while counting allocates half the bytes, so the check compares bytes (counting under two thirds of linking). No library change.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantCountedIncludeTests.swift` — the benchmark's check compares allocated bytes; the measured numbers beside it
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/l3-aggregates.md` — the measured table, optimized and debug
+- **User context (verbatim):**
+  > We should strive to make our software more elegant as we grow it, and its elegance should serve to help decrease what we need to write and keep in sync as our software evolves
+- **SpecStory:** unavailable — unavailable: headless Claude Code session 0dd33a7d-f9d8-47be-af99-d5d591088f23 (tools/agent-run, claude/ld); the transcript path is on the issue
+
 ## November 8th, 2026 at 1:55:20 p.m. EST — `fe80843491d2` green(#2005): a query counts each row's children of a relation, a reverse relation or a forward many-link, optionally only those a predicate admits, and groups rows into sections, all derived when it is read with nothing stored (ADR 0015 L3): the store counts from the children the query brings down (Instant answers aggregates for admin queries only) without materializing a child row and before an include's limit; a counted include goes on the wire without its nested bound, so a stored result keeps every child it counts, and narrowed to what its counts read; counts ride on the snapshot and in the answer digest; sections group in the order of their first rows, or by name (replaces local 653ac656, never pushed)
 
 - **Implementation commit:** `fe80843491d25acda579dc0f62d95e6995908f2a`
