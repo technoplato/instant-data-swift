@@ -1,3 +1,9 @@
+## 2026-11-08 19:44:07 EST — scribe `6c0ebcff39b9eaea819f9d03305b888402e6d3d0` (merge of agent/claude/cut-308 at `4353f234c`)
+Fix (#2086): build 308's Watch compiles: #2011's install clock views and its Settings section are left out of watchOS, where their clock formats need watchOS 11 and the package's floor is 10 (red: a watchOS compile of ScribeWidgets failed on c93846ec2 in 166 s; green: passed in 21 s); 308 then read back on the iPhone, iPad, Watch and Mac.
+
+## 2026-11-08 19:27:40 EST — scribe `c93846ec2638aedbf114ec753ca5be7ef1d1f5f9` (merge of agent/claude/cut-308 at `a85956911`)
+Release (#2086): cut Scribe 0.1 (308) from main 7de2bf8de: build 307 plus #2011's Installed For stopwatch Live Activity, its switch on by default; What's New 308 written from its commits and checked by hand, naming the Live Activities not in it (#2060 round 7, #2029). Built from 6c0ebcff3: iPhone 19:57:16, iPad 19:57:42, Watch 19:58:38 (install watch), Mac 20:13:00; TestFlight distributed 20:29:26; release held (decision 04c5ece9), tag local.
+
 ## 2026-11-08 19:49:43 EST — scribe `518fed69d3d3ebb4af432c09d52766eb0d1c710d` (merge of agent/claude/stopwatch-timers-2060 at `169dcb19f`)
 Feature (#2060): stopwatches and the next timers in the one timers Live Activity, folded to fit 160 points at his text size (design round 7 passed, 9.0); a lock-screen press redrawn from the tap's moment before the store writes, Pause/Resume one switch, no update animation (Recording 401 #8-9: "instant immediate feedback"); Time in the drawer ("Maybe call it time"); the bar's Stop and Lap, Start and X (Recording 400 #5); the stopwatch started last leads.
 
