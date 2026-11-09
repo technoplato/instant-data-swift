@@ -1,3 +1,6 @@
+## 2026-11-08 19:05:39 EST — scribe `8691e2db5f9c3f091ac53495f6680c662210c0b9` (merge of agent/claude/stopwatch-2011 at `cb9f88870`; ADR number fixed in `7de2bf8de`)
+Feature (#2011): Scribe's own stopwatch Live Activity of how long it has been installed: the system draws it to the hundredth in every presentation (Lock Screen, expanded, compact halves against the camera, minimal), Clock's colors and circles, the build and the days where Clock shows its lap, a switch declared once in the settings catalog (on by default, each device's own), relevance under the recording's and the timers'; the switch read through a dependency so the widgets link no SharedModels (#1817). Shipped on Michael's decision 281e5fa7 by the commander's order; round 5 scored 7; follow-ups #2085 (VoiceOver's hours after a change of the clocks) and #2049.
+
 ## 2026-11-08 16:15:08 EST — scribe `47bed2a99272a9fe254d9b6ef40641bdb6867e05`
 Feature (#2060): stopwatches beside the timers, any number at once: a kind, laps and a Show in Recording switch; "stopwatch named laundry" and "remind me in 10 minutes to call mom" by voice; scribe timer through the toolbox's app.action from the timers panel's declared actions; one shared Live Activity (Recording 398 #548); the timeTimers schema pushed after the landing (drift 0).
 
