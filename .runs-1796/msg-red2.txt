@@ -1,0 +1,13 @@
+red(#1796): a one-shot read sent on a socket that just died fails at once and is never sent again
+
+A tablet resuming after 229 s suspended (2026-11-04 17:33, library 1.9.66) failed a one-shot read in 0 ms: its
+add-query met the socket the system had aborted (POSIX 53) before the receiver took the death, the connection still
+read as open, and the read gave up with the send failure and dropped its registration, so the reconnect that followed
+sent nothing for it. Observers keep their registration for the reconnect; upstream Reactor.js leaves every queryOnce's
+add-query to _flushPendingMessages on the next init-ok and rejects it only at QUERY_ONCE_TIMEOUT.
+
+InstantFollowerLatencyTests/aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect: the applier holds a
+frame, the socket dies, the read's add-query fails on it, and the next socket must send the add-query and answer the
+read. The scripted socket learns to die the way the abort did: its pending receive and every later send fail.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

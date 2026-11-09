@@ -1,0 +1,174 @@
+Building for debugging...
+[Computing dependencies]
+[Provisioning 3 / 164]
+[Pre-planning 1 / 4091]
+[Planning 1578 / 4091]
+[Planning 2991 / 4091]
+[Planning deferred tasks]
+[Constructing 4147 / 9018]
+[2 / 6] InstantSwiftDataCore
+[3 / 7] InstantSwiftDataCore
+[9 / 13] InstantSwiftDataSchema
+[11 / 15] Dependencies
+[12 / 16] Dependencies
+[15 / 19] InstantSwiftData
+[17 / 21] AuthV3App
+[19 / 23] AppBuilderV3App
+[21 / 25] DependenciesTestSupport
+[25 / 29] swift-crypto_Crypto
+[27 / 32] InstantSwiftDataCore
+[29 / 33] InstantSwiftDataCore
+[37 / 45] Dependencies
+[40 / 45] Dependencies
+[46 / 51] DependenciesTestSupport
+[49 / 51] AppBuilderV3AppTests-product
+[52 / 53] AppBuilderV3AppTests-product
+[55 / 56] AuthV3AppTests-product
+[56 / 58] AuthV3AppTests-product
+[59 / 60] AuthV3AppTests-product
+[62 / 66] CloudKitDemoV3App
+[66 / 68] CloudKitDemoV3AppTests-product
+[69 / 70] CloudKitDemoV3AppTests-product
+[72 / 74] AppBuilderV3Executable
+[75 / 77] AuthV3Executable
+[78 / 80] CloudKitDemoV3Executable
+[81 / 83] InstantDomainAEVBench
+[84 / 86] InstantObservationExercise
+[94 / 322] instant-swift-data-benchmarks-product
+[98 / 322] scribe-shaped-20s-write-bench-product
+[101 / 322] TodosV3App
+[102 / 322] SyncUpsV3App
+[105 / 322] ScribeShaped20sWriteBench
+[109 / 320] StreamsV3App
+[113 / 318] LinkedInfiniteV3App
+[117 / 316] PresenceRecipesV3App
+[122 / 314] InstantSwiftDataCoreTests-product
+[123 / 314] MobileChatV3App
+[126 / 312] InstantSwiftDataDomainAEVTests-product
+[129 / 312] InstantSwiftDataMedia
+[130 / 312] scribe-shaped-20s-write-bench-product
+[137 / 312] auth-v3-product
+[145 / 318] VoiceTrailV3Executable
+[150 / 321] TranscriptionExecutable
+[150 / 322] app-builder-v3-product
+[159 / 330] VoiceTrailV3Executable
+[167 / 335] StroopwafelV3Executable
+[171 / 340] syncups-v3-product
+[173 / 340] SyncUpsV3Executable
+[182 / 346] RemindersV3Executable
+[183 / 346] StreamsV3Executable
+[192 / 351] PresenceRecipesV3Executable
+[192 / 354] reminders-v3-product
+[199 / 360] InstantSwiftDataTesting
+[200 / 360] RemindersV3Executable
+[206 / 365] InstantSwiftDataTests-product
+[209 / 366] PresenceRecipesV3Executable
+[214 / 367] MobileChatV3Executable
+[223 / 370] RecipesV3App
+[230 / 374] RecipesV3Executable
+[231 / 374] InstantSwiftDataTesting
+[234 / 378] RecipesV3Executable
+[237 / 378] instant-swift-data-validation-runner-product
+[241 / 379] instant-swift-data-product
+[249 / 372] InstantSwiftDataValidationRunner
+[254 / 366] InstantSwiftDataTests-product
+[256 / 366] todos-v3-product
+[256 / 367] voicetrail-v3-product
+[263 / 369] TodosV3AppTests-product
+[263 / 369] VoiceTrailV3AppTests-product
+[274 / 356] stroopwafel-v3-product
+[274 / 356] syncups-v3-product
+[278 / 357] reminders-v3-cli-product
+[281 / 358] mobile-chat-v3-product
+[285 / 359] presence-recipes-v3-product
+[292 / 361] StreamsV3App-product
+[295 / 361] mobile-chat-v3-product
+[302 / 364] SyncUpsV3AppTests-product
+[305 / 363] RemindersV3AppTests-product
+[317 / 366] TodosV3AppTests-product
+[321 / 369] SyncUpsV3AppTests-product
+[325 / 371] StroopwafelV3AppTests-product
+[328 / 370] RemindersV3AppTests-product
+[333 / 374] SyncUpsV3AppTests-product
+[336 / 374] SyncUpsV3AppTests-product
+[338 / 374] VoiceTrailV3AppTests-product
+[345 / 369] MobileChatV3AppTests-product
+[347 / 369] RecipesV3AppTests-product
+[349 / 369] RecipesV3AppTests-product
+[353 / 369] RecipesV3AppTests-product
+[364 / 376] StreamsV3AppTests-product
+[369 / 378] MobileChatV3AppTests-product
+[369 / 378] RecipesV3AppTests-product
+[370 / 379] RecipesV3AppTests-product
+[375 / 382] InstantSwiftDataTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift:361:11: [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m359 |[0;0m           atomicOperationGroups: entityGroups
+[0;36m360 |[0;0m         ) {
+[0;36m361 |[0;0m           [4;39mtry? await debugRuntime.transact(transaction, createdAt: now)[0;0m
+    [0;36m|[0;0m           `- [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m362 |[0;0m         }
+[0;36m363 |[0;0m       }
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[375 / 381] InstantSwiftDataCoreTests-product
+[381 / 384] InstantSwiftDataCoreTests-product
+[382 / 384] InstantSwiftDataCoreTests-product
+[384 / 384] InstantSwiftDataCoreTests-product
+[387 / 387] app-builder-v3-product
+[392 / 392] cloudkit-demo-v3-product
+[393 / 393] mobile-chat-v3-product
+[397 / 397] recipes-v3-product
+[401 / 401] reminders-v3-cli-product
+[405 / 405] syncups-v3-product
+[411 / 411] todos-v3-product
+[415 / 415] instant-swift-data-validation-runner-product
+[421 / 421] instant-domain-aev-bench-product
+Build complete! (39.19 sec)
+◇ Test run started.
+↳ Testing Library Version: 2067.1
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite InstantFollowerLatencyTests started.
+◇ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() started.
+✘ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() recorded an issue at InstantFollowerLatencyTests.swift:136:23: Issue recorded
+↳ #1796: the refreshes at 103 and 104 brought the newest writes, 2.0 s and 0.5 s after the server stored them - Difference: …
+  
+      [
+    +   [0]: 2000,
+    +   [1]: 500
+      ]
+  
+  (First: −, Second: +)
+✘ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() failed after 0.002 seconds with 1 issue.
+↳ /// The buffer measures how old the newest server write is when its frame finishes applying (#1796): a `refresh-ok`
+↳ /// carrying a fact newer than every fact applied before counts, from the fact's server time (the fourth element of
+↳ /// its triple, child nodes included) to the end of its apply. An answer to `add-query` restates what the server
+↳ /// already holds, so it only moves the mark, and an older fact does not count. The tablet behind #1796 showed a live
+↳ /// recording about six minutes late, and nothing it logged measured that.
+◇ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() started.
+✘ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() recorded an issue at InstantFollowerLatencyTests.swift:155:23: Issue recorded
+↳ Difference: …
+  
+      [
+    −   [0]: 0,
+    +   [0]: 5,
+    −   [1]: 0,
+    +   [1]: 300,
+    −   [2]: 0,
+    +   [2]: 5000,
+    −   [3]: 0
+    +   [3]: 5000
+      ]
+  
+  (First: −, Second: +)
+✘ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() failed after 0.001 seconds with 1 issue.
+↳ /// The receive summary reports how old the newest writes were at the median, at p95 and at most (#1796).
+✘ Suite InstantFollowerLatencyTests failed after 0.004 seconds with 2 issues.
+↳ /// A follower applies the newest result of each query next, however deep its receive buffer, and a one-shot read waits
+↳ /// while the connection is busy delivering what came before its answer (#1796).
+↳ ///
+↳ /// Upstream: the server drops a queued refresh that a newer one supersedes (`session.clj`, `combine [:refresh
+↳ /// :refresh]` keeps the second), `Reactor.js` replaces a query's stored result whole on every `refresh-ok`
+↳ /// (`querySubs[hash].result`), and its `queryOnce` waits 30 s (`QUERY_ONCE_TIMEOUT`).
+✘ Test run with 2 tests in 1 suite failed after 0.004 seconds with 2 issues.
+Note: Some test targets reported failures:
+  - InstantSwiftDataCoreTests (Swift Testing)

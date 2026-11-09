@@ -1,0 +1,231 @@
+Building for debugging...
+[Computing dependencies]
+[Provisioning 2 / 164]
+[Pre-planning 1 / 4091]
+[Planning 1604 / 4091]
+[Planning 2991 / 4091]
+[Planning deferred tasks]
+[Constructing 3660 / 9018]
+[8 / 749] InstantSwiftDataCLIParsingTests-product
+[8 / 747] Dependencies
+[15 / 758] Dependencies
+[17 / 758] Dependencies
+[21 / 760] Dependencies
+[24 / 763] Dependencies
+[28 / 765] DependenciesTestSupport
+[31 / 764] InstantSwiftDataCore
+[41 / 773] InstantSwiftDataBenchmarks
+[53 / 770] InstantDomainAEVBench
+[57 / 760] InstantSwiftData
+[59 / 761] InstantSwiftData
+[67 / 764] PresenceRecipesV3App
+[69 / 776] SyncUpsV3App
+[75 / 777] PresenceRecipesV3App
+[79 / 790] TodosV3App
+[83 / 786] TodosV3App
+[92 / 778] transcription-product
+[95 / 780] AuthV3App
+[105 / 782] TranscriptionExecutable
+[114 / 776] TodosV3Executable
+[125 / 772] SyncUpsV3App
+[128 / 770] SyncUpsV3Executable
+[134 / 768] SyncUpsV3App
+[140 / 768] SyncUpsV3Executable
+[141 / 768] stroopwafel-v3-product
+[145 / 766] syncups-v3-product
+[153 / 768] StroopwafelV3Executable
+[161 / 762] streams-v3-product
+[162 / 762] streams-v3-product
+[167 / 764] StreamsV3Executable
+[174 / 760] presence-recipes-v3-product
+[176 / 760] PresenceRecipesV3App
+[186 / 762] LinkedInfiniteV3App
+[187 / 764] PresenceRecipesV3App
+[193 / 758] PresenceRecipesV3App
+[197 / 758] InstantSwiftDataMedia
+[200 / 758] LinkedInfiniteV3App
+[203 / 758] InstantSwiftDataCore
+[206 / 758] InstantSwiftDataCore
+[208 / 758] InstantSwiftDataCore
+[211 / 758] AuthV3App
+[214 / 762] auth-v3-product
+[217 / 762] RecipesV3App
+[220 / 778] RemindersV3App
+[224 / 773] CloudKitDemoV3App
+[225 / 773] AuthV3Executable
+[226 / 776] CloudKitDemoV3App
+[229 / 772] VoiceTrailV3App
+[233 / 775] AuthV3App
+[240 / 769] VoiceTrailV3Executable
+[246 / 761] VoiceTrailV3App
+[247 / 763] voicetrail-v3-product
+[254 / 754] RemindersV3App
+[259 / 752] reminders-v3-cli-product
+[260 / 752] RemindersV3Executable
+[262 / 756] reminders-v3-cli-product
+[267 / 758] reminders-v3-product
+[274 / 754] RemindersV3App
+[275 / 756] RemindersV3Executable
+[280 / 752] InstantSwiftDataCore
+[283 / 752] reminders-v3-cli-product
+[286 / 750] recipes-v3-product
+[287 / 750] RecipesV3Executable
+[289 / 750] RemindersV3App
+[297 / 750] recipes-v3-product
+[303 / 750] mobile-chat-v3-product
+[306 / 746] mobile-chat-v3-product
+[314 / 744] AuthV3Executable
+[321 / 743] app-builder-v3-product
+[323 / 745] cloudkit-demo-v3-product
+[326 / 740] cloudkit-demo-v3-product
+[329 / 742] app-builder-v3-product
+[340 / 751] AppBuilderV3Executable
+[343 / 751] InstantSwiftDataTesting
+[348 / 747] InstantSwiftDataTesting
+[350 / 745] instant-swift-data-validation-runner-product
+[352 / 745] instant-swift-data
+[354 / 745] InstantSwiftDataTesting
+[356 / 749] instant-swift-data
+[358 / 753] instant-swift-data-product
+[361 / 753] instant-swift-data
+[366 / 745] instant-swift-data-product
+[370 / 745] InstantSwiftDataValidationRunner
+[375 / 745] InstantSwiftDataCore
+[376 / 741] AppBuilderV3App
+[377 / 741] InstantSwiftDataTesting
+[380 / 741] InstantSwiftDataCoreTests-product
+[386 / 737] InstantSwiftDataDomainAEVTests-product
+[390 / 738] instant-domain-aev-bench-product
+[393 / 737] InstantSwiftDataDomainAEVTests-product
+[398 / 737] instant-swift-data-benchmarks-product
+[405 / 759] InstantSwiftDataCoreTests-product
+[407 / 759] InstantSwiftDataSchemaTests-product
+[409 / 756] InstantSwiftDataSchemaTests-product
+[411 / 756] InstantSwiftDataSchemaTests-product
+[414 / 756] InstantSwiftDataSchemaTests-product
+[416 / 756] InstantSwiftDataCoreTests-product
+[417 / 756] InstantSwiftDataCoreTests-product
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+    builtin-SwiftPerFileCompile InstantFollowerLatencyTests.swift
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift:361:11: [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m359 |[0;0m           atomicOperationGroups: entityGroups
+[0;36m360 |[0;0m         ) {
+[0;36m361 |[0;0m           [4;39mtry? await debugRuntime.transact(transaction, createdAt: now)[0;0m
+    [0;36m|[0;0m           `- [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m362 |[0;0m         }
+[0;36m363 |[0;0m       }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:715:21: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m713 |[0;0m     let window = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+ [0;36m714 |[0;0m       InstantAutomaticOutboxClaimRequest(
+ [0;36m715 |[0;0m         claimantID: await runtime.automaticDeliveryClaimantIDForTesting(),
+     [0;36m|[0;0m                     `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m716 |[0;0m         claimToken: token,
+ [0;36m717 |[0;0m         now: InstantTimestamp(milliseconds: claimMilliseconds),
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:1033:64: [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m1031 |[0;0m       outbox: state.snapshot.outbox
+[0;36m1032 |[0;0m         .sorted(by: PendingMutation.creationOrder)
+[0;36m1033 |[0;0m         .map { Write(id: $0.id, status: $0.status, overlay: "\([4;39m$0.optimisticOverlayState[0;0m)") }
+     [0;36m|[0;0m                                                                |  |- [1;39mnote: [1;39muse a default value parameter to avoid this warning[0;0m
+     [0;36m|[0;0m                                                                |  |- [1;39mnote: [1;39mprovide a default value to avoid this warning[0;0m
+     [0;36m|[0;0m                                                                |  `- [1;39mnote: [1;39muse 'String(describing:)' to silence this warning[0;0m
+     [0;36m|[0;0m                                                                `- [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m1034 |[0;0m     )
+[0;36m1035 |[0;0m   }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:1828:47: [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m1826 |[0;0m       let refused = observation.outbox.first { $0.id == refusedID }
+[0;36m1827 |[0;0m       expectNoDifference(refused?.status, .failed)
+[0;36m1828 |[0;0m       expectNoDifference(refused?.overlay, "\([4;39mOptional(InstantOptimisticOverlayState.removed)[0;0m)")
+     [0;36m|[0;0m                                               |- [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+     [0;36m|[0;0m                                               |- [1;39mnote: [1;39muse a default value parameter to avoid this warning[0;0m
+     [0;36m|[0;0m                                               |- [1;39mnote: [1;39mprovide a default value to avoid this warning[0;0m
+     [0;36m|[0;0m                                               `- [1;39mnote: [1;39muse 'String(describing:)' to silence this warning[0;0m
+[0;36m1829 |[0;0m     }
+[0;36m1830 |[0;0m   }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:1948:21: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m1946 |[0;0m     let window = try await fixture.runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+[0;36m1947 |[0;0m       InstantAutomaticOutboxClaimRequest(
+[0;36m1948 |[0;0m         claimantID: await fixture.runtime.automaticDeliveryClaimantIDForTesting(),
+     [0;36m|[0;0m                     `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m1949 |[0;0m         claimToken: "later-stamp-claim",
+[0;36m1950 |[0;0m         now: InstantTimestamp(milliseconds: fixture.claimMilliseconds)
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:2198:11: [1;33mwarning: [1;39mvariable 'fixture' was never mutated; consider changing to 'let' constant[0;0m
+[0;36m2196 |[0;0m     var fixtures: [FastDrainFixture] = []
+[0;36m2197 |[0;0m     for reduces in [true, false] {
+[0;36m2198 |[0;0m       var fixture = try await FastDrainFixture.make(
+     [0;36m|[0;0m           `- [1;33mwarning: [1;39mvariable 'fixture' was never mutated; consider changing to 'let' constant[0;0m
+[0;36m2199 |[0;0m         suffix: "unset-removal-\(removal.rawValue)-\(reduces)", serverSegmentCount: 6, pendingSegmentCount: 2,
+[0;36m2200 |[0;0m         reducesServerApply: reduces, previewUnsetField: true
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:40:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m38 |[0;0m 
+ [0;36m39 |[0;0m     expectNoDifference(
+ [0;36m40 |[0;0m       try await FollowerFrame.takeBuffered(from: frames),
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m41 |[0;0m       ["transact-ok 102", "refresh-ok 103 list(2)", "refresh-ok 104 page(3)"],
+ [0;36m42 |[0;0m       "#1796: the first refresh's list and page were both restated by newer frames before the applier reached it"
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:54:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m52 |[0;0m 
+ [0;36m53 |[0;0m     expectNoDifference(
+ [0;36m54 |[0;0m       try await FollowerFrame.takeBuffered(from: frames),
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m55 |[0;0m       ["refresh-ok 101 page(1)", "refresh-ok 102 list(2)"]
+ [0;36m56 |[0;0m     )
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:68:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m66 |[0;0m 
+ [0;36m67 |[0;0m     expectNoDifference(
+ [0;36m68 |[0;0m       try await FollowerFrame.takeBuffered(from: frames),
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m69 |[0;0m       ["refresh-ok 101 list(1) attrs", "refresh-ok 102 list(2)"]
+ [0;36m70 |[0;0m     )
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:81:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m79 |[0;0m 
+ [0;36m80 |[0;0m     expectNoDifference(
+ [0;36m81 |[0;0m       try await FollowerFrame.takeBuffered(from: frames),
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+ [0;36m82 |[0;0m       ["refresh-ok 105 list(1)", "refresh-ok 104 list(2)"]
+ [0;36m83 |[0;0m     )
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+[0;36m103 |[0;0m     let taken = try await FollowerFrame.takeBuffered(from: frames)
+[0;36m104 |[0;0m     await append.value
+[0;36m105 |[0;0m     expectNoDifference(await appended.values, [true])
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+[0;36m106 |[0;0m     expectNoDifference(taken, ["refresh-ok 102 page(1)", "refresh-ok 103 list(2)"])
+[0;36m107 |[0;0m   }
+    [0;36m:[0;0m
+[0;36m718 |[0;0m 
+[0;36m719 |[0;0m private actor FollowerRecorder<Value: Sendable> {
+[0;36m720 |[0;0m   private(set) var values: [Value] = []
+    [0;36m|[0;0m                    `- [1;39mnote: [1;39mproperty declared here[0;0m
+[0;36m721 |[0;0m 
+[0;36m722 |[0;0m   func append(_ value: Value) {
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+[0;36m103 |[0;0m     let taken = try await FollowerFrame.takeBuffered(from: frames)
+[0;36m104 |[0;0m     await append.value
+[0;36m105 |[0;0m     expectNoDifference(await appended.values, [true])
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+[0;36m106 |[0;0m     expectNoDifference(taken, ["refresh-ok 102 page(1)", "refresh-ok 103 list(2)"])
+[0;36m107 |[0;0m   }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:220:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+[0;36m218 |[0;0m       )
+[0;36m219 |[0;0m       let texts = try await runtime.queryLocally(TodoExample.query).values.compactMap { entity -> String? in
+[0;36m220 |[0;0m         guard case let [4;39m.string(text)[0;0m? = entity.values[4;39m[[0;0m"text"] else { return nil }
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+[0;36m221 |[0;0m         return text
+[0;36m222 |[0;0m       }
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+Failed frontend command:
+/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c -filelist /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/sources-1 -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantCrossSDKBenchmarkTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDeferredTranscriptPayloadMemoryTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDeliveryPassTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticsCostTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticsTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantEnergyMeterTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantEntityWriteScopeTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantErrorPresentationTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFactInPlaceUpsertTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFactLayoutDeviceStoreTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFactLayoutTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFactRowsTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardCostTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFailedMutationRetryWindowTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFailedMutationSupersessionTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift -primary-file /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantGuestPromotionOutboxTests.swift -supplementary-output-file-map /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/supplementaryOutputs-12 -target arm64-apple-macos14.0 -module-can-import-version Darwin 420 0 -module-can-import-version Testing 2067.1 0 -module-can-import-version XCTest 25181.5 0 -disable-cross-import-overlay-search -swift-module-cross-import Darwin /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/Darwin.swiftcrossimport/xlocale.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/AppKit.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/CoreGraphics.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/CoreImage.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/CoreTransferable.swiftoverlay -swift-module-cross-import Testing /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework/Modules/Testing.swiftcrossimport/Foundation.swiftoverlay -load-resolved-plugin /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libFoundationMacros.dylib\#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#FoundationMacros -load-resolved-plugin /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libObservationMacros.dylib\#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#ObservationMacros -load-resolved-plugin /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libPreviewsMacros.dylib\#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#PreviewsMacros -load-resolved-plugin /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftMacros.dylib\#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#SwiftMacros -load-resolved-plugin /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib\#/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/bin/swift-plugin-server\#SwiftUIMacros -load-resolved-plugin /Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib\#\#TestingMacros -disable-implicit-swift-modules -Xcc -fno-implicit-modules -Xcc -fno-implicit-module-maps -explicit-swift-module-map-file /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantSwiftDataCoreTests-dependencies-1.json -Xllvm -aarch64-use-tbi -enable-objc-interop -stack-check -sdk /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -I /Users/server/build/slots/1/instant-data-swift/.build/out/Products/Debug -Isystem /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib -F /Users/server/build/slots/1/instant-data-swift/.build/out/Products/Debug/PackageFrameworks -F /Users/server/build/slots/1/instant-data-swift/.build/out/Products/Debug -F /Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks -module-cache-path /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/SwiftExplicitPrecompiledModules -color-diagnostics -Xcc -fcolor-diagnostics -enable-testing -g -debug-info-format\=dwarf -dwarf-version\=4 -swift-version 6 -Onone -D SWIFT_PACKAGE -D DEBUG -D Xcode -serialize-debugging-options -enable-upcoming-feature StrictConcurrency -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-upcoming-feature InferIsolatedConformances -enable-experimental-feature DebugDescriptionMacro -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /Users/server/build/slots/1/instant-data-swift/.build/out/ModuleCache.noindex/Session.modulevalidation -Xcc -working-directory -Xcc /Users/server/build/slots/1 -enable-anonymous-context-mangled-names -file-compilation-dir /Users/server/build/slots/1 -Xcc -D_LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -Xcc -ivfsstatcache -Xcc /Users/server/build/slots/1/instant-data-swift/.build/out/SDKStatCaches.noindex/macosx27.0-26A5353p-351d193019e33e6984b0110dd0ebab7445874285e5972fffeae925c4ab065928.sdkstatcache -Xcc -fmodules-prune-interval\=86400 -Xcc -fmodules-prune-after\=345600 -Xcc -I/Users/server/build/slots/1/instant-data-swift/.build/out/Products/Debug/include -Xcc -I/Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/DerivedSources-normal/arm64 -Xcc -I/Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/DerivedSources/arm64 -Xcc -I/Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/DerivedSources -Xcc -DSWIFT_PACKAGE -Xcc -DDEBUG\=1 -no-auto-bridging-header-chaining -module-name InstantSwiftDataCoreTests -package-name instant_data_swift -const-gather-protocols-file /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantSwiftDataCoreTests_const_extract_protocols.json -disable-clang-spi -clang-target arm64-apple-macos27.0 -target-sdk-version 27.0 -target-sdk-name macosx27.0 -in-process-plugin-server-path /Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -parse-as-library -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantCrossSDKBenchmarkTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantCrossSDKRuntimeBenchmarkTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDateCoercionTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDeferredTranscriptPayloadMemoryTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDeliveryPassTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDiagnosticFeedbackLoopTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDiagnosticsCostTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDiagnosticsTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantEnergyMeterTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantEntityWriteScopeTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantErrorPresentationTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactInPlaceUpsertTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactLayoutDeviceStoreTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactLayoutTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactRowsTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationDiscardCostTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationDiscardTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationRetryWindowTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationSupersessionTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFastDrainTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFollowerLatencyTests.o -o /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantGuestPromotionOutboxTests.o -debug-module-path /Users/server/build/slots/1/instant-data-swift/.build/out/Intermediates.noindex/instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantSwiftDataCoreTests.swiftmodule -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantCrossSDKBenchmarkTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantCrossSDKRuntimeBenchmarkTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDateCoercionTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDeferredTranscriptPayloadMemoryTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDeliveryPassTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDiagnosticFeedbackLoopTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDiagnosticsCostTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantDiagnosticsTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantEnergyMeterTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantEntityWriteScopeTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantErrorPresentationTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactInPlaceUpsertTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactLayoutDeviceStoreTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactLayoutTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFactRowsTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationDiscardCostTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationDiscardTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationRetryWindowTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFailedMutationSupersessionTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFastDrainTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantFollowerLatencyTests.o -index-unit-output-path /instant-swift-data.build/Debug/InstantSwiftDataCoreTests-p.build/Objects-normal/arm64/InstantGuestPromotionOutboxTests.o
+error: Build failed
+error: fatalError

@@ -1,0 +1,3 @@
+docs(#1796): ledger: scribe 9e4aa3f82 (a live copy loads again; the receive summary reaches the collector)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

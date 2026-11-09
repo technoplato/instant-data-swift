@@ -1,0 +1,9 @@
+green(#1796): a one-shot read whose add-query met a dead socket waits for the reconnect
+
+queryOnceThroughLive keeps the read's registration when its add-query fails on a socket whose receiver owns the
+failure (InstantReceiverOwnedLiveSessionSendFailure) and waits for the answer as before: the next session's init sends
+every registered query, as it does for an observer, and the answer ends the wait. A stall still fails it after 5 s
+with no frame received or applied, and upstream's 30 s limit still holds. Upstream Reactor.js never fails a queryOnce
+on a send: _trySendAuthed leaves the add-query to _flushPendingMessages on the next init-ok.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

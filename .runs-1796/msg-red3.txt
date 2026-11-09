@@ -1,0 +1,12 @@
+red(#1796): nothing measures how old the newest server write is when a follower applies it
+
+The tablet behind #1796 showed a live recording about six minutes late, and nothing it logged measured that: the
+receive summary counts waits inside the buffer, not the time from the server storing a write to this store applying
+it, and the brief asks for the follower's lag at p50, p95 and maximum after the release.
+
+InstantFollowerLatencyTests/theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied: an add-query answer sets the
+mark, an older refresh does not count, and two refreshes bring writes 2.0 s and 0.5 s old (one in a child node);
+theReceiveSummaryReportsHowOldTheNewestWritesWere: the median, p95 and maximum. Scaffold so the tests build: the buffer
+takes a wall clock, the meter keeps lags and the summary carries them, and nothing records one yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

@@ -1,0 +1,9 @@
+.runs-1796/bundle against Tests/known-failing.txt
+  run: servers-Mac-mini.local, 2026-11-05T04:39:48-05:00, 1691 tests, 0 failing, 365 s, 10 CPUs, 0 busy loops, load 1.95-5.68
+  failed and listed: 0
+  listed load-only, passed: 5
+  listed as failing idle, passed: 3 (fixed, or one that fails only some runs)
+    InstantLiveConnectionSurvivalTests/aScheduledReconnectReusesASessionThatOpenedAfterTheLoss()  [idle 1/3]
+    InstantMediaStreamOptimizationTests/binaryCodecRemovesBase64AndJSONCPU()  [idle 2/3]
+    SwiftConcurrencyGuidanceTests/uncheckedSendableConformancesDocumentProtectionMechanism()  [idle 1/3]
+  no new failures

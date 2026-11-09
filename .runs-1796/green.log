@@ -1,0 +1,353 @@
+Building for debugging...
+[Computing dependencies]
+[Provisioning 1 / 164]
+[Pre-planning 1 / 4091]
+[Planning 1625 / 4091]
+[Planning 2991 / 4091]
+[Finalizing plan]
+[Constructing 6114 / 9018]
+[2 / 6] InstantSwiftDataCore
+[3 / 7] InstantSwiftDataCore
+[7 / 11] Dependencies
+[8 / 12] Dependencies
+[11 / 15] DependenciesTestSupport
+[14 / 21] swift-crypto_Crypto
+[16 / 21] InstantSwiftDataCore
+[18 / 22] InstantSwiftDataCore
+[25 / 33] Dependencies
+[28 / 33] Dependencies
+[31 / 36] DependenciesTestSupport
+[34 / 35] AppBuilderV3AppTests-product
+[36 / 36] AppBuilderV3AppTests-product
+[38 / 39] AuthV3AppTests-product
+[42 / 43] CloudKitDemoV3AppTests-product
+[44 / 45] voicetrail-v3-product
+[50 / 136] InstantSwiftDataSchema-product
+[52 / 136] InstantSwiftData-product
+[57 / 136] scribe-shaped-20s-write-bench-product
+[62 / 136] scribe-shaped-20s-write-bench-product
+[64 / 136] instant-swift-data-product
+[69 / 136] app-builder-v3-product
+[73 / 136] TodosV3AppTests-product
+[74 / 136] TodosV3App-product
+[79 / 136] StreamsV3AppTests-product
+[79 / 136] app-builder-v3-product
+[82 / 136] RemindersV3App-product
+[84 / 136] RecipesV3App-product
+[85 / 136] SyncUpsV3AppTests-product
+[89 / 136] MobileChatV3App-product
+[91 / 136] RemindersV3AppTests-product
+[93 / 136] RecipesV3AppTests-product
+[97 / 136] InstantSwiftDataCoreTests-product
+[98 / 136] InstantObservationExercise-product
+[110 / 136] InstantSwiftDataSchemaTests-product
+[121 / 149] SyncUpsV3AppTests-product
+[125 / 149] StroopwafelV3AppTests-product
+[129 / 149] SyncUpsV3AppTests-product
+[136 / 149] RemindersV3AppTests-product
+[140 / 149] InstantSwiftDataDomainAEVTests-product
+[145 / 150] InstantSwiftDataMediaTests-product
+[145 / 151] InstantSwiftDataCoreTests-product
+[147 / 152] InstantSwiftDataCoreTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift:361:11: [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m359 |[0;0m           atomicOperationGroups: entityGroups
+[0;36m360 |[0;0m         ) {
+[0;36m361 |[0;0m           [4;39mtry? await debugRuntime.transact(transaction, createdAt: now)[0;0m
+    [0;36m|[0;0m           `- [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m362 |[0;0m         }
+[0;36m363 |[0;0m       }
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[152 / 156] InstantSwiftDataCoreTests-product
+[154 / 156] InstantSwiftDataCoreTests-product
+[157 / 157] app-builder-v3-product
+[162 / 162] cloudkit-demo-v3-product
+[167 / 167] recipes-v3-product
+[171 / 171] reminders-v3-cli-product
+[175 / 175] syncups-v3-product
+[179 / 179] voicetrail-v3-product
+[185 / 185] instant-swift-data-validation-runner-product
+[191 / 191] instant-domain-aev-bench-product
+Build complete! (31.54 sec)
+◇ Test run started.
+↳ Testing Library Version: 2067.1
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite InstantObserverRegistrationGateTests started.
+◇ Suite InstantQueryCacheAnswerWriteTests started.
+◇ Suite InstantCancelledSendTests started.
+◇ Suite InstantPruneOffTheApplierTests started.
+◇ Suite InstantConnectionStateTruthTests started.
+◇ Suite InstantFollowerLatencyTests started.
+◇ Suite InstantReconnectBackoffParityTests started.
+◇ Suite InstantInfiniteQueryLeadingRowsTests started.
+◇ Test anObservationCancelledWhileItsAddQueryIsWrittenLeavesTheSocketOpen() started.
+◇ Suite InstantWriterFollowerLatencyTests started.
+◇ Test anUnchangedRepeatedReadEncodesNoAnswer() started.
+◇ Test aRefreshThatTriggersTheCadencePruneReturnsBeforeThePruneEnds() started.
+◇ Test anObserversAddQuerySendHoldsNoGate() started.
+◇ Suite InstantReactorParityTests started.
+◇ Test aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat() started.
+◇ Suite InstantLiveConnectionSurvivalTests started.
+◇ Test aWaitingRefreshLosesTheResultsANewerRefreshRestates() started.
+◇ Test aCancelledOneShotQueryLeavesTheOpenConnectionOpen() started.
+◇ Test noAttemptWhileThePathIsMissingAndOneAttemptWhenItReturns() started.
+◇ Test aFullWindowWithALeadingRowKeepsLoadingTheNextPage() started.
+◇ Test aLongFrameApplyKeepsAReceiveOutstandingSoServerPingsAreAnswered() started.
+◇ Test upstreamReactorQuerySubsRoundTripsCachedResultsAcrossRelaunch() started.
+✔ Test aWaitingRefreshLosesTheResultsANewerRefreshRestates() passed after 0.060 seconds.
+◇ Test aWaitingRefreshKeepsTheResultsNoNewerRefreshRestates() started.
+✔ Test aWaitingRefreshKeepsTheResultsNoNewerRefreshRestates() passed after 0.001 seconds.
+◇ Test aRefreshCarryingAttributesKeepsItsResults() started.
+✔ Test aRefreshCarryingAttributesKeepsItsResults() passed after 0.001 seconds.
+◇ Test aRefreshNeverLosesResultsToAnEarlierTransaction() started.
+✔ Test aRefreshNeverLosesResultsToAnEarlierTransaction() passed after 0.001 seconds.
+◇ Test aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne() started.
+✔ Test aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne() passed after 0.002 seconds.
+◇ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() started.
+✔ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() passed after 0.001 seconds.
+◇ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() started.
+✔ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() passed after 0.001 seconds.
+◇ Test aFollowerBehindALongApplyAppliesTheNewestListOnceAndEveryAcknowledgement() started.
+✔ Test aLongFrameApplyKeepsAReceiveOutstandingSoServerPingsAreAnswered() passed after 0.075 seconds.
+◇ Test framesThatArriveDuringALongApplyAreAppliedInArrivalOrder() started.
+✔ Test noAttemptWhileThePathIsMissingAndOneAttemptWhenItReturns() passed after 0.076 seconds.
+◇ Test aPathThatReturnsDuringTheBackoffEndsTheWait() started.
+✔ Test anUnchangedRepeatedReadEncodesNoAnswer() passed after 0.081 seconds.
+◇ Test aChangedAnswerIsWrittenWhole() started.
+✔ Test aRefreshThatTriggersTheCadencePruneReturnsBeforeThePruneEnds() passed after 0.083 seconds.
+◇ Test aResultLargerThanABatchIsReleasedOverSeveralBatches() started.
+✔ Test upstreamReactorQuerySubsRoundTripsCachedResultsAcrossRelaunch() passed after 0.085 seconds.
+◇ Test upstreamReactorOptimisticTxIsNotOverwrittenByRefreshOK() started.
+✔ Test anObserversAddQuerySendHoldsNoGate() passed after 0.095 seconds.
+◇ Test aClosedResultsReloadReadsOutsideTheGate() started.
+✔ Test aCancelledOneShotQueryLeavesTheOpenConnectionOpen() passed after 0.115 seconds.
+◇ Test aServerErrorForOneQueryLeavesTheOpenConnectionOpen() started.
+✔ Test aPathThatReturnsDuringTheBackoffEndsTheWait() passed after 0.045 seconds.
+◇ Test theDelayGrowsToTenSecondsAndOnlyAnOpenedSessionResetsIt() started.
+✔ Test aChangedAnswerIsWrittenWhole() passed after 0.053 seconds.
+◇ Test aReadRewritesARowAnotherConnectionReplaced() started.
+✔ Test framesThatArriveDuringALongApplyAreAppliedInArrivalOrder() passed after 0.065 seconds.
+◇ Test anAnswerThatArrivedOnAReplacedConnectionIsNeverApplied() started.
+✔ Test aFollowerBehindALongApplyAppliesTheNewestListOnceAndEveryAcknowledgement() passed after 0.078 seconds.
+◇ Test aOneShotReadQueuedBehindALongApplyIsAnswered() started.
+✔ Test upstreamReactorOptimisticTxIsNotOverwrittenByRefreshOK() passed after 0.066 seconds.
+◇ Test upstreamReactorRefreshReplacesRowsMissingFromAuthoritativeResult() started.
+✔ Test aClosedResultsReloadReadsOutsideTheGate() passed after 0.071 seconds.
+◇ Test aReloadBeginsFromTheRowStoredNowNotTheOneItRead() started.
+✔ Test theDelayGrowsToTenSecondsAndOnlyAnOpenedSessionResetsIt() passed after 0.047 seconds.
+◇ Test aFailedExplicitConnectKeepsTheBackoff() started.
+✔ Test aReadRewritesARowAnotherConnectionReplaced() passed after 0.045 seconds.
+◇ Test anUnchangedReadUnderTheGateEncodesNoAnswer() started.
+✔ Test upstreamReactorRefreshReplacesRowsMissingFromAuthoritativeResult() passed after 0.044 seconds.
+◇ Test authoritativeRefreshRetainsTriplesOwnedByAnotherLiveQuery() started.
+✔ Test aServerErrorForOneQueryLeavesTheOpenConnectionOpen() passed after 0.085 seconds.
+◇ Test aDroppedSocketStillReadsErrored() started.
+✔ Test anAnswerThatArrivedOnAReplacedConnectionIsNeverApplied() passed after 0.061 seconds.
+◇ Test framesTakenBeforeAFailedSendAreNotApplied() started.
+✔ Test aFailedExplicitConnectKeepsTheBackoff() passed after 0.037 seconds.
+◇ Test anOutageWithTheNetworkMissingFor13MinutesMakesNoAttemptsUntilItReturns() started.
+✔ Test aReloadBeginsFromTheRowStoredNowNotTheOneItRead() passed after 0.040 seconds.
+◇ Test aReloadChunkWritesNothingOnceAServerAnswerReplacedItsRow() started.
+✔ Test anUnchangedReadUnderTheGateEncodesNoAnswer() passed after 0.044 seconds.
+◇ Test aClosedConnectionsErrorCarriesTheRowAnUnchangedReadLeft() started.
+✔ Test authoritativeRefreshRetainsTriplesOwnedByAnotherLiveQuery() passed after 0.044 seconds.
+◇ Test "SQLiteData SharingPermissionsTests.createRecordWhenLocalHasPermissionsButCloudKitDoesNot" started.
+✔ Test aDroppedSocketStillReadsErrored() passed after 0.049 seconds.
+✔ Suite InstantConnectionStateTruthTests passed after 0.251 seconds.
+✔ Test aReloadChunkWritesNothingOnceAServerAnswerReplacedItsRow() passed after 0.046 seconds.
+◇ Test anUnregistrationBeforeTheOwedSendSendsAddThenRemove() started.
+✔ Test anUnregistrationBeforeTheOwedSendSendsAddThenRemove() passed after 0.001 seconds.
+◇ Test aRegistrationsHoldNamesItsQuerysNamespace() started.
+✔ Test aClosedConnectionsErrorCarriesTheRowAnUnchangedReadLeft() passed after 0.034 seconds.
+✔ Suite InstantQueryCacheAnswerWriteTests passed after 0.258 seconds.
+✔ Test framesTakenBeforeAFailedSendAreNotApplied() passed after 0.056 seconds.
+◇ Test theReceiveBufferKeepsArrivalOrderAndMakesAFullReaderWait() started.
+✔ Test theReceiveBufferKeepsArrivalOrderAndMakesAFullReaderWait() passed after 0.002 seconds.
+◇ Test closingTheReceiveBufferReleasesAWaitingReader() started.
+✔ Test closingTheReceiveBufferReleasesAWaitingReader() passed after 0.004 seconds.
+◇ Test aSocketDeathDuringDeliveryOpensExactlyOneReplacement() started.
+reconnect-replay: attempts while the path was missing (0-13 min) 1, in 37 min 100, in 60 min 192
+✔ Test anOutageWithTheNetworkMissingFor13MinutesMakesNoAttemptsUntilItReturns() passed after 0.067 seconds.
+✔ Suite InstantReconnectBackoffParityTests passed after 0.275 seconds.
+✔ Test "SQLiteData SharingPermissionsTests.createRecordWhenLocalHasPermissionsButCloudKitDoesNot" passed after 0.036 seconds.
+◇ Test "SQLiteData SharingPermissionsTests.editRecordWhenLocalHasPermissionsButCloudKitDoesNot" started.
+✔ Test aRegistrationsHoldNamesItsQuerysNamespace() passed after 0.030 seconds.
+◇ Test aClosedResultReloadsInBoundedHolds() started.
+✔ Test "SQLiteData SharingPermissionsTests.editRecordWhenLocalHasPermissionsButCloudKitDoesNot" passed after 0.037 seconds.
+◇ Test upstreamReactorDoesNotCleanupMutationsStillWaitingOn() started.
+✔ Test aSocketDeathDuringDeliveryOpensExactlyOneReplacement() passed after 0.050 seconds.
+◇ Test aScheduledReconnectReusesASessionThatOpenedAfterTheLoss() started.
+✔ Test aClosedResultReloadsInBoundedHolds() passed after 0.035 seconds.
+◇ Test thePruneKeepsAResultWhileItReloads() started.
+✔ Test aScheduledReconnectReusesASessionThatOpenedAfterTheLoss() passed after 0.034 seconds.
+◇ Test aWriteDuringReconnectBackoffNeitherConnectsNorCancelsTheBackoff() started.
+✔ Test upstreamReactorDoesNotCleanupMutationsStillWaitingOn() passed after 0.036 seconds.
+◇ Test upstreamPythonSubscriptionPostInitFailureSilentlyRetriesAndResubscribes() started.
+✔ Test thePruneKeepsAResultWhileItReloads() passed after 0.040 seconds.
+◇ Test aSecondObserverWaitsForTheReloadOfItsQuery() started.
+✔ Test upstreamPythonSubscriptionPostInitFailureSilentlyRetriesAndResubscribes() passed after 0.032 seconds.
+◇ Test rejectedQueryDoesNotReconnectOrInterruptHealthyQuery() started.
+✔ Test aWriteDuringReconnectBackoffNeitherConnectsNorCancelsTheBackoff() passed after 0.043 seconds.
+◇ Test aDeadConnectionsWaitingQueryResultsAreDroppedAndItsOtherFramesKept() started.
+✔ Test aDeadConnectionsWaitingQueryResultsAreDroppedAndItsOtherFramesKept() passed after 0.001 seconds.
+◇ Test aConnectionThatDiesWithResultsWaitingReconnectsWithoutApplyingThem() started.
+✔ Test aConnectionThatDiesWithResultsWaitingReconnectsWithoutApplyingThem() passed after 0.062 seconds.
+✔ Suite InstantLiveConnectionSurvivalTests passed after 0.456 seconds.
+✔ Test anObservationCancelledWhileItsAddQueryIsWrittenLeavesTheSocketOpen() passed after 0.480 seconds.
+✔ Suite InstantCancelledSendTests passed after 0.480 seconds.
+✔ Test rejectedQueryDoesNotReconnectOrInterruptHealthyQuery() passed after 0.128 seconds.
+◇ Test rejectedQueryOnceFailsPromptlyWithoutClosingTheSocket() started.
+✔ Test rejectedQueryOnceFailsPromptlyWithoutClosingTheSocket() passed after 0.035 seconds.
+◇ Test runtimeReconnectBacksOffAndFlushesOnlyUnacknowledgedWork() started.
+✔ Test aFullWindowWithALeadingRowKeepsLoadingTheNextPage() passed after 0.573 seconds.
+◇ Test aWindowLoadedPastOnePageBeforeTheServerAnswersKeepsItsPagesAtTheKickstart() started.
+✔ Test runtimeReconnectBacksOffAndFlushesOnlyUnacknowledgedWork() passed after 0.037 seconds.
+◇ Test transientMutationServerErrorKeepsTheSessionAndResendsTheDurableMutationOnIt() started.
+✔ Test transientMutationServerErrorKeepsTheSessionAndResendsTheDurableMutationOnIt() passed after 0.044 seconds.
+◇ Test connectRequeuesPersistedTransientMutationFailure() started.
+✔ Test connectRequeuesPersistedTransientMutationFailure() passed after 0.032 seconds.
+◇ Test upstreamPythonConnectionCloseCancelsInflightReconnectTask() started.
+✔ Test aResultLargerThanABatchIsReleasedOverSeveralBatches() passed after 0.601 seconds.
+◇ Test aBatchDecodesAgainAResultRestatedSinceItsReadAhead() started.
+✔ Test upstreamPythonConnectionCloseCancelsInflightReconnectTask() passed after 0.027 seconds.
+◇ Test closeConnectionCancelsAndJoinsBlockedLiveReceiverEvent() started.
+✔ Test aSecondObserverWaitsForTheReloadOfItsQuery() passed after 0.340 seconds.
+✔ Suite InstantObserverRegistrationGateTests passed after 0.702 seconds.
+✔ Test aBatchDecodesAgainAResultRestatedSinceItsReadAhead() passed after 0.026 seconds.
+◇ Test aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem() started.
+✔ Test closeConnectionCancelsAndJoinsBlockedLiveReceiverEvent() passed after 0.029 seconds.
+◇ Test runtimeReconnectRejoinsRoomAndFlushesLatestPresenceAndTopic() started.
+✔ Test runtimeReconnectRejoinsRoomAndFlushesLatestPresenceAndTopic() passed after 0.027 seconds.
+◇ Test streamContentObserverRetainsOnlyNewestCompleteSnapshot() started.
+✔ Test streamContentObserverRetainsOnlyNewestCompleteSnapshot() passed after 0.001 seconds.
+◇ Test runtimeReconnectRestoresActiveStreamReaderAndUnsubscribesOnCancellation() started.
+✔ Test runtimeReconnectRestoresActiveStreamReaderAndUnsubscribesOnCancellation() passed after 0.028 seconds.
+◇ Test runtimeStreamAppendRetryReconnectsWithoutPublishingAppend() started.
+✔ Test aWindowLoadedPastOnePageBeforeTheServerAnswersKeepsItsPagesAtTheKickstart() passed after 0.227 seconds.
+◇ Test aRowThatMovesAboveTheTopAfterTheWindowSlidDoesNotBreakTheWindow() started.
+✔ Test runtimeStreamAppendRetryReconnectsWithoutPublishingAppend() passed after 0.028 seconds.
+◇ Test runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset() started.
+✔ Test runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset() passed after 0.028 seconds.
+◇ Test runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes() started.
+✔ Test runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes() passed after 0.029 seconds.
+◇ Test runtimeFileStreamFailureReconnectsWithoutAdvancingOffset() started.
+✔ Test runtimeFileStreamFailureReconnectsWithoutAdvancingOffset() passed after 0.029 seconds.
+◇ Test runtimeClientIDReaderBootstrapsRemoteStreamMetadata() started.
+✔ Test runtimeClientIDReaderBootstrapsRemoteStreamMetadata() passed after 0.028 seconds.
+◇ Test runtimeLiveWriterStartsAppendsAndClosesCanonicalStream() started.
+✔ Test runtimeLiveWriterStartsAppendsAndClosesCanonicalStream() passed after 0.028 seconds.
+◇ Test runtimeLiveWriterReconnectsAndResendsOnlyUnflushedChunks() started.
+✔ Test runtimeLiveWriterReconnectsAndResendsOnlyUnflushedChunks() passed after 0.034 seconds.
+◇ Test runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() started.
+✔ Test runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() passed after 0.028 seconds.
+◇ Test runtimeKeepsEverySessionOfOneUserAsItsOwnPeer() started.
+✔ Test runtimeKeepsEverySessionOfOneUserAsItsOwnPeer() passed after 0.027 seconds.
+◇ Test upstreamReactorRewriteMutationsKeepsPendingTransportStable() started.
+✔ Test upstreamReactorRewriteMutationsKeepsPendingTransportStable() passed after 0.031 seconds.
+◇ Test upstreamReactorRewriteMutationsHandlesMultiplePendingTransactions() started.
+✔ Test upstreamReactorRewriteMutationsHandlesMultiplePendingTransactions() passed after 0.034 seconds.
+◇ Test upstreamReactorGetLocalIDAlwaysReturnsSameID() started.
+✔ Test upstreamReactorGetLocalIDAlwaysReturnsSameID() passed after 0.031 seconds.
+◇ Test aTimedOutAddQueryStaysRegisteredAndIsResentAfterReconnect() started.
+✔ Test aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem() passed after 0.533 seconds.
+◇ Test aPruneBatchWaitsForAServerApplyInProgress() started.
+✔ Test aTimedOutAddQueryStaysRegisteredAndIsResentAfterReconnect() passed after 0.157 seconds.
+◇ Test aPermissionRejectedAddQueryIsNotResentAfterReconnect() started.
+#1796 two-client lags: 57 lines: median 3382 ms, p95 9434 ms, worst 13469 ms, newest 1500 ms
+✔ Test aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat() passed after 1.350 seconds.
+✔ Suite InstantWriterFollowerLatencyTests passed after 1.351 seconds.
+✔ Test aRowThatMovesAboveTheTopAfterTheWindowSlidDoesNotBreakTheWindow() passed after 0.552 seconds.
+◇ Test aPreviousPageWaitsForTheServerInsteadOfAnEarlierQuerysStoredResult() started.
+✔ Test aPreviousPageWaitsForTheServerInsteadOfAnEarlierQuerysStoredResult() passed after 0.440 seconds.
+◇ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() started.
+✔ Test aPermissionRejectedAddQueryIsNotResentAfterReconnect() passed after 0.945 seconds.
+◇ Test theInitAdvertisesTheCoreVersionThatSkipsAttrs() started.
+✔ Test theInitAdvertisesTheCoreVersionThatSkipsAttrs() passed after 0.059 seconds.
+◇ Test aReconnectsInitAttrsReplaceTheCachedAttrs() started.
+✔ Test aReconnectsInitAttrsReplaceTheCachedAttrs() passed after 0.058 seconds.
+◇ Test anAttributeARefreshAddsIsUsedByTheNextAttrLessFrame() started.
+━ Test anAttributeARefreshAddsIsUsedByTheNextAttrLessFrame() recorded a known issue at InstantReactorParityTests.swift:3737:7: Expectation failed: priorities.contains("todo-with-new-attrs")
+↳ The frame that adds an attribute drops its own rows' values for it; the next frame stores them (already so at d487ee09)
+↳ priorities.contains("todo-with-new-attrs") → false
+↳   priorities → ["todo-attr-less"]
+━ Test anAttributeARefreshAddsIsUsedByTheNextAttrLessFrame() passed after 0.053 seconds with 1 known issue.
+◇ Test anEmptyRefreshChangesNothing() started.
+✔ Test anEmptyRefreshChangesNothing() passed after 0.335 seconds.
+◇ Test aRefusedStreamSubscriptionEndsEveryObservationThatSharesIt() started.
+✔ Test aRefusedStreamSubscriptionEndsEveryObservationThatSharesIt() passed after 0.058 seconds.
+◇ Test aStreamWrittenWhileOfflineStartsOnTheServerOnceConnected() started.
+✔ Test aStreamWrittenWhileOfflineStartsOnTheServerOnceConnected() passed after 0.077 seconds.
+━ Suite InstantReactorParityTests passed after 2.880 seconds with 1 known issue.
+✔ Test aPruneBatchWaitsForAServerApplyInProgress() passed after 4.525 seconds.
+◇ Test aReleasedRowACrashLeftIsCheckedWhenTheStoreOpensAgain() started.
+✔ Test aReleasedRowACrashLeftIsCheckedWhenTheStoreOpensAgain() passed after 0.274 seconds.
+◇ Test aMarkAnEarlierBuildLeftIsFinishedWhenTheStoreOpensAgain() started.
+✔ Test aMarkAnEarlierBuildLeftIsFinishedWhenTheStoreOpensAgain() passed after 0.274 seconds.
+✔ Suite InstantPruneOffTheApplierTests passed after 6.321 seconds.
+✔ Test aOneShotReadQueuedBehindALongApplyIsAnswered() passed after 6.730 seconds.
+◇ Test aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect() started.
+✔ Test aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect() passed after 0.077 seconds.
+◇ Test aOneShotReadOnASilentSocketFailsAfterTheStall() started.
+✔ Test aOneShotReadOnASilentSocketFailsAfterTheStall() passed after 5.120 seconds.
+✔ Suite InstantFollowerLatencyTests passed after 12.080 seconds.
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() recorded a known issue at InstantInfiniteQueryLeadingRowsTests.swift:195:47: Issue recorded
+↳ After "move a row inside the window above the top": the window is not a contiguous run of the list: [4, 5, 6, 7, 8, 9], expected [4, 6, 7, 8, 9, 10]
+  Last operations:
+  add asc limit 3 -> [1, 2, 3] next
+  remove asc limit 3
+  add asc limit 3 after 1 incl -> [1, 2, 3] next
+  add desc limit 3 after 1 -> [] prev
+  -- loadNextPage
+  remove asc limit 3 after 1 incl
+  add asc limit 3 after 3 -> [4, 5, 6] next prev
+  add asc after 1 incl before 3 incl -> [1, 2, 3] next
+  -- loadNextPage
+  remove asc limit 3 after 3
+  add asc limit 3 after 6 -> [7, 8, 9] next prev
+  add asc after 3 before 6 incl -> [4, 5, 6] next prev
+  remove desc limit 3 after 1
+  remove asc after 1 incl before 3 incl
+  move item-0005 from 5 to 0
+    refresh asc limit 3 after 6 -> [7, 8, 9] next prev
+    refresh asc after 3 before 6 incl -> [4, 6] next prev
+↳ #302: the moved row keeps its old values at its old place
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() recorded a known issue at InstantInfiniteQueryLeadingRowsTests.swift:196:25: Issue recorded
+↳ Difference: …
+  
+      [
+        [0]: 4,
+    −   [1]: 5,
+        … (4 unchanged)
+      ]
+  
+  (First: −, Second: +)
+↳ #302: the moved row keeps its old values at its old place
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() recorded a known issue at InstantInfiniteQueryLeadingRowsTests.swift:197:29: Issue recorded
+↳ After "start paging to the top of the list": the window is not a contiguous run of the list: [4, 5, 6, 7, 8, 9], expected [4, 6, 7, 8, 9, 10]
+↳ #302: the moved row keeps its old values at its old place
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() recorded a known issue at InstantInfiniteQueryLeadingRowsTests.swift:197:29: Issue recorded
+↳ After "settle before a page load": the window is not a contiguous run of the list: [4, 5, 6, 7, 8, 9], expected [4, 6, 7, 8, 9, 10]
+↳ #302: the moved row keeps its old values at its old place
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() recorded a known issue at InstantInfiniteQueryLeadingRowsTests.swift:197:29: Issue recorded
+↳ After "load a page toward the top of the list": the window is not a contiguous run of the list: [1, 2, 3, 4, 5, 6], expected [1, 2, 3, 4, 6, 7]
+↳ #302: the moved row keeps its old values at its old place
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() recorded a known issue at InstantInfiniteQueryLeadingRowsTests.swift:197:29: Issue recorded
+↳ After "settle before a page load": the window is not a contiguous run of the list: [1, 2, 3, 4, 5, 6], expected [1, 2, 3, 4, 6, 7]
+↳ #302: the moved row keeps its old values at its old place
+━ Test aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns() passed after 301.414 seconds with 6 known issues.
+◇ Test theWindowFollowsALiveHeadWithinItsPageBound() started.
+✔ Test theWindowFollowsALiveHeadWithinItsPageBound() passed after 1.860 seconds.
+◇ Test theRecordingListReachesEveryRowWhenRowsMoveAboveItsFirstRow() started.
+✔ Test theRecordingListReachesEveryRowWhenRowsMoveAboveItsFirstRow() passed after 2.609 seconds.
+◇ Test slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 1, descending, 24 rows, pages of 3, window 2 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 2, ascending, 24 rows, pages of 3, window 1 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 3, descending, 30 rows, pages of 4, window 3 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 4, ascending, 17 rows, pages of 2, window 2 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 5, descending, 40 rows, pages of 5, window 4 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 6, descending, 20 rows, pages of 1, window 3 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 7, ascending, 36 rows, pages of 6, window 2 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+◇ Test case passing 1 argument scenario → seed 8, descending, 25 rows, pages of 3, window 6 to slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) started.
+✔ Test slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(scenario:) with 8 test cases passed after 37.500 seconds.
+━ Suite InstantInfiniteQueryLeadingRowsTests passed after 345.179 seconds with 6 known issues.
+━ Test run with 99 tests in 11 suites passed after 345.179 seconds with 7 known issues.

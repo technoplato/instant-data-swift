@@ -1,0 +1,84 @@
+build.sh: 1796-check2 runs on the Mac mini, slot 1 (cold), commit f6e30c554c01 (your uncommitted changes), tmux session build-79ad805f (ssh -t mini tmux -L build-jobs attach -t build-79ad805f); its output follows, stderr merged into stdout.
+open files: 10240
+f6e30c55 build.sh job 79ad805f-eeda-41bb-8c3f-57fed0d2d70a (1796-check2): the worktree as it was, on no branch
+a5b5174d test(#1796): the two-client test prints its lag distribution when it passes
+d7502832 green(#1796): an observer's registration names its query's namespace in the gate's phase
+fac02655 red(#1796): an observer's registration holds the gate without naming its query
+076ed107 test(#1796): a writer's lines reach a slow follower within seconds, and the lag stays flat
+75915233 green(#1796): the receive summary measures how old the newest server write is when it is applied
+882448d2 red(#1796): nothing measures how old the newest server write is when a follower applies it
+1fd79eb8 green(#1796): a one-shot read whose add-query met a dead socket waits for the reconnect
+red1=bd5d9017a2db1046fd7f33524431cedfba58799b green1=3f66c955573173fe52b654969d4433910ba01104 red2=25923d45812f517b08641df963ed8573821b30f4 green2=1fd79eb8020a6e57d14ae05badf1b2322851c4d8 red3=882448d2663185bcb732e910ecd122d16c8561e7 green3=75915233b31e7aaac8d48149284dbf03a71de407 test4=076ed107235b2bf129a889f879b73c87169c9176 merge=none red5=fac026557c20778bf06c46c34f66ece6fef5e905 green5=d75028325841410cff76307b1093d883c9b93180 head=f6e30c554c0125b6791c13ae1e9a1b9fed0bcbee
+== red1: sources at bd5d9017a2db1046fd7f33524431cedfba58799b
+== red1 exit 1
+✘ Test aWaitingRefreshLosesTheResultsANewerRefreshRestates() recorded an issue at InstantFollowerLatencyTests.swift:38:23: Issue recorded
+✘ Test aWaitingRefreshLosesTheResultsANewerRefreshRestates() failed after 0.002 seconds with 1 issue.
+✘ Test aWaitingRefreshKeepsTheResultsNoNewerRefreshRestates() recorded an issue at InstantFollowerLatencyTests.swift:53:23: Issue recorded
+✘ Test aWaitingRefreshKeepsTheResultsNoNewerRefreshRestates() failed after 0.001 seconds with 1 issue.
+✘ Test aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne() recorded an issue at InstantFollowerLatencyTests.swift:103:5: Expectation failed: !frames.readerIsWaitingForTesting
+✘ Test aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne() recorded an issue at InstantFollowerLatencyTests.swift:109:23: Issue recorded
+✘ Test aFullBufferMakesRoomWhenANewerRefreshReplacesAWaitingOne() failed after 0.013 seconds with 2 issues.
+✘ Test aFollowerBehindALongApplyAppliesTheNewestListOnceAndEveryAcknowledgement() recorded an issue at InstantFollowerLatencyTests.swift:168:25: Issue recorded
+✘ Test aFollowerBehindALongApplyAppliesTheNewestListOnceAndEveryAcknowledgement() failed after 0.092 seconds with 1 issue.
+✘ Test aOneShotReadQueuedBehindALongApplyIsAnswered() recorded an issue at InstantFollowerLatencyTests.swift:191:4: Caught error: [networkFailed] run Instant live query: Timed out after 5000ms waiting for Instant live transport.; fix: Check the Instant WebSocket endpoint, credentials, and server response.
+✘ Test aOneShotReadQueuedBehindALongApplyIsAnswered() failed after 6.603 seconds with 1 issue.
+✘ Suite InstantFollowerLatencyTests failed after 11.875 seconds with 6 issues.
+✘ Test run with 8 tests in 1 suite failed after 11.875 seconds with 6 issues.
+== red2: sources at 25923d45812f517b08641df963ed8573821b30f4
+== red2 exit 1
+✘ Test aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect() recorded an issue at InstantFollowerLatencyTests.swift:233:4: Caught error: Timed out waiting for the next socket to send the read's add-query.
+✘ Test aOneShotReadSentOnASocketThatJustDiedIsAnsweredAfterTheReconnect() failed after 60.052 seconds with 1 issue.
+✘ Suite InstantFollowerLatencyTests failed after 60.053 seconds with 1 issue.
+✘ Test run with 1 test in 1 suite failed after 60.053 seconds with 1 issue.
+== red3: sources at 882448d2663185bcb732e910ecd122d16c8561e7
+== red3 exit 1
+✘ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() recorded an issue at InstantFollowerLatencyTests.swift:136:23: Issue recorded
+✘ Test theBufferMeasuresHowOldTheNewestServerWriteIsWhenItIsApplied() failed after 0.002 seconds with 1 issue.
+✘ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() recorded an issue at InstantFollowerLatencyTests.swift:155:23: Issue recorded
+✘ Test theReceiveSummaryReportsHowOldTheNewestWritesWere() failed after 0.001 seconds with 1 issue.
+✘ Suite InstantFollowerLatencyTests failed after 0.004 seconds with 2 issues.
+✘ Test run with 2 tests in 1 suite failed after 0.004 seconds with 2 issues.
+== red4: sources at bd5d9017a2db1046fd7f33524431cedfba58799b
+== red4 exit 1
+#1796 two-client lags: 57 lines: median 29503 ms, p95 39175 ms, worst 40313 ms, newest 29502 ms
+✘ Test aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat() recorded an issue at InstantWriterFollowerLatencyTests.swift:164:7: Expectation failed: lags.worst <= 20_000
+↳ #1796: a writer's line reached the follower late: 57 lines: median 29503 ms, p95 39175 ms, worst 40313 ms, newest 29502 ms
+✘ Test aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat() recorded an issue at InstantWriterFollowerLatencyTests.swift:165:7: Expectation failed: lags.newest <= 8_000
+↳ #1796: the follower's lag grew while the writer recorded: 57 lines: median 29503 ms, p95 39175 ms, worst 40313 ms, newest 29502 ms
+✘ Test aWritersLinesReachASlowFollowerWithinSecondsAndTheLagStaysFlat() failed after 2.224 seconds with 2 issues.
+✘ Suite InstantWriterFollowerLatencyTests failed after 2.224 seconds with 2 issues.
+✘ Test run with 1 test in 1 suite failed after 2.224 seconds with 2 issues.
+== red5: sources at fac026557c20778bf06c46c34f66ece6fef5e905
+== red5 exit 1
+✘ Test aRegistrationsHoldNamesItsQuerysNamespace() recorded an issue at InstantObserverRegistrationGateTests.swift:214:23: Issue recorded
+✘ Test aRegistrationsHoldNamesItsQuerysNamespace() recorded an issue at InstantObserverRegistrationGateTests.swift:219:23: Issue recorded
+✘ Test aRegistrationsHoldNamesItsQuerysNamespace() failed after 0.057 seconds with 2 issues.
+✘ Suite InstantObserverRegistrationGateTests failed after 0.057 seconds with 2 issues.
+✘ Test run with 1 test in 1 suite failed after 0.057 seconds with 2 issues.
+== green: sources at f6e30c554c0125b6791c13ae1e9a1b9fed0bcbee
+== green exit 0
+#1796 two-client lags: 57 lines: median 3382 ms, p95 9434 ms, worst 13469 ms, newest 1500 ms
+━ Test run with 99 tests in 11 suites passed after 345.179 seconds with 7 known issues.
+== green exit 0 at f6e30c554c0125b6791c13ae1e9a1b9fed0bcbee
+== bundle: InstantSwiftDataCoreTests at f6e30c554c0125b6791c13ae1e9a1b9fed0bcbee against Tests/known-failing.txt
+== bundle run exit 0
+upstream instant e7101761: /Users/server/Library/Caches/instant-data-swift-known-failing/instant-e71017612aed4031710a35e2fcace30d38d557ac
+upstream sqlite-data 97987458: /Users/server/Library/Caches/instant-data-swift-known-failing/sqlite-data-97987458b49f0311717ecfbf7e8ac4c406afbf55
+building InstantSwiftDataCoreTests (-j 4)
+built InstantSwiftDataCoreTests: exit 0 in 2 s
+building instant-swift-data (-j 4)
+built instant-swift-data: exit 0 in 3 s
+running InstantSwiftDataCoreTests (timeout 2400 s)
+running 14 measurement tests alone, serially
+removed 1053 test stores from the temp dir (2143.9 MB)
+/Users/server/build/slots/1/instant-data-swift/.runs-1796/bundle: 1691 tests, 0 failing, 365 s (+14 measurements alone, 191 s), load 1.95-5.68 (mean 2.9)
+== bundle compare exit 0
+.runs-1796/bundle against Tests/known-failing.txt
+  run: servers-Mac-mini.local, 2026-11-05T04:39:48-05:00, 1691 tests, 0 failing, 365 s, 10 CPUs, 0 busy loops, load 1.95-5.68
+  failed and listed: 0
+  listed load-only, passed: 5
+  listed as failing idle, passed: 3 (fixed, or one that fails only some runs)
+    InstantLiveConnectionSurvivalTests/aScheduledReconnectReusesASessionThatOpenedAfterTheLoss()  [idle 1/3]
+    InstantMediaStreamOptimizationTests/binaryCodecRemovesBase64AndJSONCPU()  [idle 2/3]
+    SwiftConcurrencyGuidanceTests/uncheckedSendableConformancesDocumentProtectionMechanism()  [idle 1/3]
+  no new failures

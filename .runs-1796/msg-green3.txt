@@ -1,0 +1,12 @@
+green(#1796): the receive summary measures how old the newest server write is when it is applied
+
+Each refresh-ok carrying a fact newer than any applied before records, when its apply ends, this device's wall clock
+minus the newest fact's server time: the fourth element of its join-row triples, child nodes included, which the
+applier stores as txTime. An add-query answer restates what the server already holds, however old, so it only moves
+the mark; a waiting refresh whose results a newer one replaced leaves its mark to that frame. The summary logs the
+median, p95 and maximum once a minute, as a notice at 10 s or more.
+
+It reads as the lag a device following another one sees, plus the difference between the two clocks (a negative age
+counts as none). Cost: one walk of a result's triples on the reader, beside the decode the applier already does.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

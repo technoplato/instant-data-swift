@@ -1,0 +1,193 @@
+build.sh: 1796-check runs on the Mac mini, slot 1 (warm), commit dea1b94b6595 (your uncommitted changes), tmux session build-27392b02 (ssh -t mini tmux -L build-jobs attach -t build-27392b02); its output follows, stderr merged into stdout.
+open files: 10240
+dea1b94b build.sh job 27392b02-6d0c-453b-a376-d34c81a6c90b (1796-check): the worktree as it was, on no branch
+9d64a8e8 merge(#1796): main (v1.9.70) into the lane branch, so its check runs the code that ships
+cc02fcf2 docs(#1652): ledger: scribe 74f4f29da (steer refuses a run without the inbox hook)
+8af1ecd7 changelog(#1523): the ledger for 7b3ee47d (v1.9.70); the commit audit's entries; the memory lane's channel: re-merge on top
+7b3ee47d release(#1523): v1.9.70: the acknowledgement and the server apply find a write's receipt by its stored bytes again
+34458bef changelog(#1523): the ledger for 37790b67 (the acknowledgement's receipt found by stored bytes)
+37790b67 green(#1523): a server apply and the acknowledgements after it find a write's receipt by its stored bytes
+55d7997b docs(#1083): ledger: scribe dc733eb20 (root action cost) and a2be17609 (cut 262)
+red1=4eb24289aa9a53ea9db5111162729a5a8018ddfb green1=9bb6c99ee4014c4808ddda7771cf35f95af3ee2f red2=e6cff8c29250c9b2188a42cf911ece151a168186 green2=c6302e4468b210d5a4a17d130b23bc5fc3c66166 red3=57c36fa6e978d6f7e781ed0a3846499a108749b6 green3=216bac39e52a141f411ecdeebb447a30dfc044d4 test4=a1cac8b328f3a7318a639d2ab6b8c3a9b10012f1 merge=8f8a869a2ca05b04400bb5db2dbf3b975bd96075 red5=cb6c2a45073f94fc2ed167de416c4a8366167331 green5=e85397b90b7c2ea3a5bd976eb918faa86a96d198 head=dea1b94b65951b43f01bf6cbfd128467b3c15862
+== red1: sources at 4eb24289aa9a53ea9db5111162729a5a8018ddfb
+== red1 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:38:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:52:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:66:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:79:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:168:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== red2: sources at e6cff8c29250c9b2188a42cf911ece151a168186
+== red2 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:38:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:52:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:66:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:79:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:168:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== red3: sources at 57c36fa6e978d6f7e781ed0a3846499a108749b6
+== red3 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:40:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:54:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:68:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:81:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:220:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== red4: sources at 4eb24289aa9a53ea9db5111162729a5a8018ddfb
+== red4 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift:323:52: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                    `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== red5: sources at cb6c2a45073f94fc2ed167de416c4a8366167331
+== red5 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift:323:52: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                    `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green: sources at dea1b94b65951b43f01bf6cbfd128467b3c15862
+== green exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:40:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:54:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:68:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:81:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:220:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== the newest green did not build: falling back
+== green-7ad2e297: sources at 7ad2e297321710dccfaf3132c56424b19af18007
+== green-7ad2e297 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:40:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:54:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:68:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:81:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:220:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green-e85397b9: sources at e85397b90b7c2ea3a5bd976eb918faa86a96d198
+== green-e85397b9 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift:323:52: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                    `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green-8f8a869a: sources at 8f8a869a2ca05b04400bb5db2dbf3b975bd96075
+== green-8f8a869a exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWriterFollowerLatencyTests.swift:323:52: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                    `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green-216bac39: sources at 216bac39e52a141f411ecdeebb447a30dfc044d4
+== green-216bac39 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:40:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:54:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:68:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:81:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:105:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:220:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green-c6302e44: sources at c6302e4468b210d5a4a17d130b23bc5fc3c66166
+== green-c6302e44 exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:38:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:52:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:66:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:79:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:168:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green-9bb6c99e: sources at 9bb6c99ee4014c4808ddda7771cf35f95af3ee2f
+== green-9bb6c99e exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:38:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:52:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:66:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:79:17: [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                 `- [1;31merror: [1;39m'async' call in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:39: [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+    [0;36m|[0;0m                                       `- [1;31merror: [1;39mactor-isolated property 'values' can not be referenced from a nonisolated autoclosure[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:103:24: [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+    [0;36m|[0;0m                        `- [1;31merror: [1;39m'await' in an autoclosure that does not support concurrency[0;0m
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFollowerLatencyTests.swift:168:54: [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+    [0;36m|[0;0m                                                      `- [1;31merror: [1;39mtype 'InstantMaterializedValue?' has no member 'string'[0;0m
+error: Build failed
+error: fatalError
+== green exit 1 at nothing that builds
