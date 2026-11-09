@@ -1,0 +1,31 @@
+build.sh: 1797-1500-land-green runs on the Mac mini, slot 1 (cold), commit ea26bc4bbfc3 (your uncommitted changes), tmux session build-8a47661c (ssh -t mini tmux -L build-jobs attach -t build-8a47661c); its output follows, stderr merged into stdout.
+open files: 10240
+ea26bc4b build.sh job 8a47661c-5ead-40c4-9a2c-065b03edbd5c (1797-1500-land-green): the worktree as it was, on no branch
+== 1. the whole bundle at 74ffaf8b
+== bundle run exit 1
+upstream instant e7101761: /Users/server/Library/Caches/instant-data-swift-known-failing/instant-e71017612aed4031710a35e2fcace30d38d557ac
+upstream sqlite-data 97987458: /Users/server/Library/Caches/instant-data-swift-known-failing/sqlite-data-97987458b49f0311717ecfbf7e8ac4c406afbf55
+building InstantSwiftDataCoreTests (-j 6)
+built InstantSwiftDataCoreTests: exit 1 in 147 s
+swift build --product InstantSwiftDataCoreTests failed; see /Users/server/build/slots/1/instant-data-swift/.runs-1797/bundle/build.log
+== bundle compare exit 1
+.runs-1797/bundle has no summary.json; is it a run directory?
+== 2a. #1104 red at 6204d376
+== 1104 red exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift:14879:25: [1;31merror: [1;39moperator can throw but expression is not marked with 'try'[0;0m
+      [0;36m|[0;0m                         `- [1;31merror: [1;39moperator can throw but expression is not marked with 'try'[0;0m
+error: Build failed
+error: fatalError
+== 2b. #1105 red at 246b937f
+== 1105 red exit 1
+error: SwiftCompile normal arm64 /Users/server/build/slots/1/instant-data-swift/Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift failed with a nonzero exit code. Command line:     cd /Users/server/build/slots/1
+/Users/server/build/slots/1/instant-data-swift/Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift:14940:25: [1;31merror: [1;39moperator can throw but expression is not marked with 'try'[0;0m
+      [0;36m|[0;0m                         `- [1;31merror: [1;39moperator can throw but expression is not marked with 'try'[0;0m
+error: Build failed
+error: fatalError
+== 3a. the two-hour replay at 74ffaf8b: the sweep and unload in place
+== replay green exit 1
+== 3a'. S05's large-allocation sites at 74ffaf8b
+== s05 exit 0
+== 3b. the replay at #1145's red sources (213a7563): no sweep, closed results copied

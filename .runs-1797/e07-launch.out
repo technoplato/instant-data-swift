@@ -1,0 +1,3 @@
+building release tests into /Users/server/build/slots/1/instant-data-swift/.build/memory-exercises (log .runs-1797/e07-launch.log.build)
+running e07LaunchResident (INSTANT_MEMORY_EXERCISES=1 INSTANT_MEMORY_REPLAY=1 INSTANT_MEMORY_REPLAY_MINUTES=120) -> .runs-1797/e07-launch.log.e07LaunchResident_.out
+e07LaunchResident exit=1

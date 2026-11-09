@@ -1,0 +1,366 @@
+Building for debugging...
+[Computing dependencies]
+[Provisioning 2 / 164]
+[Pre-planning 1 / 4091]
+[Planning 1592 / 4091]
+[Planning 2991 / 4091]
+[Planning deferred tasks]
+[Constructing 4227 / 9018]
+[2 / 7] SwiftSyntax600
+[3 / 8] Dependencies
+[10 / 19] Dependencies
+[14 / 19] Dependencies
+[18 / 24] InstantSwiftDataCore
+[19 / 25] InstantSwiftDataCore
+[25 / 31] InstantSwiftDataSchema
+[27 / 33] InstantSwiftData
+[28 / 34] InstantSwiftData
+[31 / 37] AuthV3App
+[33 / 39] AppBuilderV3App
+[35 / 41] DependenciesTestSupport
+[37 / 42] DependenciesTestSupport
+[40 / 45] InstantSwiftDataCore
+[46 / 55] InstantSwiftDataCore
+[47 / 55] InstantSwiftDataCore
+[48 / 55] InstantSwiftDataCore
+[49 / 55] InstantSwiftDataCore
+[50 / 55] InstantSwiftDataCore
+[52 / 56] InstantSwiftDataCore
+[54 / 59] DependenciesTestSupport
+[61 / 63] AppBuilderV3AppTests-product
+[64 / 65] AppBuilderV3AppTests-product
+[66 / 66] AppBuilderV3AppTests-product
+[68 / 70] AuthV3AppTests-product
+[71 / 72] AuthV3AppTests-product
+[74 / 80] CloudKitDemoV3App
+[78 / 80] CloudKitDemoV3AppTests-product
+[81 / 82] CloudKitDemoV3AppTests-product
+[84 / 86] AppBuilderV3Executable
+[87 / 89] AuthV3Executable
+[90 / 92] CloudKitDemoV3Executable
+[93 / 95] SyncUpsV3App
+[96 / 98] StroopwafelV3App
+[99 / 101] TodosV3App
+[102 / 104] PresenceRecipesV3App
+[105 / 107] VoiceTrailV3App
+[108 / 110] MobileChatV3App
+[111 / 113] RemindersV3App
+[114 / 116] InstantSwiftDataTesting
+[117 / 119] InstantSwiftDataValidationRunner
+[120 / 122] MobileChatV3Executable
+[123 / 125] PresenceRecipesV3Executable
+[126 / 128] LinkedInfiniteV3App
+[129 / 131] RecipesV3App
+[132 / 134] RecipesV3Executable
+[135 / 137] RemindersV3CLIExecutable
+[144 / 350] voicetrail-v3-product
+[150 / 350] reminders-v3-cli-product
+[153 / 350] mobile-chat-v3-product
+[154 / 350] reminders-v3-product
+[156 / 350] instant-swift-data-benchmarks-product
+[158 / 350] instant-domain-aev-bench-product
+[158 / 350] mobile-chat-v3-product
+[160 / 350] auth-v3-product
+[161 / 350] instant-swift-data-validation-runner-product
+[162 / 350] instant-swift-data-product
+[164 / 352] instant-swift-data-product
+[165 / 352] TranscriptionApp
+[167 / 354] TodosV3Executable
+[169 / 354] SyncUpsV3Executable
+[172 / 353] StroopwafelV3Executable
+[176 / 352] ScribeShaped20sWriteBench
+[177 / 352] RemindersV3Executable
+[178 / 352] RemindersV3AppTests-product
+[180 / 352] PresenceRecipesV3AppTests-product
+[183 / 351] StroopwafelV3AppTests-product
+[187 / 351] InstantSwiftDataTestingTests-product
+[187 / 351] RemindersV3AppTests-product
+[192 / 351] InstantSwiftDataDomainAEVTests-product
+[193 / 351] InstantSwiftDataTests-product
+[199 / 353] InstantObservationExercise
+[201 / 353] InstantSwiftDataMedia
+[204 / 352] AuthV3App-product
+[216 / 352] scribe-shaped-20s-write-bench-product
+[227 / 356] stroopwafel-v3-product
+[229 / 367] scribe-shaped-20s-write-bench-product
+[231 / 368] scribe-shaped-20s-write-bench-product
+[239 / 371] recipes-v3-product
+[242 / 372] presence-recipes-v3-product
+[251 / 375] instant-domain-aev-bench-product
+[252 / 376] cloudkit-demo-v3-product
+[257 / 378] auth-v3-product
+[262 / 379] VoiceTrailV3AppTests-product
+[267 / 383] transcription-product
+[272 / 383] TodosV3AppTests-product
+[283 / 387] StroopwafelV3AppTests-product
+[284 / 387] StroopwafelV3AppTests-product
+[288 / 392] streams-v3-product
+[302 / 394] PresenceRecipesV3AppTests-product
+[312 / 398] MobileChatV3AppTests-product
+[316 / 399] InstantSwiftDataTestingTests-product
+[322 / 398] InstantSwiftDataDomainAEVTests-product
+[326 / 400] InstantSwiftDataSchemaTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift:361:11: [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m359 |[0;0m           atomicOperationGroups: entityGroups
+[0;36m360 |[0;0m         ) {
+[0;36m361 |[0;0m           [4;39mtry? await debugRuntime.transact(transaction, createdAt: now)[0;0m
+    [0;36m|[0;0m           `- [1;33mwarning: [1;39mresult of 'try?' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+[0;36m362 |[0;0m         }
+[0;36m363 |[0;0m       }
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[327 / 400] InstantSwiftDataCoreTests-product
+[330 / 405] InstantSwiftDataTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantResidencySweepTests.swift:196:23: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m194 |[0;0m       let window = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+[0;36m195 |[0;0m         InstantAutomaticOutboxClaimRequest(
+[0;36m196 |[0;0m           claimantID: await runtime.automaticDeliveryClaimantIDForTesting(),
+    [0;36m|[0;0m                       `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m197 |[0;0m           claimToken: token,
+[0;36m198 |[0;0m           now: InstantTimestamp(milliseconds: Int64(Date().timeIntervalSince1970 * 1_000)),
+[337 / 408] InstantSwiftDataCoreTests-product
+[340 / 408] instant-swift-data
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift:167:24: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m165 |[0;0m         let iterations = 8
+ [0;36m166 |[0;0m         let frames = await page.frames(count: 1 + 2 * iterations)
+ [0;36m167 |[0;0m         let contexts = await context.runtime.liveRefreshAttributeContextBuildCountForTesting()
+     [0;36m|[0;0m                        `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m168 |[0;0m         let writes = await context.runtime.liveQueryResultJSONWriteStatsForTesting()
+ [0;36m169 |[0;0m         let measurement = try await RealSizeMeter.measure("refresh-\(rows)", label: Self.label, iterations: iterations, warmup: 1) { index in
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/RealSize/MemoryExercises.swift:173:29: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m171 |[0;0m           try await context.waitApplies.wait(for: frames[index].tx)
+ [0;36m172 |[0;0m         }
+ [0;36m173 |[0;0m         let contextsAfter = await context.runtime.liveRefreshAttributeContextBuildCountForTesting()
+     [0;36m|[0;0m                             `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m174 |[0;0m         let writesAfter = await context.runtime.liveQueryResultJSONWriteStatsForTesting()
+ [0;36m175 |[0;0m         MemoryReport.print(
+[342 / 408] InstantSwiftDataCoreTests-product
+[343 / 408] instant-swift-data-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift:610:22: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m608 |[0;0m     await runtime.persistence.invalidateMemoryCache()
+ [0;36m609 |[0;0m 
+ [0;36m610 |[0;0m     let claimantID = await runtime.automaticDeliveryClaimantIDForTesting()
+     [0;36m|[0;0m                      `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m611 |[0;0m     let targetClaimToken = "row-addressed-target-claim"
+ [0;36m612 |[0;0m     await runtime.persistence.resetDecodedOutboxBodyCount()
+[348 / 410] InstantSwiftDataCoreTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantOutboxBTreeReadsTests.swift:106:20: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m104 |[0;0m     }
+[0;36m105 |[0;0m     // The waiting writes in delivery order; a write saved over one not yet sent may have replaced it (supersession).
+[0;36m106 |[0;0m     let claimant = await cycle.runtime.automaticDeliveryClaimantIDForTesting()
+    [0;36m|[0;0m                    `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m107 |[0;0m     var delivered = 0
+[0;36m108 |[0;0m     while delivered <= backlog.count {
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantOutboxBodyConversionTests.swift:32:20: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m30 |[0;0m     var cycle = try await StorageIOWriteCycle.make(label: "outbox-body-conversion", directory: run.directory, settings: settings)
+ [0;36m31 |[0;0m     let url = cycle.configuration.persistenceURL
+ [0;36m32 |[0;0m     let claimant = await cycle.runtime.automaticDeliveryClaimantIDForTesting()
+    [0;36m|[0;0m                    `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m33 |[0;0m 
+ [0;36m34 |[0;0m     // Refused writes, each with a body that spills over several pages.
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift:393:45: [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m391 |[0;0m       plans += [2, 5].map { size in
+[0;36m392 |[0;0m         InstantQueryPlan(
+[0;36m393 |[0;0m           id: "energy.newest.\(recording).\([4;39msize[0;0m)",
+    [0;36m|[0;0m                                             |- [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+    [0;36m|[0;0m                                             |- [1;39mnote: [1;39muse a default value parameter to avoid this warning[0;0m
+    [0;36m|[0;0m                                             |- [1;39mnote: [1;39mprovide a default value to avoid this warning[0;0m
+    [0;36m|[0;0m                                             `- [1;39mnote: [1;39muse 'String(describing:)' to silence this warning[0;0m
+[0;36m394 |[0;0m           namespace: Self.pageNamespace,
+[0;36m395 |[0;0m           filters: [.equals(field: "recordingID", value: .string(recording))],
+[349 / 410] InstantSwiftDataCore-product
+[355 / 411] InstantObservationExercise-product
+[359 / 411] SyncUpsV3AppTests-product
+[360 / 411] TodosV3AppTests-product
+[362 / 411] TodosV3AppTests-product
+[363 / 411] TodosV3AppTests-product
+[365 / 411] RemindersV3AppTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift:71:18: [1;33mwarning: [1;39m'init(connect:)' is deprecated: Use InstantLiveTransportClient.connectionAttempts and provide a synchronous abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+  [0;36m69 |[0;0m   func legacyClientIsRejectedBeforeConnectClosureRuns() async throws {
+  [0;36m70 |[0;0m     let connectorStarts = InstantLiveAbandonmentProbe()
+  [0;36m71 |[0;0m     let client = InstantLiveTransportClient { _ in
+     [0;36m|[0;0m                  `- [1;33mwarning: [1;39m'init(connect:)' is deprecated: Use InstantLiveTransportClient.connectionAttempts and provide a synchronous abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+  [0;36m72 |[0;0m       connectorStarts.increment()
+  [0;36m73 |[0;0m       throw InstantLiveStreamTestError.pushFailed
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift:351:25: [1;33mwarning: [1;39m'init(send:receive:close:)' is deprecated: Custom live transports must provide the four-closure initializer's immediate abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+ [0;36m349 |[0;0m   func directAttemptRejectsLegacyReturnedSession() async throws {
+ [0;36m350 |[0;0m     let connectorAborts = InstantLiveAbandonmentProbe()
+ [0;36m351 |[0;0m     let legacySession = InstantLiveWebSocketSession(
+     [0;36m|[0;0m                         `- [1;33mwarning: [1;39m'init(send:receive:close:)' is deprecated: Custom live transports must provide the four-closure initializer's immediate abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+ [0;36m352 |[0;0m       send: { _ in },
+ [0;36m353 |[0;0m       receive: { throw CancellationError() },
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift:733:18: [1;33mwarning: [1;39m'init(connect:)' is deprecated: Use InstantLiveTransportClient.connectionAttempts and provide a synchronous abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+ [0;36m731 |[0;0m     let connectorStarts = InstantLiveAbandonmentProbe()
+ [0;36m732 |[0;0m     let decoratorStarts = InstantLiveAbandonmentProbe()
+ [0;36m733 |[0;0m     let legacy = InstantLiveTransportClient { _ in
+     [0;36m|[0;0m                  `- [1;33mwarning: [1;39m'init(connect:)' is deprecated: Use InstantLiveTransportClient.connectionAttempts and provide a synchronous abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+ [0;36m734 |[0;0m       connectorStarts.increment()
+ [0;36m735 |[0;0m       throw CancellationError()
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift:880:25: [1;33mwarning: [1;39m'init(send:receive:close:)' is deprecated: Custom live transports must provide the four-closure initializer's immediate abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+ [0;36m878 |[0;0m     let probe = InstantLiveSessionIOProbe()
+ [0;36m879 |[0;0m     let attemptAborts = InstantLiveAbandonmentProbe()
+ [0;36m880 |[0;0m     let legacySession = InstantLiveWebSocketSession(
+     [0;36m|[0;0m                         `- [1;33mwarning: [1;39m'init(send:receive:close:)' is deprecated: Custom live transports must provide the four-closure initializer's immediate abort operation.[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration\DeprecatedDeclaration]8;;\]
+ [0;36m881 |[0;0m       send: { _ in probe.recordSend() },
+ [0;36m882 |[0;0m       receive: {
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsDeviceStoreTests.swift:85:21: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m83 |[0;0m     let window = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+ [0;36m84 |[0;0m       InstantAutomaticOutboxClaimRequest(
+ [0;36m85 |[0;0m         claimantID: await runtime.automaticDeliveryClaimantIDForTesting(),
+    [0;36m|[0;0m                     `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m86 |[0;0m         claimToken: claimToken,
+ [0;36m87 |[0;0m         now: deviceStamp,
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[367 / 411] RecipesV3AppTests-product
+[371 / 411] MobileChatV3AppTests-product
+[376 / 411] InstantSwiftDataTestingTests-product
+[379 / 411] InstantSwiftDataDomainAEVTests-product
+[385 / 410] TranscriptionExecutable
+[390 / 412] StreamsV3AppTests-product
+[391 / 412] transcription-product
+[398 / 411] TranscriptionExecutable
+[402 / 410] RemindersV3AppTests-product
+[405 / 411] InstantSwiftDataTestingTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantPersistenceCacheResidencyTests.swift:328:22: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m326 |[0;0m       cacheResidencyWrite(id: "refused-write", entityID: "refused-entity", milliseconds: 40_001)
+ [0;36m327 |[0;0m     )
+ [0;36m328 |[0;0m     let claimantID = await runtime.automaticDeliveryClaimantIDForTesting()
+     [0;36m|[0;0m                      `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m329 |[0;0m     let claim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+ [0;36m330 |[0;0m       InstantAutomaticOutboxClaimRequest(
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantPersistenceCacheResidencyTests.swift:385:22: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m383 |[0;0m       cacheResidencyWrite(id: "refused-write", entityID: "large-entity-17", milliseconds: 40_001)
+ [0;36m384 |[0;0m     )
+ [0;36m385 |[0;0m     let claimantID = await runtime.automaticDeliveryClaimantIDForTesting()
+     [0;36m|[0;0m                      `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m386 |[0;0m     _ = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+ [0;36m387 |[0;0m       InstantAutomaticOutboxClaimRequest(
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift:560:15: [1;33mwarning: [1;39mresult of call to 'instantLiveWithTimeout(operation:timeoutMilliseconds:onAbandon:sleep:_:)' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+ [0;36m558 |[0;0m       )
+ [0;36m559 |[0;0m     )
+ [0;36m560 |[0;0m     try await instantLiveWithTimeout(
+     [0;36m|[0;0m               `- [1;33mwarning: [1;39mresult of call to 'instantLiveWithTimeout(operation:timeoutMilliseconds:onAbandon:sleep:_:)' is unused[0;0m [#]8;;https://docs.swift.org/compiler/documentation/diagnostics/no-usage\NoUsage]8;;\]
+ [0;36m561 |[0;0m       operation: "wait for seed server acceptance",
+ [0;36m562 |[0;0m       timeoutMilliseconds: InstantTestWait.hangMilliseconds
+
+[#NoUsage]: <https://docs.swift.org/compiler/documentation/diagnostics/no-usage>
+[406 / 412] StreamsV3AppTests-product
+[408 / 413] StreamsV3AppTests-product
+[410 / 414] InstantSwiftDataMediaTests-product
+[412 / 416] app-builder-v3-product
+[415 / 419] cloudkit-demo-v3-product
+[417 / 421] mobile-chat-v3-product
+[419 / 423] presence-recipes-v3-product
+[421 / 425] recipes-v3-product
+[423 / 427] reminders-v3-product
+[425 / 429] reminders-v3-cli-product
+[427 / 431] stroopwafel-v3-product
+[429 / 433] syncups-v3-product
+[433 / 437] voicetrail-v3-product
+[435 / 439] todos-v3-product
+[439 / 443] instant-swift-data-validation-runner-product
+[443 / 447] scribe-shaped-20s-write-bench-product
+[447 / 451] instant-domain-aev-bench-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:715:21: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m713 |[0;0m     let window = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+ [0;36m714 |[0;0m       InstantAutomaticOutboxClaimRequest(
+ [0;36m715 |[0;0m         claimantID: await runtime.automaticDeliveryClaimantIDForTesting(),
+     [0;36m|[0;0m                     `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+ [0;36m716 |[0;0m         claimToken: token,
+ [0;36m717 |[0;0m         now: InstantTimestamp(milliseconds: claimMilliseconds),
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:1033:64: [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m1031 |[0;0m       outbox: state.snapshot.outbox
+[0;36m1032 |[0;0m         .sorted(by: PendingMutation.creationOrder)
+[0;36m1033 |[0;0m         .map { Write(id: $0.id, status: $0.status, overlay: "\([4;39m$0.optimisticOverlayState[0;0m)") }
+     [0;36m|[0;0m                                                                |  |- [1;39mnote: [1;39muse a default value parameter to avoid this warning[0;0m
+     [0;36m|[0;0m                                                                |  |- [1;39mnote: [1;39mprovide a default value to avoid this warning[0;0m
+     [0;36m|[0;0m                                                                |  `- [1;39mnote: [1;39muse 'String(describing:)' to silence this warning[0;0m
+     [0;36m|[0;0m                                                                `- [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m1034 |[0;0m     )
+[0;36m1035 |[0;0m   }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:1828:47: [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+[0;36m1826 |[0;0m       let refused = observation.outbox.first { $0.id == refusedID }
+[0;36m1827 |[0;0m       expectNoDifference(refused?.status, .failed)
+[0;36m1828 |[0;0m       expectNoDifference(refused?.overlay, "\([4;39mOptional(InstantOptimisticOverlayState.removed)[0;0m)")
+     [0;36m|[0;0m                                               |- [1;33mwarning: [1;39mstring interpolation produces a debug description for an optional value; did you mean to make this explicit?[0;0m
+     [0;36m|[0;0m                                               |- [1;39mnote: [1;39muse a default value parameter to avoid this warning[0;0m
+     [0;36m|[0;0m                                               |- [1;39mnote: [1;39mprovide a default value to avoid this warning[0;0m
+     [0;36m|[0;0m                                               `- [1;39mnote: [1;39muse 'String(describing:)' to silence this warning[0;0m
+[0;36m1829 |[0;0m     }
+[0;36m1830 |[0;0m   }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:1948:21: [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m1946 |[0;0m     let window = try await fixture.runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+[0;36m1947 |[0;0m       InstantAutomaticOutboxClaimRequest(
+[0;36m1948 |[0;0m         claimantID: await fixture.runtime.automaticDeliveryClaimantIDForTesting(),
+     [0;36m|[0;0m                     `- [1;33mwarning: [1;39mno 'async' operations occur within 'await' expression[0;0m
+[0;36m1949 |[0;0m         claimToken: "later-stamp-claim",
+[0;36m1950 |[0;0m         now: InstantTimestamp(milliseconds: fixture.claimMilliseconds)
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift:2198:11: [1;33mwarning: [1;39mvariable 'fixture' was never mutated; consider changing to 'let' constant[0;0m
+[0;36m2196 |[0;0m     var fixtures: [FastDrainFixture] = []
+[0;36m2197 |[0;0m     for reduces in [true, false] {
+[0;36m2198 |[0;0m       var fixture = try await FastDrainFixture.make(
+     [0;36m|[0;0m           `- [1;33mwarning: [1;39mvariable 'fixture' was never mutated; consider changing to 'let' constant[0;0m
+[0;36m2199 |[0;0m         suffix: "unset-removal-\(removal.rawValue)-\(reduces)", serverSegmentCount: 6, pendingSegmentCount: 2,
+[0;36m2200 |[0;0m         reducesServerApply: reduces, previewUnsetField: true
+[448 / 454] InstantSwiftDataCoreTests-product
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift:4195:5: [1;33mwarning: [1;39mno calls to throwing functions occur within 'try' expression[0;0m
+[0;36m4193 |[0;0m   func aFrameThatStopsWorkingIsStillTreatedAsStuckAfterTheDeferralLimit() async throws {
+[0;36m4194 |[0;0m     var outcome: HeldFrameOutcome?
+[0;36m4195 |[0;0m     try await withKnownIssue {
+     [0;36m|[0;0m     `- [1;33mwarning: [1;39mno calls to throwing functions occur within 'try' expression[0;0m
+[0;36m4196 |[0;0m       outcome = try await holdAFramePastTheDeferralLimit(prefix: "ack-stuck-frame", reportsProgress: false)
+[0;36m4197 |[0;0m     }
+
+/Users/server/build/slots/1/instant-data-swift/Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift:359:9: [1;33mwarning: [1;39mvariable 'accepted' was never mutated; consider changing to 'let' constant[0;0m
+ [0;36m357 |[0;0m   @Test
+ [0;36m358 |[0;0m   func emptyServerOperationPrunesWatermarkWithoutDecodingABody() async throws {
+ [0;36m359 |[0;0m     var accepted = boundedServerApplyMutation(
+     [0;36m|[0;0m         `- [1;33mwarning: [1;39mvariable 'accepted' was never mutated; consider changing to 'let' constant[0;0m
+ [0;36m360 |[0;0m       id: "accepted",
+ [0;36m361 |[0;0m       position: 1,
+[450 / 454] InstantSwiftDataCoreTests-product
+[452 / 454] InstantSwiftDataCoreTests-product
+Build complete! (75.44 sec)
+◇ Test run started.
+↳ Testing Library Version: 2067.1
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite InstantLaunchResidencyTests started.
+◇ Test aRelaunchHoldsTheNewestStoredResultsAndReadsAnOlderOneFromDisk() started.
+✔ Test aRelaunchHoldsTheNewestStoredResultsAndReadsAnOlderOneFromDisk() passed after 0.081 seconds.
+◇ Test aRelaunchFindsTheEntitiesItLoadsInOwnershipRowsWithoutReadingAStoredResult() started.
+✘ Test aRelaunchFindsTheEntitiesItLoadsInOwnershipRowsWithoutReadingAStoredResult() recorded an issue at InstantLaunchResidencyTests.swift:65:5: Expectation failed: metrics.storedLiveQueryResultReadCount == 0
+↳ stored results the launch read whole
+↳ metrics.storedLiveQueryResultReadCount == 0 → false
+↳   metrics.storedLiveQueryResultReadCount → 2
+✘ Test aRelaunchFindsTheEntitiesItLoadsInOwnershipRowsWithoutReadingAStoredResult() failed after 0.222 seconds with 1 issue.
+↳ /// A relaunch reads the entities its loaded results own from their ownership rows in one statement (#1149).
+↳ ///
+↳ /// It read each loaded result whole, every ownership row decoded into a fact, and ran the query's nested limits over
+↳ /// those facts again, to find the same entities: a save stores ownership only of the facts the nested limits keep.
+↳ /// Then it bound every one of them as a parameter of the facts' read. On the #1075 phone-sized store the launch
+↳ /// allocated 370 MB to load 54,720 facts (E07, 2026-10-25).
+✘ Suite InstantLaunchResidencyTests failed after 0.304 seconds with 1 issue.
+↳ /// A relaunch holds the newest stored results, not every one (#1107, #1149).
+↳ ///
+↳ /// A launch loaded every stored result's entities into memory, open or not: on a phone (2026-11-04, the consuming app's
+↳ /// build 253) 46 results held 1,915 entities and 48,202 facts after each relaunch, where the newest ten hold 677 and
+↳ /// 31,070. Upstream `PersistedObject` preloads the `preloadEntryCount` most recently updated query results
+↳ /// (`Reactor.js` passes 10) and loads any other when its query subscribes (`waitForKeyToLoad`). Results are unloaded
+↳ /// where they are (#1500), so a launch unloads the older ones with one write, and each reloads from disk when its query
+↳ /// subscribes again, before the server answers.
+✘ Test run with 2 tests in 1 suite failed after 0.304 seconds with 1 issue.
+Note: Some test targets reported failures:
+  - InstantSwiftDataCoreTests (Swift Testing)

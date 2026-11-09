@@ -1,0 +1,228 @@
+build.sh: 1797-1500-land-green runs on the Mac mini, slot 1 (warm), commit 097fa1a6265a (your uncommitted changes), tmux session build-1c32f722 (ssh -t mini tmux -L build-jobs attach -t build-1c32f722); its output follows, stderr merged into stdout.
+open files: 10240
+097fa1a6 build.sh job 1c32f722-29c4-44d5-bade-1cd5db13b879 (1797-1500-land-green): the worktree as it was, on no branch
+== 1. the whole bundle at f504ed51
+-- at f504ed51
+== M2 bundle run exit 0
+built instant-swift-data: exit 0 in 19 s
+running InstantSwiftDataCoreTests (timeout 2400 s)
+running 14 measurement tests alone, serially
+removed 994 test stores from the temp dir (1911.2 MB)
+/Users/server/build/slots/1/instant-data-swift/.runs-1797/bundle: 1694 tests, 23 failing, 374 s (+14 measurements alone, 193 s), load 0.95-6.76 (mean 2.6)
+== M2 bundle compare exit 1
+    InstantLiveQueryCompactOwnershipTests/aConversionInterruptedBeforeItsCommitIsRedoneWholeAtTheNextOpen()
+      InstantLiveQueryCompactOwnershipTests.swift:137: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aConversionOf10000LongKeyedRowsFitsTheOpenBudget()
+      InstantLiveQueryCompactOwnershipTests.swift:194: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aNewStoreKeysOwnershipByAnIntegerQueryID()
+      InstantLiveQueryCompactOwnershipTests.swift:30: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aStoreIn0011sLayoutConvertsAtOpenAndAnswersEveryOwnershipReadAsBefore()
+      InstantLiveQueryCompactOwnershipTests.swift:84: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/anOwnershipRowWhoseResultIsMissingIsCountedAndNotCopied()
+      InstantLiveQueryCompactOwnershipTests.swift:166: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantObserverRegistrationGateTests/aReloadBeginsFromTheRowStoredNowNotTheOneItRead()
+      InstantObserverRegistrationGateTests.swift:126: Expectation failed: try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") → nil
+    InstantObserverRegistrationGateTests/aReloadChunkWritesNothingOnceAServerAnswerReplacedItsRow()
+      InstantObserverRegistrationGateTests.swift:145: Expectation failed: try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") → nil
+    InstantPruneCostTests/aPruneOnAFortyThousandFactStoreCopiesNothingTheSizeOfTheStore()
+      InstantPruneCostTests.swift:48: Issue recorded Difference: … [ + [0]: "closed-result-0", + [1]: "closed-result-1", + [2]: "closed-result-10", + [3]: "closed-result-11", + [4]: "closed-result-12", + [5]: "closed-result-13", + [6]: "closed-result-14", + [7]: "closed-result-15", + [8]: "closed-result-16", + [9]: "closed-result-17", + [10]: "closed-result-18", + [11]: "closed-result-19", + [12]: "closed-result-2", + [13]: "closed-re
+    InstantPruneGateHoldTests/aLocalWriteWaitsForOnePruneBatchNotTheWholePrune()
+      InstantPruneGateHoldTests.swift:214: Expectation failed: outcome.batches >= 5 outcome.batches >= 5 → false outcome.batches → 1
+    InstantPruneGateHoldTests/withoutABatchBoundTheWriteWaitsForTheWholePrune()
+      InstantPruneGateHoldTests.swift:228: Issue recorded Difference: … − 24 + 0 (First: −, Second: +)
+    InstantPruneMaintenanceActivityTests/aPruneThatFinishesInsideItsActivityEndsIt()
+      InstantPruneMaintenanceActivityTests.swift:139: Issue recorded Difference: … − 0 + 24 (First: −, Second: +)
+    InstantPruneOffTheApplierTests/aBatchDecodesAgainAResultRestatedSinceItsReadAhead()
+      InstantPruneOffTheApplierTests.swift:132: Expectation failed: batch.removedQueryKeys == ["query-closed"] batch.removedQueryKeys == ["query-closed"] → false batch.removedQueryKeys → []
+    InstantPruneOffTheApplierTests/aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem()
+      InstantPruneOffTheApplierTests.swift:178: Expectation failed: rowsAfterPrune == 0 the prune left 452 ownership rows of the released result rowsAfterPrune == 0 → false rowsAfterPrune → 452
+    InstantPruneOffTheApplierTests/aReleasedRowACrashLeftIsCheckedWhenTheStoreOpensAgain()
+      InstantPruneOffTheApplierTests.swift:269: Expectation failed: batch.removedQueryKeys == ["inactive-result-0"] batch.removedQueryKeys == ["inactive-result-0"] → false batch.removedQueryKeys → []
+    InstantPruneOffTheApplierTests/aResultLargerThanABatchIsReleasedOverSeveralBatches()
+      InstantPruneOffTheApplierTests.swift:92: Expectation failed: batches.count >= InstantPruneGateHoldTests.resultCount * 4 #1129: 1 batches for 24 results of about 450 facts each batches.count >= InstantPruneGateHoldTests.resultCount * 4 → false batches.count → 1 InstantPruneGateHoldTests.resultCount * 4 → 96
+    InstantPruneResidencyCostTests/aBatchReadsTheFactsOnlyOfEntitiesItCanDrop()
+      InstantPruneResidencyCostTests.swift:135: Issue recorded Difference: … − 0 + 25 (First: −, Second: +)
+    InstantStoredFileLookupTests/downloadByIDQueriesOnlyThatFile(accountFileCount:)
+      InstantStoredFileLookupTests.swift:60: Issue recorded Difference: … − 0 + 4 (First: −, Second: +)
+    InstantStoredResultReloadTests/aSavedResultSupersedesItsUnloadedCopy()
+      InstantStoredResultReloadTests.swift:280: Expectation failed: try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil → <not evaluated>
+    InstantStoredResultReloadTests/thePolicyCollectsUnloadedResultsOldestFirst()
+      InstantStoredResultReloadTests.swift:232: Issue recorded Difference: … [ + [0]: "query-0", + [1]: "query-1", + [2]: "query-2", + [3]: "query-3" ] (First: −, Second: +)
+    StorageIOExercises/closingAQuerysResultWritesNoTemporaryFile()
+      InstantTemporaryStoreTests.swift:101: Issue recorded Difference: … [ [0]: "query-open-page" − [1]: "query-closed-page" ] (First: −, Second: +)
+== 2. the whole bundle at #1107's green and #1149's launch read 518b7418
+-- at 518b7418
+== LAUNCH bundle run exit 0
+built instant-swift-data: exit 0 in 22 s
+running InstantSwiftDataCoreTests (timeout 2400 s)
+running 14 measurement tests alone, serially
+removed 1019 test stores from the temp dir (2016.9 MB)
+/Users/server/build/slots/1/instant-data-swift/.runs-1797/bundle-launch: 1696 tests, 25 failing, 367 s (+14 measurements alone, 194 s), load 1.22-5.81 (mean 2.5)
+== LAUNCH bundle compare exit 1
+    InstantLiveQueryCompactOwnershipTests/aConversionOf10000LongKeyedRowsFitsTheOpenBudget()
+      InstantLiveQueryCompactOwnershipTests.swift:194: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aNewStoreKeysOwnershipByAnIntegerQueryID()
+      InstantLiveQueryCompactOwnershipTests.swift:30: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aStoreIn0011sLayoutConvertsAtOpenAndAnswersEveryOwnershipReadAsBefore()
+      InstantLiveQueryCompactOwnershipTests.swift:84: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/anOwnershipRowWhoseResultIsMissingIsCountedAndNotCopied()
+      InstantLiveQueryCompactOwnershipTests.swift:166: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantObserverRegistrationGateTests/aReloadBeginsFromTheRowStoredNowNotTheOneItRead()
+      InstantObserverRegistrationGateTests.swift:126: Expectation failed: try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") → nil
+    InstantObserverRegistrationGateTests/aReloadChunkWritesNothingOnceAServerAnswerReplacedItsRow()
+      InstantObserverRegistrationGateTests.swift:145: Expectation failed: try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") → nil
+    InstantPruneCostTests/aPruneOnAFortyThousandFactStoreCopiesNothingTheSizeOfTheStore()
+      InstantPruneCostTests.swift:48: Issue recorded Difference: … [ + [0]: "closed-result-0", + [1]: "closed-result-1", + [2]: "closed-result-10", + [3]: "closed-result-11", + [4]: "closed-result-12", + [5]: "closed-result-13", + [6]: "closed-result-14", + [7]: "closed-result-15", + [8]: "closed-result-16", + [9]: "closed-result-17", + [10]: "closed-result-18", + [11]: "closed-result-19", + [12]: "closed-result-2", + [13]: "closed-re
+    InstantPruneGateHoldTests/aLocalWriteWaitsForOnePruneBatchNotTheWholePrune()
+      InstantPruneGateHoldTests.swift:214: Expectation failed: outcome.batches >= 5 outcome.batches >= 5 → false outcome.batches → 1
+    InstantPruneGateHoldTests/withoutABatchBoundTheWriteWaitsForTheWholePrune()
+      InstantPruneGateHoldTests.swift:228: Issue recorded Difference: … − 24 + 0 (First: −, Second: +)
+    InstantPruneMaintenanceActivityTests/aPruneThatFinishesInsideItsActivityEndsIt()
+      InstantPruneMaintenanceActivityTests.swift:139: Issue recorded Difference: … − 0 + 24 (First: −, Second: +)
+    InstantPruneOffTheApplierTests/aBatchDecodesAgainAResultRestatedSinceItsReadAhead()
+      InstantPruneOffTheApplierTests.swift:132: Expectation failed: batch.removedQueryKeys == ["query-closed"] batch.removedQueryKeys == ["query-closed"] → false batch.removedQueryKeys → []
+    InstantPruneOffTheApplierTests/aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem()
+      InstantPruneOffTheApplierTests.swift:178: Expectation failed: rowsAfterPrune == 0 the prune left 452 ownership rows of the released result rowsAfterPrune == 0 → false rowsAfterPrune → 452
+    InstantPruneOffTheApplierTests/aMarkAnEarlierBuildLeftIsFinishedWhenTheStoreOpensAgain()
+      InstantPruneOffTheApplierTests.swift:347: Expectation failed: survivors.contains("prune-todo-150") a result still stored keeps its facts survivors.contains("prune-todo-150") → false survivors → ["prune-todo-2185", "prune-todo-3489", "prune-todo-2283", "prune-todo-2313", "prune-todo-2492", "prune-todo-3433", "prune-todo-3588", "prune-todo-2388", "prune-todo-2100", "prune-todo-2195", "prune-todo-2942", "prune-todo-2456", "prune-todo-2451", 
+    InstantPruneOffTheApplierTests/aReleasedRowACrashLeftIsCheckedWhenTheStoreOpensAgain()
+      InstantPruneOffTheApplierTests.swift:269: Expectation failed: batch.removedQueryKeys == ["inactive-result-0"] batch.removedQueryKeys == ["inactive-result-0"] → false batch.removedQueryKeys → []
+    InstantPruneOffTheApplierTests/aResultLargerThanABatchIsReleasedOverSeveralBatches()
+      InstantPruneOffTheApplierTests.swift:92: Expectation failed: batches.count >= InstantPruneGateHoldTests.resultCount * 4 #1129: 1 batches for 24 results of about 450 facts each batches.count >= InstantPruneGateHoldTests.resultCount * 4 → false batches.count → 1 InstantPruneGateHoldTests.resultCount * 4 → 96
+    InstantPruneResidencyCostTests/aBatchReadsTheFactsOnlyOfEntitiesItCanDrop()
+      InstantPruneResidencyCostTests.swift:135: Issue recorded Difference: … − 0 + 25 (First: −, Second: +)
+    InstantStoredFileLookupTests/downloadByIDQueriesOnlyThatFile(accountFileCount:)
+      InstantStoredFileLookupTests.swift:60: Issue recorded Difference: … − 0 + 4 (First: −, Second: +)
+    InstantStoredResultReloadTests/aSavedResultSupersedesItsUnloadedCopy()
+      InstantStoredResultReloadTests.swift:280: Expectation failed: try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil → <not evaluated>
+    InstantStoredResultReloadTests/thePolicyCollectsUnloadedResultsOldestFirst()
+      InstantStoredResultReloadTests.swift:232: Issue recorded Difference: … [ + [0]: "query-0", + [1]: "query-1", + [2]: "query-2", + [3]: "query-3" ] (First: −, Second: +)
+    StorageIOExercises/closingAQuerysResultWritesNoTemporaryFile()
+      InstantTemporaryStoreTests.swift:101: Issue recorded Difference: … [ [0]: "query-open-page" − [1]: "query-closed-page" ] (First: −, Second: +)
+== launch gate 1
+== 2a. #1104 red at 277a9203
+-- at 277a9203
+== 1104 red exit 1
+✘ Test "Eviction reads only the records it names, and the storage snapshot counts copies without reading records" recorded an issue at InstantStoredFileEvictionTests.swift:148:5: Expectation failed: evictionReads == 1
+✘ Test "Eviction reads only the records it names, and the storage snapshot counts copies without reading records" recorded an issue at InstantStoredFileEvictionTests.swift:155:5: Expectation failed: snapshotReads == 0
+✘ Test "Eviction reads only the records it names, and the storage snapshot counts copies without reading records" failed after 0.078 seconds with 2 issues.
+✘ Suite InstantStoredFileEvictionTests failed after 0.251 seconds with 2 issues.
+✘ Test run with 4 tests in 1 suite failed after 0.252 seconds with 2 issues.
+== 2b. #1105 red at dfe16998
+-- at dfe16998
+== 1105 red exit 1
+✘ Test "This device's file records are read without decoding their JSON, and read as the decoder read them" recorded an issue at InstantStoredFileEvictionTests.swift:198:5: Expectation failed: metrics.storedFileRecordJSONDecodeCount == 0
+✘ Test "This device's file records are read without decoding their JSON, and read as the decoder read them" failed after 0.046 seconds with 1 issue.
+✘ Suite InstantStoredFileEvictionTests failed after 0.296 seconds with 1 issue.
+✘ Test run with 5 tests in 1 suite failed after 0.296 seconds with 1 issue.
+== 2c. #1107 red at 9da1fbf5
+-- at 9da1fbf5
+== 1107 red exit 1
+✘ Test aRelaunchHoldsTheNewestStoredResultsAndReadsAnOlderOneFromDisk() recorded an issue at InstantLaunchResidencyTests.swift:67:23: Issue recorded
+✘ Test aRelaunchHoldsTheNewestStoredResultsAndReadsAnOlderOneFromDisk() failed after 0.134 seconds with 1 issue.
+✘ Suite InstantLaunchResidencyTests failed after 0.134 seconds with 1 issue.
+✘ Test run with 1 test in 1 suite failed after 0.135 seconds with 1 issue.
+== 2d. #1149's launch-read red at 44fc0c03
+-- at 44fc0c03
+== 1149 red exit 1
+✘ Test aRelaunchFindsTheEntitiesItLoadsInOwnershipRowsWithoutReadingAStoredResult() recorded an issue at InstantLaunchResidencyTests.swift:65:5: Expectation failed: metrics.storedLiveQueryResultReadCount == 0
+✘ Test aRelaunchFindsTheEntitiesItLoadsInOwnershipRowsWithoutReadingAStoredResult() failed after 0.222 seconds with 1 issue.
+✘ Suite InstantLaunchResidencyTests failed after 0.304 seconds with 1 issue.
+✘ Test run with 2 tests in 1 suite failed after 0.304 seconds with 1 issue.
+== 3a. the two-hour replay at f504ed51: the sweep and unload in place
+-- at f504ed51
+== replay green exit 0
+MEMORY-REPLAY phone minute=5 footprintMB=228.7 footprintPeakMB=231.3 heapMB=98.9 triples=55559 observers=51 pending=0 writes=312 uploads=51 emissions=495 framesIn=615 bytesInMB=46.4 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=4.0 ms.chunkRow=9 ms.final=1098 ms.heartbeat=948 ms.interim=193 ms.other=4 ms.poll=4 ms.route=22 ms.scan=10 m
+MEMORY-REPLAY phone minute=30 footprintMB=185.1 footprintPeakMB=188.4 heapMB=102.1 triples=56039 observers=51 pending=0 writes=1867 uploads=306 emissions=3206 framesIn=3472 bytesInMB=274.7 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=2 wallS=23.9 ms.chunkRow=21 ms.final=1442 ms.heartbeat=996 ms.interim=243 ms.other=4 ms.poll=2 ms.route=24 ms.
+MEMORY-REPLAY phone minute=60 footprintMB=132.6 footprintPeakMB=135.7 heapMB=102.9 triples=56339 observers=51 pending=0 writes=3733 uploads=612 emissions=6476 framesIn=6890 bytesInMB=548.0 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=48.3 ms.chunkRow=13 ms.final=1446 ms.heartbeat=983 ms.interim=262 ms.other=4 ms.poll=2 ms.reconnect=47
+MEMORY-REPLAY phone minute=90 footprintMB=120.2 footprintPeakMB=123.8 heapMB=103.4 triples=56552 observers=51 pending=0 writes=5599 uploads=918 emissions=9746 framesIn=10256 bytesInMB=814.4 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=72.2 ms.chunkRow=13 ms.final=1434 ms.heartbeat=1002 ms.interim=245 ms.other=4 ms.poll=2 ms.route=24 m
+MEMORY-REPLAY phone minute=120 footprintMB=123.5 footprintPeakMB=126.9 heapMB=104.2 triples=56939 observers=51 pending=0 writes=7465 uploads=1224 emissions=13016 framesIn=13674 bytesInMB=1087.6 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=4 wallS=96.5 ms.chunkRow=13 ms.final=1443 ms.heartbeat=989 ms.interim=243 ms.other=4 ms.poll=2 ms.route=2
+MEMORY-REPLAY-SUMMARY phone minutes=120 footprint0MB=224.5 footprint5MB=228.7 footprint60MB=132.6 footprint120MB=123.5 growth5to60MB=-96.1 growth60to120MB=-9.1 footprintPerHourMB=-54.9 heapPerHourMB=2.7 peakMB=243.7 triples5=55559 triples60=56339 triples120=56939 wallS=96
+MEMORY-REPLAY phone minute=5 footprintMB=228.7 footprintPeakMB=231.3 heapMB=98.9 triples=55559 observers=51 pending=0 writes=312 uploads=51 emissions=495 framesIn=615 bytesInMB=46.4 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=4.0 ms.chunkRow=9 ms.final=1098 ms.heartbeat=948 ms.interim=193 ms.other=4 ms.poll=4 ms.route=22 ms.scan=10 m
+MEMORY-REPLAY phone minute=30 footprintMB=185.1 footprintPeakMB=188.4 heapMB=102.1 triples=56039 observers=51 pending=0 writes=1867 uploads=306 emissions=3206 framesIn=3472 bytesInMB=274.7 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=2 wallS=23.9 ms.chunkRow=21 ms.final=1442 ms.heartbeat=996 ms.interim=243 ms.other=4 ms.poll=2 ms.route=24 ms.
+MEMORY-REPLAY phone minute=60 footprintMB=132.6 footprintPeakMB=135.7 heapMB=102.9 triples=56339 observers=51 pending=0 writes=3733 uploads=612 emissions=6476 framesIn=6890 bytesInMB=548.0 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=48.3 ms.chunkRow=13 ms.final=1446 ms.heartbeat=983 ms.interim=262 ms.other=4 ms.poll=2 ms.reconnect=47
+MEMORY-REPLAY phone minute=90 footprintMB=120.2 footprintPeakMB=123.8 heapMB=103.4 triples=56552 observers=51 pending=0 writes=5599 uploads=918 emissions=9746 framesIn=10256 bytesInMB=814.4 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=72.2 ms.chunkRow=13 ms.final=1434 ms.heartbeat=1002 ms.interim=245 ms.other=4 ms.poll=2 ms.route=24 m
+MEMORY-REPLAY phone minute=120 footprintMB=123.5 footprintPeakMB=126.9 heapMB=104.2 triples=56939 observers=51 pending=0 writes=7465 uploads=1224 emissions=13016 framesIn=13674 bytesInMB=1087.6 largestFrameKB=979 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=4 wallS=96.5 ms.chunkRow=13 ms.final=1443 ms.heartbeat=989 ms.interim=243 ms.other=4 ms.poll=2 ms.route=2
+MEMORY-REPLAY-SUMMARY phone minutes=120 footprint0MB=224.5 footprint5MB=228.7 footprint60MB=132.6 footprint120MB=123.5 growth5to60MB=-96.1 growth60to120MB=-9.1 footprintPerHourMB=-54.9 heapPerHourMB=2.7 peakMB=243.7 triples5=55559 triples60=56339 triples120=56939 wallS=96
+== 3a'. S05's large-allocation sites at f504ed51
+== s05 exit 0
+MEMORY-SITES S05.large.page-refresh-64 allocations=23 bytes=3312368 dropped=0 sites=21
+MEMORY-SITE S05.large.page-refresh-64 rank=1 allocations=3 bytes=335200 site=staticInstantLiveRefreshTranslator.canonicalOperations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefreshApplication.swift:418 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=staticInstantLiveRefreshTranslator.operations(from:processedTran
+MEMORY-SITE S05.large.page-refresh-64 rank=2 allocations=2 bytes=188224 site=specializedstaticInstantLiveRefreshTranslator.translate(_:existingAttributes:receivedAt:attributeContext:)@InstantLiveRefreshApplication.swift:196 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=specializedInstantRuntime.applyLiveRefresh(_:receivedAt:)@InstantRu
+MEMORY-SITE S05.large.page-refresh-64 rank=3 allocations=1 bytes=344384 site=specializedstaticSQLitePersistenceStore.indexLiveTriples(_:)@SQLitePersistenceStore.swift:20498 allocator=static_DictionaryStorage.allocate(scale:Int8,age:Optional<Int32>,seed:Optional<Int>)->_DictionaryStorage<A,B> caller=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQ
+MEMORY-SITE S05.large.page-refresh-64 rank=4 allocations=1 bytes=344384 site=InstantPersistedLiveQueryResult.init(replacement:updatedAt:)@InstantLiveRefreshApplication.swift:50 allocator=static_DictionaryStorage.allocate(scale:Int8,age:Optional<Int32>,seed:Optional<Int>)->_DictionaryStorage<A,B> caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutat
+MEMORY-SITE S05.large.page-refresh-64 rank=5 allocations=1 bytes=290072 site=specializedstaticInstantServerApplyCascade.sources(into:attributes:)@SQLitePersistenceStore.swift:1062 allocator=specialized_ContiguousArrayBuffer.init(_uninitializedCount:minimumCapacity:) caller=specializedstaticInstantRuntime.emptyServerApplySlots(of:absentEntityIDs:attributes:indexes:)@InstantRuntime.swift:5004
+MEMORY-SITE S05.large.page-refresh-64 rank=6 allocations=1 bytes=196512 site=staticInstantLiveRefreshTranslator.canonicalOperations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefreshApplication.swift:439 allocator=specializedArray.append<A>(contentsOf:) caller=staticInstantLiveRefreshTranslator.operations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefr
+MEMORY-SITE S05.large.page-refresh-64 rank=7 allocations=1 bytes=172064 site=InstantPersistedLiveQueryResult.init(replacement:updatedAt:)@InstantLiveRefreshApplication.swift:51 allocator=specializedContiguousArray._createNewBuffer(bufferIsUnique:minimumCapacity:growForAppend:) caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutationID:mergingAttrib
+MEMORY-SITE S05.large.page-refresh-64 rank=8 allocations=1 bytes=172064 site=specializedstaticSQLitePersistenceStore.indexLiveTriples(_:)@SQLitePersistenceStore.swift:20499 allocator=specializedContiguousArray._createNewBuffer(bufferIsUnique:minimumCapacity:growForAppend:) caller=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQLitePersistenceStor
+MEMORY-SITE S05.large.page-refresh-64 rank=9 allocations=1 bytes=147768 site=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQLitePersistenceStore.swift:12470 allocator=specializedSet.init<A>(_:) caller=SQLitePersistenceStore.serverApplyPlanningReads(replacements:retractions:savingResults:expectedQueryResultRevision:expectedOutboxRevision:pr@SQLit
+MEMORY-SITE S05.large.page-refresh-64 rank=10 allocations=1 bytes=147360 site=InstantRuntime.reducedServerApplyOperations(_:processedTransactionID:seed:request:context:declineReason:declinedAttributeID:)@InstantRuntime.swift:4687 allocator=specializedArray.append<A>(contentsOf:) caller=-
+MEMORY-SITE S05.large.page-refresh-64 rank=11 allocations=1 bytes=144992 site=specializedstaticInstantServerApplyCascade.sources(into:attributes:)@SQLitePersistenceStore.swift:1062 allocator=specializedMutableCollection<>.sort(by:) caller=specializedstaticInstantRuntime.emptyServerApplySlots(of:absentEntityIDs:attributes:indexes:)@InstantRuntime.swift:5004
+MEMORY-SITE S05.large.page-refresh-64 rank=12 allocations=1 bytes=131680 site=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutationID:mergingAttributes:liveQueryResultRepla@InstantRuntime.swift:3549 allocator=specializedArray.append<A>(contentsOf:) caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutatio
+MEMORY-SITE S05.large.page-refresh-64 rank=13 allocations=1 bytes=131104 site=specializedstaticInstantLiveRefreshTranslator.translate(_:existingAttributes:receivedAt:attributeContext:)@InstantLiveRefreshApplication.swift:247 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=specializedInstantRuntime.applyLiveRefresh(_:receivedAt:)@InstantR
+MEMORY-SITE S05.large.page-refresh-64 rank=14 allocations=1 bytes=131104 site=staticInstantLiveRefreshTranslator.operations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefreshApplication.swift:373 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=specializedstaticInstantLiveRefreshTranslator.translate(_:existingAttrib
+MEMORY-SITE S05.large.page-refresh-64 rank=15 allocations=1 bytes=98336 site=InstantPersistedLiveQueryResult.init(replacement:updatedAt:)@InstantLiveRefreshApplication.swift:55 allocator=specialized_ContiguousArrayBuffer.init(_uninitializedCount:minimumCapacity:) caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutationID:mergingAttributes:liveQuery
+MEMORY-SITE S05.large.page-refresh-64 rank=16 allocations=1 bytes=73760 site=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQLitePersistenceStore.swift:12470 allocator=specializedArray.append<A>(contentsOf:) caller=SQLitePersistenceStore.serverApplyPlanningReads(replacements:retractions:savingResults:expectedQueryResultRevision:expectedOutboxRevi
+MEMORY-SITE S05.large.page-refresh-64 rank=17 allocations=1 bytes=49472 site=specializedLiveQueryOwnershipDiff.init(next:encoder:)@LiveQueryOwnershipDiff.swift:54 allocator=Dictionary._Variant.reserveCapacity(Int)->() caller=SQLitePersistenceStore.storedLiveQueryFactsLeavingWithoutTransaction(key:next:keepingDiffIn:)@SQLitePersistenceStore.swift:20427
+MEMORY-SITE S05.large.page-refresh-64 rank=18 allocations=1 bytes=49184 site=InstantPersistedLiveQueryResult.init(replacement:updatedAt:)@InstantLiveRefreshApplication.swift:55 allocator=specializedMutableCollection<>.sort(by:) caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutationID:mergingAttributes:liveQueryResultRepla@InstantRuntime.swift:344
+MEMORY-SITE S05.large.page-refresh-64 rank=19 allocations=1 bytes=33080 site=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQLitePersistenceStore.swift:12455 allocator=specializedSet.init<A>(_:) caller=SQLitePersistenceStore.serverApplyPlanningReads(replacements:retractions:savingResults:expectedQueryResultRevision:expectedOutboxRevision:pr@SQLit
+MEMORY-SITE S05.large.page-refresh-64 rank=20 allocations=1 bytes=33080 site=SQLitePersistenceStore.preparedLiveQueryResultSaveWithoutTransaction(_:previousFacts:storedDiff:)@SQLitePersistenceStore.swift:21389 allocator=specializedSet.init<A>(_:) caller=SQLitePersistenceStore.preparedLiveQueryResultSavesWithoutTransaction(_:storedDiffs:)@SQLitePersistenceStore.swift:21371
+MEMORY-SITE S05.large.page-refresh-64 rank=21 allocations=0 bytes=98544 site=TripleIndexes.invalidateInternedEntities(_:)@TripleIndexes.swift:5117 allocator=specialized_NativeDictionary.copy() caller=TripleIndexes.finishInternCachesAfterWrite(invalidating:attributes:)@TripleIndexes.swift:4924
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=1 bytes=344384 allocations=1 site=specializedstaticSQLitePersistenceStore.indexLiveTriples(_:)@SQLitePersistenceStore.swift:20498 allocator=static_DictionaryStorage.allocate(scale:Int8,age:Optional<Int32>,seed:Optional<Int>)->_DictionaryStorage<A,B> caller=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiff
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=2 bytes=344384 allocations=1 site=InstantPersistedLiveQueryResult.init(replacement:updatedAt:)@InstantLiveRefreshApplication.swift:50 allocator=static_DictionaryStorage.allocate(scale:Int8,age:Optional<Int32>,seed:Optional<Int>)->_DictionaryStorage<A,B> caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmin
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=3 bytes=335200 allocations=3 site=staticInstantLiveRefreshTranslator.canonicalOperations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefreshApplication.swift:418 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=staticInstantLiveRefreshTranslator.operations(from:process
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=4 bytes=290072 allocations=1 site=specializedstaticInstantServerApplyCascade.sources(into:attributes:)@SQLitePersistenceStore.swift:1062 allocator=specialized_ContiguousArrayBuffer.init(_uninitializedCount:minimumCapacity:) caller=specializedstaticInstantRuntime.emptyServerApplySlots(of:absentEntityIDs:attributes:indexes:)@InstantRuntime.swift:5004
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=5 bytes=196512 allocations=1 site=staticInstantLiveRefreshTranslator.canonicalOperations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefreshApplication.swift:439 allocator=specializedArray.append<A>(contentsOf:) caller=staticInstantLiveRefreshTranslator.operations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLi
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=6 bytes=188224 allocations=2 site=specializedstaticInstantLiveRefreshTranslator.translate(_:existingAttributes:receivedAt:attributeContext:)@InstantLiveRefreshApplication.swift:196 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=specializedInstantRuntime.applyLiveRefresh(_:receivedAt:)@Ins
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=7 bytes=172064 allocations=1 site=InstantPersistedLiveQueryResult.init(replacement:updatedAt:)@InstantLiveRefreshApplication.swift:51 allocator=specializedContiguousArray._createNewBuffer(bufferIsUnique:minimumCapacity:growForAppend:) caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutationID:merging
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=8 bytes=172064 allocations=1 site=specializedstaticSQLitePersistenceStore.indexLiveTriples(_:)@SQLitePersistenceStore.swift:20499 allocator=specializedContiguousArray._createNewBuffer(bufferIsUnique:minimumCapacity:growForAppend:) caller=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQLitePersisten
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=9 bytes=147768 allocations=1 site=SQLitePersistenceStore.liveQueryReplacementRetractionsWithoutTransaction(for:keepingStoredDiffs:)@SQLitePersistenceStore.swift:12470 allocator=specializedSet.init<A>(_:) caller=SQLitePersistenceStore.serverApplyPlanningReads(replacements:retractions:savingResults:expectedQueryResultRevision:expectedOutboxRevision:pr
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=10 bytes=147360 allocations=1 site=InstantRuntime.reducedServerApplyOperations(_:processedTransactionID:seed:request:context:declineReason:declinedAttributeID:)@InstantRuntime.swift:4687 allocator=specializedArray.append<A>(contentsOf:) caller=-
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=11 bytes=144992 allocations=1 site=specializedstaticInstantServerApplyCascade.sources(into:attributes:)@SQLitePersistenceStore.swift:1062 allocator=specializedMutableCollection<>.sort(by:) caller=specializedstaticInstantRuntime.emptyServerApplySlots(of:absentEntityIDs:attributes:indexes:)@InstantRuntime.swift:5004
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=12 bytes=131680 allocations=1 site=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingMutationID:mergingAttributes:liveQueryResultRepla@InstantRuntime.swift:3549 allocator=specializedArray.append<A>(contentsOf:) caller=InstantRuntime.performApplyServerTransaction(_:processedTransactionID:receivedAt:confirmingM
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=13 bytes=131104 allocations=1 site=specializedstaticInstantLiveRefreshTranslator.translate(_:existingAttributes:receivedAt:attributeContext:)@InstantLiveRefreshApplication.swift:247 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=specializedInstantRuntime.applyLiveRefresh(_:receivedAt:)@In
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=14 bytes=131104 allocations=1 site=staticInstantLiveRefreshTranslator.operations(from:processedTransactionID:defaultTxTime:attributes:)@InstantLiveRefreshApplication.swift:373 allocator=specialized_ArrayBuffer._consumeAndCreateNew(bufferIsUnique:minimumCapacity:growForAppend:) caller=specializedstaticInstantLiveRefreshTranslator.translate(_:existing
+MEMORY-SITE-BYTES S05.large.page-refresh-64 rank=15 bytes=98544 allocations=0 site=TripleIndexes.invalidateInternedEntities(_:)@TripleIndexes.swift:5117 allocator=specialized_NativeDictionary.copy() caller=TripleIndexes.finishInternCachesAfterWrite(invalidating:attributes:)@TripleIndexes.swift:4924
+MEMORY-SITES S05.large.final-line-long-recording allocations=6 bytes=631656 dropped=0 sites=6
+MEMORY-SITE S05.large.final-line-long-recording rank=1 allocations=1 bytes=270336 site=specializedstaticInstantOutboxStoredBody.compressed(_:)@InstantOutboxStoredBody.swift:29 allocator=compression_encode_buffer caller=SQLitePersistenceStore.saveOutboxMutationWithoutTransaction(_:lifecycleID:advancingFromMutationID:failureAttributeRevision:receiptWriteAutho@SQLitePersistenceStore.swift:20839
+MEMORY-SITE S05.large.final-line-long-recording rank=2 allocations=1 bytes=131392 site=TripleIndexes.applyPendingInternSnapshots()@TripleIndexes.swift:5023 allocator=specialized_NativeDictionary.merge<A,B>(_:isUnique:uniquingKeysWith:) caller=TripleIndexes.finishInternCachesAfterWrite(invalidating:attributes:)@TripleIndexes.swift:4921
+MEMORY-SITE S05.large.final-line-long-recording rank=3 allocations=1 bytes=131072 site=specializedstaticInstantOutboxStoredBody.json(fromCompressed:)@InstantOutboxStoredBody.swift:61 allocator=compression_decode_buffer caller=SQLitePersistenceStore.outboxBodyJSON(_:_:)@SQLitePersistenceStore.swift:19192
+MEMORY-SITE S05.large.final-line-long-recording rank=4 allocations=1 bytes=32952 site=InstantStore.prepareMutating(_:attributes:indexes:capturePreviousChangedEntityTriples:insertReplayPolicy:){closure}@InstantStore.swift:1507 allocator=specializedSet._Variant.insert(_:) caller=InstantStore.prepareMutating(_:attributes:indexes:capturePreviousChangedEntityTriples:insertReplayPolicy:)@InstantStore.sw
+MEMORY-SITE S05.large.final-line-long-recording rank=5 allocations=1 bytes=32952 site=TripleIndexes.hydrateDeferredValues(_:attributes:)@TripleIndexes.swift:1595 allocator=Set._Variant.reserveCapacity(Int)->() caller=InstantStore.prepareCurrent(_:hydratingDeferredValues:loadingFactsKeptOnDisk:)@InstantStore.swift:1051
+MEMORY-SITE S05.large.final-line-long-recording rank=6 allocations=1 bytes=32952 site=TripleIndexes.removeMarkedDeferredValues(attributes:)@TripleIndexes.swift:1776 allocator=specializedSet._Variant.remove(at:) caller=InstantStore.install(_:)@InstantStore.swift:1995
+MEMORY-SITE-BYTES S05.large.final-line-long-recording rank=1 bytes=270336 allocations=1 site=specializedstaticInstantOutboxStoredBody.compressed(_:)@InstantOutboxStoredBody.swift:29 allocator=compression_encode_buffer caller=SQLitePersistenceStore.saveOutboxMutationWithoutTransaction(_:lifecycleID:advancingFromMutationID:failureAttributeRevision:receiptWriteAutho@SQLitePersistenceStore.swift:20839
+MEMORY-SITE-BYTES S05.large.final-line-long-recording rank=2 bytes=131392 allocations=1 site=TripleIndexes.applyPendingInternSnapshots()@TripleIndexes.swift:5023 allocator=specialized_NativeDictionary.merge<A,B>(_:isUnique:uniquingKeysWith:) caller=TripleIndexes.finishInternCachesAfterWrite(invalidating:attributes:)@TripleIndexes.swift:4921
+MEMORY-SITE-BYTES S05.large.final-line-long-recording rank=3 bytes=131072 allocations=1 site=specializedstaticInstantOutboxStoredBody.json(fromCompressed:)@InstantOutboxStoredBody.swift:61 allocator=compression_decode_buffer caller=SQLitePersistenceStore.outboxBodyJSON(_:_:)@SQLitePersistenceStore.swift:19192
+MEMORY-SITE-BYTES S05.large.final-line-long-recording rank=4 bytes=32952 allocations=1 site=InstantStore.prepareMutating(_:attributes:indexes:capturePreviousChangedEntityTriples:insertReplayPolicy:){closure}@InstantStore.swift:1507 allocator=specializedSet._Variant.insert(_:) caller=InstantStore.prepareMutating(_:attributes:indexes:capturePreviousChangedEntityTriples:insertReplayPolicy:)@InstantSt
+MEMORY-SITE-BYTES S05.large.final-line-long-recording rank=5 bytes=32952 allocations=1 site=TripleIndexes.hydrateDeferredValues(_:attributes:)@TripleIndexes.swift:1595 allocator=Set._Variant.reserveCapacity(Int)->() caller=InstantStore.prepareCurrent(_:hydratingDeferredValues:loadingFactsKeptOnDisk:)@InstantStore.swift:1051
+MEMORY-SITE-BYTES S05.large.final-line-long-recording rank=6 bytes=32952 allocations=1 site=TripleIndexes.removeMarkedDeferredValues(attributes:)@TripleIndexes.swift:1776 allocator=specializedSet._Variant.remove(at:) caller=InstantStore.install(_:)@InstantStore.swift:1995
+== 3a''. E07's launch at f504ed51 (#1149 before)
+== e07 m2 exit 0
+MEMORY E07.launch.resident phone n=1 allocations=634027 allocatedKB=221313 frees=568461 retainedKB=24874.6 peakLiveKB=34945 footprintPeakMB=147 footprintGrowthMB=14.0 wallMs=234.18 residentFacts=54720 retainedPerFactB=465.5
+MEMORY E07.launch.resident phone n=1 allocations=634027 allocatedKB=221313 frees=568461 retainedKB=24874.6 peakLiveKB=34945 footprintPeakMB=147 footprintGrowthMB=14.0 wallMs=234.18 residentFacts=54720 retainedPerFactB=465.5
+== 3b. E07's launch at 518b7418 (#1107 + #1149's launch read: after)
+-- at 518b7418
+== e07 launch exit 0
+MEMORY E07.launch.resident phone n=1 allocations=163454 allocatedKB=70354 frees=135558 retainedKB=8998.0 peakLiveKB=12579 footprintPeakMB=179 footprintGrowthMB=1.4 wallMs=59.03 residentFacts=9728 retainedPerFactB=947.2
+MEMORY E07.launch.resident phone n=1 allocations=163454 allocatedKB=70354 frees=135558 retainedKB=8998.0 peakLiveKB=12579 footprintPeakMB=179 footprintGrowthMB=1.4 wallMs=59.03 residentFacts=9728 retainedPerFactB=947.2
+✘ Test e07LaunchResident() recorded an issue at MemoryExercises.swift:400:5: Expectation failed: launch.netLiveBytes < 540 * triples
+↳ E07 retained 947 B a resident fact.
+↳ /// E07: launch: what the store's resident set costs in memory once the runtime is up, per resident fact, and the
+== 3c. the replay at #1145's red sources (213a7563): no sweep, closed results copied
+-- at 213a7563
+== replay red exit 0
+MEMORY-REPLAY phone minute=60 footprintMB=139.3 footprintPeakMB=142.3 heapMB=108.0 triples=63427 observers=51 pending=0 writes=3733 uploads=612 emissions=6476 framesIn=6890 bytesInMB=548.0 largestFrameKB=979 resultWrites=91 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=52.0 ms.chunkRow=14 ms.final=1526 ms.heartbeat=1096 ms.interim=315 ms.other=3 ms.poll=11 ms.reconnect
+MEMORY-REPLAY phone minute=90 footprintMB=131.2 footprintPeakMB=134.7 heapMB=111.7 triples=67319 observers=51 pending=0 writes=5599 uploads=918 emissions=9746 framesIn=10256 bytesInMB=814.4 largestFrameKB=979 resultWrites=137 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=77.5 ms.chunkRow=11 ms.final=1529 ms.heartbeat=1086 ms.interim=303 ms.other=3 ms.poll=11 ms.route=2
+MEMORY-REPLAY phone minute=120 footprintMB=135.7 footprintPeakMB=139.1 heapMB=116.0 triples=71211 observers=51 pending=0 writes=7465 uploads=1224 emissions=13016 framesIn=13674 bytesInMB=1087.6 largestFrameKB=979 resultWrites=185 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=4 wallS=103.7 ms.chunkRow=13 ms.final=1504 ms.heartbeat=1053 ms.interim=294 ms.other=3 ms.poll=10 ms.ro
+MEMORY-REPLAY-SUMMARY phone minutes=120 footprint0MB=222.6 footprint5MB=227.2 footprint60MB=139.3 footprint120MB=135.7 growth5to60MB=-87.9 growth60to120MB=-3.6 footprintPerHourMB=-47.8 heapPerHourMB=9.2 peakMB=245.0 triples5=56109 triples60=63427 triples120=71211 wallS=104
+MEMORY-REPLAY phone minute=5 footprintMB=227.2 footprintPeakMB=229.5 heapMB=98.4 triples=56109 observers=51 pending=0 writes=312 uploads=51 emissions=495 framesIn=615 bytesInMB=46.4 largestFrameKB=979 resultWrites=6 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=4.3 ms.chunkRow=6 ms.final=1169 ms.heartbeat=1048 ms.interim=253 ms.other=3 ms.poll=12 ms.route=20 ms.scan=12
+MEMORY-REPLAY phone minute=30 footprintMB=185.3 footprintPeakMB=188.6 heapMB=103.9 triples=59535 observers=51 pending=0 writes=1867 uploads=306 emissions=3206 framesIn=3472 bytesInMB=274.7 largestFrameKB=979 resultWrites=45 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=2 wallS=25.8 ms.chunkRow=11 ms.final=1499 ms.heartbeat=1063 ms.interim=285 ms.other=3 ms.poll=11 ms.route=22 
+MEMORY-REPLAY phone minute=60 footprintMB=139.3 footprintPeakMB=142.3 heapMB=108.0 triples=63427 observers=51 pending=0 writes=3733 uploads=612 emissions=6476 framesIn=6890 bytesInMB=548.0 largestFrameKB=979 resultWrites=91 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=52.0 ms.chunkRow=14 ms.final=1526 ms.heartbeat=1096 ms.interim=315 ms.other=3 ms.poll=11 ms.reconnect
+MEMORY-REPLAY phone minute=90 footprintMB=131.2 footprintPeakMB=134.7 heapMB=111.7 triples=67319 observers=51 pending=0 writes=5599 uploads=918 emissions=9746 framesIn=10256 bytesInMB=814.4 largestFrameKB=979 resultWrites=137 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=3 wallS=77.5 ms.chunkRow=11 ms.final=1529 ms.heartbeat=1086 ms.interim=303 ms.other=3 ms.poll=11 ms.route=2
+MEMORY-REPLAY phone minute=120 footprintMB=135.7 footprintPeakMB=139.1 heapMB=116.0 triples=71211 observers=51 pending=0 writes=7465 uploads=1224 emissions=13016 framesIn=13674 bytesInMB=1087.6 largestFrameKB=979 resultWrites=185 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=4 wallS=103.7 ms.chunkRow=13 ms.final=1504 ms.heartbeat=1053 ms.interim=294 ms.other=3 ms.poll=10 ms.ro
+MEMORY-REPLAY-SUMMARY phone minutes=120 footprint0MB=222.6 footprint5MB=227.2 footprint60MB=139.3 footprint120MB=135.7 growth5to60MB=-87.9 growth60to120MB=-3.6 footprintPerHourMB=-47.8 heapPerHourMB=9.2 peakMB=245.0 triples5=56109 triples60=63427 triples120=71211 wallS=104
+✘ Test twoHourRecording() recorded an issue at MemoryLongRunReplay.swift:86:7: Expectation failed: last.triples - first.triples < 2_000
+↳ Resident facts went 56109 -> 71211.
+✘ Test twoHourRecording() recorded an issue at MemoryLongRunReplay.swift:87:7: Expectation failed: heapPerHour < 3
+↳ The heap grew 9.2 MB an hour.
+== gate: M2 bundle compare exit 1

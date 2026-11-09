@@ -1,0 +1,223 @@
+◇ Test run started.
+↳ Testing Library Version: 2067.1
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite DualResidencyFootprintMeasureTests started.
+◇ Test publishGatePendingAndColdReopenMetrics() started.
+AUTORESEARCH_METRIC profile=publishGate mode=pending peak_physical_growth_bytes=91373688 mb_growth=87.1
+AUTORESEARCH_METRIC profile=publishGate mode=cold-reopen peak_physical_growth_bytes=24133656 mb_growth=23.0 after_abs=117687208
+✔ Test publishGatePendingAndColdReopenMetrics() passed after 10.624 seconds.
+✔ Suite DualResidencyFootprintMeasureTests passed after 10.624 seconds.
+◇ Suite "Instant diagnostic feedback loop" started.
+◇ Test "info-level dual-write handler does not re-enter on large local transact volume" started.
+✔ Test "info-level dual-write handler does not re-enter on large local transact volume" passed after 0.069 seconds.
+✔ Suite "Instant diagnostic feedback loop" passed after 0.069 seconds.
+◇ Suite InstantFastDrainTests started.
+◇ Test measureOneFrameAgainstTheQueue(writes:) started.
+◇ Test case passing 1 argument writes → 100 to measureOneFrameAgainstTheQueue(writes:) started.
+#1270 one frame against 105 pending writes (setup 0.152253042 seconds):
+  round 1 list: 0.002935917 seconds, bodies 0, declines [:]
+  round 1 timeline: 0.003477917 seconds, bodies 0, declines [:]
+  round 2 list: 0.002336916 seconds, bodies 0, declines [:]
+  round 2 timeline: 0.003431167 seconds, bodies 0, declines [:]
+  round 3 list: 0.002451375 seconds, bodies 0, declines [:]
+  round 3 timeline: 0.003356917 seconds, bodies 0, declines [:]
+◇ Test case passing 1 argument writes → 1000 to measureOneFrameAgainstTheQueue(writes:) started.
+#1270 one frame against 1001 pending writes (setup 1.208021208 seconds):
+  round 1 list: 0.004300167 seconds, bodies 0, declines [:]
+  round 1 timeline: 0.004066542 seconds, bodies 0, declines [:]
+  round 2 list: 0.003372542 seconds, bodies 0, declines [:]
+  round 2 timeline: 0.00393425 seconds, bodies 0, declines [:]
+  round 3 list: 0.003512083 seconds, bodies 0, declines [:]
+  round 3 timeline: 0.003816292 seconds, bodies 0, declines [:]
+◇ Test case passing 1 argument writes → 2000 to measureOneFrameAgainstTheQueue(writes:) started.
+#1270 one frame against 2002 pending writes (setup 2.427089958 seconds):
+  round 1 list: 0.005591583 seconds, bodies 0, declines [:]
+  round 1 timeline: 0.0048825 seconds, bodies 0, declines [:]
+  round 2 list: 0.004730625 seconds, bodies 0, declines [:]
+  round 2 timeline: 0.005000667 seconds, bodies 0, declines [:]
+  round 3 list: 0.004800875 seconds, bodies 0, declines [:]
+  round 3 timeline: 0.004662417 seconds, bodies 0, declines [:]
+✔ Test measureOneFrameAgainstTheQueue(writes:) with 3 test cases passed after 3.867 seconds.
+◇ Test measureTheDrainOfTheQueue(writes:) started.
+◇ Test case passing 1 argument writes → 100 to measureTheDrainOfTheQueue(writes:) started.
+#1270 drain of 105 pending writes: writes 105, frames 105, rebases 0 (0 ms), bodies planned 0 decoded 0, wall 683 ms, apply 542 ms, slowest frame 9 ms, process CPU 679 ms
+  pending after: 0; declines: []
+◇ Test case passing 1 argument writes → 1000 to measureTheDrainOfTheQueue(writes:) started.
+#1270 drain of 1001 pending writes: writes 1001, frames 1001, rebases 0 (0 ms), bodies planned 0 decoded 0, wall 7913 ms, apply 6075 ms, slowest frame 13 ms, process CPU 7875 ms
+  pending after: 0; declines: []
+◇ Test case passing 1 argument writes → 2000 to measureTheDrainOfTheQueue(writes:) started.
+#1270 drain of 2002 pending writes: writes 2002, frames 2002, rebases 0 (0 ms), bodies planned 0 decoded 0, wall 18120 ms, apply 13723 ms, slowest frame 14 ms, process CPU 18032 ms
+  pending after: 0; declines: []
+✔ Test measureTheDrainOfTheQueue(writes:) with 3 test cases passed after 30.546 seconds.
+◇ Test aMinuteOfRecordingShrinksAQueueOf2000(reducesServerApply:) started.
+◇ Test case passing 1 argument reducesServerApply → true to aMinuteOfRecordingShrinksAQueueOf2000(reducesServerApply:) started.
+#1270 a recording minute on 2002 pending (reduced): written 77, accepted 2072, pending 2002 -> 7; writes 0, frames 2072, rebases 0 (0 ms), bodies planned 0 decoded 0, wall 60006 ms, apply 14022 ms, slowest frame 14 ms, process CPU 59913 ms
+◇ Test case passing 1 argument reducesServerApply → false to aMinuteOfRecordingShrinksAQueueOf2000(reducesServerApply:) started.
+#1270 a recording minute on 2002 pending (whole-component rebase): written 70, accepted 25, pending 2002 -> 2047; writes 0, frames 25, rebases 25 (60195 ms), bodies planned 50695 decoded 101390, wall 60342 ms, apply 60195 ms, slowest frame 2601 ms, process CPU 60329 ms
+✔ Test aMinuteOfRecordingShrinksAQueueOf2000(reducesServerApply:) with 2 test cases passed after 125.306 seconds.
+◇ Test measureANewPreviewSegmentsFramesAgainstTheQueue(writes:) started.
+◇ Test case passing 1 argument writes → 100 to measureANewPreviewSegmentsFramesAgainstTheQueue(writes:) started.
+#1378 a new preview segment's frames against 102 pending writes (setup 0.14321475 seconds):
+  round 1 fast-drain-write-00001: 0.00495425 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00002: 0.004415875 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00003: 0.004293958 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00004: 0.003759875 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00005: 0.005022834 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00006: 0.003873667 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00007: 0.004248542 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00008: 0.004411417 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00009: 0.003986625 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00010: 0.004149875 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00011: 0.004680292 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00012: 0.004033417 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00013: 0.0042785 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00014: 0.004356584 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00015: 0.00425775 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00016: 0.00391675 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00017: 0.005000375 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00018: 0.004025 seconds, bodies 0, declines [:]
+◇ Test case passing 1 argument writes → 1000 to measureANewPreviewSegmentsFramesAgainstTheQueue(writes:) started.
+#1378 a new preview segment's frames against 1002 pending writes (setup 1.213822625 seconds):
+  round 1 fast-drain-write-00001: 0.005596958 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00002: 0.005207834 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00003: 0.004862209 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00004: 0.004816542 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00005: 0.006028916 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00006: 0.004842542 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00007: 0.004626167 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00008: 0.0051325 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00009: 0.004784375 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00010: 0.004658917 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00011: 0.005993208 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00012: 0.004985 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00013: 0.004954208 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00014: 0.005357083 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00015: 0.005044042 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00016: 0.004945875 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00017: 0.005997333 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00018: 0.004940709 seconds, bodies 0, declines [:]
+◇ Test case passing 1 argument writes → 2000 to measureANewPreviewSegmentsFramesAgainstTheQueue(writes:) started.
+#1378 a new preview segment's frames against 2004 pending writes (setup 2.410203208 seconds):
+  round 1 fast-drain-write-00001: 0.006423375 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00002: 0.006427458 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00003: 0.006281791 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00004: 0.005983875 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00005: 0.00852825 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00006: 0.005869834 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00007: 0.005557542 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00008: 0.0065795 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00009: 0.006050417 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00010: 0.006229875 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00011: 0.008075041 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00012: 0.0061745 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00013: 0.005896334 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00014: 0.006246667 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00015: 0.0063545 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00016: 0.006081584 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00017: 0.008044833 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00018: 0.006325083 seconds, bodies 0, declines [:]
+✔ Test measureANewPreviewSegmentsFramesAgainstTheQueue(writes:) with 3 test cases passed after 4.141 seconds.
+◇ Test measureANewPreviewSegmentsFramesAgainstTheQueueOnScribesLinks(writes:) started.
+◇ Test case passing 1 argument writes → 100 to measureANewPreviewSegmentsFramesAgainstTheQueueOnScribesLinks(writes:) started.
+#1756 a new preview segment's frames on Scribe's links against 102 pending writes (setup 0.170601334 seconds):
+  round 1 fast-drain-write-00001: 0.005114125 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00002: 0.0046405 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00003: 0.004359541 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00004: 0.004978125 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00005: 0.005510834 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00006: 0.00491475 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00007: 0.004398958 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00008: 0.004807958 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00009: 0.004322083 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00010: 0.005125458 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00011: 0.005569625 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00012: 0.004849166 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00013: 0.004611041 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00014: 0.004672458 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00015: 0.004582083 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00016: 0.004948833 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00017: 0.005866125 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00018: 0.004844333 seconds, bodies 0, declines [:]
+◇ Test case passing 1 argument writes → 1000 to measureANewPreviewSegmentsFramesAgainstTheQueueOnScribesLinks(writes:) started.
+#1756 a new preview segment's frames on Scribe's links against 1002 pending writes (setup 1.322299875 seconds):
+  round 1 fast-drain-write-00001: 0.005382416 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00002: 0.004863083 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00003: 0.004772416 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00004: 0.005909958 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00005: 0.007314959 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00006: 0.005715208 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00007: 0.004450042 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00008: 0.004997542 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00009: 0.004636875 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00010: 0.006001458 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00011: 0.006751292 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00012: 0.005973041 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00013: 0.004608833 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00014: 0.005131709 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00015: 0.004670459 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00016: 0.0062905 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00017: 0.006717125 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00018: 0.006159625 seconds, bodies 0, declines [:]
+◇ Test case passing 1 argument writes → 2000 to measureANewPreviewSegmentsFramesAgainstTheQueueOnScribesLinks(writes:) started.
+#1756 a new preview segment's frames on Scribe's links against 2004 pending writes (setup 2.638544875 seconds):
+  round 1 fast-drain-write-00001: 0.005484542 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00002: 0.005364375 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00003: 0.005103125 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00004: 0.008378542 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00005: 0.008905708 seconds, bodies 0, declines [:]
+  round 1 fast-drain-write-00006: 0.008064792 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00007: 0.004794541 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00008: 0.005102167 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00009: 0.005098208 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00010: 0.008067584 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00011: 0.008992625 seconds, bodies 0, declines [:]
+  round 2 fast-drain-write-00012: 0.008298833 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00013: 0.005089709 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00014: 0.005189416 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00015: 0.005226291 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00016: 0.008093084 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00017: 0.009348833 seconds, bodies 0, declines [:]
+  round 3 fast-drain-write-00018: 0.008121833 seconds, bodies 0, declines [:]
+✔ Test measureANewPreviewSegmentsFramesAgainstTheQueueOnScribesLinks(writes:) with 3 test cases passed after 4.529 seconds.
+✔ Suite InstantFastDrainTests passed after 168.392 seconds.
+◇ Suite InstantMediaStreamOptimizationTests started.
+◇ Test "Twenty thousand synchronized audio frames stay inside a fixed memory and CPU envelope" started.
+SEVEN_OPT_STREAM_RESOURCE frames=20000 wall_s=0.061342 frames_per_s=326040.9 cpu_pct=188.6 peak_growth_bytes=32768 settled_growth_bytes=32768 peak_buffer_bytes=20480 peak_buffer_frames=64 digest=4628a65129ed74c3
+✔ Test "Twenty thousand synchronized audio frames stay inside a fixed memory and CPU envelope" passed after 0.061 seconds.
+✔ Suite InstantMediaStreamOptimizationTests passed after 0.061 seconds.
+◇ Suite InstantPruneCostTests started.
+◇ Test aPruneHoldsTheGateForMillisecondsWhateverTheStoresSize() started.
+#654 prune at 4002 facts: longest gate hold 0.135299708 seconds, batches 1, whole prune 0.1354385 seconds, prune CPU 1.728584 ms
+#654 prune at 40002 facts: longest gate hold 0.140752958 seconds, batches 1, whole prune 0.140874583 seconds, prune CPU 1.770499 ms
+✔ Test aPruneHoldsTheGateForMillisecondsWhateverTheStoresSize() passed after 1.793 seconds.
+✔ Suite InstantPruneCostTests passed after 1.793 seconds.
+◇ Suite InstantResourceCitizenshipTests started.
+◇ Test "Accelerated native media remains a healthy realtime citizen" started.
+RESOURCE_CITIZENSHIP_STREAM frames=20000 logical_s=400.000 wall_s=0.181156 cpu_s=0.115248 burst_cpu_pct=63.618 realtime_cpu_pct=0.028812 cpu_s_per_logical_s=0.00028812 peak_growth_bytes=0 settled_growth_bytes=0 peak_buffer_bytes=20480 peak_buffer_frames=64 dropped=0 thermal_start=nominal thermal_end=nominal digest=4628a65129ed74c3
+✔ Test "Accelerated native media remains a healthy realtime citizen" passed after 0.182 seconds.
+✔ Suite InstantResourceCitizenshipTests passed after 0.182 seconds.
+◇ Suite InstantSameEntityLiveRevisionMemoryTests started.
+◇ Test livePutsDoNotGrowPhysicalFootprintWithRevisionCount() started.
+✔ Test livePutsDoNotGrowPhysicalFootprintWithRevisionCount() passed after 0.034 seconds.
+✔ Suite InstantSameEntityLiveRevisionMemoryTests passed after 0.034 seconds.
+◇ Suite InstantServerApplyOperationGateTests started.
+◇ Test localTransactsDoNotWaitBehindAServerApplyOverAHubComponent() started.
+server-apply operation gate: held 45 ms (catch up 3, commit 40, patch 0); 8 local writes, longest 11 ms
+✔ Test localTransactsDoNotWaitBehindAServerApplyOverAHubComponent() passed after 0.832 seconds.
+✔ Suite InstantServerApplyOperationGateTests passed after 0.832 seconds.
+◇ Suite LinkedInfiniteScribeShapedMemorySoakTests started.
+◇ Test scribeShapedInfiniteListStayWithinFootprintBudget() started.
+✔ Test scribeShapedInfiniteListStayWithinFootprintBudget() passed after 7.132 seconds.
+✔ Suite LinkedInfiniteScribeShapedMemorySoakTests passed after 7.132 seconds.
+◇ Suite MemoryLongRunReplaySmokeTests started.
+◇ Test aTinyReplaySamplesEveryMinute() started.
+MEMORY-SESSION replay-smoke shape=[recordings=4 lines=23 others=34 files=95 fileRecords=43 refused=7 open=2 closed=4 attributes=170] staleConfirmedCovered=0 outbox=failed:7
+MEMORY-REPLAY-START smoke shape=[recordings=4 lines=23 others=34 files=95 fileRecords=43 refused=7 open=2 closed=4 attributes=170] workload=[lines/min=10 interims=1,2 heartbeats/min=12 routes/min=3 wavEvery=5minx4096B segments/min=10x1024B others/min=1 window=64 liveLines=8 list=84 polls/min=12 scans/min=1 reconnectEvery=40min pruneEvery=64] minutes=3
+MEMORY-REPLAY smoke minute=0 footprintMB=120.7 footprintPeakMB=164.6 heapMB=6.5 triples=412 observers=5 pending=0 writes=1 uploads=0 emissions=0 framesIn=8 bytesInMB=0.1 largestFrameKB=55 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=0.3 ms.op.localSave=9 ms.op.storePrepare=1 ms.op.acknowledgement=1 ms.op.refreshTranslate=3 ms.op.serverApplyPlan=4 ms.op.serverApplyCommit=4 ms.op.deferredHydrate=1 ms.op.serverApplyRetractions=6
+MEMORY-REPLAY smoke minute=1 footprintMB=121.1 footprintPeakMB=122.5 heapMB=7.1 triples=642 observers=5 pending=0 writes=63 uploads=10 emissions=99 framesIn=120 bytesInMB=0.7 largestFrameKB=55 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=1.0 ms.chunkRow=11 ms.final=104 ms.heartbeat=68 ms.interim=67 ms.other=1 ms.poll=0 ms.route=5 ms.scan=2 ms.segment=19 ms.speakers=45 ms.op.localSave=82 ms.op.storePrepare=10 ms.op.observerRefresh=21 ms.op.acknowledgement=18 ms.op.refreshTranslate=12 ms.op.serverApplyPlan=14 ms.op.serverApplyCommit=23 ms.op.deferredHydrate=4 ms.op.serverApplyRetractions=29
+MEMORY-REPLAY smoke minute=2 footprintMB=121.5 footprintPeakMB=123.0 heapMB=7.5 triples=783 observers=5 pending=0 writes=125 uploads=20 emissions=198 framesIn=232 bytesInMB=1.6 largestFrameKB=63 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=1.7 ms.chunkRow=10 ms.final=140 ms.heartbeat=61 ms.interim=77 ms.other=1 ms.poll=0 ms.route=7 ms.scan=2 ms.segment=18 ms.speakers=43 ms.op.localSave=81 ms.op.storePrepare=11 ms.op.observerRefresh=22 ms.op.acknowledgement=18 ms.op.refreshTranslate=15 ms.op.serverApplyPlan=15 ms.op.serverApplyCommit=25 ms.op.deferredHydrate=6 ms.op.serverApplyRetractions=35
+MEMORY-REPLAY smoke minute=3 footprintMB=97.9 footprintPeakMB=123.4 heapMB=7.8 triples=905 observers=5 pending=0 writes=187 uploads=30 emissions=297 framesIn=344 bytesInMB=2.7 largestFrameKB=87 resultWrites=0 resultWrittenMB=0.0 fullStoreLoads=1 storeReplacements=0 fullStoreCopies=1 connections=1 wallS=2.5 ms.chunkRow=10 ms.final=177 ms.heartbeat=56 ms.interim=63 ms.other=1 ms.poll=0 ms.route=8 ms.scan=3 ms.segment=18 ms.speakers=41 ms.op.localSave=75 ms.op.storePrepare=12 ms.op.observerRefresh=24 ms.op.acknowledgement=18 ms.op.refreshTranslate=19 ms.op.serverApplyPlan=17 ms.op.serverApplyCommit=22 ms.op.deferredHydrate=9 ms.op.serverApplyRetractions=42
+MEMORY-REPLAY-SUMMARY smoke minutes=3 footprint0MB=120.7 footprint5MB=120.7 footprint60MB=121.5 footprint120MB=97.9 growth5to60MB=0.7 growth60to120MB=-23.5 footprintPerHourMB=-456.2 heapPerHourMB=25.6 peakMB=164.6 triples5=412 triples60=783 triples120=905 wallS=2
+✔ Test aTinyReplaySamplesEveryMinute() passed after 2.913 seconds.
+✔ Suite MemoryLongRunReplaySmokeTests passed after 2.913 seconds.
+✔ Test run with 14 tests in 10 suites passed after 192.039 seconds.

@@ -1,0 +1,10 @@
+◇ Test run started.
+↳ Testing Library Version: 2067.1
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite MemoryExercises started.
+◇ Test e07LaunchResident() started.
+MEMORY-SESSION e07-prepare shape=[recordings=352 lines=8712 others=3400 files=9455 fileRecords=4264 refused=663 open=48 closed=355 attributes=2283] staleConfirmedCovered=0 outbox=failed:663
+MEMORY E07.launch.resident phone n=1 allocations=634027 allocatedKB=221313 frees=568461 retainedKB=24874.6 peakLiveKB=34945 footprintPeakMB=147 footprintGrowthMB=14.0 wallMs=234.18 residentFacts=54720 retainedPerFactB=465.5
+✔ Test e07LaunchResident() passed after 2.018 seconds.
+✔ Suite MemoryExercises passed after 2.019 seconds.
+✔ Test run with 1 test in 1 suite passed after 2.019 seconds.

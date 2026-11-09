@@ -1,0 +1,3 @@
+building release tests into /Users/server/build/slots/1/instant-data-swift/.build/memory-exercises (log .runs-1797/replay-red.log.build)
+running MemoryLongRunReplay/ (INSTANT_MEMORY_REPLAY=1 INSTANT_MEMORY_REPLAY_MINUTES=120 INSTANT_MEMORY_REPLAY_SCALE=1) -> .runs-1797/replay-red.log.replay_.out
+MemoryLongRunReplay/ exit=1

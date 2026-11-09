@@ -1,0 +1,5 @@
+build.sh: 1797-1500-land-green runs on the Mac mini, slot 1 (cold), commit 767fa6457d49 (your uncommitted changes), tmux session build-91eb2e30 (ssh -t mini tmux -L build-jobs attach -t build-91eb2e30); its output follows, stderr merged into stdout.
+open files: 10240
+767fa645 build.sh job 91eb2e30-9130-4e4e-baa9-d672d7473aa9 (1797-1500-land-green): the worktree as it was, on no branch
+== 1. the whole bundle at 967e7d06
+-- at 967e7d06

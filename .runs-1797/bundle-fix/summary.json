@@ -1,0 +1,33 @@
+{
+  "commit": "55dc0d407ab2e69702ee5a7092a5b532b9fb9e8e",
+  "dirty": false,
+  "version": "unknown",
+  "host": "servers-Mac-mini.local",
+  "started": "2026-11-05T05:04:39-05:00",
+  "seconds": 369.7,
+  "exit": 1,
+  "timed_out": false,
+  "load": {
+    "busy_loops": 0,
+    "min": 1.72,
+    "mean": 3.3,
+    "max": 7.8
+  },
+  "cpus": 10,
+  "filter": null,
+  "skip": null,
+  "tests": 1700,
+  "failing": 3,
+  "hung": [],
+  "measurements": {
+    "tests": 14,
+    "seconds": 194.2,
+    "exit": 0,
+    "timed_out": false
+  },
+  "leftovers": {
+    "removed_entries": 1021,
+    "removed_bytes": 2041663488,
+    "kept_because": []
+  }
+}

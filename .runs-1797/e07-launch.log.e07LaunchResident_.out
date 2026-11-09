@@ -1,0 +1,17 @@
+◇ Test run started.
+↳ Testing Library Version: 2067.1
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite MemoryExercises started.
+◇ Test e07LaunchResident() started.
+MEMORY-SESSION e07-prepare shape=[recordings=352 lines=8712 others=3400 files=9455 fileRecords=4264 refused=663 open=48 closed=355 attributes=2283] staleConfirmedCovered=0 outbox=failed:663
+MEMORY E07.launch.resident phone n=1 allocations=163454 allocatedKB=70354 frees=135558 retainedKB=8998.0 peakLiveKB=12579 footprintPeakMB=179 footprintGrowthMB=1.4 wallMs=59.03 residentFacts=9728 retainedPerFactB=947.2
+✘ Test e07LaunchResident() recorded an issue at MemoryExercises.swift:400:5: Expectation failed: launch.netLiveBytes < 540 * triples
+↳ E07 retained 947 B a resident fact.
+↳ launch.netLiveBytes < 540 * triples → false
+↳   launch.netLiveBytes → 9213984
+↳   540 * triples → 5253120
+✘ Test e07LaunchResident() failed after 1.525 seconds with 1 issue.
+↳ /// E07: launch: what the store's resident set costs in memory once the runtime is up, per resident fact, and the
+↳ /// launch's transient peak.
+✘ Suite MemoryExercises failed after 1.526 seconds with 1 issue.
+✘ Test run with 1 test in 1 suite failed after 1.526 seconds with 1 issue.

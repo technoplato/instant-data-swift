@@ -1,0 +1,2 @@
+running s05LargeAllocationSites (INSTANT_MEMORY_EXERCISES=1 INSTANT_MEMORY_REPLAY=1 INSTANT_MEMORY_REPLAY_MINUTES=120) -> .runs-1797/s05.log.s05LargeAllocationSites_.out
+s05LargeAllocationSites exit=0

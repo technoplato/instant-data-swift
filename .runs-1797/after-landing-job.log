@@ -1,0 +1,8 @@
+build.sh: 1797-1500-after-landing runs on the Mac mini, slot 1 (warm), commit 3d2fc5259e9e (your uncommitted changes), tmux session build-d48e23c4 (ssh -t mini tmux -L build-jobs attach -t build-d48e23c4); its output follows, stderr merged into stdout.
+-- at d7dcf707
+== decode alone at d7dcf707: ratios 0.300343683236654 0.3055400587881977 0.2981679763659309 0.2885610639627109 0.30525980048188694 
+-- at f504ed51
+== decode alone at f504ed51: ratios 0.29955395747373237 0.29296351061876896 0.2946528676388179 0.2973788512162129 0.3044708006807632 
+-- at d7dcf707
+== main's new suites exit 0
+✔ Test run with 22 tests in 3 suites passed after 12.005 seconds.

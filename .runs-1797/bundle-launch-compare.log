@@ -1,0 +1,57 @@
+.runs-1797/bundle-launch against Tests/known-failing.txt
+  run: servers-Mac-mini.local, 2026-11-05T02:56:41-05:00, 1696 tests, 25 failing, 367 s, 10 CPUs, 0 busy loops, load 1.22-5.81
+  failed and listed: 1
+  listed load-only, passed: 4
+  listed as failing idle, passed: 3 (fixed, or one that fails only some runs)
+    InstantLiveConnectionSurvivalTests/aScheduledReconnectReusesASessionThatOpenedAfterTheLoss()  [idle 1/3]
+    InstantMediaStreamOptimizationTests/binaryCodecRemovesBase64AndJSONCPU()  [idle 2/3]
+    SwiftConcurrencyGuidanceTests/uncheckedSendableConformancesDocumentProtectionMechanism()  [idle 1/3]
+  NEW failures, not on the list: 24
+    InstantBoundedServerApplyRebaseTests/emptyServerApplyAdoptsAnotherRuntimeLocalWriteIntoTheHotStore()
+      InstantBoundedServerApplyRebaseTests.swift:1471: Issue recorded Difference: … InstantTriple( entityID: "cross-runtime-local-entity", attributeID: "items/value", value: .string("peer-local"), txID: "cross-runtime-local", − txTime: InstantTimestamp(milliseconds: 1000) + txTime: InstantTimestamp(milliseconds: 1) ) (First: −, Second: +)
+    InstantInactiveLiveQueryPruneMemoryTests/sessionPruneUnloadsInactivePagesWhileOutboxHasOptimisticOverlay()
+      InstantInactiveLiveQueryPruneMemoryTests.swift:98: Issue recorded Difference: … [ [0]: "query-active-page" − [1]: "query-stale-page-1", − [2]: "query-stale-page-2", − [3]: "query-stale-page-3", − [4]: "query-stale-page-4", − [5]: "query-stale-page-5", − [6]: "query-stale-page-6", − [7]: "query-stale-page-7", − [8]: "query-stale-page-8", − [9]: "query-stale-page-9", − [10]: "query-stale-page-10", − [11]: "query-stale-page-11", − [12]: "query-stale-
+    InstantLiveFrameDecodeTests/aServerResultDecodesAtAFractionOfJSONDecodersCost()
+      InstantLiveFrameDecodeTests.swift:29: Expectation failed: ratio < 0.33 decoding the frame cost 0.37366298469794335 times JSONDecoder's ratio < 0.33 → false ratio → 0.37366298469794335
+    InstantLiveQueryCompactOwnershipTests/aConversionInterruptedBeforeItsCommitIsRedoneWholeAtTheNextOpen()
+      InstantLiveQueryCompactOwnershipTests.swift:137: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aConversionOf10000LongKeyedRowsFitsTheOpenBudget()
+      InstantLiveQueryCompactOwnershipTests.swift:194: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aNewStoreKeysOwnershipByAnIntegerQueryID()
+      InstantLiveQueryCompactOwnershipTests.swift:30: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/aStoreIn0011sLayoutConvertsAtOpenAndAnswersEveryOwnershipReadAsBefore()
+      InstantLiveQueryCompactOwnershipTests.swift:84: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantLiveQueryCompactOwnershipTests/anOwnershipRowWhoseResultIsMissingIsCountedAndNotCopied()
+      InstantLiveQueryCompactOwnershipTests.swift:166: Issue recorded Difference: … OwnershipLayout( resultColumns: [ … (6 unchanged) − [6]: "unloaded_at_ms INTEGER 0 0" ], ownershipColumns: […], ownershipIsWithoutRowID: true, ownershipForeignKeys: […], ownershipBTrees: […], identityIndexColumns: […] ) (First: −, Second: +)
+    InstantObserverRegistrationGateTests/aReloadBeginsFromTheRowStoredNowNotTheOneItRead()
+      InstantObserverRegistrationGateTests.swift:126: Expectation failed: try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") → nil
+    InstantObserverRegistrationGateTests/aReloadChunkWritesNothingOnceAServerAnswerReplacedItsRow()
+      InstantObserverRegistrationGateTests.swift:145: Expectation failed: try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") try await persistence.readConnection.unloadedLiveQueryResult(key: "query-closed") → nil
+    InstantPruneCostTests/aPruneOnAFortyThousandFactStoreCopiesNothingTheSizeOfTheStore()
+      InstantPruneCostTests.swift:48: Issue recorded Difference: … [ + [0]: "closed-result-0", + [1]: "closed-result-1", + [2]: "closed-result-10", + [3]: "closed-result-11", + [4]: "closed-result-12", + [5]: "closed-result-13", + [6]: "closed-result-14", + [7]: "closed-result-15", + [8]: "closed-result-16", + [9]: "closed-result-17", + [10]: "closed-result-18", + [11]: "closed-result-19", + [12]: "closed-result-2", + [13]: "closed-re
+    InstantPruneGateHoldTests/aLocalWriteWaitsForOnePruneBatchNotTheWholePrune()
+      InstantPruneGateHoldTests.swift:214: Expectation failed: outcome.batches >= 5 outcome.batches >= 5 → false outcome.batches → 1
+    InstantPruneGateHoldTests/withoutABatchBoundTheWriteWaitsForTheWholePrune()
+      InstantPruneGateHoldTests.swift:228: Issue recorded Difference: … − 24 + 0 (First: −, Second: +)
+    InstantPruneMaintenanceActivityTests/aPruneThatFinishesInsideItsActivityEndsIt()
+      InstantPruneMaintenanceActivityTests.swift:139: Issue recorded Difference: … − 0 + 24 (First: −, Second: +)
+    InstantPruneOffTheApplierTests/aBatchDecodesAgainAResultRestatedSinceItsReadAhead()
+      InstantPruneOffTheApplierTests.swift:132: Expectation failed: batch.removedQueryKeys == ["query-closed"] batch.removedQueryKeys == ["query-closed"] → false batch.removedQueryKeys → []
+    InstantPruneOffTheApplierTests/aLargeResultsOwnershipRowsGoWithTheBatchesThatCheckThem()
+      InstantPruneOffTheApplierTests.swift:178: Expectation failed: rowsAfterPrune == 0 the prune left 452 ownership rows of the released result rowsAfterPrune == 0 → false rowsAfterPrune → 452
+    InstantPruneOffTheApplierTests/aMarkAnEarlierBuildLeftIsFinishedWhenTheStoreOpensAgain()
+      InstantPruneOffTheApplierTests.swift:347: Expectation failed: survivors.contains("prune-todo-150") a result still stored keeps its facts survivors.contains("prune-todo-150") → false survivors → ["prune-todo-2185", "prune-todo-3489", "prune-todo-2283", "prune-todo-2313", "prune-todo-2492", "prune-todo-3433", "prune-todo-3588", "prune-todo-2388", "prune-todo-2100", "prune-todo-2195", "prune-todo-2942", "prune-todo-2456", "prune-todo-2451", 
+    InstantPruneOffTheApplierTests/aReleasedRowACrashLeftIsCheckedWhenTheStoreOpensAgain()
+      InstantPruneOffTheApplierTests.swift:269: Expectation failed: batch.removedQueryKeys == ["inactive-result-0"] batch.removedQueryKeys == ["inactive-result-0"] → false batch.removedQueryKeys → []
+    InstantPruneOffTheApplierTests/aResultLargerThanABatchIsReleasedOverSeveralBatches()
+      InstantPruneOffTheApplierTests.swift:92: Expectation failed: batches.count >= InstantPruneGateHoldTests.resultCount * 4 #1129: 1 batches for 24 results of about 450 facts each batches.count >= InstantPruneGateHoldTests.resultCount * 4 → false batches.count → 1 InstantPruneGateHoldTests.resultCount * 4 → 96
+    InstantPruneResidencyCostTests/aBatchReadsTheFactsOnlyOfEntitiesItCanDrop()
+      InstantPruneResidencyCostTests.swift:135: Issue recorded Difference: … − 0 + 25 (First: −, Second: +)
+    InstantStoredFileLookupTests/downloadByIDQueriesOnlyThatFile(accountFileCount:)
+      InstantStoredFileLookupTests.swift:60: Issue recorded Difference: … − 0 + 4 (First: −, Second: +)
+    InstantStoredResultReloadTests/aSavedResultSupersedesItsUnloadedCopy()
+      InstantStoredResultReloadTests.swift:280: Expectation failed: try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil → <not evaluated>
+    InstantStoredResultReloadTests/thePolicyCollectsUnloadedResultsOldestFirst()
+      InstantStoredResultReloadTests.swift:232: Issue recorded Difference: … [ + [0]: "query-0", + [1]: "query-1", + [2]: "query-2", + [3]: "query-3" ] (First: −, Second: +)
+    StorageIOExercises/closingAQuerysResultWritesNoTemporaryFile()
+      InstantTemporaryStoreTests.swift:101: Issue recorded Difference: … [ [0]: "query-open-page" − [1]: "query-closed-page" ] (First: −, Second: +)

@@ -1,0 +1,10 @@
+upstream instant e7101761: /Users/server/Library/Caches/instant-data-swift-known-failing/instant-e71017612aed4031710a35e2fcace30d38d557ac
+upstream sqlite-data 97987458: /Users/server/Library/Caches/instant-data-swift-known-failing/sqlite-data-97987458b49f0311717ecfbf7e8ac4c406afbf55
+building InstantSwiftDataCoreTests (-j 6)
+built InstantSwiftDataCoreTests: exit 0 in 59 s
+building instant-swift-data (-j 6)
+built instant-swift-data: exit 0 in 19 s
+running InstantSwiftDataCoreTests (timeout 2400 s)
+running 14 measurement tests alone, serially
+removed 994 test stores from the temp dir (1911.2 MB)
+/Users/server/build/slots/1/instant-data-swift/.runs-1797/bundle: 1694 tests, 23 failing, 374 s (+14 measurements alone, 193 s), load 0.95-6.76 (mean 2.6)

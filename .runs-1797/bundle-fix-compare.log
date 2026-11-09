@@ -1,0 +1,13 @@
+.runs-1797/bundle-fix against Tests/known-failing.txt
+  run: servers-Mac-mini.local, 2026-11-05T05:04:39-05:00, 1700 tests, 3 failing, 370 s, 10 CPUs, 0 busy loops, load 1.72-7.8
+  failed and listed: 1
+  listed load-only, passed: 4
+  listed as failing idle, passed: 3 (fixed, or one that fails only some runs)
+    InstantLiveConnectionSurvivalTests/aScheduledReconnectReusesASessionThatOpenedAfterTheLoss()  [idle 1/3]
+    InstantMediaStreamOptimizationTests/binaryCodecRemovesBase64AndJSONCPU()  [idle 2/3]
+    SwiftConcurrencyGuidanceTests/uncheckedSendableConformancesDocumentProtectionMechanism()  [idle 1/3]
+  NEW failures, not on the list: 2
+    InstantLiveFrameDecodeTests/aServerResultDecodesAtAFractionOfJSONDecodersCost()
+      InstantLiveFrameDecodeTests.swift:29: Expectation failed: ratio < 0.33 decoding the frame cost 0.3663259430940703 times JSONDecoder's ratio < 0.33 → false ratio → 0.3663259430940703
+    InstantLiveQueryCompactOwnershipTests/aStoreIn0011sLayoutConvertsAtOpenAndAnswersEveryOwnershipReadAsBefore()
+      InstantLiveQueryCompactOwnershipTests.swift:103: Issue recorded Difference: … − "7b4abdccc1163c64 over 22778 answers" + "e5f08f8f40ae0900 over 22178 answers" (First: −, Second: +)

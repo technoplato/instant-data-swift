@@ -1,0 +1,1 @@
+MEMORY E07.launch.resident phone n=1 allocations=634027 allocatedKB=221313 frees=568461 retainedKB=24874.6 peakLiveKB=34945 footprintPeakMB=147 footprintGrowthMB=14.0 wallMs=234.18 residentFacts=54720 retainedPerFactB=465.5

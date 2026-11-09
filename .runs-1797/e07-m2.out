@@ -1,0 +1,2 @@
+running e07LaunchResident (INSTANT_MEMORY_EXERCISES=1 INSTANT_MEMORY_REPLAY=1 INSTANT_MEMORY_REPLAY_MINUTES=120) -> .runs-1797/e07-m2.log.e07LaunchResident_.out
+e07LaunchResident exit=0
