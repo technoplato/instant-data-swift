@@ -1,3 +1,6 @@
+## 2026-11-08 20:49:16 EST — scribe `f56663ec348a6ee7ca44eeeeaa3fb012bcd49973`
+Feature (#2087): storage-cleanup skill: one command writes a manifest of regenerable build output, caches and merged worktrees, and --remove re-checks and deletes each row; tonight it took the laptop from 185.4 to 205.3 GiB free (54 rows, 31.89 GiB by du).
+
 ## 2026-11-08 19:44:07 EST — scribe `6c0ebcff39b9eaea819f9d03305b888402e6d3d0` (merge of agent/claude/cut-308 at `4353f234c`)
 Fix (#2086): build 308's Watch compiles: #2011's install clock views and its Settings section are left out of watchOS, where their clock formats need watchOS 11 and the package's floor is 10 (red: a watchOS compile of ScribeWidgets failed on c93846ec2 in 166 s; green: passed in 21 s); 308 then read back on the iPhone, iPad, Watch and Mac.
 
