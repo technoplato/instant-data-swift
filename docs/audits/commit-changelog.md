@@ -1,3 +1,6 @@
+## 2026-11-09 03:22:45 EST — scribe `e882a9a69465ac3d27cfdd268a9936b05fd7b195` (merge of agent/claude/cut-310-2029 at `0e2820a05`)
+Release (#2029): cut Scribe 0.1 (310) from main e06fd923a: build 309 plus #2029's film and song Live Activity (#2077's longest-then-oldest rule) and #2092's stale-take launch guard and the Watch's Offline row; What's New 310 written from its commits and checked by hand. Read back: iPhone 03:43:03 (20 min 18 s), iPad 03:43:04, Watch 03:52:51, Mac 04:01:50; TestFlight distributed 03:50:14; GitHub release held, tag local.
+
 ## 2026-11-09 02:54:00 EST — scribe `e06fd923adfae5602ed53da7583ad79e5ec48178`
 Feature (#2029, #2077): a Live Activity for each recognized film or song, made from its now-playing card: several at once beside the recording's, the system drawing the time and bar (told only what drawing cannot follow), a film as its title and year with its poster tall, a tap opening what its card opens; of two catalog items heard together the longest, then oldest, shows (#2077). Design rounds 1-5 (lowest line 9.0); tests, iOS and watchOS (the Watch app) compiles passed; also fixes main's stale place table (#2060). Known: the simulator's expanded island draws nothing for a still film or a no-length song (#2095).
 
