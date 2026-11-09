@@ -1,3 +1,6 @@
+## 2026-11-08 21:00:22 EST — scribe `bf5f5945dcb5349da85be3d01570fa3c777e8447` (merge of agent/claude/watch-recording-2092 at `16c12c9a1`: red `ffafc790d`, green `aeef14212`, docs `537672f9f`)
+Fix (#2092): a launch on the iPhone, iPad or Watch never starts the microphone on a take the app closed on 30 minutes or more before it (UnfinishedRecordingSweep.resumeWindow, decided once at the composition root before anything reads the session); its Stop is finished instead. Build 308's install relaunch made the Watch continue Recording 389 by itself, 50 hours after its cut-off (Recording 403 #23-31: "Is this a new recording?" ... "did I take over?"). The Watch also stops drawing Offline from a network path that cannot see its iPhone route (TN3135). Red on the mini (3 issues against the stub), green 30 tests, watchOS compile of ScribeSharedAppCore passed in 357 s; the Mac's launch path waits for his desktop hours.
+
 ## 2026-11-08 20:49:16 EST — scribe `f56663ec348a6ee7ca44eeeeaa3fb012bcd49973`
 Feature (#2087): storage-cleanup skill: one command writes a manifest of regenerable build output, caches and merged worktrees, and --remove re-checks and deletes each row; tonight it took the laptop from 185.4 to 205.3 GiB free (54 rows, 31.89 GiB by du).
 
