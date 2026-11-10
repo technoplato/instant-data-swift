@@ -1,3 +1,15 @@
+## 2026-11-10 02:55:19 EST — scribe `fb54544ec8c8a4908a4474ced519eeef119e3e8a`
+Docs (#2060): build 313's Try line within 30 words, so the notes check passes.
+
+## 2026-11-10 02:54:54 EST — scribe `9bad7aa5a4e25c336d332ed84d9c396d02f9913d`
+Cut (#2060): Scribe 0.1 (313) from main after the timers sync: CURRENT_PROJECT_VERSION 312 to 313 and build 313's plain block (the same timers on every device, each device's earlier timers brought in once).
+
+## 2026-11-10 02:52:04 EST — scribe `2285c1359d144b56b7cc864fb8ea9aa2f9b58ae2`
+Fix (#2060): a device's first launch on the timers' rows does not reconcile the empty list read before its old timers came in.
+
+## 2026-11-10 02:27:26 EST — scribe `00c9a21bf6d1a4d4f1854ebc7aad6528f0831098`
+Feature (#2060): timers and stopwatches on every device: the account's timeTimers rows (ScribeTimersInstantKey), a change writing only its own fields (InstantTimer.mutations), nothing reconciled before the rows first answer, the old timers.json brought in once.
+
 ## 2026-11-10 01:10:19 EST — scribe `58925e0bf15af73a810bdd0796b248c256facf81`
 Cut (#2060): Scribe 0.1 (312) from main after #2060's landing: CURRENT_PROJECT_VERSION 311 to 312 and build 312's plain block (the timers bar off the top bar, the Live Activity's small time with hours, a time of day after "for", a cancelled timer no twin).
 
