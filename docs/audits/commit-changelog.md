@@ -1,3 +1,9 @@
+## 2026-11-10 01:10:19 EST — scribe `58925e0bf15af73a810bdd0796b248c256facf81`
+Cut (#2060): Scribe 0.1 (312) from main after #2060's landing: CURRENT_PROJECT_VERSION 311 to 312 and build 312's plain block (the timers bar off the top bar, the Live Activity's small time with hours, a time of day after "for", a cancelled timer no twin).
+
+## 2026-11-10 01:07:20 EST — scribe `584ead57b30b4bb764e8e6923650892890c0db88`
+Fix (#2060, #2113, #2114): the timers bar never covers a screen's top bar (under the music and the chapter on the live recording screen, under the toolbar elsewhere, its name and time whole); the timers' Live Activity keeps its hours in its compact and minimal places (the Mac's menu bar); "timer for 9.03 pm" starts a timer until then; a cancelled timer is no twin. Design round 3 passed at 9.0.
+
 ## 2026-11-09 03:22:45 EST — scribe `e882a9a69465ac3d27cfdd268a9936b05fd7b195` (merge of agent/claude/cut-310-2029 at `0e2820a05`)
 Release (#2029): cut Scribe 0.1 (310) from main e06fd923a: build 309 plus #2029's film and song Live Activity (#2077's longest-then-oldest rule) and #2092's stale-take launch guard and the Watch's Offline row; What's New 310 written from its commits and checked by hand. Read back: iPhone 03:43:03 (20 min 18 s), iPad 03:43:04, Watch 03:52:51, Mac 04:01:50; TestFlight distributed 03:50:14; GitHub release held, tag local.
 
