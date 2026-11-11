@@ -1,3 +1,6 @@
+## 2026-11-11 06:03:12 EST — scribe `57b4574225263994f471d687ac52fd28b70e0b93` (merge of agent/claude/game-ui-2141: green `fc113eb0c`)
+Feature (#2141, the UI queue's entry for #2136): the Sign Every Broadcast Frame switch in the broadcast button's long press: a toggle after Save Screen Recording to Photos that keeps the menu open; Recording.Action.broadcastFrameSigningToggled writes the preference (no default changes); turned off with a chain open, the chain ends at once. Design round 2: 9.0, the lowest line (6 screenshots of the real menu on a simulator).
+
 ## 2026-11-11 05:41:35 EST — scribe `a2aaf6a405f16537ddaf010bc8b19a0ddf57570c` (merge of agent/claude/game-ui-2141: green `16ab4d92f`)
 Feature (#2141, the UI queue's entry for #2136): the Mint Screenshots row in Settings: one switch on Settings > Recording on iPhone and iPad for the setting as stored (no default changes), with a plain line saying which screenshots get a proof file and what the proof says; Settings search finds it; the place table gains setting:mintsScreenshots; a picture test for the Cut-Off Recordings row. Design round 1: 9.0, the lowest line (4 pictures of the running code).
 
