@@ -1,3 +1,6 @@
+## 2026-11-11 10:40:01 EST — scribe `49b5a036d` (merge of agent/claude/chooser-2249: red `b0a9c8298`, green `34f2814de`)
+Fix (#2249): the live mirror reads every Claude login's quota under launchd. quota-axi is a Node script (`#!/usr/bin/env node`) and launchd gives the mirror PATH=/usr/bin:/bin:/usr/sbin:/sbin, so after 55d20af7a every read there failed ("env: node: No such file or directory") and the thread chooser fell back to the declared order, unmeasured; cheap-model.ts now puts the node the mirror runs on first on quota-axi's PATH and names a failed read in its progress lines.
+
 ## 2026-11-11 10:39:10 EST — scribe `6c4d3de30b5f76516f1d38499d65082803d680fd`
 Fix and docs (#2248): the tracker mirror and its nightly check run from skills-live, the worktree land keeps at main (f040162da; the shared checkout they ran from sits at 2026-11-04, #1849, #2097); ADR 0121 section 10 and the scribe-schema skill's one query (ce6dde157). Backfill: 2,982 of 2,982 recording mentions name their recording, 2,940 linked, mentionCount recounts on 2,246 of 2,246 Issues.
 
