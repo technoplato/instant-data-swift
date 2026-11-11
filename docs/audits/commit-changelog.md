@@ -1,3 +1,6 @@
+## 2026-11-11 14:01:57 EST — scribe `9dc645276e8cde4bab5fa7d63252637f8fd05fcc` (merge of agent/claude/game-ui-2141: `e074f883e`, `8daf0267b`)
+Test (#2141): the layout harness shows Just Answers over the preview deck (RECORDING_LAYOUT_HOST=justAnswers) and a UI test flings cards inside XCTHitchMetric; on the iOS 27.2 simulator it runs but records no hitch measurements, so the swipe's hitch number waits for a device.
+
 ## 2026-11-11 13:31:02 EST — scribe `830b19ac664847a79c40af8eda6d414ac46046df` (merge of agent/claude/game-ui-2141: the Minted Screens sheet, reds and greens `e4ada4172`, `67693e23f`, `d01b45f97`, `a544e68f2`; the harness's dark proof `04eeec921`)
 Feature (#2141, the UI queue's entry for #2136, item 3): the Minted Screens sheet. Once this session has minted a screen, the recording's menu holds Minted Screens: the minted screenshots and frames newest first under a line for this device's App Attest key; each row says what signed it, who owns it, the build, its last check in plain words, with Check and Share Picture and Proof. MintedScreenRow and MintedScreensKeyLine are pure and tested over the mint package's signed fixture. Design round 5: 9.0 (after 3.0, 5.0, 5.0, 8.5), with the real sheet pictured on a simulator in light and dark.
 
