@@ -43,3 +43,4 @@ claude-code/perf-sync-1796@pp 2026-11-04T18:10:35-0500 mower plan=2026-11-04-per
 claude-code/mac-longplay-1916@al 2026-11-06T08:49:36-0500 fixer plan=2026-11-06-mac-longplay-1916 #1916
 claude-code/ack-proof-1942@pp 2026-11-06T23:10:15-0500 mower plan=2026-11-06-ack-proof-1942 amendment 1 #1942 (the proof's entry only)
 claude-code/first-write-2046@strangelearning 2026-11-11T09:43:33-0500 mower plan=2026-11-11-first-write-2046 #2046 (a validation refusal names what was missing and the write)
+claude-code/tv-look-2284@halfjew22 2026-11-11T17:05:54-0500 mower plan=2026-11-11-tvos-auth-2287 #2287 (the library compiles for tvOS: the browser authorizer leaves the tvOS build)

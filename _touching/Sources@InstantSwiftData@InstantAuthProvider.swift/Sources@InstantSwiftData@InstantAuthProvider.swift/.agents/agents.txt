@@ -1,0 +1,1 @@
+claude-code/tv-look-2284@halfjew22 2026-11-11T17:05:54-0500 mower plan=2026-11-11-tvos-auth-2287 #2287 (the library compiles for tvOS: the browser authorizer leaves the tvOS build)
