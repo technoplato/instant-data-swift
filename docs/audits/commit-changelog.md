@@ -1,3 +1,6 @@
+## 2026-11-11 14:53:11 EST — scribe `000d58f76584992f2c67ff57200525274a399031`
+Fix (#2244): the in-app screen capture starts one stream at a time, and its silent end is logged as the app's, not the extension's memory limit.
+
 ## 2026-11-11 14:27:16 EST — scribe `e24e0246f355b62c4b3e1b4e6f010aaf170c1b98`
 Feature (#2244): the broadcast can capture inside the app with ScreenCaptureKit (iOS, iPadOS, visionOS 27), feeding the same broadcast core as the ReplayKit extension; Vision Pro's route is the in-app capture, iPhone and iPad keep ReplayKit until he chooses (ADR 0152).
 
