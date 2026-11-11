@@ -1,3 +1,12 @@
+## 2026-11-11 08:33:09 EST — scribe `56a4c70eae2b56e744d5e95b875c47ca448630b9`
+Feature (#2239): the developer SDK's Swift half on main: the Swift package sdk/swift-scryyyyybe (a client of closures with live, preview, noop and recording values, its queue as an actor, drop-in shims; no third-party dependency), SwiftSyntax 604 as a second opinion on the Swift rewrite (465 of 465 calls agree over the repository's 3,899 .swift files; it found declarations counted as calls, fixed), print(…, to:) left with its reason, Scribe.Logger(_: OSLog). On the build machine: sdk/cli 101/101, sdk/typescript 174/174, Swift 52 + 26 tests, the Swift sample app's proof (try, build, events with file:line, undo); changelog 96f49b65c.
+
+## 2026-11-11 07:46:14 EST — scribe `4dc395af7c26ab76ab6c56b6e6667e7c19957412`
+Feature (#2239): the developer SDK's one page of docs, the Swift sample app and its proof script, formatting with the project's own formatter, and a second run that changes nothing (98 tests in sdk/cli).
+
+## 2026-11-11 07:34:34 EST — scribe `74d6e7c0261c4dd239a985d659f1270f84a70e88`
+Feature (#2239): the developer SDK's contract (sdk/SPEC.md), its command (keys kept as SHA-256, a local receiver on 127.0.0.1, scan, try on a throwaway branch, report, undo, doctor, the wizard), the TypeScript rewrite on TypeScript's own compiler and the lexer-guarded Swift rewrite, the TypeScript SDK and its proof on a sample app (93 tests in sdk/cli, 174 in sdk/typescript).
+
 ## 2026-11-11 08:29:04 EST — scribe `40a9c0a1a21dc4eed772643660772d1989c9cb6e` (merge of agent/claude/notes-gate-2000: green `7c67968e3`)
 Fix (#2000): the release-notes check reads which screens and Settings rows a build holds from the commit it is compiled from (scripts/scribe-mirror/place-links.json at the head the gate is given), not from the build's tag, which the installer makes only after every device. Build 315's gate (2026-11-11 07:52) asked the lookup about an untagged build, which read build 314 and withheld five true lines (the Mode choice, the Mint Screenshots switch, a Try step, two stories) from TestFlight, the Instant copy and the release notes. Replayed on 315's notes with the real lookup: 5 false before, 0 after; test_build_notes.py 47 of 47, scripts/whats-new 96 of 96. Red 7a81c0f3e.
 
