@@ -1,3 +1,9 @@
+## 2026-11-11 16:03:34 EST — scribe `7ba54ad9f97174fa03a305bc81a00b643d647792` (merge of agent/claude/mirror-load-869: red `9ae6f6538`, green `1de340d00`; fix `b5999f031` corrects the size in comments and tests, landed as `3142c65b7`)
+Fix (#2278): the Mac mirror refuses, once and before any decode, a decoded copy past what a WAV's 32-bit sizes can hold, and never retries it: Recording 405's 4,371,973,932-byte row had been decoded whole and failed at the header 341 times since 11-09 (~44 s and ~4.3 GB written each); installed 21:01:39 UTC, one refusal and no try since. The RF64 WAV past 4 GiB waits for an attach upload that streams.
+
+## 2026-11-11 16:03:34 EST — scribe `3c99017833bd1b2cfbbc8fd3d10c3483dff68b11` (merge of agent/claude/mirror-load-869: red `9ae6f6538`, green `a66a8a3ae`)
+Fix (#869): the agents board leaves a run the registry says finished before its window unread (brief, log, exit file, transcript): 49-52 MB -> 26-29 MB read per board, and the board thread's heap no longer settles at 190-217 MB.
+
 ## 2026-11-11 15:53:50 EST — scribe `0efa18e28436bc4f3b43f7154e0429a983b5cbb9` (merge of agent/claude/settings-freeze-2273: red `916cdacae`, green `56d60ebf7`, changelog `2e5523feb`)
 Fix (#2273): Broadcast Settings no longer freezes Scribe on iPhone: the broadcast feature keeps what the app fills in (what is live, his saved choices) unobserved, so the app's computed broadcastStart no longer tells SwiftUI the Broadcast section changed on every read (build 318's watchdog kill, 0x8BADF00D at 15:16:20, had the main thread in that read).
 
