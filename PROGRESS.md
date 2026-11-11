@@ -1,3 +1,19 @@
+## 2026-11-11 10:20:00 EST — first-write-2046 (#2046): v1.9.84, a validation refusal names what the server found missing and the write it refused
+
+- **Why:** a consuming app's device refused a write on its first offer with "Missing required attribute
+  `recordings/startedAtMs`: f592cdd1 ..." (`validation-failed`); the server's hint is a list of records, not a rule's
+  `expected`/`input`, so `outbox.mutation.refused-write` logged every refused* field empty and the write (a row whose
+  link keeps its fact on the missing row) was named only by reading the device's store.
+- **Landed:** plan `d39a0c2d` (merge `42625091`), red `468d4ce2`, green `3ae53b77`, this release record.
+- **Now:** the records give the namespace, entities and missing attributes (`refusedCheck` `required attributes`); every
+  refusal names the write's namespaces (`refusedWriteNamespaces`) and links (`refusedWriteLinks`).
+- **Checked:** red (m5 `2046-lib-red`): every refused* field empty, as on the device; green (m5 `2046-lib-green`):
+  `InstantMutationRefusalTests` 4 of 4; neighbours (mini `2046-lib-neighbors`): 89 tests in 5 suites, the only unexpected
+  issues in one wall-clock guard that passes alone (`2046-lib-covering-alone`, 5 of 5).
+- **Released:** v1.9.84 (`docs/releases/v1.9.84.md`).
+- **Next (resume here):** the consuming app pins 1.9.84 (its fix for the refusal itself is in the app: a new recording's
+  moments wait for the recording's create and take no queue time of their own).
+
 ## 2026-11-08 14:05:00 EST — ids-l3-aggregate (#2005): v1.9.83, ADR 0015 L3: rows count a relation's children and group into sections when a query is read
 
 - **Why:** a consuming app's list row wants its picture and thread counts derived when the list is read, with no second
