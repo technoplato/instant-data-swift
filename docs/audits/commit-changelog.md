@@ -1,3 +1,6 @@
+## 2026-11-11 05:14:22 EST — scribe `95483ca77d217d715b006b9ca6dd190496aad11e` (merge of agent/claude/ink-core-2194: docs `5af961d31`)
+Docs (#2194): a correction and the lane's progress entry. The door's comments, the plan and the change log said the old minter's pass took the mirror's memory from 231 MB to 778 MB; the readings were right and the cause was not: with the cheap pass installed the mirror stood at 634 and 802 MB ten and eleven minutes after its start, so the mirror grows by itself (#2234). Measured of the pass itself: 100.5 MB of lists and 4.4 s before, about 2 MB and 0.8 s after (first pass by itself 05:10:21: nothing new in 267 recordings). PROGRESS.md has the lane's entry: ink is whole below its screens. No code changed.
+
 ## 2026-11-11 05:03:08 EST — scribe `a4024642e2d21542e9cbe1f8c8f70537dfd71c0d` (merge of agent/claude/game-ui-2141: green `f36915655`)
 Feature (#2141): the mode's row in Settings: a Mode picker on Settings > Account and Device (and the Mac's General tab) whose choices are AppMode's cases; it writes the setting, the root follows it, so a choice switches the app and closes Settings; Settings search finds it; the place table gains setting:appMode. With it, a test that every call that can be spoken is an action an agent can send by name. Design round 1: 9.0, the lowest line (4 pictures of the running code).
 
