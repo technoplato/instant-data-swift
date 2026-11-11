@@ -1,3 +1,6 @@
+## 2026-11-10 23:55:50 EST — scribe `18b84d27f09c15a0f7abf0bc97764aaa7d47b9d5` and `996334da659625e8643e2f064d34605fbcfb2e37` (merges of agent/claude/game-core-2140: reds `a0bbd3761` `9ea0baa64`, greens `bc476a0bc` `88a85abc9`)
+Feature (#2140): the game's teller in the mirror: a swipe made in the app moves its card's split. One live window of the newest 12 swipes on the house's cards; the cards of one window answer are read in one request and their moved splits written in one transaction (twelve reads at the mirror's start met Instant's rate limit at 23:52, found in the installed mirror's log and fixed). Installed in the mirror at 23:55 with its own flags. node --test: 8 of 8, with the door and the main loop 22 of 22. No library change.
+
 ## 2026-11-10 23:54:13 EST — scribe `0d363271aca74e4161e1bf6d29de1eadb13cbf3d`
 Merge (#2142): the frames program is built into the wallet from its own description (WalletCore.FramesProgram, generated from the program lane's IDL and deployments files; each of its 15 golden transactions is rebuilt byte for byte; one program id per network), and a swipe signs lamports (SwipeMessage, 240 fixed bytes, equal to the program's own vector); on main 0d363271a 295 tests in swift-wallet and 57 in swift-screen-mint pass on the M5; a devnet transaction, an iPhone and energy are not measured.
 
