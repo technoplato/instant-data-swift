@@ -1,3 +1,6 @@
+## 2026-11-11 16:04:01 EST — scribe `7ba54ad9f97174fa03a305bc81a00b643d647792` (correction, supersedes the two entries below)
+For 7ba54ad9f (#2278) the red commit is `70f8287c7` and the green `1de340d00`. The entry below and the one under it named `7ba54ad9f` and `9ae6f6538` as its red by mistake; `9ae6f6538` is #869's red for a66a8a3ae.
+
 ## 2026-11-11 16:03:49 EST — scribe `7ba54ad9f97174fa03a305bc81a00b643d647792` (correction)
 Correction to the entry for 7ba54ad9f below: its red commit is `7ba54ad9f` (red(#2278)), not `9ae6f6538` (that is #869's red for a66a8a3ae).
 
