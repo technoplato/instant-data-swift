@@ -35,6 +35,56 @@ struct InstantMutationRefusalTests {
         "refusedAttributes": "durationSeconds,updatedAtMs",
         "refusedValues":
           "52e9a666/durationSeconds=2210.230867; 52e9a666/updatedAtMs=1790720435698.833",
+        "refusedWriteNamespaces": "recordings,transcriptions",
+        "refusedWriteLinks": "",
+      ]
+    )
+  }
+
+  /// #2046: a validation refusal names what the server found missing, and every refusal names what the write held. A
+  /// recording's first moment was refused on its first offer with "Missing required attribute `recordings/startedAtMs`:
+  /// f592cdd1 ..." and a hint of records, not of a rule: the moment's link to the recording keeps its fact on the
+  /// recording, whose create had not reached the server. The log line said nothing of either until the device's store
+  /// was read.
+  @Test
+  func aValidationRefusalNamesWhatWasMissingAndTheWriteThatTouchedIt() {
+    let recordingID = "f592cdd1-0bab-4c26-be2f-4008a4fe26cf"
+    let eventID = "506054f4-0d59-411c-b5d2-47f22abf601a"
+    let transaction = InstantStoreTransaction(
+      id: "ba87ed87-b289-412b-9a38-4ec1d6bb2315",
+      operations: [
+        .insert(triple(eventID, "recordingRuntimeEvents/id", .string(eventID))),
+        .insert(triple(eventID, "recordingRuntimeEvents/kind", .string("action"))),
+        .insert(triple(eventID, "recordingRuntimeEvents/timestampSeconds", .number(0))),
+        .insert(triple(eventID, "recordingRuntimeEvents/recording", .ref(recordingID))),
+      ]
+    )
+    let hint = InstantLiveJSONValue.object([
+      "records": .array(
+        ["startedAtMs", "title", "id", "durationSeconds", "updatedAtMs"].map { label in
+          .object([
+            "attr_id": .string("attribute-\(label)"),
+            "entity_id": .string(recordingID),
+            "etype": .string("recordings"),
+            "is_required": label == "id" ? .null : .bool(true),
+            "label": .string(label),
+          ])
+        }
+      )
+    ])
+
+    let refusal = InstantMutationRefusal(hint: hint, transaction: transaction)
+
+    expectNoDifference(
+      refusal.metadata,
+      [
+        "refusedNamespace": "recordings",
+        "refusedCheck": "required attributes",
+        "refusedEntityIDs": recordingID,
+        "refusedAttributes": "durationSeconds,id,startedAtMs,title,updatedAtMs",
+        "refusedValues": "",
+        "refusedWriteNamespaces": "recordingRuntimeEvents",
+        "refusedWriteLinks": "506054f4/recording->f592cdd1",
       ]
     )
   }
