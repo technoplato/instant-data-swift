@@ -246,7 +246,8 @@ extension InstantAuthProviderAuthorizerKey: DependencyKey {
             recovery: "Declare '\(provider.id.rawValue)' with presentation: .externalBrowser."
           )
         }
-        #if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit)) && !os(watchOS)
+        // tvOS has no browser to present a sign-in in (#2287), so it takes the error below, as watchOS does.
+        #if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit)) && !os(watchOS) && !os(tvOS)
           return try await BrowserOAuthAuthorizer.shared.authorize(
             provider: provider,
             client: client
@@ -519,6 +520,9 @@ extension Collection {
     #endif
   }
 
+  // tvOS has no web authentication presentation: ASWebAuthenticationPresentationContextProviding is unavailable there
+  // (#2287). Sign in with Apple below still builds for tvOS.
+  #if !os(tvOS)
   @MainActor
   public final class BrowserOAuthAuthorizer: NSObject,
     ASWebAuthenticationPresentationContextProviding
@@ -826,6 +830,7 @@ extension Collection {
     }
 
   }
+  #endif
 
   @MainActor
   public final class AppleIDAuthorizer: NSObject, ASAuthorizationControllerDelegate,
@@ -979,7 +984,8 @@ extension Collection {
 
     private func cancel(attemptID: UUID) {
       guard attempts.matches(attemptID) else { return }
-      if #available(iOS 16, macCatalyst 16, tvOS 16, watchOS 9, *) {
+      // tvOS has ASAuthorizationController.cancel() from 18.0 only (#2287).
+      if #available(iOS 16, macCatalyst 16, tvOS 18, watchOS 9, *) {
         controller?.cancel()
       }
       finish(attemptID: attemptID, throwing: CancellationError())

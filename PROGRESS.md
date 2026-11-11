@@ -1,3 +1,16 @@
+## 2026-11-11 17:14:14 EST — tvos-auth-2287 (#2287): v1.9.85, the library compiles for tvOS
+
+- **Why:** a consuming app's first tvOS build failed in `InstantAuthProvider.swift`: the browser authorizer's web
+  authentication presentation does not exist on tvOS, and Sign in with Apple's cancel is tvOS 18 and later.
+- **Landed:** plan `1e08280a` (merge `9db5ffaf`), green `fa1f3d8a`, this release record.
+- **Now:** on tvOS `BrowserOAuthAuthorizer` leaves the build (authorization-code sign-in throws "Browser authentication
+  is unavailable on this platform" there, as on watchOS); `AppleIDAuthorizer` stays, its cancel from tvOS 18.
+- **Checked:** red (m5 `2287-lib-tvos-red`): five tvOS errors; green (m5 `2287-lib-tvos-green`): `InstantSwiftData` for
+  tvOS builds, and `InstantSwiftDataMedia` (m5 `2287-lib-media-tvos`); neighbours (m5 `2287-lib-auth-tests`, macOS):
+  23 tests in 2 suites pass.
+- **Released:** v1.9.85 (`docs/releases/v1.9.85.md`).
+- **Next (resume here):** the consuming app pins 1.9.85 and compiles its tvOS app (#2284).
+
 ## 2026-11-11 10:20:00 EST — first-write-2046 (#2046): v1.9.84, a validation refusal names what the server found missing and the write it refused
 
 - **Why:** a consuming app's device refused a write on its first offer with "Missing required attribute
