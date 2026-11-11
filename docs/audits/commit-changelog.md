@@ -1,3 +1,24 @@
+## 2026-11-11 08:44:32 EST — scribe `9d1c81eec651b75d6ed030d4ad8a33d08a571d7f` (merge of agent/claude/selfhost-2238: red `9d383c734`'s parent, green `9d383c734`)
+Feature (#2238): the phone's side of pairing in Swift, Packages/swift-scribe-pairing: protocol v0 (Noise XXpsk3 for pairing, KK for sessions, X25519, ChaChaPoly, SHA-256) with CryptoKit, byte for byte the Node tool's (both held to selfhost/vectors/pairing-v0.json and selfhost/wordlist.txt); the pairing client and its seams as controlled dependencies; a first transport over Instant's HTTP API. 60 of 60 tests on the mini; compiles for iOS 17 on the M5; the Swift phone paired with the Node machine through the live self-hosted Instant on the M5, 3 of 3 sealed frames answered at 263-273 ms (row polling at 250 ms), and a search of Postgres's data folder finds the channel id and neither the words said nor the phone's name. Changelog 75889a704.
+
+## 2026-11-11 07:55:17 EST — scribe `1707e052b9847c6bd948136ee3d7d41b9e5f16c9` (merge of agent/claude/selfhost-2238: feat `ba0369454`, `484e1f246`)
+Feature (#2238): the local onboarding page (served by the tool at 127.0.0.1:28880: what runs, what was downloaded and what comes later with sizes, pairing with QR, six words and a countdown) and the install site (selfhost/site, every fact read from the file that owns it); a newer copy of the tool brings a self-hosted Instant's schema and rules up to date at the next up. The installed copy's up took 26 s in Apple's container tool on the M5. 87 of 87 node tests.
+
+## 2026-11-11 07:41:20 EST — scribe `39d1e249d73a5b62aa2eeeb672a481ffe81b7b27` (merge of agent/claude/selfhost-2238: fixes `ce5acad66`, `0e9ecf64d`, `b95e0a361`)
+Fix (#2238): up closes a fresh self-hosted Instant's two doors to the local network (making apps without signing in answered 200 before, refused after; dashboard sign-ups off); the tool's local API answers only this computer's own page and command; the command proved on Linux (Ubuntu 24.04 arm64: up 16 s, status, doctor, pair, forget).
+
+## 2026-11-11 07:33:10 EST — scribe `f5ae3e3c7eb01e57ccbfd4911b6c8dc86b86ee29` (merge of agent/claude/selfhost-2238: test `0ccf208e5`, feat `0a5703fbf`)
+Feature (#2238): a paired session's sealed frames ride Instant's topics, nothing stored: 60 of 60 answered, 8.4-9.4 ms in the middle, 12.6-13.1 ms for the slowest 1 in 20, against 125-155 ms for rows, which stay as the fallback. Measured: a sealed 530-byte frame row costs 6,430 bytes of table and 14,893 bytes of write-ahead log.
+
+## 2026-11-11 07:26:26 EST — scribe `9f5259c16a6a61d42cd793f6daedfc307b4c647f` (merge of agent/claude/selfhost-2238: feat `5e5087704`, test `59492d05a`)
+Feature (#2238): the installer script (fetch one archive, check its SHA-256, unpack into the home folder, run scryyyyybe up), the tool's sentences over its API, tests for the machine's side of pairing over a stand-in for Instant, download progress per image.
+
+## 2026-11-11 07:17:17 EST — scribe `8806d72d828abdb164598a5eb1835ea89cec615f` (merge of agent/claude/selfhost-2238: green `756dd5b3e`)
+Feature (#2238): scryyyyybe up brings a self-hosted Instant up in Docker (15 s) and in Apple's container tool (27 s) on the M5 from one description, sets it up with Scribe's schema (192 entities plus 2 for pairing) and rules with no dashboard, and pairs a phone from either side (249-522 ms); down --remove leaves no container or volume.
+
+## 2026-11-11 07:02:02 EST — scribe `d2601a80145756627a9541ab2bb4264e7485f17f` (merge of agent/claude/selfhost-2238: green `e566d06e6`, `0f1c9cb81`)
+Feature (#2238): the self-hosted services declared once (selfhost/services.json) with both container setups generated from it and a test against drift; pairing protocol v0 in Node with public test vectors (34 node tests).
+
 ## 2026-11-11 08:48:38 EST — scribe `68511f9a82291358bdaac35d6f560e136f865f8c` (merge of agent/claude/voice-cmd-2131: greens `bcb6b928d`, `af46cfb96`)
 Fix (#2131): the voice-actions benchmark runs open sentences first, as the phone does (a rescore of the #1898 audit's stored on-device run: 276 to 285 of 424, 9 fixed, 0 broken), and screen.open's ids are the ones the on-device model knew, made from each place's first spoken name (screenDiagnostics, screenSync), with "sync" and "account" as first names. Measured on this Mac's on-device model, 121 phrasings of the #1898 audit: 65 of 121 before #2131, 70 as first shipped, 71 now; three playback phrasings of liveRecording.show lost. Tests: the 13 voice suites on the mini (170 + 5 + 4), the package on the M5 (114 + 8 + 5).
 
