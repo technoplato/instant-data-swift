@@ -1,3 +1,6 @@
+## 2026-11-11 15:18:26 EST — scribe `7f7f3bc25f26ab5defe8f216b6ef88ac27e30d08` (merge of agent/claude/dragbar-2129: tests `f3e8dc12b`, `4fcbde093`, changelog `cba8f76a7`)
+Test (#2129): the guards for the frames handle over a now-playing card, after its fix (5bdb0d652). A picture test of the screen frames, their handle and the song card, with frames put into the thumbnail cache at the band's decode size (whole frames overflowed its 8 MB and two drew gray); recorded and repeated on the laptop, 38 tests in 4 suites pass. An opt-in iPhone simulator test that drags the handle 60 points: before the fix the card case stayed at 56 points, after it both cases went 56 to 85; the half travel is #2272.
+
 ## 2026-11-11 15:03:01 EST — scribe `8a4850301278bd9d66c3e8501d4394e8e45ebc77` (merge of agent/claude/mirror-load-869: red `c6403e50d`, red `e62df2f92`, green `1613edf6e`; changelog `364dd413c`)
 Fix (#869): the mirror's agents board reads only the live files a running claude names or that changed within its window, on its own worker thread, and the activity sweep looks at the live folder off the loop; at load 183-215 the board held the mirror's loop 4.3-9.0 s every 15 s (82% of 148.7 s of lateness in a 270 s profile), reading all 20,417 live files each time.
 
