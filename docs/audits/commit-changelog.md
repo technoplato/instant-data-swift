@@ -1,3 +1,6 @@
+## 2026-11-11 03:39:07 EST — scribe `a31a98c07ba04cfc704e93988526bed2b53b2479`
+Feature (#2140): the game's teller in the mirror checks a guest's signed swipe against devnet (the frames/1 message's signature, the channel's count and lamports at the deck's rate, the signer's deposit) and writes covered with the card's split, or refused with why, in one admin transaction; main 4ed518f79.
+
 ## 2026-11-11 01:03:05 EST — scribe `11553c68ad4eb19aca9cbeb68d5e0f7540f54f7e`
 Feature (#2194): ink works from the terminal: InkCore (ink's rules as pure Swift: a frame's bit under a published rule, the mint as a recount, a painted frame's cost in zeros and ones, editions, the split, owners' leaves, the payout rule; 67 tests on the build Mac) and scribe ink mint | balance | paint | list | show | buy through the mirror as his account (217 of 217); installed 01:07 and run in production under rule ink/0 (frames already recorded, not signed; play money): 124 recordings gave 33,904 frames, three frames painted and shown to him; changelog 05b430fc6.
 
