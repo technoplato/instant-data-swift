@@ -1,3 +1,6 @@
+## 2026-11-11 14:07:44 EST — scribe `64c10fc8edb1bfb0bb0c04d20c13bfbc9e0b1753` (merge of agent/claude/onboarding-2241-entitlements: red `7ef3d879c`, red `e47cde483`, red `5b52681fa`, green `f0661cd80`)
+Feature (#2241): StoreKit 2 client for the trial and the plans (not linked into the app): a purchase reads its own transaction, an ended plan the history, and the changes stream wakes at a paid plan's end; a macOS harness hosts StoreKitTest (24 tests, 3 known issues of the test session).
+
 ## 2026-11-11 14:01:57 EST — scribe `9dc645276e8cde4bab5fa7d63252637f8fd05fcc` (merge of agent/claude/game-ui-2141: `e074f883e`, `8daf0267b`)
 Test (#2141): the layout harness shows Just Answers over the preview deck (RECORDING_LAYOUT_HOST=justAnswers) and a UI test flings cards inside XCTHitchMetric; on the iOS 27.2 simulator it runs but records no hitch measurements, so the swipe's hitch number waits for a device.
 
