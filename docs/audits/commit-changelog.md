@@ -1,3 +1,6 @@
+## 2026-11-11 11:28:16 EST — scribe `c82f857391a86065f8017deb00138324580a2573` (merge of agent/claude/ab-sheet-2125: green `09b66946a`)
+Fix (#2125): a press that leaves a screen with a sheet open (the Action Button, Siri, a new-recording link, the Mac menu, the floating bar over a sheet) closes the sheet first and acts once it has slid away (500 ms on the controlled clock): the playback screen, scoped through TCA's optional scope, never drew its two sheets closed when the press closed them and removed it in one turn, and an empty sheet stayed over the new recording (Recording 409). 125 RecordingList tests on the M5, 4 of 4 UI tests on the iOS 27.0 simulator; the device trigger itself was not reproduced on the simulator.
+
 ## 2026-11-11 11:27:27 EST — scribe `1a236df7afca55ee1aebed62e2de89ff3ca689f2`
 Fix (#2258): a size picked from the screen frames' long-press opens a band his Collapse When Frames Stop wait had folded, at that size, for his wait from the pick (build 315: his picks reached his settings while the band stayed its chip, the newest frame 34 minutes old); RecordingFrameBandTests 16 of 16 on the M5.
 
