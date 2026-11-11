@@ -1,3 +1,6 @@
+## 2026-11-11 16:03:49 EST — scribe `7ba54ad9f97174fa03a305bc81a00b643d647792` (correction)
+Correction to the entry for 7ba54ad9f below: its red commit is `7ba54ad9f` (red(#2278)), not `9ae6f6538` (that is #869's red for a66a8a3ae).
+
 ## 2026-11-11 16:03:34 EST — scribe `7ba54ad9f97174fa03a305bc81a00b643d647792` (merge of agent/claude/mirror-load-869: red `9ae6f6538`, green `1de340d00`; fix `b5999f031` corrects the size in comments and tests, landed as `3142c65b7`)
 Fix (#2278): the Mac mirror refuses, once and before any decode, a decoded copy past what a WAV's 32-bit sizes can hold, and never retries it: Recording 405's 4,371,973,932-byte row had been decoded whole and failed at the header 341 times since 11-09 (~44 s and ~4.3 GB written each); installed 21:01:39 UTC, one refusal and no try since. The RF64 WAV past 4 GiB waits for an attach upload that streams.
 
