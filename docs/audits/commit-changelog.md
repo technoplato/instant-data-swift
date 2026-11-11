@@ -1,3 +1,9 @@
+## 2026-11-11 01:03:05 EST — scribe `11553c68ad4eb19aca9cbeb68d5e0f7540f54f7e`
+Feature (#2194): ink works from the terminal: InkCore (ink's rules as pure Swift: a frame's bit under a published rule, the mint as a recount, a painted frame's cost in zeros and ones, editions, the split, owners' leaves, the payout rule; 67 tests on the build Mac) and scribe ink mint | balance | paint | list | show | buy through the mirror as his account (217 of 217); installed 01:07 and run in production under rule ink/0 (frames already recorded, not signed; play money): 124 recordings gave 33,904 frames, three frames painted and shown to him; changelog 05b430fc6.
+
+## 2026-11-11 00:19:10 EST — scribe `d3b7fb37d6cc744c5165b06f4a9e20c7cedc0af6`
+Feature (#2194): ink is bits (ADR 0148): a frame gives a zero or a one by a published question, a painted frame costs the bits its canonical bytes spell, only a recording's counts are ever kept or shown; one vectors file every implementation reads, the mirror's copy of the rules (155 of 155) and the picture code (16 of 16); nothing wired or installed by it.
+
 ## 2026-11-11 01:22:25 EST — scribe `3a66ad67aa672d6e3cae6de42def342a260b5d78`
 Merge (#2142): a swipe's game field is never named like a word the chain reads, nor named twice (the #2163 review's finding 6): SwipeMessage.FixedWord, which the body and the reader are written from; a reserved or repeated field name is refused when the message is made and does not read back as a swipe; the golden swipe message is unchanged; ADR 0113 amendment K point 3; on the tree joined with main 599a2a548 329 tests in swift-wallet pass on the M5; the app's own package was not run; an iPhone, energy and mainnet are not measured.
 
