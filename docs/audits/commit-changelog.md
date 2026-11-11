@@ -1,3 +1,9 @@
+## 2026-11-11 15:44:34 EST — scribe `16c8c6141e53c56ef40a8354959518ab3a2e55b1`
+Fix (#2244): simulator builds of the app compile again (their SDKs ship no ScreenCaptureKit); the Vision app embeds a broadcast receiver so Record My View lists Scribe.
+
+## 2026-11-11 15:44:34 EST — scribe `58c6d9290aec1f4ea0443b099a3c29ba32c9ac8a`
+Feature (#2244): a start request's picker follows the broadcast's route: on Vision Pro the voice command, Siri and Shortcuts put up the in-app capture's picker.
+
 ## 2026-11-11 15:35:43 EST — scribe `ada2e7aa98b1b4d80e3ff91477bab36749cccd95` (merge of agent/claude/catalog-wav-2226: red `125814061`, green `85926bfff`, plan amendment `1f8001afb`; changelog `33d69976e`)
 Fix (#2226): the ShazamKit catalog's caches take the long WAV header (RF64 past 4 GiB, Core Audio's JUNK-then-ds64 layout) and wav_data reads RF64 and BW64, so a recording longer than 12 h 25 min is signed to its end; installed on the old mini 15:30:21: Recording 405 signed through 45,541.416 s (was 34,386.005) and 10 of 10 clips from its last 6 minutes recognized as it (offset error median 3 ms).
 
