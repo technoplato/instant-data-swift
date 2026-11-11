@@ -1,3 +1,6 @@
+## 2026-11-11 03:47:57 EST — scribe `0aa033d755e45153e3cff6f8ad5a84acc03812b6` (merge of agent/claude/game-ui-2141: green `b73be3ffc`)
+Feature (#2141): the app's mode in the app: it opens as Scribe or as Just Answers and keeps the choice (the setting appMode); one switch in both modes (the drawer's first row, a button at the top of Just Answers); each mode is a place whose link comes from its case's name (scribe-shared://mode/just-answers, scribe-shared://mode/scribe); Just Answers shows the live deck 409 over Scribe, which keeps running under it; a switch closes the sheets in front (ADR 0149). Design round 8: 9.0, the lowest line (15 pictures of the running code). Not measured on a device yet.
+
 ## 2026-11-11 03:39:07 EST — scribe `a31a98c07ba04cfc704e93988526bed2b53b2479`
 Feature (#2140): the game's teller in the mirror checks a guest's signed swipe against devnet (the frames/1 message's signature, the channel's count and lamports at the deck's rate, the signer's deposit) and writes covered with the card's split, or refused with why, in one admin transaction; main 4ed518f79.
 
