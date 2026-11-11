@@ -1,3 +1,6 @@
+## 2026-11-10 20:54:39 EST — scribe `b48029643db943b3532b940c103a553a7ab72368` (merge of agent/claude/game-ui-2141 at `c61b6cded`: red `e82ab88f4`, green `61c013e63`)
+Feature (#2141): the swipe deck's rules, a new standalone package (Packages/swift-swipe-deck, SwipeDeckCore): the quadrant a swipe starts in, the lean, the call with a flick's momentum and a dead band at the diagonals, the rubber band, the tilt and the exit. 35 of 35 tests on the mini. Not yet linked by the app.
+
 ## 2026-11-10 02:55:19 EST — scribe `fb54544ec8c8a4908a4474ced519eeef119e3e8a`
 Docs (#2060): build 313's Try line within 30 words, so the notes check passes.
 
