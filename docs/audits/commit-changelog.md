@@ -1,3 +1,12 @@
+## 2026-11-11 18:05:37 EST — scribe `29e3b952ef3cf92b6ab5ea45b6d4828eb470181a` (merge of agent/claude/tv-look-2284: feat `24a7f8c9b`, audit `7f5787c04`)
+Feature (#2284): the loft Apple TV joins scripts/devices/devices.conf (loft-tv, tvos, 00008110-001111A90C02601E, reach m5): every release builds Scribe TV and the M5 installs it on the Loft; and audits/2026-11-11-apple-tv-2284.md (paired with the M5 only, no Apple TV on his team until 16:53, the TV app uncompiled for weeks, no sign-in, copies of the shared screens, a seamed icon).
+
+## 2026-11-11 18:05:37 EST — scribe `97a4740a5d30a40a333987f5c31664a69fbd34fc` (merge of agent/claude/tv-look-2284: green `caf3b11d4`, plan amendment 3)
+Fix (#2284, #2287): Scribe TV compiles for tvOS: instant-data-swift pinned 1.9.85, and eight gates the TV app had outgrown (the ribbon's drag, the debug overlay's sliders and drag, the bench's battery reads, RangeShareView's text selection and ShareLink, ScribeTargetSize at 66 pt, no voice-actions model on the TV, the notification router's two plain values on every platform); tvOS Simulator Debug and device Release builds pass on the M5.
+
+## 2026-11-11 18:05:37 EST — scribe `8b1e6883d43ecd6797046eb4265589376a50d7ff` (merge of agent/claude/tv-look-2284: green `dbcb53ded`, plan amendment 1)
+Tooling (#2284): scripts/visionos/compile-check.py --platform tvos compiles Scribe TV on the M5 like the Vision Pro app (one table of platforms; test_compile_check.py).
+
 ## 2026-11-11 17:15:23 EST — instant-data-swift `dab43982219ee5af8ecd0470255b177a1e320204` (merge of agent/claude/tv-instant-2287: plan `1e08280a`, green `fa1f3d8a`, release record `530b94c1`; tag v1.9.85)
 Release (#2287): v1.9.85, the library compiles for tvOS: the browser sign-in authorizer leaves the tvOS build (tvOS has no web authentication presentation) and Sign in with Apple's cancel runs from tvOS 18; red, a tvOS compile with five errors, and green, InstantSwiftData and InstantSwiftDataMedia building for tvOS, both on the M5; a consuming app's first tvOS build (#2284) found it.
 
