@@ -1,3 +1,6 @@
+## 2026-11-11 16:10:50 EST — scribe `f0e32e5cd171dc095b2a9e61564dc9375bb6ca1e` (merge of agent/claude/visionpro-2275: red `06e4d63e6`, green `7cdbe2ec5`, audit `3f06194dc`, changelog `4f4942265`)
+Fix (#2275): Vision Pro pictures reach the recording: the media coordinator holds a local observation of the scan's rows (attachments without a file) so the library keeps them in memory until their file is linked, and the scan sends this device's rows before its server question (#621), which timed out with a 500 on every scan of Recording 413; the photo watcher looks in Photos 1, 2 and 5 s after the system says a screenshot was taken, hands over one Photos never reported, and logs photo-library.screenshot.unseen when Photos holds none; each asset goes once.
+
 ## 2026-11-11 16:04:01 EST — scribe `7ba54ad9f97174fa03a305bc81a00b643d647792` (correction, supersedes the two entries below)
 For 7ba54ad9f (#2278) the red commit is `70f8287c7` and the green `1de340d00`. The entry below and the one under it named `7ba54ad9f` and `9ae6f6538` as its red by mistake; `9ae6f6538` is #869's red for a66a8a3ae.
 
