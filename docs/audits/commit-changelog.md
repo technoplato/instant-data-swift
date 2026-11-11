@@ -1,3 +1,6 @@
+## 2026-11-10 21:31:03 EST — scribe `7d910a83bcc96cb572a807a017a2d5fcd55326e7` (merge of agent/claude/game-core-2140 at `9cd0e3018`: red `9cf31ea83`, green `0845765b4`; red `e4d04c47a`, green `e9bb7c18d`)
+Feature (#2140): the game of life's client (GameClient, SwipeSigner) and GameDeck reducer (@Declared, 41 tests), and the game module in Instant (gameDecks, gameCards, gameSwipes, gameReveals; the house is the card's owner read through a link) pushed to production 21:29:52 by evolve.sh with the standing approval, drift 0; game-matrix 40 of 40 on bd40c50a.
+
 ## 2026-11-10 20:55:00 EST — scribe `c755ecca8158678142eddeb7b036adfdc7cb3554` (merge of agent/claude/game-core-2140 at `2f156d7bc`: red `7cb312b30`, green `9765d5950`)
 Feature (#2140): GameOfLifeCore, the game of life (#2130) as types and its rules as pure functions: a call is yes/no or human/AI, the top half of a card is what others think and the bottom half mine, a swipe id derived from player, card and slot whose 16 bytes the chain carries, only free or verified swipes counted, nothing revealed before the player's own swipe counts. 26 tests on the Mac mini.
 
