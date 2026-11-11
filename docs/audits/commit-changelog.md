@@ -1,3 +1,12 @@
+## 2026-11-11 14:10:21 EST — foldkit `a5d9246db0f2caabf10a64a15858b3cd15a23086` (technoplato/main: red `febc5eea3`, green `7a2b7870e`, changelog `a5d9246db`)
+Fix (Scribe #2264): the issues tracker's sync hands a released claim to the agent still running on the Issue (the latest of them to claim it, else the newest to start) and releases to nobody only when none runs there; it had released #2141 to nobody three times on 2026-11-11 while game-ui-2141c worked on. Issues CLI 1.21.0 installed 14:13:46 from it.
+
+## 2026-11-11 13:41:30 EST — scribe `2533cebfea908e404c62943b20f3ef5a95eeb68a` (merge of agent/claude/resume-guard-2264: red `07bdbf947`, green `a02220952`)
+Fix (#2264): agent-run's line_began leaves out registry rows with no id (22 in the live registry): f4e9343d1's install made every --resume raise KeyError from 13:38:47 to 13:41:44; installed 13:41:44.
+
+## 2026-11-11 13:38:18 EST — scribe `f4e9343d1eeaab961b3c053731a4270e6cb646f9` (merge of agent/claude/resume-guard-2264: red `9d422efd3`, green `4631087c1`; plan `6123f2781`)
+Fix (#2264): agent-run never resumes a run whose place another run took (exit 6; a held start in that state moves to agents/held-superseded/ and is never asked about), and never gives a Claude login a model it stopped at its limit until quota-axi shows that limit back (exit 5, before the hold, the pre-plan check and the claim); auto reads model windows (model:fable); an attempt's reason comes from its own output. Found from the #2130 lead's watchdog, which resumed game-ui-2141b on a spent Fable week every 15 minutes and took #2141's claim from game-ui-2141c (stopped 12:58 with its own switch).
+
 ## 2026-11-11 14:07:44 EST — scribe `64c10fc8edb1bfb0bb0c04d20c13bfbc9e0b1753` (merge of agent/claude/onboarding-2241-entitlements: red `7ef3d879c`, red `e47cde483`, red `5b52681fa`, green `f0661cd80`)
 Feature (#2241): StoreKit 2 client for the trial and the plans (not linked into the app): a purchase reads its own transaction, an ended plan the history, and the changes stream wakes at a paid plan's end; a macOS harness hosts StoreKitTest (24 tests, 3 known issues of the test session).
 
