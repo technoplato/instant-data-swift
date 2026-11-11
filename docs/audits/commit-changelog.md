@@ -1,3 +1,6 @@
+## 2026-11-11 17:08:55 EST — scribe `7c4f7b6f29319534962a79bfc77d084ce5d75632` (merge of agent/claude/app-actions-2281: red `3d3cad261`, green `c6fbf9f1c`, changelog `58fb423c7`)
+Feature (#2281): the app icon's menu offers Stop Recording while a recording is live and Stop Broadcast in Start Broadcast's place while a broadcast runs, by one rule for what a system surface may ask of the live recording (the list refuses by it, the menu offers only what it takes); the Live Activity's and Control Center's controls no longer go unanswered while the recording is full screen.
+
 ## 2026-11-11 16:54:15 EST — scribe `dbe397f2d997c73775f0c9266497cd2a8e04d42c`
 Fix (#2088): the Mac's live transcription server keeps its models loaded while it runs and loads them when it starts (ModelHost.Residency .resident, ModelHost.Lifecycle), so a recording's first line never waits for a reload: Recording 415's stream waited 39.7 s for one after the ten-minute unload and showed its first line 29.5 s late; On This iPhone keeps its idle let-go; mini: TranscriptionEngineTests 79 and ScribeTranscriptionTests 13 pass.
 
