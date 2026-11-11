@@ -1,3 +1,6 @@
+## 2026-11-10 20:55:00 EST — scribe `c755ecca8158678142eddeb7b036adfdc7cb3554` (merge of agent/claude/game-core-2140 at `2f156d7bc`: red `7cb312b30`, green `9765d5950`)
+Feature (#2140): GameOfLifeCore, the game of life (#2130) as types and its rules as pure functions: a call is yes/no or human/AI, the top half of a card is what others think and the bottom half mine, a swipe id derived from player, card and slot whose 16 bytes the chain carries, only free or verified swipes counted, nothing revealed before the player's own swipe counts. 26 tests on the Mac mini.
+
 ## 2026-11-10 20:54:39 EST — scribe `b48029643db943b3532b940c103a553a7ab72368` (merge of agent/claude/game-ui-2141 at `c61b6cded`: red `e82ab88f4`, green `61c013e63`)
 Feature (#2141): the swipe deck's rules, a new standalone package (Packages/swift-swipe-deck, SwipeDeckCore): the quadrant a swipe starts in, the lean, the call with a flick's momentum and a dead band at the diagonals, the rubber band, the tilt and the exit. 35 of 35 tests on the mini. Not yet linked by the app.
 
