@@ -1,3 +1,9 @@
+## 2026-11-11 12:47:30 EST — scribe `8d3271e0600760f4cb6ad3d9cc75407b8ca0ad54` (cut of Scribe 0.1 (317): `d8e507667`; release commit `ddc449d2d547043358ddde59289b6ce6ff94aac7`, origin release/317-playground-drift)
+Release (#1989): build 317, the first Vision Pro build since 232. Its release commit adds #2253's playgroundSessions.area and .summary and their update rule, already on production, so the drift gate matches the fresh pull. Installed on the Vision Pro over Wi-Fi at 12:39 (built unsigned on the M5, signed on the laptop), read back 0.1 (317).
+
+## 2026-11-11 12:31:10 EST — scribe `bffcde0f5b8444948c4f92d182526ab556c6e2fc` (merge of agent/visionpro-install-1989: red `527ee5c9e`, green `6691e33fb`)
+Fix (#1989): the Vision Pro app compiles again. swift-game-of-life and swift-ink declared visionOS 1 and link instant-data-swift, which declares visionOS 2, so Xcode refused the package graph; two views called sensoryFeedback, which visionOS starts at 26. A test reads every package manifest so the first can not come back unseen.
+
 ## 2026-11-11 11:28:16 EST — scribe `c82f857391a86065f8017deb00138324580a2573` (merge of agent/claude/ab-sheet-2125: green `09b66946a`)
 Fix (#2125): a press that leaves a screen with a sheet open (the Action Button, Siri, a new-recording link, the Mac menu, the floating bar over a sheet) closes the sheet first and acts once it has slid away (500 ms on the controlled clock): the playback screen, scoped through TCA's optional scope, never drew its two sheets closed when the press closed them and removed it in one turn, and an empty sheet stayed over the new recording (Recording 409). 125 RecordingList tests on the M5, 4 of 4 UI tests on the iOS 27.0 simulator; the device trigger itself was not reproduced on the simulator.
 
