@@ -1,3 +1,9 @@
+## 2026-11-11 11:05:50 EST — scribe `20d1dce6948a437a1008c3df6f1ad87d3bdc0155` (merge of agent/claude/selfhost-2238: docs `8bc0aa4bd`)
+Docs (#2238): the pairing protocol (v0), sessions, topics and the threat model move from the work's plan file into the repository as selfhost/PROTOCOL.md, with the Swift clients as built (PairingClient, SessionClient, ChannelTopics); selfhost/README.md says where things are, what runs where, and how each live proof is run with its last measurement; the Swift package's and the schema's references point there. Changelog 83f5ee018.
+
+## 2026-11-11 11:05:51 EST — scribe `242ce9e9422547274a4c06d583c8cab5fd7ad847` (merge of agent/claude/selfhost-2238: docs `bb2a3db9b`)
+Docs (#2238): the install site's not-yet list says what is left of transcription off the Mac: Windows, and proof on Intel or AMD Linux; on Linux, up --with speech adds the open transcriber, proved on ARM Linux so far. Redeployed and checked through his sign-in.
+
 ## 2026-11-11 11:00:43 EST — scribe `dc043c495` (merge of agent/claude/chooser-2249: red `8695ea8d4`, green `9a673d256`, red `76989109e`, green `5e75c4b95`, docs `5a8212ff0`)
 Fix (#2249): the mirror's thread chooser keeps each Claude login's quota reading off the post's path (used as is under 90 s, used at once up to an hour while read again, waited on at most 5 s only when there is none), and each choice's record in events.jsonl names the login or path that answered, the logins at their limits with their windows, and the unread ones. Found live at 10:41: 87 s after an install, under load, all five reads inside the mirror passed 5 s and the ask went on unmeasured.
 
