@@ -1,3 +1,6 @@
+## 2026-11-11 11:08:33 EST — scribe `31329e94da1e0bf357092b2aee18830ea0705188` (merge of agent/claude/selfhost-2238: green `3972e5999`)
+Feature (#2238): scryyyyybe status says the transcriber's state in the tool's own sentence from words.json (transcriberSentence, one function of the tool; the local page holds the same sentences through its own transcriberView). Live on the M5: "Transcriber: none on this computer yet, so a paired phone transcribes by itself." 111 of 111 node tests. Changelog da298917f.
+
 ## 2026-11-11 11:05:50 EST — scribe `20d1dce6948a437a1008c3df6f1ad87d3bdc0155` (merge of agent/claude/selfhost-2238: docs `8bc0aa4bd`)
 Docs (#2238): the pairing protocol (v0), sessions, topics and the threat model move from the work's plan file into the repository as selfhost/PROTOCOL.md, with the Swift clients as built (PairingClient, SessionClient, ChannelTopics); selfhost/README.md says where things are, what runs where, and how each live proof is run with its last measurement; the Swift package's and the schema's references point there. Changelog 83f5ee018.
 
