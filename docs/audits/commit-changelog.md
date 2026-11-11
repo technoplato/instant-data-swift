@@ -1,3 +1,6 @@
+## 2026-11-11 16:59:31 EST — scribe `096305092b68355057ed7417878d55d165ee9088`
+Fix (#2088): the Mac server's install says the live models load at its start and stay loaded (its health label after the restart, the warm-up's comment and its memory summary, which said the models unload after 600 s); deployed to the mini with 781642706 at 17:10:02 EST, which loaded its models in 460 ms at the start and answered every check stream with models ready after 0.0-0.1 s.
+
 ## 2026-11-11 17:08:55 EST — scribe `7c4f7b6f29319534962a79bfc77d084ce5d75632` (merge of agent/claude/app-actions-2281: red `3d3cad261`, green `c6fbf9f1c`, changelog `58fb423c7`)
 Feature (#2281): the app icon's menu offers Stop Recording while a recording is live and Stop Broadcast in Start Broadcast's place while a broadcast runs, by one rule for what a system surface may ask of the live recording (the list refuses by it, the menu offers only what it takes); the Live Activity's and Control Center's controls no longer go unanswered while the recording is full screen.
 
