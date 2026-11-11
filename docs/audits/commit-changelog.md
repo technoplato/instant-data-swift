@@ -1,3 +1,6 @@
+## 2026-11-11 00:17:10 EST — scribe `af080c5e146b4fb249187e9a790d9891abb5a8db` and `27e82bac1914f9bb9a3da484267b2241b56aa678` (merges of agent/claude/game-core-2140: red `a1011066b`, green `d8525d4f0`; docs `8764d18bf`)
+Fix (#2140): a deck added again never rewrites a card's split (a dry run on production's deck 409 planned 56 counted splits back to zero; nothing was written); deck 409 then got the devnet rate (lamportsPerCent 120351 from chain/frames/deployments.json) at 00:23, its splits intact. Docs: the game's reads on deck 409, measured (audits/2026-11-10-game-core-2140.md, docs/PERFORMANCE.md). No library change.
+
 ## 2026-11-11 00:12:50 EST — scribe `c6f8c5df8bba0f727fa0a6cc025373d4fff42e3d`
 Feature (#2135): the frame-ownership program is on Solana devnet (FramPHKAwmfEyRGSkmda6MRhWfCeNTvukfSBLeg3ji8Z, slot 520990564; the bytes on chain read back equal to the build) and proven there: a real screen frame registered by hash only under a salted name from its owner's offline signature, a stand-in device's assertion, a second key's agreement paying one US cent, collect, deposit, three signed swipes settled, a withdrawal requested, the treasury paid out; every signature in chain/frames/deployments.json, from which the spec's section 12 is generated; the client waits out a busy public node (HTTP 429), bounded.
 
