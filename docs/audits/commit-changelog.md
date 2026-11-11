@@ -1,3 +1,9 @@
+## 2026-11-11 04:08:01 EST — scribe `311cda3e2d01d3fdd814ef9e5c56e24c7b5fc09b` (merge of agent/claude/ink-core-2194: greens `b4250493c`, `791b8da0a`, `d00e5e315`)
+Feature (#2194): ink's reducers, who counts, and the Mac mints by itself: InkFeature (InkHome, InkCanvas, PaintedFrames as TCA reducers, each declared once; no view; 64 tests), InkClient.counter (a screen offers Mint only where the device can count; under ink/0 the Mac's door counts and the ink comes with the feed), and the mirror's minter (ten quiet minutes after a recording ends, the mirror asks its own door for a recount through the function scribe ink mint --all reaches; counts only; 238 of 238 ink tests); changelog ef9167f11. The minter is in the source, not installed by this landing.
+
+## 2026-11-11 01:42:57 EST — scribe `cf994cfd3d2bb1079ea44cfff46887fc0bacf590` (merge of agent/claude/ink-core-2194: green `6c371d334`)
+Feature (#2194): InkClient, the app's door to its ink rows, as a dependency: InkFeed (rows only, nothing worked out), feed, mint, register and buy, an in-memory value and a made-up preview; it imports no Instant and no Scribe module (80 tests on the build Mac).
+
 ## 2026-11-11 03:47:57 EST — scribe `0aa033d755e45153e3cff6f8ad5a84acc03812b6` (merge of agent/claude/game-ui-2141: green `b73be3ffc`)
 Feature (#2141): the app's mode in the app: it opens as Scribe or as Just Answers and keeps the choice (the setting appMode); one switch in both modes (the drawer's first row, a button at the top of Just Answers); each mode is a place whose link comes from its case's name (scribe-shared://mode/just-answers, scribe-shared://mode/scribe); Just Answers shows the live deck 409 over Scribe, which keeps running under it; a switch closes the sheets in front (ADR 0149). Design round 8: 9.0, the lowest line (15 pictures of the running code). Not measured on a device yet.
 
