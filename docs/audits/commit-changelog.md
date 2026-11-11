@@ -1,3 +1,6 @@
+## 2026-11-11 15:03:01 EST — scribe `8a4850301278bd9d66c3e8501d4394e8e45ebc77` (merge of agent/claude/mirror-load-869: red `c6403e50d`, red `e62df2f92`, green `1613edf6e`; changelog `364dd413c`)
+Fix (#869): the mirror's agents board reads only the live files a running claude names or that changed within its window, on its own worker thread, and the activity sweep looks at the live folder off the loop; at load 183-215 the board held the mirror's loop 4.3-9.0 s every 15 s (82% of 148.7 s of lateness in a 270 s profile), reading all 20,417 live files each time.
+
 ## 2026-11-11 14:53:11 EST — scribe `000d58f76584992f2c67ff57200525274a399031`
 Fix (#2244): the in-app screen capture starts one stream at a time, and its silent end is logged as the app's, not the extension's memory limit.
 
