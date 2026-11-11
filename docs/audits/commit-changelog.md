@@ -1,3 +1,6 @@
+## 2026-11-11 15:35:43 EST — scribe `ada2e7aa98b1b4d80e3ff91477bab36749cccd95` (merge of agent/claude/catalog-wav-2226: red `125814061`, green `85926bfff`, plan amendment `1f8001afb`; changelog `33d69976e`)
+Fix (#2226): the ShazamKit catalog's caches take the long WAV header (RF64 past 4 GiB, Core Audio's JUNK-then-ds64 layout) and wav_data reads RF64 and BW64, so a recording longer than 12 h 25 min is signed to its end; installed on the old mini 15:30:21: Recording 405 signed through 45,541.416 s (was 34,386.005) and 10 of 10 clips from its last 6 minutes recognized as it (offset error median 3 ms).
+
 ## 2026-11-11 15:18:26 EST — scribe `7f7f3bc25f26ab5defe8f216b6ef88ac27e30d08` (merge of agent/claude/dragbar-2129: tests `f3e8dc12b`, `4fcbde093`, changelog `cba8f76a7`)
 Test (#2129): the guards for the frames handle over a now-playing card, after its fix (5bdb0d652). A picture test of the screen frames, their handle and the song card, with frames put into the thumbnail cache at the band's decode size (whole frames overflowed its 8 MB and two drew gray); recorded and repeated on the laptop, 38 tests in 4 suites pass. An opt-in iPhone simulator test that drags the handle 60 points: before the fix the card case stayed at 56 points, after it both cases went 56 to 85; the half travel is #2272.
 
