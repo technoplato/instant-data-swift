@@ -1,3 +1,24 @@
+## 2026-11-10 22:25:49 EST — scribe `0466582b9edd6a7b907b41c148d617e0c0cb3496` (merge of agent/claude/game-core-2140 at `2de0e2108`: red `63735f34d`, green `2de0e2108`; changelog `9c5487104` landed in `20173494a`)
+Feature (#2140): the other lanes' schema asks in one push, pushed to production 22:23:58 by evolve.sh with the standing approval, drift 0: gameSwipes.channel, programDescriptions (a program's IDL as a row), twelve optional mint fields on recordingAttachments and appAttestKeys; 71 additive steps, proved on bd40c50a first (43, 4 and 14 of their matrices).
+
+## 2026-11-10 22:09:51 EST — scribe `0f2fd045287c84166fc0d9666142bf8f154e6615` (merge of agent/claude/game-core-2140 at `bb956c7cf`: red `5743e781e`, green `bb956c7cf`)
+Fix (#2140): each run of scribe game is its own request (its wire carries when it was asked), so the mirror's once-per-request guard no longer swallows a rerun.
+
+## 2026-11-10 22:07:59 EST — scribe `9e97a13b43da87eeddaadd5dbf9e5b7e0da12562` (merge of agent/claude/game-core-2140 at `d5d839244`: red `605615ef3`, green `d5d839244`)
+Fix (#2140): scribe game copies or compares an attribute Instant reads back as null as absent, so reason cards are no longer refused.
+
+## 2026-11-10 22:04:54 EST — scribe `0f42f1749c11279990a82201bf963eec87a82228` (merge of agent/claude/game-core-2140 at `d88b70bae`: red `c83700067`, green `d88b70bae`)
+Fix (#2140): scribe game prints what it did line by line, and a dry run says nothing was written.
+
+## 2026-11-10 22:02:11 EST — scribe `014f8049c2f54e82758b79e0883cb7bdcba00347` (merge of agent/claude/game-core-2140 at `3eafc532a`: red `d580d718e`, green `3efa9d134`, changelog `3eafc532a`)
+Feature (#2140): scribe game add, answers, answer, list, show and tally through the mirror as his account; the mirror's install stages the schema files its commands import, derived from the imports.
+
+## 2026-11-10 21:50:32 EST — scribe `bb8c9e27bb0ff7f8d82efe9c88acfdc02645f32f` (merge of agent/claude/game-core-2140 at `67344cfdf`: red `ccbc504df`, green `6f0674362`; red `8927d4f2e`, green `1c86ee010`; changelog `67344cfdf`)
+Feature (#2140): GameDeck deals one swipe per card (state.dealt), and his account opens a deck (gameDecks' rules from the schema's one declaration of his account), pushed to production 21:50:01, drift 0.
+
+## 2026-11-10 21:39:52 EST — scribe `6ab9919b855ca6d2224b1cbba58cd9ddb7c2bf52` (merge of agent/claude/game-core-2140 at `555424d65`: red `9cca43f2d`, green `426d9fe2b`; red `784764b59`, green `c4d75594c`; changelog `555424d65`)
+Feature (#2140): GameDeck in the cards' shape, a guest's swipe signing its price (stake or penalty), and a signed swipe's running totals and a deck's three prices in Instant, pushed to production 21:38:43, drift 0.
+
 ## 2026-11-10 21:31:03 EST — scribe `7d910a83bcc96cb572a807a017a2d5fcd55326e7` (merge of agent/claude/game-core-2140 at `9cd0e3018`: red `9cf31ea83`, green `0845765b4`; red `e4d04c47a`, green `e9bb7c18d`)
 Feature (#2140): the game of life's client (GameClient, SwipeSigner) and GameDeck reducer (@Declared, 41 tests), and the game module in Instant (gameDecks, gameCards, gameSwipes, gameReveals; the house is the card's owner read through a link) pushed to production 21:29:52 by evolve.sh with the standing approval, drift 0; game-matrix 40 of 40 on bd40c50a.
 
