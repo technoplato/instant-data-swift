@@ -1,3 +1,6 @@
+## 2026-11-11 13:13:01 EST — scribe `9d2650e66f5f918961c291652789eb978fef8c10` (merge of agent/claude/onboarding-2241: red `2cacca527`, gate red `75f90bf6c` green `fe462df96`, green `e49587d14`, adapter red `e98161f26` green `453c3d368`, design-round greens `efdb91d95` `b879ef1f2` `8c777e105` `cffe9cb02` `3846769e2`)
+Feature (#2241): the first-run screens (every step drawn from its declaration; whole words at the largest text size; three sentences a screen; refusals and failed pairings as warnings; the trial on one screen with its billed price prominent), the launch gate in the app with its switch off, #2238's pairing client behind the flow's interface, watchOS 10 and tvOS 17 declared for the onboarding package; design review passed at round nine (82 screens, lowest line 9.0, review-2241-r9).
+
 ## 2026-11-11 12:47:30 EST — scribe `8d3271e0600760f4cb6ad3d9cc75407b8ca0ad54` (cut of Scribe 0.1 (317): `d8e507667`; release commit `ddc449d2d547043358ddde59289b6ce6ff94aac7`, origin release/317-playground-drift)
 Release (#1989): build 317, the first Vision Pro build since 232. Its release commit adds #2253's playgroundSessions.area and .summary and their update rule, already on production, so the drift gate matches the fresh pull. Installed on the Vision Pro over Wi-Fi at 12:39 (built unsigned on the M5, signed on the laptop), read back 0.1 (317).
 
