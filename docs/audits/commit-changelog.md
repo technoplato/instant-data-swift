@@ -1,3 +1,6 @@
+## 2026-11-11 11:27:27 EST — scribe `1a236df7afca55ee1aebed62e2de89ff3ca689f2`
+Fix (#2258): a size picked from the screen frames' long-press opens a band his Collapse When Frames Stop wait had folded, at that size, for his wait from the pick (build 315: his picks reached his settings while the band stayed its chip, the newest frame 34 minutes old); RecordingFrameBandTests 16 of 16 on the M5.
+
 ## 2026-11-11 11:08:33 EST — scribe `31329e94da1e0bf357092b2aee18830ea0705188` (merge of agent/claude/selfhost-2238: green `3972e5999`)
 Feature (#2238): scryyyyybe status says the transcriber's state in the tool's own sentence from words.json (transcriberSentence, one function of the tool; the local page holds the same sentences through its own transcriberView). Live on the M5: "Transcriber: none on this computer yet, so a paired phone transcribes by itself." 111 of 111 node tests. Changelog da298917f.
 
