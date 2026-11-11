@@ -1,3 +1,6 @@
+## 2026-11-11 01:22:25 EST — scribe `3a66ad67aa672d6e3cae6de42def342a260b5d78`
+Merge (#2142): a swipe's game field is never named like a word the chain reads, nor named twice (the #2163 review's finding 6): SwipeMessage.FixedWord, which the body and the reader are written from; a reserved or repeated field name is refused when the message is made and does not read back as a swipe; the golden swipe message is unchanged; ADR 0113 amendment K point 3; on the tree joined with main 599a2a548 329 tests in swift-wallet pass on the M5; the app's own package was not run; an iPhone, energy and mainnet are not measured.
+
 ## 2026-11-11 01:17:16 EST — scribe `58e9bcb883aeb3a7d71eb5c6dce9485b01869786`
 Merge (#2142): docs only: the wallet's quote and capped program call run on devnet (ADR 0113 amendment K point 12, the wallet's README): --quote said fee 10,000 and takes 1,757,520 lamports in 0.44 s and moved nothing, the capped call took exactly that and returned final in 1.28 s, a repeat was refused unsigned by the node's simulation; devnet coins only; evidence ~/Sync/audit/wallet-sign-2142/devnet2.
 
