@@ -1,3 +1,6 @@
+## 2026-11-11 01:17:16 EST — scribe `58e9bcb883aeb3a7d71eb5c6dce9485b01869786`
+Merge (#2142): docs only: the wallet's quote and capped program call run on devnet (ADR 0113 amendment K point 12, the wallet's README): --quote said fee 10,000 and takes 1,757,520 lamports in 0.44 s and moved nothing, the capped call took exactly that and returned final in 1.28 s, a repeat was refused unsigned by the node's simulation; devnet coins only; evidence ~/Sync/audit/wallet-sign-2142/devnet2.
+
 ## 2026-11-11 01:11:15 EST — scribe `c9fc6ea8d71069b0be38ba3ef504b499fcf81c46`
 Merge (#2142): a program call is one signed transaction and says what it takes before the key signs (the #2163 review's finding 5): WalletEngine.call journals the signed bytes under ProgramCall.id before broadcast and a retry sends them again, across launches; the node simulates first (wouldFail), the quote (fee, lamports out of the payer) comes with quoteCall and is capped by maximumLamportsOut; a spoken line calls no program; the call waits for the node five seconds at most; scribe wallet call prints fee and takes, --quote, --max-lamports; ADR 0113 amendment K point 12; on the tree joined with main 11553c68a 326 tests in swift-wallet, 57 in swift-screen-mint and the app package's LiveValuesAreLinkedTests pass; not yet run against devnet; an iPhone, energy and mainnet are not measured.
 
