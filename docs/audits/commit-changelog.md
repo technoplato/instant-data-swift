@@ -1,3 +1,6 @@
+## 2026-11-11 15:53:50 EST — scribe `0efa18e28436bc4f3b43f7154e0429a983b5cbb9` (merge of agent/claude/settings-freeze-2273: red `916cdacae`, green `56d60ebf7`, changelog `2e5523feb`)
+Fix (#2273): Broadcast Settings no longer freezes Scribe on iPhone: the broadcast feature keeps what the app fills in (what is live, his saved choices) unobserved, so the app's computed broadcastStart no longer tells SwiftUI the Broadcast section changed on every read (build 318's watchdog kill, 0x8BADF00D at 15:16:20, had the main thread in that read).
+
 ## 2026-11-11 15:44:34 EST — scribe `16c8c6141e53c56ef40a8354959518ab3a2e55b1`
 Fix (#2244): simulator builds of the app compile again (their SDKs ship no ScreenCaptureKit); the Vision app embeds a broadcast receiver so Record My View lists Scribe.
 
