@@ -4334,6 +4334,58 @@ struct BootstrapTests {
     expectNoDifference(url.path, directory.appendingPathComponent("state.sqlite").path)
   }
 
+  /// tvOS lets an app write only Caches and tmp: on a device, creating the store's folder in
+  /// Application Support fails with EPERM (NSCocoaErrorDomain 513), though the simulator allows it.
+  @Test
+  func liveDefaultPersistenceURLIsUnderCachesOnTVOS() {
+    let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    let url = DependencyValues.defaultInstantSwiftDataPersistenceURL(
+      appID: "tv-app",
+      context: .live,
+      platform: .tvOS
+    )
+
+    expectNoDifference(
+      url.path,
+      caches
+        .appendingPathComponent("InstantSwiftData", isDirectory: true)
+        .appendingPathComponent("apps", isDirectory: true)
+        .appendingPathComponent("tv-app.sqlite").path
+    )
+  }
+
+  @Test
+  func liveDefaultPersistenceURLIsUnderApplicationSupportOnIOS() {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    let url = DependencyValues.defaultInstantSwiftDataPersistenceURL(
+      appID: "phone-app",
+      context: .live,
+      platform: .iOS
+    )
+
+    expectNoDifference(
+      url.path,
+      support
+        .appendingPathComponent("InstantSwiftData", isDirectory: true)
+        .appendingPathComponent("apps", isDirectory: true)
+        .appendingPathComponent("phone-app.sqlite").path
+    )
+  }
+
+  @Test
+  func diagnosticsLogFileIsUnderCachesOnTVOS() {
+    let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    let url = InstantDiagnostics.defaultLogFileURL(processName: "Scribe TV", platform: .tvOS)
+
+    expectNoDifference(
+      url.path,
+      caches
+        .appendingPathComponent("Logs", isDirectory: true)
+        .appendingPathComponent("InstantSwiftData", isDirectory: true)
+        .appendingPathComponent("Scribe-TV.jsonl").path
+    )
+  }
+
   @Test
   func mockClientQueryOnceFallsBackToSnapshots() async throws {
     let mock = InstantSwiftDataClient(
