@@ -1,3 +1,6 @@
+## 2026-11-11 22:16:24 EST — scribe `23b53e4bb43278b50f03e60be59b0ff9a5c71510` (merge of agent/claude/scrubber-2157: red `4f602434d`, green `fc3bed064`, changelog)
+Fix (#2157): a share's picture is read twice (at its own size and at three times it) and text Vision's detector finds that no read gave is filled; each read is judged as its own text, a place is filled once, and a second read is asked about only where it read a row the first did not. M5: on all 1,497 frames of Recording 409, 0 frames show a date of birth, an age, a mapped name or his label at the picture's size or twice it; 785 tests, 0 fail; strict set 0 leaks, 0 over-redactions. Nothing installed yet; the video stays private.
+
 ## 2026-11-11 21:51:26 EST — scribe `931435d0d3e161763ffa6da4422e021ba15700ce`
 Feature (#2244): the Vision Pro gets the iPhone's broadcast button and long press, on the receiver he started from Record My View; one route rule for iPhone, iPad and Vision Pro, and every ReplayKit gate names visionOS (an architecture test holds it).
 
