@@ -1,3 +1,6 @@
+## 2026-11-12 06:26:55 EST — scribe `904905b8f8714bc4fab238d99923b8268c21991a`
+Feature (#2239): the scryyyyybe SDK over Instant: an app on a phone sends its events as sealed rows (TypeScript scryyyyybe/instant, Swift ScryyyyybeInstant), a Babel plugin writes file and line into React Native calls, and only the sdk command on the machine opens the rows; live on the build machine against a self-hosted Instant, 63 of 63 and 3 of 3 events.
+
 ## 2026-11-12 01:19:35 EST — scribe `af122a22188d917fa955d755c17cacdcff5938ea` (merge of agent/claude/scrubber-2157: docs `32b806607`)
 Proof (#2157): Recording 409's remade broadcast shows a date of birth, an age, a mapped name or his label in 0 of its 1,821 pictures, 2,293 video frames, captions and description (counts only, M5); the audit and ADR 0122 amendment C's table. The remade video stays private.
 
