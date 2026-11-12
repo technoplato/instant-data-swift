@@ -1,3 +1,6 @@
+## 2026-11-11 19:09:47 EST — scribe `73d0082ec57d7409d47e335e6815baa7d7c5954d` (merge of agent/claude/scrubber-2157: red `0ef9eb15e`, red `3ee0e060d`, green `386d29310`, changelog)
+Fix (#2157): the share scrubber's text causes behind Recording 409's broadcast leaks: a picture's wrapped rows are read as one text and each finding drawn back on its rows (a line still being said is scrubbed as a finished one); a date of birth in words, cut off, or by the question it answers; a person's age unless a thing is the subject; lines read with the two lines before them, in the captions and the clip's mutes too. M5: 766 tests, 0 fail; strict set 100% precision and recall. Nothing installed yet; the band of small frames and the speaker label follow; the video stays private.
+
 ## 2026-11-11 18:05:37 EST — scribe `29e3b952ef3cf92b6ab5ea45b6d4828eb470181a` (merge of agent/claude/tv-look-2284: feat `24a7f8c9b`, audit `7f5787c04`)
 Feature (#2284): the loft Apple TV joins scripts/devices/devices.conf (loft-tv, tvos, 00008110-001111A90C02601E, reach m5): every release builds Scribe TV and the M5 installs it on the Loft; and audits/2026-11-11-apple-tv-2284.md (paired with the M5 only, no Apple TV on his team until 16:53, the TV app uncompiled for weeks, no sign-in, copies of the shared screens, a seamed icon).
 
