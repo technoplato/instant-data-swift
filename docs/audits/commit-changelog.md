@@ -1,3 +1,6 @@
+## 2026-11-11 21:51:26 EST — scribe `931435d0d3e161763ffa6da4422e021ba15700ce`
+Feature (#2244): the Vision Pro gets the iPhone's broadcast button and long press, on the receiver he started from Record My View; one route rule for iPhone, iPad and Vision Pro, and every ReplayKit gate names visionOS (an architecture test holds it).
+
 ## 2026-11-11 21:50:49 EST — scribe `602316c0b416ce71aa708da4ecbe398d82d74826`
 Merge (#2228): every counting Live Activity shows its title and its whole count: each count laid out in the room of its own figures (ScribeCountFigures, ScribeCountRoom); the collapsed island carries a long count across the camera, one line a side; a running stopwatch keeps room for the hours it reaches; the minimal holds the whole count on one or two rows; the recording's expanded island holds its title, Pause and Stop; a paused recording's compact time in orange. Design round 7 passed (lowest line 9.0).
 
