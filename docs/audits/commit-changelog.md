@@ -1,3 +1,9 @@
+## 2026-11-12 08:52:01 EST — scribe `812dd76f6a890d5e21df6c646b041a875e3a38b1` (merge of agent/claude/agent-chat-1652: cut `6d6e07a87`)
+Cut (#1652): Scribe 0.1 (325) from main after #1652's landing: CURRENT_PROJECT_VERSION 324 to 325 and build 325's plain block and stories, written by build_notes.py from its 108 commits and verified.
+
+## 2026-11-12 08:25:56 EST — scribe `9fa4c8b700230e31e5fad25caae790532902ef5f` (merge of agent/claude/agent-chat-1652)
+Feature (#1652): an agent's live chat from his threads, At Work and one app link (scribe-shared://agent/<name>); his words reach the agent (agentCommands message-agent, agent-run --steer) and stay in the thread; the chat's top shows its progress; the Mac stores one agent name and handle (agent-identity.ts), links check-ins to their threads, and graph-sync runs main's code from skills-live. Design review round 3, lowest line 9.0.
+
 ## 2026-11-12 06:26:55 EST — scribe `904905b8f8714bc4fab238d99923b8268c21991a`
 Feature (#2239): the scryyyyybe SDK over Instant: an app on a phone sends its events as sealed rows (TypeScript scryyyyybe/instant, Swift ScryyyyybeInstant), a Babel plugin writes file and line into React Native calls, and only the sdk command on the machine opens the rows; live on the build machine against a self-hosted Instant, 63 of 63 and 3 of 3 events.
 
