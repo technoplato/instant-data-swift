@@ -1,3 +1,12 @@
+## 2026-11-12 10:49:28 EST — scribe `84e5673d356ee0a832c39de19f140ddc74990500`
+Docs (#2303): ADR 0121 section 12: an Issue's agents and a recording's, read from the rows that exist (agentRuns by issueNumber with sessions and subagent children; a recording through its issueMentions), one definition in the Foldkit issues core for issues show, issues recording and the Issue page (technoplato/foldkit 1e5d0666b), and why no agentRuns.issue link yet.
+
+## 2026-11-12 10:48:49 EST — scribe `018af5d0ed7fa1395cf80b5561d1b3c0e4282834`
+Fix (#2303): agents-sync reads agent-run's paused state as paused (statusOfRegistry had no case; 19 runs read unknown on their Issues); red 1bfd0ab0d.
+
+## 2026-11-12 10:39:45 EST — scribe `0b9f3484c7f8882b26d2ba6b6e7f8b45873fe9ba`
+Fix (#2303): apply-plan resends a refused chunk one step at a time and leaves out the links of refused rows, so one session update the mirror had overtaken no longer refuses every agent row and ends the sync on Instant's 400 (graph-sync failed every agents run 10:28 to about 10:37 on 2026-11-12); red f0b6a996a.
+
 ## 2026-11-12 08:52:01 EST — scribe `812dd76f6a890d5e21df6c646b041a875e3a38b1` (merge of agent/claude/agent-chat-1652: cut `6d6e07a87`)
 Cut (#1652): Scribe 0.1 (325) from main after #1652's landing: CURRENT_PROJECT_VERSION 324 to 325 and build 325's plain block and stories, written by build_notes.py from its 108 commits and verified.
 
