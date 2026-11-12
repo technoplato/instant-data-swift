@@ -1,3 +1,6 @@
+## 2026-11-11 23:05:51 EST — scribe `ec0af979e19ab377069be5912bd36d32a6493b1b`
+Fix (#2285): a laptop-only word names a suite, not a test function: `swift test --filter ArchitectureTests` goes to the M5 (the word Resize was in CameraFeedBoundaryTests/thePanelSendsAPinchOrAResizeOnlyWhenItEnds()); the suites of macOS 26 layout keep the laptop until Michael says.
+
 ## 2026-11-11 22:59:02 EST — scribe `6463d0f2d000dda92783c00fa40ca84868e90c92`
 Feature (#2285): snapshot tests run on the M5 and their reference pictures are drawn there: swift-snapshot-testing 1.19.7 (1.19.1's comparison ended whole test bundles on macOS 27), 226 pictures drawn again on the M5 and each compared with the one it replaced, `snapshot` off laptop-only.txt, and scripts/build-jobs/draw-pictures.sh to draw a picture there; the composer's typed-text picture, which differed in 10 of 14 M5 runs, is a known intermittent issue (#2300).
 
