@@ -1,3 +1,6 @@
+## 2026-11-11 22:26:41 EST — scribe `fd74b476a1d26e5346527a823cdc924e46aef958` (merge of agent/claude/scrubber-2157: fix `b87014712`, changelog)
+Fix (#2157): the scrubber's installer puts in place an image helper built on the M5 (--helper, its lowest macOS checked against the mini's) and builds none on the mini.
+
 ## 2026-11-11 22:22:51 EST — scribe `dcaaea3bb0c3fe0a5b02bed1d22ba40ebe1288fb` (merge of agent/claude/scrubber-2157: red `36498a03f`, green `53ff4538b`, changelog)
 Fix (#2157): the scrub's version is declared once (pipeline.ts, share-scrub 4) and a broadcast's video is made only from it; scribe-broadcast remake --key K makes a finished broadcast's video again as a dry run of its own in fresh shares, sending nothing. M5: 789 tests, 0 fail; strict set 0 leaks, 0 over-redactions. Nothing installed yet; the video stays private.
 
