@@ -1,3 +1,6 @@
+## 2026-11-12 01:19:35 EST — scribe `af122a22188d917fa955d755c17cacdcff5938ea` (merge of agent/claude/scrubber-2157: docs `32b806607`)
+Proof (#2157): Recording 409's remade broadcast shows a date of birth, an age, a mapped name or his label in 0 of its 1,821 pictures, 2,293 video frames, captions and description (counts only, M5); the audit and ADR 0122 amendment C's table. The remade video stays private.
+
 ## 2026-11-12 00:01:46 EST — scribe `bf82ffbc9743714c62e29ee91a8be999c8035438` (merge of agent/claude/scrubber-2157: red `ded182b79`, green `b9039bd63`, docs `1fe872a75`; changelog after it)
 Fix (#2157): a label never says a number of the value it hides (the remade broadcast read "[Number 2]" over an age of two); the audit of Recording 409's broadcast, ADR 0122 amendment C, FEATURES item 10. M5: 790 tests, 0 fail; strict set 0 / 0.
 
