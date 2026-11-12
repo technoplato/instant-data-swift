@@ -4740,18 +4740,19 @@ extension DependencyValues {
   public static func defaultInstantSwiftDataPersistenceURL(
     appID: String,
     context: InstantSwiftDataBootstrapContext,
-    uniqueID: String? = nil
+    uniqueID: String? = nil,
+    platform: InstantStoragePlatform = .current
   ) -> URL {
     let fileName = sanitizedPersistenceName(appID) + ".sqlite"
 
     switch context {
     case .live:
-      return defaultApplicationDataURL()
+      return defaultApplicationDataURL(platform: platform)
         .appendingPathComponent("apps", isDirectory: true)
         .appendingPathComponent(fileName)
 
     case .cli:
-      return defaultCLIHomeURL()
+      return defaultCLIHomeURL(platform: platform)
         .appendingPathComponent("state.sqlite")
 
     case .preview:
@@ -4775,30 +4776,28 @@ extension DependencyValues {
     return name.isEmpty ? "default" : name
   }
 
-  private static func defaultCLIHomeURL() -> URL {
+  private static func defaultCLIHomeURL(platform: InstantStoragePlatform) -> URL {
     if let path = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_HOME"] {
       return URL(fileURLWithPath: path, isDirectory: true)
     }
-
-    #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-      return defaultApplicationDataURL()
-    #else
-    return FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".instant-swift-data", isDirectory: true)
-    #endif
+    return defaultApplicationDataURL(platform: platform)
   }
 
-  private static func defaultApplicationDataURL() -> URL {
-    #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-      return (
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-          ?? FileManager.default.temporaryDirectory
-      )
-      .appendingPathComponent("InstantSwiftData", isDirectory: true)
-    #else
-      return FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".instant-swift-data", isDirectory: true)
-    #endif
+  /// The folder the library keeps its data in: `~/.instant-swift-data` on a Mac, `InstantSwiftData`
+  /// under the platform's ``InstantStoragePlatform/applicationDataDirectory`` elsewhere (Caches on
+  /// tvOS, where Application Support is not writable).
+  private static func defaultApplicationDataURL(platform: InstantStoragePlatform) -> URL {
+    if platform == .macOS {
+      #if os(macOS)
+        return FileManager.default.homeDirectoryForCurrentUser
+          .appendingPathComponent(".instant-swift-data", isDirectory: true)
+      #endif
+    }
+    return (
+      FileManager.default.urls(for: platform.applicationDataDirectory, in: .userDomainMask).first
+        ?? FileManager.default.temporaryDirectory
+    )
+    .appendingPathComponent("InstantSwiftData", isDirectory: true)
   }
 }
 

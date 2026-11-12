@@ -205,9 +205,12 @@ public final class InstantDiagnostics: @unchecked Sendable {
     fileWriteQueue.setSpecific(key: fileWriteQueueKey, value: ())
   }
 
-  public static func defaultLogFileURL(processName: String) -> URL {
+  public static func defaultLogFileURL(
+    processName: String,
+    platform: InstantStoragePlatform = .current
+  ) -> URL {
     let baseURL =
-      FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+      FileManager.default.urls(for: platform.logsParentDirectory, in: .userDomainMask).first
       ?? FileManager.default.temporaryDirectory
     let safeName =
       processName
