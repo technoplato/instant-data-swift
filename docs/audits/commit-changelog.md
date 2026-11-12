@@ -1,3 +1,6 @@
+## 2026-11-11 23:31:47 EST — scribe `74a2a5d6a185c5403ba8912b8aa5eb4087b2fce0`
+Fix (#2292): a link to a thread or message that has not reached this device yet is a loading state that says what it waits for; only a lookup that finds none says not available (thread or message, never both), a failed one shows the error's own words, each with Try Again; the threads panel's task is keyed by the recording, so a recording that takes the playback screen's place has its threads followed (his iPhone, build 321: the spinner never ended and the error sat over it); design round 3 passed (lowest line 9); red 4b2158520, changelog 6dd322a83.
+
 ## 2026-11-11 23:05:51 EST — scribe `ec0af979e19ab377069be5912bd36d32a6493b1b`
 Fix (#2285): a laptop-only word names a suite, not a test function: `swift test --filter ArchitectureTests` goes to the M5 (the word Resize was in CameraFeedBoundaryTests/thePanelSendsAPinchOrAResizeOnlyWhenItEnds()); the suites of macOS 26 layout keep the laptop until Michael says.
 
