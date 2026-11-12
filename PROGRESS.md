@@ -1,3 +1,14 @@
+## 2026-11-12 15:10:00 EST — tv-store-2330 (#2330): v1.9.86, an Apple TV app's store lives under Caches
+
+- **Why:** on the Apple TV, the consuming app stopped at launch: creating `Application Support/InstantSwiftData/apps`
+  failed with EPERM (Cocoa 513). tvOS allows writes only to Caches and tmp; the simulator does not enforce it.
+- **Landed:** red `1fd88879`, green `449f9004`, this release record.
+- **Now:** on tvOS the default store and diagnostics log are under Caches (`InstantStoragePlatform`).
+- **Checked:** red (m5 `2330-lib-red`); green (m5 `2330-lib-green`): 85 bootstrap tests pass; tvOS build (m5
+  `2330-lib-tvos`) succeeds.
+- **Released:** v1.9.86 (`docs/releases/v1.9.86.md`).
+- **Next (resume here):** the consuming app pins 1.9.86 and opens on the Apple TV.
+
 ## 2026-11-11 17:14:14 EST — tvos-auth-2287 (#2287): v1.9.85, the library compiles for tvOS
 
 - **Why:** a consuming app's first tvOS build failed in `InstantAuthProvider.swift`: the browser authorizer's web
