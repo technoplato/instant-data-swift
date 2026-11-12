@@ -1,3 +1,9 @@
+## 2026-11-11 22:59:02 EST — scribe `6463d0f2d000dda92783c00fa40ca84868e90c92`
+Feature (#2285): snapshot tests run on the M5 and their reference pictures are drawn there: swift-snapshot-testing 1.19.7 (1.19.1's comparison ended whole test bundles on macOS 27), 226 pictures drawn again on the M5 and each compared with the one it replaced, `snapshot` off laptop-only.txt, and scripts/build-jobs/draw-pictures.sh to draw a picture there; the composer's typed-text picture, which differed in 10 of 14 M5 runs, is a known intermittent issue (#2300).
+
+## 2026-11-11 21:31:59 EST — scribe `b3b82ebc9e9003043d4f33c6288978ec7a68a4b6`
+Feature (#2285): no build takes a laptop slot: a build tool queued for the laptop is refused whatever BUILD_REMOTE, BUILD_WHY, BUILD_SIM or BUILD_EXCLUSIVE says and goes to the M5's line; a script that names one, and an install that cannot leave, need their reason; every agent's brief says so.
+
 ## 2026-11-11 22:26:41 EST — scribe `fd74b476a1d26e5346527a823cdc924e46aef958` (merge of agent/claude/scrubber-2157: fix `b87014712`, changelog)
 Fix (#2157): the scrubber's installer puts in place an image helper built on the M5 (--helper, its lowest macOS checked against the mini's) and builds none on the mini.
 
