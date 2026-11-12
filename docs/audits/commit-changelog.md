@@ -1,3 +1,6 @@
+## 2026-11-11 22:22:51 EST — scribe `dcaaea3bb0c3fe0a5b02bed1d22ba40ebe1288fb` (merge of agent/claude/scrubber-2157: red `36498a03f`, green `53ff4538b`, changelog)
+Fix (#2157): the scrub's version is declared once (pipeline.ts, share-scrub 4) and a broadcast's video is made only from it; scribe-broadcast remake --key K makes a finished broadcast's video again as a dry run of its own in fresh shares, sending nothing. M5: 789 tests, 0 fail; strict set 0 leaks, 0 over-redactions. Nothing installed yet; the video stays private.
+
 ## 2026-11-11 22:18:53 EST — scribe `6038ef26c0203433ae5fe61dcbb99747217848f1`
 Merge (#2254): a reset stopwatch leaves the Stopwatches list and stands in Recents (TimersBoard sorts idle stopwatches into the Recents with the idle countdowns, newest first, one per kind, length and label), shown by its name with a stopwatch symbol where a countdown shows its length; his yes, decision b2fe3937. Design round 3 passed (lowest line 9.0).
 
