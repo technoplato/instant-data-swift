@@ -1,3 +1,6 @@
+## 2026-11-12 00:01:46 EST — scribe `bf82ffbc9743714c62e29ee91a8be999c8035438` (merge of agent/claude/scrubber-2157: red `ded182b79`, green `b9039bd63`, docs `1fe872a75`; changelog after it)
+Fix (#2157): a label never says a number of the value it hides (the remade broadcast read "[Number 2]" over an age of two); the audit of Recording 409's broadcast, ADR 0122 amendment C, FEATURES item 10. M5: 790 tests, 0 fail; strict set 0 / 0.
+
 ## 2026-11-11 23:31:47 EST — scribe `74a2a5d6a185c5403ba8912b8aa5eb4087b2fce0`
 Fix (#2292): a link to a thread or message that has not reached this device yet is a loading state that says what it waits for; only a lookup that finds none says not available (thread or message, never both), a failed one shows the error's own words, each with Try Again; the threads panel's task is keyed by the recording, so a recording that takes the playback screen's place has its threads followed (his iPhone, build 321: the spinner never ended and the error sat over it); design round 3 passed (lowest line 9); red 4b2158520, changelog 6dd322a83.
 
