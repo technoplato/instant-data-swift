@@ -1,3 +1,6 @@
+## 2026-11-11 22:18:53 EST — scribe `6038ef26c0203433ae5fe61dcbb99747217848f1`
+Merge (#2254): a reset stopwatch leaves the Stopwatches list and stands in Recents (TimersBoard sorts idle stopwatches into the Recents with the idle countdowns, newest first, one per kind, length and label), shown by its name with a stopwatch symbol where a countdown shows its length; his yes, decision b2fe3937. Design round 3 passed (lowest line 9.0).
+
 ## 2026-11-11 22:16:24 EST — scribe `23b53e4bb43278b50f03e60be59b0ff9a5c71510` (merge of agent/claude/scrubber-2157: red `4f602434d`, green `fc3bed064`, changelog)
 Fix (#2157): a share's picture is read twice (at its own size and at three times it) and text Vision's detector finds that no read gave is filled; each read is judged as its own text, a place is filled once, and a second read is asked about only where it read a row the first did not. M5: on all 1,497 frames of Recording 409, 0 frames show a date of birth, an age, a mapped name or his label at the picture's size or twice it; 785 tests, 0 fail; strict set 0 leaks, 0 over-redactions. Nothing installed yet; the video stays private.
 
