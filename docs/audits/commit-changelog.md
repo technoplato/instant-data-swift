@@ -1,3 +1,6 @@
+## 2026-11-12 22:17:42 EST — scribe `d7d7efddd112c6603d88577facd43b8caee72d11` (merge of agent/camera-entitlements-2343: red `9e787a8fb`, green `a115b938e`, docs `8ec127a29`)
+Feature (#2343): the Vision Pro's enterprise camera and room entitlements, wired dark: they sign only an internal build (Release with SCRIBE_ENTERPRISE_APIS=YES) and count in code only with a valid Apple license that approves them; Apple grants them only to organization or Enterprise teams.
+
 ## 2026-11-12 10:49:28 EST — scribe `84e5673d356ee0a832c39de19f140ddc74990500`
 Docs (#2303): ADR 0121 section 12: an Issue's agents and a recording's, read from the rows that exist (agentRuns by issueNumber with sessions and subagent children; a recording through its issueMentions), one definition in the Foldkit issues core for issues show, issues recording and the Issue page (technoplato/foldkit 1e5d0666b), and why no agentRuns.issue link yet.
 
