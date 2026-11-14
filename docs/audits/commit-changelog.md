@@ -1,3 +1,6 @@
+## 2026-11-13 20:24:10 EST — scribe `cba4d668c4e23e597287175115cbe45464d34de7` (merge of agent/claude/chat-bar-contrast-2368: fix `6b45177bd`, references `52b9caf64` and `f0508a4cf`)
+Fix (#2368): the agent chat's run bar and progress line say their words in the primary colour (on a sheet's dark glass the secondary grey read 3.96:1, #2303's design review); its snapshots gain a light look at AX5; design round 2 lowest line 9.0.
+
 ## 2026-11-12 22:17:42 EST — scribe `d7d7efddd112c6603d88577facd43b8caee72d11` (merge of agent/camera-entitlements-2343: red `9e787a8fb`, green `a115b938e`, docs `8ec127a29`)
 Feature (#2343): the Vision Pro's enterprise camera and room entitlements, wired dark: they sign only an internal build (Release with SCRIBE_ENTERPRISE_APIS=YES) and count in code only with a valid Apple license that approves them; Apple grants them only to organization or Enterprise teams.
 
