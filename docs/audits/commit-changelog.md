@@ -1,3 +1,6 @@
+## 2026-11-13 21:02:58 EST — scribe `81daede36a15947ab5f7ad9fcb3a4d0b42adfa0d` (merge of agent/claude/recording-issues-2303: red `86f93d7aa`, green `5056f6a37`, fixes `c1de17952`, `08c8ed8af`, `bd44af614`; main merged `ec31caf88`)
+Feature (#2303): a recording's Chat view lists the issues his lines in it mention above the threads, each with its agents as At Work's rows (the row shared, AgentRow), read from issueMentions then agentRuns; a tap opens the agent's live chat; design round 4 lowest line 9.0; the chat's bar contrast landed first as #2368.
+
 ## 2026-11-13 20:24:10 EST — scribe `cba4d668c4e23e597287175115cbe45464d34de7` (merge of agent/claude/chat-bar-contrast-2368: fix `6b45177bd`, references `52b9caf64` and `f0508a4cf`)
 Fix (#2368): the agent chat's run bar and progress line say their words in the primary colour (on a sheet's dark glass the secondary grey read 3.96:1, #2303's design review); its snapshots gain a light look at AX5; design round 2 lowest line 9.0.
 
