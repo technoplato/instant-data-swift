@@ -1,3 +1,21 @@
+## November 16th, 2026 at 6:19:17 p.m. EST — technoplato/scribe `606ac0ab1b518b392dfe22837553de78bd5d4c54` merge(#2411): landings and releases run the tests
+
+- **Implementation commit:** `606ac0ab1b518b392dfe22837553de78bd5d4c54` (branch tests-2411: red/green pairs for suites.py, land, auto_release, the installer, the ratchet, the release scope, the nightly run)
+- **Change:** scripts/tests/suites.py reads the suites from the tree; land runs gate --fast; the release cut runs gate --release; the installer compiles a production build only from a tree with a green release run; Tests/known-failing.txt is a ratchet seeded with the seed run's 130 failures; com.scribe.tests-nightly runs the whole set at 03:10 and files what breaks
+- **Issues:** [#2411](https://issues.pisspoursoftware.xyz/issues/2411), [#2319](https://issues.pisspoursoftware.xyz/issues/2319)
+- **Details:**
+  - Seed run of origin/main 4a1ddb0d9 on the M5: root package 9754 cases, 130 failing in 14 targets (1899 s, load 400-550); lists in ~/Sync/audit/tests-2411/
+  - Found: auto_release.py has cut nothing since build 329, so releases by hand are what the installer's check guards
+  - Measured: test_suites 47 OK, test_land 62 OK, test_auto_release 9 OK, installer 302 OK (the M5, build.sh)
+- **Files:**
+  - `scripts/tests/suites.py`, `test_suites.py`, `com.scribe.tests-nightly.plist`, `install-nightly.sh` — the gate
+  - `scripts/land/land.py`, `scripts/releases/auto_release.py`, `scripts/install_scribe_all_devices.py` and their tests — where it runs
+  - `Tests/known-failing.txt`, `AGENTS.md` — the list and the rule
+- **User context (verbatim):**
+  > Test first
+  > Say only what you measured, and how; name what you could not measure.
+- **SpecStory:** unavailable — Claude Code sub-agent tests-2411 of session https://claude.ai/code/session_014dLSvJhmwiNfVFHv39oidt (account al); no SpecStory capture
+
 ## 2026-11-16 16:14:35 EST — scribe `f3128d8f255527eef0a4d674f15fbc9bd26dc8b9` (merge of ts-2411: 9f1a9cba6..9ecf2ed65)
 Tests (#2411): the mirror's and the schema's TypeScript suites pass whole on the M5 (mirror 2090 of 2091 with 1 skipped, schema 684 of 684, both tscs 0 errors; seed 17 failures and 43 type errors): the cheap model's quota gate takes the caller's clock, the design door asks its own tools' client declaration, Start Broadcast is no toolbox place, the wiki, search and the performance page link issues through og, and stale tests updated.
 
