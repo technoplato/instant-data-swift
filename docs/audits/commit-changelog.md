@@ -1,3 +1,6 @@
+## 2026-11-16 10:30:30 EST — scribe `7784b006871e18d425eae80c129c7ed8db1e1057` (merge of agent/claude/frames-probe-2416: red `7d7c6ea2c`, `19fb67f81`, green `513a80f39`, changelog `c23edeacd`)
+Feature (#2416): scribe frames-probe, how long his screen frames take from his phone to this Mac, stage by stage (capture to link on the phone, link to the file on the Mac, the download, the whole way), with their cadence, size, frames with no file on the server, bursts of links, a growing backlog and inline previews; it reads production's attachment rows itself, read only, in pages bounded at 5 s, and the mirror's files.
+
 ## 2026-11-13 21:02:58 EST — scribe `81daede36a15947ab5f7ad9fcb3a4d0b42adfa0d` (merge of agent/claude/recording-issues-2303: red `86f93d7aa`, green `5056f6a37`, fixes `c1de17952`, `08c8ed8af`, `bd44af614`; main merged `ec31caf88`)
 Feature (#2303): a recording's Chat view lists the issues his lines in it mention above the threads, each with its agents as At Work's rows (the row shared, AgentRow), read from issueMentions then agentRuns; a tap opens the agent's live chat; design round 4 lowest line 9.0; the chat's bar contrast landed first as #2368.
 
