@@ -1,3 +1,6 @@
+## 2026-11-16 10:36:12 EST — scribe `dd93e9a4b5b831599cfb06a72cb67405dcf2c755` (merge of agent/claude/frames-probe-2416: red `1878c6e57`, green `88671cdb1`, changelog `337ca38d5`)
+Fix (#2416): scribe frames-probe never takes the mirror's room on the app's rate limit: its pages of production's rows come 0.5 s apart, and a page refused for the limit waits as long as Instant asks (at most 4 tries and 20 s of waits, each said); its second run in two minutes had been refused while the mirror's own reads were.
+
 ## 2026-11-16 10:30:30 EST — scribe `7784b006871e18d425eae80c129c7ed8db1e1057` (merge of agent/claude/frames-probe-2416: red `7d7c6ea2c`, `19fb67f81`, green `513a80f39`, changelog `c23edeacd`)
 Feature (#2416): scribe frames-probe, how long his screen frames take from his phone to this Mac, stage by stage (capture to link on the phone, link to the file on the Mac, the download, the whole way), with their cadence, size, frames with no file on the server, bursts of links, a growing backlog and inline previews; it reads production's attachment rows itself, read only, in pages bounded at 5 s, and the mirror's files.
 
