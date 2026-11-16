@@ -1,3 +1,6 @@
+## 2026-11-16 12:17:52 EST — scribe `8caabaecb9aac81666a6439b20905bbeccf03261` (merge of agent/claude/frames-view-2416-land: red `296eff0d3`, green `b176073d5`, red `1e17f1a6c`, test `96ad7df8f`, green `321e8be3b`, changelog `bfd5a3024`, test `2def5a696`)
+Fix (#2416): a watching device gets each new frame's file as soon as its row names one (ScribeMediaCacheLane: newest first, four at a time, by its stored path, each file looked for once per playback; no main-actor re-projection after a picture lands), and its playback decodes each picture's row once and keeps it (ScribeRecordingDetailPictures, PreparedAttachment): at 2,700 frames a frame's delivery took the observation 314 ms before and 81 ms after, a line's 314 and 69 (debug, the M5), and the media cache's per-delivery pass 46 ms became the lane's 1 ms offer.
+
 ## 2026-11-16 10:36:12 EST — scribe `dd93e9a4b5b831599cfb06a72cb67405dcf2c755` (merge of agent/claude/frames-probe-2416: red `1878c6e57`, green `88671cdb1`, changelog `337ca38d5`)
 Fix (#2416): scribe frames-probe never takes the mirror's room on the app's rate limit: its pages of production's rows come 0.5 s apart, and a page refused for the limit waits as long as Instant asks (at most 4 tries and 20 s of waits, each said); its second run in two minutes had been refused while the mirror's own reads were.
 
