@@ -1,3 +1,6 @@
+## 2026-11-16 20:22:36 EST — scribe `d11031018b848ce02f35d3b1d116a24a9d781b0c` (merge of arch-misc-2411: 2709e89d6..611fb0423)
+Tests (#2411): ten suites' 29 seed failures fixed at their causes on the M5 (fast gate on 88fa2cf15 green for every fixed target): the internal Vision Pro build signs with HealthKit again, a repeated synced media card id no longer traps, What's New's links open; 15 architecture and tool checks follow the commits that moved them; 11 load-dependent tests now wait on what they test (a stallable twin disk, queue backpressure, controlled clocks, commit progress). Listed flaky: #2452, #2466.
+
 ## 2026-11-16 20:00:28 EST — scribe `785bdb43fe7552e5970811b5849c9dbe1e057db9` (merge of list-app-2411)
 Tests (#2411): RecordingListFeatureTests 715 of 715 and AppFeatureTests 453 of 455 pass (seed: 16 and 7 failing); a pending local recording no longer leaves the list at the next page; the test logger has a log queue per test; the playback stamp's clear reads the controlled client id; two window tests that hang only under load are listed flaky under #2464.
 
