@@ -1,3 +1,17 @@
+## November 17th, 2026 at 12:00:39 a.m. EST — `e6688e332` merge(#2411): the gate after its first night (landings 07d48e8b5, 7b0cc1aa0, 59888d32b, 5d3ec0f19, f8e2e8da0, c4334eaa9, 3dce23f28, e6688e332; support-2411's 8ffa3b124)
+
+- **Implementation commits:** `07d48e8b5` packages seeded; `7b0cc1aa0` fast = changed targets' own tests; `59888d32b` reuse of a green build.sh run, the landing's issue as BUILD_ISSUE, the worker cancels an unfollowed job (#2461); `5d3ec0f19` a release's tests in the warm slots, platform compiles (iOS, watchOS, visionOS, tvOS); `f8e2e8da0` a repair of main's red compile goes first; `c4334eaa9` only a release's gate carries BUILD_RELEASE, two compiles at once, lock before queueing, worktrees cap 260 GiB (#2410); `3dce23f28` DerivedData beside each platform's checkout; `e6688e332` ScribeSharedSupportTests serial (#2464)
+- **Change:** the tests gate as it runs on landings and releases after 2026-11-16's measurements; support-2411's ScribeSharedSupportTests fixes landed by tests-2411 (`8ffa3b124`)
+- **Issues:** [#2411](https://issues.pisspoursoftware.xyz/issues/2411), [#2461](https://issues.pisspoursoftware.xyz/issues/2461), [#2464](https://issues.pisspoursoftware.xyz/issues/2464), [#2410](https://issues.pisspoursoftware.xyz/issues/2410)
+- **Details:**
+  - Measured: release gate waits 68-190 s after 5d3ec0f19 (before: 35+ min, main's lane); compile gate on the 342 watchOS break: cold red 374 s, warm red 72 s; support-2411's gate 3215 s
+  - Storage: 33.2 GiB removed by du, df +41.9 GiB; worktrees 196 -> 123.8 GiB (~/Sync/audit/storage-2411/)
+- **Files:** `scripts/tests/`, `scripts/land/land.py`, `scripts/build-jobs/`, `scripts/storage-guard/storage-budget.json`, `Tests/known-failing.txt`
+- **User context (verbatim):**
+  > Test first
+  > Say only what you measured, and how; name what you could not measure.
+- **SpecStory:** unavailable — Claude Code sub-agent tests-2411 of session https://claude.ai/code/session_01Q9pVPXQGJVb78cST6St2KS (account pp); no SpecStory capture
+
 ## 2026-11-16 23:50:57 EST — scribe `3c2943cd3c08a2b1e19ea82631ff605b120dbe5d` (merge of agent/claude/probe-steps-2416: red `2a8303d6e`, `ab0a21c7a`, green `1f7ff3ddd`, changelog `0e1bb41dc`)
 Feature (#2416): scribe diagnostics frames-probe prints the phone's own steps between a frame's capture and its link (capture -> row written -> its scan began -> its send began -> file linked, and capture -> linked) from the phone's recording.media.frames.minute lines in this Mac's diagnostics journal, with why each scan began, what was sent, failed, waited and rescued; from every build, the routine lines it held back each minute (scans, uploads, frame rows) and its server question's failures; and names the build that sent no minute line (Recording 456: 0.1 (341) f66f8c3af). M5: red as expected, green 22 of 22, the mirror suite 2,158 passing with tsc at 0 errors.
 
