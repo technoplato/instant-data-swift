@@ -1,3 +1,6 @@
+## 2026-11-16 20:00:28 EST — scribe `785bdb43fe7552e5970811b5849c9dbe1e057db9` (merge of list-app-2411)
+Tests (#2411): RecordingListFeatureTests 715 of 715 and AppFeatureTests 453 of 455 pass (seed: 16 and 7 failing); a pending local recording no longer leaves the list at the next page; the test logger has a log queue per test; the playback stamp's clear reads the controlled client id; two window tests that hang only under load are listed flaky under #2464.
+
 ## November 16th, 2026 at 6:19:17 p.m. EST — technoplato/scribe `606ac0ab1b518b392dfe22837553de78bd5d4c54` merge(#2411): landings and releases run the tests
 
 - **Implementation commit:** `606ac0ab1b518b392dfe22837553de78bd5d4c54` (branch tests-2411: red/green pairs for suites.py, land, auto_release, the installer, the ratchet, the release scope, the nightly run)
