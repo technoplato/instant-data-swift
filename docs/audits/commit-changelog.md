@@ -1,3 +1,6 @@
+## 2026-11-16 21:12:00 EST — scribe `114bfdc943d354f3f74e8c9304e26625aaf6ba49` (merge of rec-2411)
+Fix and tests (#2411): an inserted row's right-ribbon mark by binary search, not a read of every row (decorationBeforeNewest 69.5 M -> 23.6 M instructions at 5,000 rows); RecordingFeatureTests from 43 failing of 1,603 (seed, M5) to 2 of 1,613, both listed (#2456, #2465); #1993's record-start tests on quiet lanes under the main serial executor.
+
 ## 2026-11-16 20:22:36 EST — scribe `d11031018b848ce02f35d3b1d116a24a9d781b0c` (merge of arch-misc-2411: 2709e89d6..611fb0423)
 Tests (#2411): ten suites' 29 seed failures fixed at their causes on the M5 (fast gate on 88fa2cf15 green for every fixed target): the internal Vision Pro build signs with HealthKit again, a repeated synced media card id no longer traps, What's New's links open; 15 architecture and tool checks follow the commits that moved them; 11 load-dependent tests now wait on what they test (a stallable twin disk, queue backpressure, controlled clocks, commit progress). Listed flaky: #2452, #2466.
 
