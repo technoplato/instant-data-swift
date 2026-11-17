@@ -1,3 +1,6 @@
+## 2026-11-16 23:50:57 EST — scribe `3c2943cd3c08a2b1e19ea82631ff605b120dbe5d` (merge of agent/claude/probe-steps-2416: red `2a8303d6e`, `ab0a21c7a`, green `1f7ff3ddd`, changelog `0e1bb41dc`)
+Feature (#2416): scribe diagnostics frames-probe prints the phone's own steps between a frame's capture and its link (capture -> row written -> its scan began -> its send began -> file linked, and capture -> linked) from the phone's recording.media.frames.minute lines in this Mac's diagnostics journal, with why each scan began, what was sent, failed, waited and rescued; from every build, the routine lines it held back each minute (scans, uploads, frame rows) and its server question's failures; and names the build that sent no minute line (Recording 456: 0.1 (341) f66f8c3af). M5: red as expected, green 22 of 22, the mirror suite 2,158 passing with tsc at 0 errors.
+
 ## 2026-11-16 21:12:00 EST — scribe `114bfdc943d354f3f74e8c9304e26625aaf6ba49` (merge of rec-2411)
 Fix and tests (#2411): an inserted row's right-ribbon mark by binary search, not a read of every row (decorationBeforeNewest 69.5 M -> 23.6 M instructions at 5,000 rows); RecordingFeatureTests from 43 failing of 1,603 (seed, M5) to 2 of 1,613, both listed (#2456, #2465); #1993's record-start tests on quiet lanes under the main serial executor.
 
