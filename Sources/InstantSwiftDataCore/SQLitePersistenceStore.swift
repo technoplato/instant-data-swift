@@ -516,6 +516,7 @@ struct InstantLiveQueryResultPruneBatch: Sendable {
       result: resultRemovingNothing,
       removedFacts: [],
       storeRevision: revisions.store,
+      storeRevisionBefore: revisions.store,
       attributeRevision: revisions.attribute,
       queryResultRevision: revisions.queryResult,
       hasMoreToRemove: false,
@@ -599,7 +600,11 @@ struct InstantLiveQueryResultPruneBatchApplication: Sendable {
   var result: InstantLiveQueryResultPruningResult
   /// The store's facts the batch removed, whole entities only: the hot store retracts exactly these.
   var removedFacts: [InstantTriple]
+  /// The store's revision once the batch committed: moved when facts left the disk, whether memory held them or not.
   var storeRevision: Int64
+  /// The store's revision the batch was applied at (#2209): when ``storeRevision`` moved past it and memory was at it,
+  /// memory matches what the batch left on disk.
+  var storeRevisionBefore: Int64
   var attributeRevision: Int64
   var queryResultRevision: Int64
   /// Rows the policy removes that the batch left for the next one (#303, item 6).
@@ -14992,6 +14997,7 @@ public actor SQLitePersistenceStore {
       ),
       removedFacts: removedFacts,
       storeRevision: storeRevision,
+      storeRevisionBefore: batch.revisions.store,
       attributeRevision: batch.revisions.attribute,
       queryResultRevision: queryResultRevision,
       hasMoreToRemove: batch.hasMoreToRemove,
@@ -15333,6 +15339,7 @@ public actor SQLitePersistenceStore {
         ),
         removedFacts: removedFacts,
         storeRevision: storeRevision,
+        storeRevisionBefore: revisions.store,
         attributeRevision: revisions.attribute,
         queryResultRevision: queryResultRevision,
         hasMoreToRemove: false,

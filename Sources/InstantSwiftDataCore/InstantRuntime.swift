@@ -8610,6 +8610,8 @@ public final class InstantRuntime: Sendable {
         storeRevision: application.storeRevision,
         attributeRevision: application.attributeRevision
       )
+    } else {
+      installStoreRevisionOfAPruneThatRemovedOnlyDiskFacts(application)
     }
     operationGate.markHolderWrites([])
     InstantDiagnostics.shared.record(
@@ -8626,6 +8628,25 @@ public final class InstantRuntime: Sendable {
       ]
     )
     return application
+  }
+
+  /// Installs the store revision a prune batch moved without retracting anything from memory (#2209): it deleted only
+  /// facts of entities memory had already let go (#1500), which the store counts and announces by moving its revision.
+  /// Memory held none of them, so when it was at the revision the batch applied at, it matches the disk the batch left.
+  /// Left uninstalled, the next local write found memory behind SQLite and reloaded every resident fact and rebuilt the
+  /// hot store's indexes: 0.5-1 s inside a save on a phone, after up to 186 prunes in two hours. When memory was behind
+  /// already, it stays behind, and the next read reloads as before. The caller holds the operation gate.
+  private func installStoreRevisionOfAPruneThatRemovedOnlyDiskFacts(
+    _ application: InstantLiveQueryResultPruneBatchApplication
+  ) {
+    guard application.storeRevision != application.storeRevisionBefore else { return }
+    let installed = installedStoreRevisions.snapshot()
+    guard installed.store == application.storeRevisionBefore, installed.attributes == application.attributeRevision
+    else { return }
+    installedStoreRevisions.install(
+      storeRevision: application.storeRevision,
+      attributeRevision: application.attributeRevision
+    )
   }
 
   /// `carried` split into the facts of `entityIDs` and the rest (#1319).
@@ -8756,6 +8777,8 @@ public final class InstantRuntime: Sendable {
             storeRevision: application.storeRevision,
             attributeRevision: application.attributeRevision
           )
+        } else {
+          installStoreRevisionOfAPruneThatRemovedOnlyDiskFacts(application)
         }
         if !application.unloadedEntityIDs.isEmpty {
           // #1500: the unloaded results' rows and facts stay on disk; memory releases, under this batch's gates, what no
