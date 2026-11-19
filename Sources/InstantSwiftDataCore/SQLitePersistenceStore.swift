@@ -21067,12 +21067,18 @@ public actor SQLitePersistenceStore {
   ) throws -> Bool {
     // #1500: a result unloaded where it is owns nothing here, as its whole copy owned nothing before: its rows hold the
     // values its reopening shows, and a fact the server took away leaves the store.
+    // #2553: the fact's ownership rows through the identity index, each one's result by its integer primary key, as the
+    // other ownership reads do. `query_id IN (SELECT ... WHERE unloaded_at_ms IS NULL)` rebuilt its list by scanning
+    // every stored result each time the statement ran, once per fact a refresh retracts: 1,000 results on a phone's
+    // store, about a third of a refresh's apply. The rows are the same: `query_id` names one result, and `query_key` is
+    // NOT NULL and UNIQUE, so `NOT IN` over the keys excludes exactly the rows the subquery over their ids excluded.
     var sql =
       """
       SELECT 1
-      FROM instant_live_query_triples
-      WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
-        AND query_id IN (SELECT query_id FROM instant_live_query_results WHERE unloaded_at_ms IS NULL)
+      FROM instant_live_query_triples AS owned
+      JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
+      WHERE owned.entity_id = ? AND owned.attribute_id = ? AND owned.value_json = ?
+        AND result.unloaded_at_ms IS NULL
       """
     var bindings: [SQLiteBinding] = [
       .text(identity.entityID),
@@ -21080,10 +21086,10 @@ public actor SQLitePersistenceStore {
       .text(try encode(identity.value)),
     ]
     if !excludingQueryKeys.isEmpty {
-      // A key with no stored result owns no rows, so excluding the stored ones' ids excludes the same rows (#704).
-      sql += " AND query_id NOT IN (SELECT query_id FROM instant_live_query_results WHERE query_key IN ("
+      // A key with no stored result owns no rows, so excluding the stored ones' keys excludes the same rows (#704).
+      sql += " AND result.query_key NOT IN ("
         + Array(repeating: "?", count: excludingQueryKeys.count).joined(separator: ", ")
-        + "))"
+        + ")"
       bindings.append(contentsOf: excludingQueryKeys.sorted().map(SQLiteBinding.text))
     }
     sql += " LIMIT 1"
