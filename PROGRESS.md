@@ -1,3 +1,14 @@
+## 2026-11-19 01:55:00 EST — segmenter-2529 (#2529): v1.9.87, every segmenter writer ends exactly once
+
+- **Why:** AVAssetWriter crashed on its own queue in test processes that dropped writers still writing and held
+  several at once; the segmenter could not be cancelled and had no deinit.
+- **Landed:** stress harness `3c044f9a`, red `89292e6e`, green `e6f2c427`, this release record.
+- **Now:** `cancel()`, `onEnd`/`Ending`; a segmenter released mid-write cancels its writer; a second finish returns the
+  first's outcome; an append after the end (or resumed after one) throws.
+- **Checked:** green (m5 `segmenter-2529-lib-green`): 7 tests pass; media target (m5 `segmenter-2529-lib-media`): 11 pass.
+- **Released:** v1.9.87 (`docs/releases/v1.9.87.md`).
+- **Next (resume here):** the consuming app pins 1.9.87, cancels a replaced take's encoder, and runs the stress harness.
+
 ## 2026-11-12 15:10:00 EST — tv-store-2330 (#2330): v1.9.86, an Apple TV app's store lives under Caches
 
 - **Why:** on the Apple TV, the consuming app stopped at launch: creating `Application Support/InstantSwiftData/apps`
