@@ -217,8 +217,19 @@ struct ShardedDictionary<Key: Hashable, Value>: Sequence, ExpressibleByDictionar
   }
 
   /// Whether the dictionary holds more than `limit` entries, and how many shards were read to tell (#2555).
+  ///
+  /// The shards' counts are summed until the sum passes `limit`: `hasLink` asks whether a recording's slot, thousands
+  /// of refs, holds more than a page's tens of entities, for each observer on each write, and `count` summed all 64
+  /// shards to answer. The answer is `count > limit` either way. No count is stored: the dictionary stays one reference
+  /// wide, and no write pays to keep one (#1152).
   func countReaching(_ limit: Int) -> (holdsMore: Bool, shardsRead: Int) {
-    (count > limit, shards.count)
+    guard limit >= 0 else { return (true, 0) }
+    var total = 0
+    for (index, shard) in shards.enumerated() {
+      total += shard.count
+      if total > limit { return (true, index + 1) }
+    }
+    return (false, shards.count)
   }
 
   /// Whether the entries are in `shardCount` shards rather than one dictionary.
