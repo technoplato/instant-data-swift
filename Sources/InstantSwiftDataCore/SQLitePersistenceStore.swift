@@ -22751,6 +22751,12 @@ public actor SQLitePersistenceStore {
     connection.statements.preparedCount
   }
 
+  /// What the writer's statements did since it opened (#1245): steps, full-scan steps, sorts, automatic-index rows and
+  /// re-prepares, so a test can pin a read by the work SQLite did for it (#2553).
+  package func statementCountersForTesting() -> InstantSQLiteCounters {
+    connection.statements.statementCounters
+  }
+
   /// How many prepared statements wait for reuse, and the heap bytes SQLite holds for every statement of the
   /// connection (`SQLITE_DBSTATUS_STMT_USED`) (#653).
   package func statementCacheStatusForTesting() -> (idleCount: Int, statementBytes: Int) {
