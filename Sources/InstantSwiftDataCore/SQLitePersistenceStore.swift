@@ -21241,35 +21241,57 @@ public actor SQLitePersistenceStore {
     if let cachedPreviousTriples {
       previousTriples = cachedPreviousTriples.filter(scope.contains)
     } else {
+      // #2556: read from the facts' columns, as every other fact read has since #1150, not the generated `json` SQLite
+      // builds for each row and `JSONDecoder` reads back: 6% of a save's samples in a 3.6-hour trace. Same facts.
       switch scope {
       case .wholeEntity:
-        previousTriples = try selectJSON(
-          "SELECT json FROM instant_triples WHERE entity_id = ? ORDER BY attribute_id, value_json",
+        previousTriples = try selectFacts(
+          "SELECT \(InstantFactRowReader.columns) FROM instant_triples WHERE entity_id = ?"
+            + " ORDER BY attribute_id, value_json",
           [.text(entityID)]
         )
       case let .facts(attributeIDs, values):
         var scoped: [InstantTriple] = []
         for attributeID in attributeIDs.sorted() {
-          scoped += try selectJSON(
-            "SELECT json FROM instant_triples WHERE entity_id = ? AND attribute_id = ?",
+          scoped += try selectFacts(
+            "SELECT \(InstantFactRowReader.columns) FROM instant_triples WHERE entity_id = ? AND attribute_id = ?",
             [.text(entityID), .text(attributeID)]
-          ) as [InstantTriple]
+          )
         }
         for attributeID in values.keys.sorted() where !attributeIDs.contains(attributeID) {
           for value in values[attributeID] ?? [] {
-            scoped += try selectJSON(
+            scoped += try selectFacts(
               """
-              SELECT json FROM instant_triples
+              SELECT \(InstantFactRowReader.columns) FROM instant_triples
               WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
               """,
               [.text(entityID), .text(attributeID), .text(try encode(value))]
-            ) as [InstantTriple]
+            )
           }
         }
         previousTriples = scoped
       }
     }
     try saveTripleDiffWithoutTransaction(from: previousTriples, to: triples)
+  }
+
+  /// The facts `sql` selects, read from their columns by ``InstantFactRowReader``: `sql` selects its ``columns`` first.
+  private func selectFacts(_ sql: String, _ bindings: [SQLiteBinding]) throws -> [InstantTriple] {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    guard let statement else {
+      throw persistenceError(operation: "read facts", message: "SQLite prepared no statement.")
+    }
+    var facts: [InstantTriple] = []
+    var reader = InstantFactRowReader(decoder: decoder)
+    do {
+      try reader.read(statement, into: &facts)
+    } catch let failure as InstantFactRowReader.ReadFailure {
+      throw persistenceError(operation: failure.operation, message: failure.message)
+    }
+    return facts
   }
 
   private func saveTripleDiffWithoutTransaction(
