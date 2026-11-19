@@ -211,6 +211,16 @@ struct ShardedDictionary<Key: Hashable, Value>: Sequence, ExpressibleByDictionar
   var count: Int { shards.reduce(0) { $0 + $1.count } }
   var isEmpty: Bool { shards.allSatisfy(\.isEmpty) }
 
+  /// Whether the dictionary holds more than `limit` entries: `count > limit` (#2555).
+  func holdsMore(than limit: Int) -> Bool {
+    countReaching(limit).holdsMore
+  }
+
+  /// Whether the dictionary holds more than `limit` entries, and how many shards were read to tell (#2555).
+  func countReaching(_ limit: Int) -> (holdsMore: Bool, shardsRead: Int) {
+    (count > limit, shards.count)
+  }
+
   /// Whether the entries are in `shardCount` shards rather than one dictionary.
   private var isSharded: Bool { shards.count == shardCount }
 

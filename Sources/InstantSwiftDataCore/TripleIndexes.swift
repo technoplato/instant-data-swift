@@ -1972,7 +1972,7 @@ struct TripleIndexes: Codable, Sendable {
         case let .one(value, _):
           if case let .ref(target) = value, entityIDs.contains(target) { return true }
         case let .many(map):
-          if map.count > entityIDs.count {
+          if map.holdsMore(than: entityIDs.count) {
             if entityIDs.contains(where: { map[.ref($0)] != nil }) { return true }
           } else if map.keys.contains(where: { $0.refValue.map(entityIDs.contains) ?? false }) {
             return true
@@ -2003,7 +2003,7 @@ struct TripleIndexes: Codable, Sendable {
         case let .one(value, _):
           if case let .ref(target) = value, entityIDs.contains(target) { linked.insert(target) }
         case let .many(map):
-          if map.count > entityIDs.count {
+          if map.holdsMore(than: entityIDs.count) {
             for id in entityIDs where map[.ref(id)] != nil { linked.insert(id) }
           } else {
             for value in map.keys {
