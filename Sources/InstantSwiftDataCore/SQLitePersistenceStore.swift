@@ -739,6 +739,17 @@ private struct InstantKeptReceiptFingerprint {
   var fingerprint: String
 }
 
+/// A body a save stored, found by the digest of the bytes it stored (#1497), as a receipt fingerprint is (#1523).
+///
+/// The stored bytes are this body encoded, and a body decodes to the value it was encoded from (every type it holds
+/// codes itself as `Codable` synthesizes, and a failure's hint, which writes a whole number as an integer, decodes to an
+/// equal value), so a row whose stored bytes have this digest decodes to ``body``.
+private struct InstantKeptOutboxBody {
+  var storedBodyDigest: SHA256Digest
+  /// ``SQLitePersistenceStore/storedOutboxBody(_:)`` of the saved write: the row's delivery columns still apply to it.
+  var body: PendingMutation
+}
+
 struct InstantOutboxBodyRow: Sendable {
   var mutationID: String
   var createdAtMilliseconds: Int64
@@ -1553,6 +1564,12 @@ public actor SQLitePersistenceStore {
   /// about 1.3 ms for a transcript line on a Mac mini, on this actor. The fingerprint is a function of its inputs, so
   /// equal inputs reuse it, and any other inputs (an earlier process's body, a changed one) are fingerprinted as before.
   private var keptReceiptFingerprints: [String: InstantKeptReceiptFingerprint] = [:]
+  /// The body each save stored, by mutation id, with the digest of its stored bytes (#1497). The acknowledgement of a
+  /// write decoded its whole stored body, about half of an acknowledgement's 1.97 ms on a phone, though the save that
+  /// stored those bytes held the value; a row that still holds them gives the kept body, any other row is decoded.
+  private var keptOutboxBodies: [String: InstantKeptOutboxBody] = [:]
+  /// How many acknowledgements took the kept body instead of decoding their row's (#1497).
+  private var reusedOutboxBodyCount = 0
   /// How many forward wire-intent fingerprints the outbox row write computed for the mutation it saves (#1491).
   private var savedWireIntentFingerprintCount = 0
   /// What the delivery claim encoded for the writes it claimed (#1517): each projected body it measured, and each
@@ -1738,9 +1755,12 @@ public actor SQLitePersistenceStore {
   /// a save is about to bind (#1523). The kept fingerprint is then found by those bytes, so the save, the claim and the
   /// acknowledgement of a write no longer hash its whole transaction and rollback (about 180 us each on an M4) to find
   /// it; equal bytes are equal inputs. Without them, the inputs' hash finds it as before.
+  ///
+  /// `knownStoredBodyDigest` is `storedBody`'s digest when the caller already took it (#1497).
   private func optimisticEffectFingerprint(
     of mutation: PendingMutation,
-    storedBody: SQLiteBinding? = nil
+    storedBody: SQLiteBinding? = nil,
+    knownStoredBodyDigest: SHA256Digest? = nil
   ) throws -> String? {
     guard mutation.hasOptimisticEffectReceiptFingerprint else {
       optimisticEffectFingerprintCount += 1
@@ -1748,7 +1768,7 @@ public actor SQLitePersistenceStore {
     }
     let kept = keptReceiptFingerprints[mutation.id]
     let inputsHash: Int?
-    let storedBodyDigest = storedBody?.storedBodyDigest
+    let storedBodyDigest = knownStoredBodyDigest ?? storedBody?.storedBodyDigest
     if let storedBodyDigest {
       if let kept, kept.storedBodyDigest == storedBodyDigest {
         return kept.fingerprint
@@ -1785,6 +1805,28 @@ public actor SQLitePersistenceStore {
   }
 
   static let maximumKeptReceiptFingerprints = 512
+
+  /// Keeps the body a save stores, by the digest of the bytes it stores (#1497). An entry lives from the save to the
+  /// acknowledgement, so a connected recording keeps a few; past the bound (offline, unacknowledged writes) they are all
+  /// dropped, and those writes' acknowledgements decode their rows as before. Bodies, unlike fingerprints, are whole
+  /// writes, so the bound is small.
+  private func keepOutboxBody(_ body: PendingMutation, storedBodyDigest: SHA256Digest?) {
+    guard let storedBodyDigest else {
+      keptOutboxBodies[body.id] = nil
+      return
+    }
+    if keptOutboxBodies.count >= Self.maximumKeptOutboxBodies, keptOutboxBodies[body.id] == nil {
+      keptOutboxBodies.removeAll(keepingCapacity: true)
+    }
+    keptOutboxBodies[body.id] = InstantKeptOutboxBody(storedBodyDigest: storedBodyDigest, body: body)
+  }
+
+  static let maximumKeptOutboxBodies = 64
+
+  /// How many acknowledgements took their save's kept body instead of decoding their row's (#1497).
+  package func reusedOutboxBodyCountForTesting() -> Int {
+    reusedOutboxBodyCount
+  }
 
   package func resetTerminalFailureMetadataMetricsForTesting() {
     terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
@@ -11957,9 +11999,19 @@ public actor SQLitePersistenceStore {
           nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
         )
       }
-      var mutation: PendingMutation = try decodeOutboxBody(row)
-      decodedOutboxBodyCount += 1
-      decodedOutboxBodyByteCount += row.json.utf8.count
+      // #1497: the body the save of this write stored, while the row holds the bytes it stored; any other row is decoded.
+      // Decoding was about half of an acknowledgement on a phone (262 of 485 samples in a 3.6-hour trace).
+      let storedBodyDigest = row.storedBody.storedBodyDigest
+      var mutation: PendingMutation
+      if let storedBodyDigest, let kept = keptOutboxBodies[id], kept.storedBodyDigest == storedBodyDigest {
+        mutation = kept.body
+        row.delivery.apply(to: &mutation)
+        reusedOutboxBodyCount += 1
+      } else {
+        mutation = try decodeOutboxBody(row)
+        decodedOutboxBodyCount += 1
+        decodedOutboxBodyByteCount += row.json.utf8.count
+      }
       guard mutation.id == id else {
         throw persistenceError(
           operation: "accept outbox mutation",
@@ -11969,7 +12021,11 @@ public actor SQLitePersistenceStore {
 
       // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007), and the
       // save's, kept, needs none (#1497), found by the row's bytes: `mutation` is its body as decoded (#1523).
-      let effectFingerprint = try optimisticEffectFingerprint(of: mutation, storedBody: row.storedBody)
+      let effectFingerprint = try optimisticEffectFingerprint(
+        of: mutation,
+        storedBody: row.storedBody,
+        knownStoredBodyDigest: storedBodyDigest
+      )
       let hasPreparedMaterializedEffect = hasStoredPreparedOptimisticEffectReceipt(
         mutation,
         in: row,
@@ -12088,6 +12144,7 @@ public actor SQLitePersistenceStore {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
         // Accepted: no claim or acknowledgement checks this write again (#1497).
         keptReceiptFingerprints[mutation.id] = nil
+        keptOutboxBodies[mutation.id] = nil
       }
       return InstantOutboxRowAcceptance(
         mutation: mutation,
@@ -21448,7 +21505,14 @@ public actor SQLitePersistenceStore {
     // acknowledgement find it by the bytes they read.
     let encoded = try encodedBody ?? encodeOutboxBody(mutation)
     let storedBody = Self.storedBodyBinding(encoded.body)
-    let candidateFingerprint = try optimisticEffectFingerprint(of: mutation, storedBody: storedBody)
+    let storedBodyDigest = storedBody.storedBodyDigest
+    // #1497: the body these bytes encode, kept by them, so this write's acknowledgement decodes nothing.
+    keepOutboxBody(Self.storedOutboxBody(mutation), storedBodyDigest: storedBodyDigest)
+    let candidateFingerprint = try optimisticEffectFingerprint(
+      of: mutation,
+      storedBody: storedBody,
+      knownStoredBodyDigest: storedBodyDigest
+    )
     let durableMutation = mutation
     var statement: OpaquePointer?
     try prepare(

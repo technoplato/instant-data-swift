@@ -2204,10 +2204,11 @@ struct InstantBoundedOutboxDeliveryTests {
       .compactMap(\.clientEventID)
     expectNoDifference(sentMutationIDs.last, "tx-in-flight-00050", boundedOutboxSource)
     let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    // #1497: the acknowledgement takes the body its save kept, so it decodes no row (it decoded one before).
     expectNoDifference(
       decodedBodyCount,
-      2,
-      "The acknowledgement decodes one row and the refill decodes only the one unsent row."
+      1,
+      "The acknowledgement decodes no row and the refill decodes only the one unsent row."
     )
     _ = try? await runtime.closeConnection()
   }
