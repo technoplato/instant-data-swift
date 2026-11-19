@@ -719,8 +719,10 @@ private struct InstantLiveAttributeIdentity: Hashable, Sendable {
 /// refresh with those. Parsing Scribe's 447 attrs and rebuilding the schema lookups for each frame cost more than
 /// translating the frame's own rows. The cache keeps the attrs array and the local attribute revision its context was
 /// built for. An attr-less refresh passes the session's same array, so the comparison is a buffer-identity check; a
-/// refresh that carries equal attrs is compared in memory, still far cheaper than parsing it. A merged attribute bumps
-/// the local revision, and changed attrs fail the comparison: either rebuilds the context.
+/// refresh with an equal array in another buffer (a reconnect's init-ok, a refresh that carries attrs) is compared in
+/// memory once, still far cheaper than parsing it, and the cache keeps that array, so the session's later refreshes are
+/// identity checks again (#2554). A merged attribute bumps the local revision, and changed attrs fail the comparison:
+/// either rebuilds the context.
 // SAFETY: `lock` (an NSLock) guards every read and write of the cached entry.
 final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
   private struct Entry {
@@ -751,6 +753,10 @@ final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
       }
       valueComparisons += 1
       if entry.serverAttributes == serverAttributes {
+        // #2554: keep the caller's array, the session's latest. After a reconnect the session applies every refresh
+        // with its new init-ok's attrs; keeping the old array made each of them compare every attr value by value
+        // (2,283 on a phone, 1.45% of the app in a 3.6-hour trace). The context is the same either way.
+        self.entry?.serverAttributes = serverAttributes
         return entry.context
       }
     }
