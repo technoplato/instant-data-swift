@@ -8387,6 +8387,21 @@ struct InstantLiveRefreshAttributeContextCacheTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// #2554: an attr-less refresh with init-ok's attrs, a refresh that carries equal attrs (the session keeps that new
+  /// array), then eight attr-less refreshes with it, as after every reconnect. The cache kept init-ok's array, so each of
+  /// the eight compared every attr value by value; it compares once and reuses the context by identity.
+  @Test
+  func refreshesAfterARefreshCarryingEqualAttrsReuseTheContextWithoutComparingAgain() async throws {
+    let runtime = try await Self.applying(
+      [Self.refresh(1), Self.refresh(2, attrs: .todoServerAttrs)] + (3...10).map { Self.refresh($0) },
+      lastTransactionID: "server-tx-10",
+      suffix: "equal-attrs-then-attr-less"
+    )
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 1)
+    expectNoDifference(runtime.liveRefreshAttributeContextValueComparisonCountForTesting(), 1)
+    _ = try await runtime.closeConnection()
+  }
+
   /// Each server apply saves its query results inside the commit, under the operation gate, and each save loaded and
   /// decoded every attribute row to bound the result's nested includes.
   @Test

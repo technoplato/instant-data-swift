@@ -2213,6 +2213,11 @@ public final class InstantRuntime: Sendable {
     liveRefreshAttributeContexts.buildCount
   }
 
+  /// How many live refreshes compared their attrs value by value with the cached context's (#2554).
+  package func liveRefreshAttributeContextValueComparisonCountForTesting() -> Int {
+    liveRefreshAttributeContexts.valueComparisonCount
+  }
+
   @concurrent
   package func resetPersistenceCacheResidencyMetricsForTesting() async {
     storeAdoptionMetrics.reset()

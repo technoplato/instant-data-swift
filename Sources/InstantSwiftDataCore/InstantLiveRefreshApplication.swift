@@ -733,6 +733,7 @@ final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
   private let lock = NSLock()
   private var entry: Entry?
   private var builds = 0
+  private var valueComparisons = 0
 
   func context(
     serverAttributes: [InstantLiveJSONValue],
@@ -743,10 +744,15 @@ final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
     defer { lock.unlock() }
     if let entry,
       entry.localAttributeRevision == localAttributeRevision,
-      entry.localAttributeCount == existingAttributes.count,
-      entry.serverAttributes == serverAttributes
+      entry.localAttributeCount == existingAttributes.count
     {
-      return entry.context
+      if Self.isSameBuffer(entry.serverAttributes, serverAttributes) {
+        return entry.context
+      }
+      valueComparisons += 1
+      if entry.serverAttributes == serverAttributes {
+        return entry.context
+      }
     }
     let context = try InstantLiveRefreshTranslator.attributeContext(
       serverAttributes: serverAttributes,
@@ -767,6 +773,21 @@ final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return builds
+  }
+
+  /// How many calls compared attrs value by value: another array than the cached one, with the same revision and count.
+  var valueComparisonCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return valueComparisons
+  }
+
+  /// Whether two arrays share one buffer, which `Array`'s `==` answers without reading an element.
+  private static func isSameBuffer(_ lhs: [InstantLiveJSONValue], _ rhs: [InstantLiveJSONValue]) -> Bool {
+    lhs.count == rhs.count
+      && lhs.withUnsafeBufferPointer { lhs in
+        rhs.withUnsafeBufferPointer { rhs in lhs.baseAddress == rhs.baseAddress }
+      }
   }
 }
 
