@@ -1,3 +1,23 @@
+## 2026-11-19 18:40:00 EST — lib-opt-2551 (#2551): v1.9.88, six hot paths of an all-day recording made cheaper, identical output
+
+- **Why:** the consuming app's Power Profiler traces and diskwrites reports (2026-11-16..19, builds pinning 1.9.86 and
+  1.9.87) named library costs with an identical-output fix each (the app's #2551 reports lib-audit, trace-long,
+  trace-recent, sysdiag).
+- **Landed (red, green):** #2553 owner probe by key `71b45060`, `b14ee729`; #2554 attribute context kept by identity
+  `9cd4e0cc`, `3c5d5f90`; #2209 a disk-only prune installs its revision `3d5438e4`, `1dc85ae9`; #1497 acknowledgement
+  uses the saved body `86881346`, `9a6dec7e`, `38ef3945`; #2555 slot size without all shards `477fb526`, `fa084f28`; #2556 save read-back by
+  columns `77db5ff8`, `6d55288d`.
+- **Measured (M5 build queue):** owner probe 398 -> 0 full-scan steps (2 probes, 200 results), 48.1-48.6 -> 4.6-4.7 us
+  a probe on a phone-shaped store; attrs value comparisons 100 -> 1 and 9 -> 1; reload after a disk-only prune 1 -> 0;
+  bodies decoded per acknowledgement 1 -> 0; shards read 64 -> at most 2 (test bound); save reads of generated json 1 -> 0.
+- **Checked:** the whole InstantSwiftDataCoreTests bundle (m5 `lib-opt-2551-core-full`): 1,801 tests, 74 issues (44 known issues); a like-for-like rerun of the failing suites on v1.9.87 and on this tree (m5 `lib-opt-2551-baseline`, `lib-opt-2551-subset`) fails the same tests on both: the upstream-submodule parity tests (no `upstream/instant` checkout), the segmenter's @unchecked Sendable lint (InstantAudioSegmenter.swift:268), the actor-hop pin and the RealSize fixture's old unloaded table; three timing and CPU-ratio tests failed only inside the full parallel bundle and pass in the rerun; the 10,000-row acceptance test's counts moved by design (`38ef3945`).
+- **Released:** v1.9.88 (`docs/releases/v1.9.88.md`).
+- **Not done (reasons on #2551):** encode-once fingerprints (#1517/#1523: a byte drift would distrust stored writes, for
+  about 3 CPU-s an hour), supersession lookups by id (needs an id index at both call sites), the media spool's
+  stream.json writes (identical only with Foundation's atomic-write durability matched).
+- **Next (resume here):** the consuming app pins 1.9.88 through its merge queue; after the build is on the phone, its
+  recording smoke and the next Power Profiler trace.
+
 ## 2026-11-19 01:55:00 EST — segmenter-2529 (#2529): v1.9.87, every segmenter writer ends exactly once
 
 - **Why:** AVAssetWriter crashed on its own queue in test processes that dropped writers still writing and held
