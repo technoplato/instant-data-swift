@@ -10,6 +10,93 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## November 19th, 2026 at 7:15:18 p.m. EST — `38ef3945cd43` green(#1497): memory pressure (releaseMemory) drops the kept bodies, whose acknowledgements then decode their rows as before; the 10,000-row server-acceptance test's pinned decodes for the two writes the runtime saved go 1 -> 0 (the ack takes the kept body; it never read the other 9,999 rows). Measured: the 15-suite subset on this tree fails only tests the v1.9.87 baseline fails in the same run (upstream-submodule parity, the segmenter's Sendable lint, the actor-hop pin, the RealSize fixture's old table) (m5 lib-opt-2551-subset vs lib-opt-2551-baseline)
+
+- **Implementation commit:** `38ef3945cd433b979c2085344220b07490fe8a47`
+- **Change:** green(#1497): memory pressure drops the kept bodies; the 10,000-row acceptance test's decodes for runtime-saved writes 1 -> 0
+- **Details:**
+  - the 15-suite subset fails only what the v1.9.87 baseline fails in the same run
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — releaseMemory drops keptOutboxBodies
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — pinned decode counts for runtime-saved writes
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
+## November 19th, 2026 at 6:59:34 p.m. EST — `fa084f28bee7` green(#2555): ShardedDictionary.countReaching sums shard counts only until the sum passes the limit (never storing a count: the dictionary stays one reference wide, #1152), so hasLink and linkedEntityIDs tell that a recording-sized slot holds more refs than a page shows from its first shard or two. Measured: a 3,000-ref slot against 30 entities reads at most 2 shards (the test's bound) where it read 64 of 64; holdsMore equals count > limit for every size from 0 to 200 and back and every limit tried; ShardedCollectionsTests pass; the whole Core bundle shows no failure the v1.9.87 baseline does not (m5 lib-opt-2551-core-full, lib-opt-2551-baseline)
+
+- **Implementation commit:** `fa084f28bee71688c59bf6daa0a616c3ae1df641`
+- **Change:** green(#2555): a slot's size is compared with a page's by summing shard counts only until the limit is passed
+- **Details:**
+  - a 3,000-ref slot against 30 entities reads at most 2 shards where it read 64; holdsMore equals count > limit for every size and limit tried; hasLink and linkedEntityIDs call it since the red commit
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ShardedCollections.swift` — ShardedDictionary.countReaching stops once the sum passes the limit
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
+## November 19th, 2026 at 6:59:27 p.m. EST — `6d55288d1407` green(#2556): a local save reads the facts it replaces from their columns through InstantFactRowReader (selectFacts), as every other fact read has since #1150, not the generated json column SQLite builds per row and JSONDecoder reads back; same facts. Measured: generated-json reads in a todo's second save 1 -> 0, and the entity holds exactly the facts the write states (string with quotes, slash, accent and emoji, bool, date, id); the whole Core bundle shows no failure the v1.9.87 baseline does not (m5 lib-opt-2551-core-full, lib-opt-2551-baseline)
+
+- **Implementation commit:** `6d55288d1407bde58ca680f28ad2c986a1a4eba2`
+- **Change:** green(#2556): a save reads the facts it replaces from their columns, not the generated json column
+- **Details:**
+  - generated-json reads in a todo's second save 1 -> 0; the entity holds exactly the facts the write states
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — saveChangedEntityFactsWithoutTransaction reads through selectFacts (InstantFactRowReader)
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
+## November 19th, 2026 at 6:29:16 p.m. EST — `9a6dec7e1661` green(#1497): the save keeps the body it stores (storedOutboxBody of the write) by the SHA-256 of the stored bytes, at most 64 and dropped at acceptance, and the acknowledgement uses it, with the row's delivery columns applied, when the row still holds those bytes; any other row is decoded as before. The digest is taken once for the kept body and the kept receipt fingerprint. Measured: bodies decoded by the acknowledgement of a write saved in the same store 1 -> 0, the acceptance equal to what the row decodes to; a store that did not save the write decodes 1, as before; stored bodies round-trip exactly for every value kind, operation and failure hint; the bounded-delivery window test's ack-plus-refill decodes 2 -> 1 (expectation updated: the ack decodes none); write-path cost and energy, acknowledgement digest, outbox body conversion and terminal-failure suites pass (m5 lib-opt-2551-greenC-redHG)
+
+- **Implementation commit:** `9a6dec7e1661cb7128c7bd432043fe4c0fb95ab8`
+- **Change:** green(#1497): an acknowledgement uses the body its save stored, found by the stored bytes' digest
+- **Details:**
+  - bodies decoded by an acknowledgement of a write saved in the same store 1 -> 0; acceptance equal to the decoded row; other stores decode as before
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — kept outbox bodies and acceptOutboxMutation
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — the window test's decode count 2 -> 1
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
+## November 19th, 2026 at 6:29:16 p.m. EST — `1dc85ae93b33` green(#2209): a prune batch that deleted only facts memory had already let go installs the store revision it moved, when memory was at the revision the batch applied at (storeRevisionBefore on the batch application, both prune paths), so the next local write finds memory current and reloads nothing; memory held none of those facts, so it matches the disk the batch left. Measured: after unloading a closed list, letting memory go, collecting it (12 facts leave the disk only) and one local write: fullStateReconstructionCount 1 -> 0 and storeSnapshotReplacementCount 1 -> 0, memory and disk show the same todos; the prune suites pass (unload in place, stored-result reload, prune batch phases, inactive prune memory, prune off the applier, phone prune hold) (m5 lib-opt-2551-greenE-redC)
+
+- **Implementation commit:** `1dc85ae93b3310d78d2d78d89312cd38c48bb3e9`
+- **Change:** green(#2209): a prune that deleted only facts memory had let go installs the store revision it moved
+- **Details:**
+  - after such a prune and one local write: fullStateReconstructionCount 1 -> 0, storeSnapshotReplacementCount 1 -> 0
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — both prune paths install the moved revision when memory was at storeRevisionBefore
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the batch application carries storeRevisionBefore
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
+## November 19th, 2026 at 6:29:16 p.m. EST — `3c5d5f90c66f` green(#2554): on a value-equal hit the attribute-context cache keeps the caller's attrs array, the session's latest, so after a reconnect (or a refresh that carries equal attrs) the later attr-less refreshes are buffer-identity checks again instead of comparing every attr value by value; the context returned is the same. Measured: value comparisons 100 -> 1 for 100 calls with an equal array in another buffer, and 9 -> 1 in a runtime applying an attr-less refresh, one carrying equal attrs, then eight attr-less ones; contexts built stay 1; changed attrs or a changed local schema still rebuild (m5 lib-opt-2551-greenBA-redE)
+
+- **Implementation commit:** `3c5d5f90c66ff6647ee20cae289b944412fab15d`
+- **Change:** green(#2554): the attribute-context cache keeps the caller's equal attrs array, so refreshes after a reconnect are identity checks
+- **Details:**
+  - value comparisons 100 -> 1 per 100 calls, 9 -> 1 in a runtime's reconnect-shaped sequence; one context built either way
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — InstantLiveRefreshAttributeContextCache.context keeps the caller's array
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
+## November 19th, 2026 at 6:29:16 p.m. EST — `b14ee7292921` green(#2553): the live-query owner probe JOINs instant_live_query_results by its integer primary key instead of an IN-subquery that scanned every stored result each run (same rows: query_id names one result, query_key is NOT NULL UNIQUE, so query_key NOT IN excludes the rows the subquery over ids did). Measured: 2 probes over 200 stored results 398 -> 0 full-scan steps, plan SEARCH owned USING COVERING INDEX identity_idx / SEARCH result USING INTEGER PRIMARY KEY (test counters, m5 lib-opt-2551-greenBA-redE); a phone-shaped store (1,000 results, 57 loaded, 400,000 ownership rows, 2 MiB cache) 48.1-48.6 -> 4.6-4.7 us a probe with the same answers for 5,000 probes (owner_probe_bench.py, #2551 work/lib-opt). Answers equal the subquery form for owners loaded, unloaded and excluded; the compact-ownership answers digest is unchanged (7b4abdccc1163c64 over 22778 answers)
+
+- **Implementation commit:** `b14ee72929217e99dad421aabb84798d472909b6`
+- **Change:** green(#2553): the live-query owner probe joins stored results by their integer key instead of scanning them all per retracted fact
+- **Details:**
+  - M5 build queue: 2 probes over 200 stored results 398 -> 0 full-scan steps; phone-shaped store 48.1-48.6 -> 4.6-4.7 us a probe, same answers for 5,000 probes
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — liveQueryTripleHasOwnerWithoutTransaction joins results by query_id
+- **User context (verbatim):**
+  > Can you pull the latest 5 perf and system diagnostics traces from my iPhone and use them to improve performance and optimize our library and queries. No compromising functionality or throttling. Only optimizing what's already there
+- **SpecStory:** unavailable — unavailable: Claude Code sub-agent lib-opt of session 33ce8039 (T3 Code, no claude.ai link), account al; no SpecStory capture; the transcript path is on #2551
+
 ## November 8th, 2026 at 2:19:56 p.m. EST — `c50aaefd91b9` test(#2005): the 10k-row benchmark compares allocated bytes, not allocation counts: optimized on the Mac mini (2005-l3-bench-release2, three runs) counting took 13.9-14.5 ms, 24,034 allocations and 6.5 MB against linking every child's 37.8 ms, 19,052 and 13.8 MB, so the count check failed while counting allocates half the bytes; the measured table goes in ADR 0015 L3's design note
 
 - **Implementation commit:** `c50aaefd91b9936ad458a2c5789178f92f9f3a3b`
