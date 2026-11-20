@@ -637,10 +637,12 @@ struct InstantOutboxHydrationTests {
 
     expectNoDifference(accepted.id, targetID, upstreamDeliverySource)
     expectNoDifference(accepted.status, .confirmed, upstreamDeliverySource)
+    // #1497: the acknowledgement takes the body its save kept (the runtime saved this write), so it decodes no row; it
+    // decoded the addressed one before, never the other 9,999.
     let firstAcceptanceDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(
       firstAcceptanceDecodeCount,
-      1,
+      0,
       upstreamDeliverySource
     )
     let pendingMutationCount = await runtime.pendingMutationCount()
@@ -648,7 +650,7 @@ struct InstantOutboxHydrationTests {
     let status = try await runtime.connectionStatus()
     expectNoDifference(status.pendingMutationCount, 9_998, upstreamDeliverySource)
     let decodeCountAfterStatusReads = await runtime.persistence.currentDecodedOutboxBodyCount()
-    expectNoDifference(decodeCountAfterStatusReads, 1, upstreamDeliverySource)
+    expectNoDifference(decodeCountAfterStatusReads, 0, upstreamDeliverySource)
     let resident = await runtime.mutationDeliveryBarrierMutations()
     expectNoDifference(
       resident,
@@ -729,11 +731,12 @@ struct InstantOutboxHydrationTests {
     )
     let pendingCountAfterLocalReceipt = await runtime.pendingMutationCount()
     expectNoDifference(pendingCountAfterLocalReceipt, 9_998, upstreamDeliverySource)
+    // #1497: this write was saved by the runtime too, so its acknowledgement decodes no row.
     let decodeCountAfterLocalReceipt =
       await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(
       decodeCountAfterLocalReceipt,
-      1,
+      0,
       upstreamDeliverySource
     )
 

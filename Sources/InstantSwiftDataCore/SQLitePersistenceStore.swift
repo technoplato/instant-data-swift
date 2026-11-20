@@ -2125,6 +2125,8 @@ public actor SQLitePersistenceStore {
   /// the system warns of memory pressure; SQLite reads the pages it needs again afterwards, and prepares the statements
   /// again on their next use. A save used to run `PRAGMA shrink_memory` every time.
   package func releaseMemory() {
+    // #1497: the kept bodies are whole writes; their acknowledgements decode their rows instead, as they did before.
+    keptOutboxBodies.removeAll()
     guard let raw = connection.raw else { return }
     var usedBefore: Int32 = 0
     var highwater: Int32 = 0
