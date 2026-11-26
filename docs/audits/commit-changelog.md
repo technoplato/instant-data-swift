@@ -1,3 +1,11 @@
+## November 26th, 2026 at 10:52:27 a.m. EST — scribe `dcd3239cfcf8130b56e7489dd541f53e68dd4033` land(#2995): share-scrub 16, pictures-only broadcasts, the stream's reviewer, the share's memory (changelog `767598d81`)
+
+- **Implementation commits:** 37 commits of agent/claude/pictures-only-2995, red then green, from `6ed9dcae8` to `bf72be9e3`, landed by the merge queue as `dcd3239cf`
+- **Change:** a broadcast with no words heard is scrubbed as pictures alone into a silent video; the private stream shows a frame only after the rules and the semantic reviewer; a share's memory hides what any picture hid in every picture that shows it; the reviewer leaves Scribe's side stamp alone; the scrubber's installer stages what its app imports
+- **Issues:** [#2995](https://issues.pisspoursoftware.xyz/issues/2995), [#2730](https://issues.pisspoursoftware.xyz/issues/2730)
+- **Details:** scrubber and private stream installed on production as bf72be9e3 (rollback `install.sh --rollback 20261126-100643`); the uploader not installed (sending is his word); measured over Recording 508's 1071 frames: frames still reading a hidden value by tesseract 945 before the memory pass, 207 after
+- **SpecStory:** unavailable — Claude Code sub-agent pictures-only-2995 of session c0de4d90 (T3 Code, no claude.ai link), account pp; no SpecStory capture
+
 ## November 19th, 2026 at 7:15:44 p.m. EST — instant-data-swift `38ef3945` (last implementation commit before the v1.9.88 release record) release(#2551): v1.9.88, six hot paths made cheaper with identical output
 
 - **Implementation commits:** #2553 owner probe by key `71b45060` red, `b14ee729` green; #2554 attribute context kept by identity `9cd4e0cc`, `3c5d5f90`; #2209 a disk-only prune installs its revision `3d5438e4`, `1dc85ae9`; #1497 acknowledgement uses the saved body `86881346`, `9a6dec7e`, `38ef3945`; #2555 slot size without all shards `477fb526`, `fa084f28`; #2556 save read-back by columns `77db5ff8`, `6d55288d`
